@@ -5622,6 +5622,8 @@
       overflow: hidden;
     }
 
+    .home-hero-title.has-logo { display: none; }
+
     .home-nav-tabs #chips {
       min-width: 0;
       flex: 1 1 auto;
@@ -19460,8 +19462,9 @@ utils.encode = function encode(arr, enc) {
       const rating = item && Number(item.voteAverage || 0) > 0 ? Number(item.voteAverage).toFixed(1) + " 分" : "";
       meta.textContent = [year, kind, rating].filter(Boolean).join(" · ");
       const existingLogo = item && (item.logo || item.logoUrl || item.logoPath || item.logo_path) || "";
+      const logoSrc = existingLogo ? displayImage(existingLogo, { size: "w780" }) : "";
+      title.classList.toggle("has-logo", !!logoSrc);
       if (logoWrap && logo) {
-        const logoSrc = existingLogo ? displayImage(existingLogo, { size: "w780" }) : "";
         logoWrap.hidden = !logoSrc;
         logo.src = logoSrc;
         logo.alt = item && item.title || "";
