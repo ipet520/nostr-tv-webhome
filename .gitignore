@@ -1,0 +1,15 @@
+# Local dependencies and editor files
+node_modules/
+.vscode/
+.idea/
+
+# Temporary files and local diagnostics
+*.log
+*.tmp
+*.bak
+debug/
+tmp/
+
+# Captures and archives that are not release files
+*.har
+vvee-ui-audit.zip
