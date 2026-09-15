@@ -6354,6 +6354,22 @@
       box-shadow: none !important;
     }
 
+    @media (max-width: 719px) {
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-rail > .card {
+        background: transparent !important;
+        border: 0 !important;
+        box-shadow: none !important;
+        -webkit-backdrop-filter: none !important;
+        backdrop-filter: none !important;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-rail > .card .card-body {
+        background: transparent !important;
+        border: 0 !important;
+        box-shadow: none !important;
+      }
+    }
+
     @media (max-width: 900px) {
       #searchHotRail { --home-card-width: clamp(112px, 28vw, 148px); }
     }
