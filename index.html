@@ -15766,7 +15766,6 @@ utils.encode = function encode(arr, enc) {
       fallback: [],
       fallbackPage: { sourceIndex: 0, page: 0, loading: false, loaded: false, done: false },
       loadingMore: false,
-      chipFocusTimer: 0,
       railScroll: {},
       homeV14: {
         sections: {},
@@ -19595,19 +19594,34 @@ utils.encode = function encode(arr, enc) {
       "variety-global": "now-playing",
       "concert": "now-playing"
     });
+    const HOME_PRESENTATION_ROUTES = Object.freeze(["home", "search", "secondary"]);
+    const LEGACY_HOME_PRESENTATION_ROUTES = Object.freeze(["history", "continue", "live", "recent", "catalog"]);
 
     function normalizeLegacyCategoryId(id) {
       const value = String(id || "").trim();
       return LEGACY_CATEGORY_MIGRATION[value] || value;
     }
 
+    function normalizeHomePresentationRoute(route) {
+      const value = String(route || "").trim().toLowerCase();
+      return HOME_PRESENTATION_ROUTES.includes(value) ? value : "home";
+    }
+
+    function isLegacyHomePresentationRoute(route) {
+      const value = String(route || "").trim().toLowerCase();
+      return LEGACY_HOME_PRESENTATION_ROUTES.includes(value) || (!!value && !HOME_PRESENTATION_ROUTES.includes(value));
+    }
+
     function migrateLegacyHomeState() {
       const home = state.homeV14;
       if (!home) return;
-      // Native History was removed from the user-facing Home model. Older
-      // snapshots that point at that route must reopen at Home instead of
-      // reviving a second history presentation.
-      if (home.route === "history" || home.route === "continue") home.route = "home";
+      // The presentation route is intentionally smaller than the category
+      // business IDs. Older snapshots may still contain removed
+      // category-shaped Home routes; reopen those snapshots at Home instead
+      // of reviving a parallel presentation path.
+      const rawRoute = String(home.route || "").trim().toLowerCase();
+      if (isLegacyHomePresentationRoute(rawRoute)) state.activeList = "all";
+      home.route = normalizeHomePresentationRoute(rawRoute);
       state.activeList = normalizeLegacyCategoryId(state.activeList);
       home.secondaryListId = normalizeLegacyCategoryId(home.secondaryListId);
       const filters = home.secondaryFilters && typeof home.secondaryFilters === "object" ? home.secondaryFilters : {};
@@ -19637,7 +19651,8 @@ utils.encode = function encode(arr, enc) {
       return Object.assign({}, saved, {
         activeList: normalizeLegacyCategoryId(saved.activeList),
         secondaryListId: normalizeLegacyCategoryId(saved.secondaryListId),
-        originSection: normalizeLegacyCategoryId(saved.originSection)
+        originSection: normalizeLegacyCategoryId(saved.originSection),
+        route: normalizeHomePresentationRoute(saved.route)
       });
     }
 
@@ -20111,7 +20126,7 @@ utils.encode = function encode(arr, enc) {
     }
 
     function homeUiRoute() {
-      return state.homeV14 && state.homeV14.route || "home";
+      return normalizeHomePresentationRoute(state.homeV14 && state.homeV14.route);
     }
 
     function isHomeRouteActive() {
@@ -20924,22 +20939,6 @@ utils.encode = function encode(arr, enc) {
       return `homeSection-${String(listId || "section").replace(/[^a-zA-Z0-9_-]/g, "-")}`;
     }
 
-    function selectChip(id, options) {
-      const opts = options || {};
-      id = normalizeLegacyCategoryId(id);
-      if (!opts.fromFocus) clearTimeout(state.chipFocusTimer);
-      if (!id || state.activeList === id && !(id === "all" && homeUiRoute() !== "home")) return;
-      if (id !== "all") exitBlockSelectMode();
-      state.activeList = id;
-      state.homeV14.route = id === "all" ? "home" : id === "live" || id === "recent" ? id : "catalog";
-      if (state.homeV14.route !== "home") state.homeV14.coldHomeFocusPending = false;
-      setHomeOnlyPresentationVisible(isHomeRouteActive());
-      syncHomeRoutePresentation();
-      scheduleHomeContentRender({ afterPaint: true, after: () => ensureActiveListData(id) });
-      scheduleUiSnapshotSave();
-      if (opts.keepFocus) requestAnimationFrame(() => focusRemoteTarget(initialHomeFocus()));
-    }
-
     function isSearchHistoryEntry() {
       const current = window.history && window.history.state;
       return location.hash === "#search" && !!(current && current.sheet === "search");
@@ -20989,9 +20988,11 @@ utils.encode = function encode(arr, enc) {
       const form = $("searchForm");
       const saved = state.homeV14.searchReturn || {};
       if (form) form.hidden = true;
-      const restoreRoute = saved.route === "live" || saved.route === "recent" ? saved.route : "home";
-      state.homeV14.route = restoreRoute;
-      state.activeList = restoreRoute === "live" || restoreRoute === "recent" ? saved.activeList || restoreRoute : "all";
+      // Search is a presentation route over the single Home model. Older
+      // snapshots could carry the removed live/recent Home routes; never
+      // revive those routes when returning from Search.
+      state.homeV14.route = "home";
+      state.activeList = "all";
       state.homeV14.searchReturn = null;
       renderAll({ deferContent: false });
       const restore = () => {
@@ -31402,6 +31403,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const home = $("home");
       const oldHomeNodes = document.querySelectorAll("#homeHeader, #homeHeaderInner, #homeIndependentNav, #chips, #homeToolbar");
       const sourceText = String(renderAll) + String(renderHome) + String(renderHomeContent);
+      const routeSource = String(homeUiRoute) + String(migrateLegacyHomeState) + String(normalizeLegacySavedState) + String(restoreUiSnapshot);
+      const legacyHomeRoutes = LEGACY_HOME_PRESENTATION_ROUTES;
       check("PHASE1_OLD_HOME_HEADER_DOM_REMOVED", oldHomeNodes.length === 0, "legacy Home Header nodes are absent", "DOM_ASSERTION");
       check("PHASE1_HOME_ANCHOR_PRESENTATION_REMOVED", !document.querySelector(".home-anchor, [data-home-anchor-key], [data-home-section-id]"), "legacy Home Anchor controls are absent", "DOM_ASSERTION");
       check("PHASE1_HOME_ANCHOR_NAVIGATION_REMOVED", typeof scrollHomeToAnchor === "undefined" && typeof findHomeHeaderEntry === "undefined", "legacy Home Anchor navigation helpers are absent", "STATIC_HOOK");
@@ -31418,6 +31421,15 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       check("PHASE1_DETAIL_UNCHANGED", typeof openDetail === "function", "existing Detail path remains", "FROZEN_SOURCE_AUDIT");
       check("PHASE1_PAN_UNCHANGED", typeof panSearch === "function" || typeof searchPan === "function" || typeof playPanResult === "function", "existing Pan path remains", "FROZEN_SOURCE_AUDIT");
       check("PHASE1_PLAYBACK_UNCHANGED", typeof playBestQuark === "function" && typeof playPanResult === "function", "existing Playback path remains", "FROZEN_SOURCE_AUDIT");
+      check("PHASE1_SELECT_CHIP_REMOVED", typeof selectChip === "undefined", "old selectChip helper is absent", "STATIC_HOOK");
+      const obsoleteChipTimer = ["chip", "Focus", "Timer"].join("");
+      check("PHASE1_CHIP_FOCUS_TIMER_REMOVED", !Object.prototype.hasOwnProperty.call(state, obsoleteChipTimer) && !document.documentElement.innerHTML.includes(obsoleteChipTimer), "obsolete chip focus timer is absent", "STATIC_HOOK");
+      check("PHASE1_HOME_PRESENTATION_ROUTE_ENUM", HOME_PRESENTATION_ROUTES.join(",") === "home,search,secondary" && HOME_PRESENTATION_ROUTES.every((route) => normalizeHomePresentationRoute(route) === route), "presentation route enum is home/search/secondary", "STATIC_HOOK");
+      check("PHASE1_LEGACY_HOME_ROUTE_MIGRATION", legacyHomeRoutes.every((route) => normalizeHomePresentationRoute(route) === "home" && normalizeLegacySavedState({ route }).route === "home"), "legacy Home routes normalize to home", "STATIC_HOOK");
+      const searchCloseSource = String(closeSearchPage);
+      check("PHASE1_SEARCH_RETURN_NO_LEGACY_HOME_ROUTE", searchCloseSource.includes('state.homeV14.route = "home"') && searchCloseSource.includes('state.activeList = "all"') && !searchCloseSource.includes("restoreRoute") && !searchCloseSource.includes("saved.route"), "Search return always restores Home", "STATIC_HOOK");
+      const legacySnapshotArrayText = ["[", '"home"', ", ", '"live"', ", ", '"recent"', ", ", '"catalog"', "]"].join("");
+      check("PHASE1_SNAPSHOT_NO_LEGACY_HOME_ROUTE_RESTORE", routeSource.includes("normalizeHomePresentationRoute") && !String(restoreUiSnapshot).includes(legacySnapshotArrayText), "snapshot restore accepts only current presentation routes", "STATIC_HOOK");
       runtimeRequired("PHASE1_HOME_DPAD_RUNTIME", "requires TV/browser directional interaction");
       runtimeRequired("PHASE1_HOME_VISUAL_RUNTIME", "requires 1920x1080 preview comparison");
       if (state.tvDiag) state.tvDiag.tests = results;
@@ -31688,17 +31700,24 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         });
       }
       restoreSearchSnapshot(snapshot.search);
-      if (snapshot.homeRoute === "search") {
+      const rawHomeRoute = String(snapshot.homeRoute || "").trim().toLowerCase();
+      const legacyHomeRoute = isLegacyHomePresentationRoute(rawHomeRoute);
+      const restoredHomeRoute = normalizeHomePresentationRoute(rawHomeRoute);
+      if (restoredHomeRoute === "search") {
         state.activeList = "all";
         state.homeV14.route = "search";
         // Snapshot restore is not a new user navigation. Rebind the current
         // same-document entry so a restored Search page cannot have a Search
         // UI with a Home URL.
         if (!isSearchHistoryEntry()) history.replaceState({ sheet: "search" }, "", "#search");
-      } else if (["home", "live", "recent", "catalog"].includes(snapshot.homeRoute)) {
-        state.homeV14.route = snapshot.homeRoute;
+      } else if (restoredHomeRoute === "secondary") {
+        state.activeList = "all";
+        state.homeV14.route = "secondary";
+      } else {
+        state.homeV14.route = "home";
       }
-      if (snapshot.activeList) state.activeList = normalizeLegacyCategoryId(snapshot.activeList);
+      if (legacyHomeRoute) state.activeList = "all";
+      else if (snapshot.activeList) state.activeList = normalizeLegacyCategoryId(snapshot.activeList);
       normalizeActiveListForViewport();
       renderAll({ deferContent: snapshot.route === "home" });
       if (snapshot.connectionOpen && $("connectionDock") && $("connectionBody")) {
