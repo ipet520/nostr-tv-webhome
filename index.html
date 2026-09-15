@@ -6060,6 +6060,20 @@
 
     .secondary-filter-row::-webkit-scrollbar { display: none; }
 
+    html.tv-mode .secondary-filter-row,
+    html.tv-preview .secondary-filter-row {
+      padding-inline-end: 24px;
+      scroll-padding-inline-end: 24px;
+    }
+
+    html.tv-mode .secondary-filter-options::after,
+    html.tv-preview .secondary-filter-options::after {
+      content: "";
+      flex: 0 0 24px;
+      width: 24px;
+      height: 1px;
+    }
+
     .secondary-filter-label {
       flex: 0 0 58px;
       color: var(--home-v14-muted);
@@ -6219,6 +6233,18 @@
     html.tv-preview .secondary-filter-option[aria-pressed="true"]:focus {
       border-color: rgba(191, 233, 255, .7) !important;
       background: rgba(191, 233, 255, .16) !important;
+    }
+
+    html.tv-mode .secondary-page button:focus:not(.card):not(.episode-card):not(.person-card),
+    html.tv-preview .secondary-page button:focus:not(.card):not(.episode-card):not(.person-card) {
+      background: rgba(255, 255, 255, .18);
+      color: #fff;
+      outline: 3px solid rgba(120, 210, 255, .95) !important;
+      outline-offset: 2px !important;
+      box-shadow: 0 0 0 2px rgba(120, 210, 255, .18), 0 0 18px rgba(80, 180, 255, .35) !important;
+      transform: scale(1.06);
+      z-index: 5;
+      transform-origin: center center;
     }
 
     html.tv-mode .card:focus,
@@ -31387,6 +31413,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const sectionIndex = sections.indexOf(section);
       const currentCards = homeSectionCards(section);
       const ownMore = section.querySelector && section.querySelector(".home-section-more");
+      const railMore = section.querySelector && section.querySelector(".home-rail > .home-more-card");
       if (more) {
         if (key === "ArrowUp") {
           for (let previous = sectionIndex - 1; previous >= 0; previous--) {
@@ -31402,7 +31429,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           }
           return more;
         }
-        if (key === "ArrowLeft") return currentCards[currentCards.length - 1] || more;
+        if (key === "ArrowLeft") return isVisibleFocusable(railMore) ? railMore : currentCards[currentCards.length - 1] || more;
         if (key === "ArrowRight") return more;
         return null;
       }
@@ -32050,7 +32077,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (!target || !target.getBoundingClientRect || !isTvLikeDevice()) return { x: 0, y: 0 };
       let deltaX = 0;
       let deltaY = 0;
-      const horizontal = target.closest && target.closest("#seasonTabs, .rail, #panTabs");
+      const horizontal = target.closest && target.closest("#seasonTabs, .rail, #panTabs, .secondary-filter-row");
       const panList = $("panResultList");
       const imageContent = $("imageContent");
       const connectionBody = $("connectionBody");
