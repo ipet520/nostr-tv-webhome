@@ -5292,7 +5292,7 @@
     .home-search-launcher-wrap {
       position: absolute;
       z-index: 12;
-      top: clamp(28px, 2.8vw, 52px);
+      top: clamp(24px, 1.55vw, 32px);
       left: 50%;
       width: min(680px, calc(100% - (2 * var(--home-v14-gut))));
       transform: translateX(-50%);
@@ -5400,7 +5400,7 @@
     .home-hero-content {
       position: absolute;
       z-index: 2;
-      top: clamp(180px, 10vw, 220px);
+      top: clamp(220px, 13vw, 270px);
       left: var(--home-v14-gut);
       max-width: min(700px, 48vw);
       padding: 0;
@@ -5470,7 +5470,7 @@
     .home-hero-dots {
       position: absolute;
       right: var(--home-v14-gut);
-      bottom: clamp(70px, 6vw, 104px);
+      bottom: clamp(130px, 7.8vw, 150px);
       z-index: 3;
       display: flex;
       align-items: center;
@@ -5492,7 +5492,7 @@
     .home-section {
       width: 100%;
       min-width: 0;
-      margin: clamp(42px, 2.8vw, 56px) 0 0;
+      margin: clamp(20px, 1.3vw, 26px) 0 0;
       overflow: visible;
     }
 
@@ -5567,7 +5567,7 @@
       flex-wrap: nowrap !important;
       align-items: flex-start;
       gap: var(--home-v14-gap);
-      padding: 28px var(--home-section-gut, var(--home-v14-gut)) 18px !important;
+      padding: 22px var(--home-section-gut, var(--home-v14-gut)) 0 !important;
       scroll-padding-inline: var(--home-section-gut, var(--home-v14-gut));
       overflow-x: auto !important;
       overflow-y: visible !important;
@@ -5695,7 +5695,7 @@
       min-width: 0;
     }
 
-    .home-dynamic-section { margin-top: clamp(22px, 2vw, 34px); }
+    .home-dynamic-section { margin-top: clamp(20px, 1.3vw, 26px); }
 
     body.block-select-active .home-rail .card {
       outline: 1px solid rgba(255, 255, 255, .18);
@@ -5753,7 +5753,7 @@
        Home DOM, card semantics, or focus/reveal engine. */
     html.tv-mode #home.home-root .home-section,
     html.tv-preview #home.home-root .home-section {
-      margin-top: clamp(42px, 2.8vw, 56px);
+      margin-top: clamp(20px, 1.3vw, 26px);
     }
 
     html.tv-mode #home.home-root .home-recent-section,
@@ -5770,8 +5770,8 @@
 
     html.tv-mode #home.home-root .home-rail,
     html.tv-preview #home.home-root .home-rail {
-      padding-top: 28px !important;
-      padding-bottom: 18px !important;
+      padding-top: 22px !important;
+      padding-bottom: 0 !important;
     }
 
     @media (max-width: 900px) {
