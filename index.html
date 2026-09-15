@@ -34833,7 +34833,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           else history.pushState({ sheet: "search" }, "", "#search");
         }
         const home = v147HomeState();
-        home.searchReturnToken = home.homeFocusToken || v147HomeToken(document.activeElement) || "hero";
+        const activeHomeToken = v147HomeTarget(document.activeElement) ? v147HomeToken(document.activeElement) : "";
+        home.searchReturnToken = activeHomeToken || home.homeFocusToken || "hero";
         home.searchReturnScrollY = homeScrollTop();
         state.homeV14.searchReturn = { scrollY: home.searchReturnScrollY, focusToken: home.searchReturnToken, route: "home", activeList: "all" };
         state.homeV14.route = "search";
