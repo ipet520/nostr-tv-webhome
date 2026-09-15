@@ -5331,6 +5331,38 @@
       box-shadow: none;
       transform: translateX(5px);
     }
+    /* The original HTML basic-settings control keeps its DOM and handlers;
+       these are only the minimum presentation overrides needed after moving
+       that one control into the existing Sidebar tools group. */
+    .home-sidebar #connectionDock {
+      width: 100%;
+      min-width: 0;
+      height: auto;
+      align-self: stretch;
+      margin: 0;
+      border-radius: 8px;
+    }
+    .home-sidebar #connectionToggle {
+      min-height: 54px;
+      height: auto;
+      justify-content: flex-start;
+      gap: 12px;
+      padding: 0 14px;
+      border-radius: 8px;
+    }
+    .home-sidebar #connectionDock .connection-title {
+      display: inline;
+      font-size: clamp(14px, .9vw, 17px);
+      font-weight: 600;
+    }
+    .home-sidebar #connectionDock .connection-arrow { display: none; }
+    .home-sidebar #connectionToggle:focus,
+    .home-sidebar #connectionToggle:active {
+      color: #fff;
+      background: rgba(255, 255, 255, .14) !important;
+      box-shadow: none !important;
+      transform: translateX(5px);
+    }
     html.tv-mode .home-sidebar-item { transition: none; }
     html.tv-mode #home.home-root .home-sidebar {
       -webkit-backdrop-filter: none;
@@ -6325,7 +6357,7 @@
               <span></span><span></span><span></span>
               <span></span><span></span><span></span>
             </span>
-            <span class="connection-title">状态</span>
+            <span class="connection-title">基础设置</span>
             <span class="connection-arrow">⌃</span>
           </button>
           <div class="connection-body" id="connectionBody" aria-hidden="true">
@@ -20358,21 +20390,6 @@ utils.encode = function encode(arr, enc) {
       }).filter(Boolean);
     }
 
-    function sidebarExistingAppAction() {
-      const methodNames = ["openApps", "openAppGrid", "openLauncher", "openAppList", "openApplications"];
-      const roots = [];
-      try { if (typeof sdk === "function") roots.push(sdk()); } catch (e) {}
-      if (window.fm) roots.push(window.fm, window.fm.app, window.fm.native, window.fm.bridge);
-      if (window.fongmi) roots.push(window.fongmi, window.fongmi.app, window.fongmi.native, window.fongmi.bridge);
-      for (const root of roots) {
-        if (!root) continue;
-        for (const name of methodNames) {
-          if (typeof root[name] === "function") return { name, root };
-        }
-      }
-      return null;
-    }
-
     function sidebarFocusableItems() {
       const sidebar = $("homeSidebar");
       return sidebar ? Array.from(sidebar.querySelectorAll(".home-sidebar-item")).filter(isVisibleFocusable) : [];
@@ -20391,23 +20408,38 @@ utils.encode = function encode(arr, enc) {
         button.className = "home-sidebar-item focusable";
         button.type = "button";
         if (item.action === "settings") button.id = "sidebarSettings";
-        if (item.action === "apps") button.id = "sidebarApps";
         button.dataset.sidebarKey = item.key;
         button.dataset.sidebarAction = item.action;
         if (item.listId) button.dataset.sidebarListId = item.listId;
-        button.textContent = item.label;
+        if (item.action === "settings") {
+          button.setAttribute("aria-label", item.label);
+          button.title = item.label;
+          button.innerHTML = `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg><span>${escapeHtml(item.label)}</span>`;
+        } else {
+          button.textContent = item.label;
+        }
         button.addEventListener("focus", () => {
           if (state.homeV14) state.homeV14.sidebarFocusId = item.key;
         });
-        button.addEventListener("click", () => activateSidebarItem(button));
+        if (item.action === "live") button.addEventListener("click", openLiveHome);
+        else if (item.action === "settings") button.addEventListener("click", openSettingHome);
+        else button.addEventListener("click", () => activateSidebarItem(button));
         return button;
       };
       nav.replaceChildren(...sidebarNavigationItems().map(makeItem));
-      const toolItems = [];
-      const appAction = sidebarExistingAppAction();
-      if (appAction) toolItems.push({ key: "apps", label: "应用", action: "apps", nativeName: appAction.name });
-      toolItems.push({ key: "settings", label: "设置", action: "settings" });
-      tools.replaceChildren(...toolItems.map(makeItem));
+      const connectionDock = $("connectionDock");
+      const connectionToggle = $("connectionToggle");
+      tools.replaceChildren();
+      if (connectionDock && connectionToggle) {
+        const title = connectionDock.querySelector(".connection-title");
+        if (title) title.textContent = "基础设置";
+        connectionToggle.classList.add("home-sidebar-item");
+        connectionToggle.setAttribute("aria-label", "基础设置");
+        connectionToggle.dataset.sidebarKey = "grid";
+        connectionToggle.dataset.sidebarAction = "grid";
+        tools.appendChild(connectionDock);
+      }
+      tools.appendChild(makeItem({ key: "settings", label: "设置", action: "settings" }));
       return true;
     }
 
@@ -20481,12 +20513,6 @@ utils.encode = function encode(arr, enc) {
         openSettingHome();
         return true;
       }
-      if (action === "apps") {
-        const nativeAction = sidebarExistingAppAction();
-        if (!nativeAction) return false;
-        try { Promise.resolve(nativeAction.root[nativeAction.name].call(nativeAction.root)).catch((error) => toast("打开应用失败：" + (error && error.message || "unknown"))); } catch (error) { toast("打开应用失败：" + (error && error.message || "unknown")); }
-        return true;
-      }
       if (action === "secondary") {
         const context = closeSidebar({ restore: false });
         const listId = normalizeLegacyCategoryId(button.dataset.sidebarListId || "");
@@ -20508,6 +20534,7 @@ utils.encode = function encode(arr, enc) {
       const sidebar = $("homeSidebar");
       const active = document.activeElement;
       if (!sidebar || !active || !sidebar.contains(active)) return false;
+      if (isConnectionPanelOpen() && $("connectionDock") && $("connectionDock").contains(active)) return false;
       event.preventDefault();
       event.stopPropagation();
       if (event.stopImmediatePropagation) event.stopImmediatePropagation();
@@ -20527,6 +20554,7 @@ utils.encode = function encode(arr, enc) {
 
     function handleSidebarBackKey(event) {
       if (!isSidebarOpen()) return false;
+      if (isConnectionPanelOpen() && $("connectionDock") && $("connectionDock").contains(document.activeElement)) return false;
       event.preventDefault();
       event.stopPropagation();
       if (event.stopImmediatePropagation) event.stopImmediatePropagation();
