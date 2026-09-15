@@ -5291,7 +5291,7 @@
       display: flex;
       flex-direction: column;
       justify-content: center;
-      width: clamp(166px, 9vw, 180px);
+      width: 150px;
       padding: 24px 10px 26px;
       pointer-events: auto;
       background: linear-gradient(90deg, rgba(8, 11, 16, .82) 0%, rgba(8, 11, 16, .68) 72%, rgba(8, 11, 16, .34) 100%);
@@ -16109,6 +16109,7 @@ utils.encode = function encode(arr, enc) {
         initialHomeFocusPending: false,
         coldHomeFocusPending: false,
         coldHomeFallbackTarget: null,
+        homeSectionEntryTarget: null,
         snapshotBound: {}
       },
       searchItems: [],
@@ -16176,6 +16177,7 @@ utils.encode = function encode(arr, enc) {
       activeGridAppendId: "",
       focusScrollTimer: 0,
       focusScrollTarget: null,
+      focusScrollOptions: null,
       tvDiag: {
         key: "",
         from: "",
@@ -24420,11 +24422,13 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const card = el && el.closest(".card[data-media-key]");
       if (card) {
         const grid = card.closest(".media-grid,.rail");
+        const section = card.closest(".home-section");
         return {
           type: "media",
           key: card.dataset.mediaKey || mediaDomKey(item),
           cardIndex: Number(card.dataset.cardIndex || -1),
-          gridId: grid && (grid.dataset.homeListId || grid.dataset.listId || grid.id || "") || ""
+          gridId: grid && (grid.dataset.homeListId || grid.dataset.listId || grid.id || "") || "",
+          sectionId: section && section.id || ""
         };
       }
       const itemKey = mediaDomKey(item);
@@ -24461,7 +24465,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
     function findHomeReturnMediaTarget(saved, focus) {
       const key = focus.key || saved.mediaKey || "";
-      const returnGrid = focus.gridId === "searchHotRail" ? $("searchHotRail") : null;
+      const section = focus.sectionId ? document.getElementById(focus.sectionId) : null;
+      const sectionGrid = section && section.querySelector(".home-rail,.media-grid");
+      const returnGrid = focus.gridId === "searchHotRail" ? $("searchHotRail") : sectionGrid;
       const candidates = key ? Array.from(returnGrid
         ? returnGrid.querySelectorAll(".card[data-media-key]")
         : document.querySelectorAll(".app .card[data-media-key]"))
@@ -24474,13 +24480,29 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         if (scoped) return scoped;
       }
       if (candidates.length) return candidates[0];
-      const grid = focus.gridId === "searchHotRail" ? returnGrid : focus.gridId === "searchRail" ? $("searchRail") : activeMediaGrid();
+      const grid = returnGrid || (focus.sectionId ? null : focus.gridId === "searchRail" ? $("searchRail") : activeMediaGrid());
       const index = Number(focus.cardIndex);
       if (!grid || !Number.isFinite(index) || index < 0) return null;
       let guard = 0;
       while (grid.querySelectorAll(".card").length <= index && appendGridBatch(grid) && guard < 60) guard += 1;
-      const indexed = grid.querySelectorAll(".card")[index] || null;
+      const indexed = Array.from(grid.querySelectorAll(".card"))[index] || null;
       return isVisibleFocusable(indexed) ? indexed : null;
+    }
+
+    function findHomeReturnSection(saved) {
+      const focus = saved && saved.focus || {};
+      if (focus.sectionId) return document.getElementById(focus.sectionId);
+      if (focus.gridId) {
+        const grid = document.getElementById(focus.gridId);
+        return grid && grid.closest(".home-section");
+      }
+      return null;
+    }
+
+    function findHomeReturnSectionTarget(saved) {
+      const section = findHomeReturnSection(saved);
+      if (!section || section.hidden || section.closest("[hidden]")) return null;
+      return homeSectionCards(section)[0] || null;
     }
 
     function findHomeReturnTarget(saved) {
@@ -24488,7 +24510,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const focus = saved.focus || {};
       if (focus.type === "media") return findHomeReturnMediaTarget(saved, focus);
       if (focus.type === "id" && focus.key) return $(focus.key);
-      return firstContentFocus();
+      return null;
     }
 
     function applyHomeScrollTop(y) {
@@ -24531,23 +24553,32 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         renderAll({ deferContent: false });
       }
       const y = Math.max(0, Number(saved.scrollY || 0));
-      const apply = (withFocus) => {
+      const mediaReturn = !!(saved.focus && saved.focus.type === "media");
+      const apply = (withFocus, allowMissingSectionFallback) => {
         if ($("detailSheet") && $("detailSheet").classList.contains("active")) return;
+        applyHomeScrollTop(y);
         const target = withFocus ? findHomeReturnTarget(saved) : null;
-        if (target) focusHomeReturnTarget(target);
+        const sectionTarget = withFocus && mediaReturn ? findHomeReturnSectionTarget(saved) : null;
+        if (target || sectionTarget) focusHomeReturnTarget(target || sectionTarget);
+        else if (withFocus && !mediaReturn) {
+          const fallback = isVisibleFocusable($("homeHeroAction")) ? $("homeHeroAction") : initialHomeFocus();
+          if (fallback) focusHomeReturnTarget(fallback);
+        } else if (withFocus && allowMissingSectionFallback && !findHomeReturnSection(saved)) {
+          const fallback = isVisibleFocusable($("homeHeroAction")) ? $("homeHeroAction") : initialHomeFocus();
+          if (fallback) focusHomeReturnTarget(fallback);
+        }
         if (saved.route === "search" && $("searchRail")) $("searchRail").scrollLeft = Math.max(0, Number(saved.searchRailScrollLeft || 0));
         if (saved.route === "search" && $("searchHotRail")) $("searchHotRail").scrollLeft = Math.max(0, Number(saved.searchHotRailScrollLeft || 0));
         if (restoreSecondary && $("secondaryCatalogGrid")) {
           $("secondaryCatalogGrid").scrollTop = Math.max(0, Number(saved.secondaryGridScrollTop || 0));
           $("secondaryCatalogGrid").scrollLeft = Math.max(0, Number(saved.secondaryGridScrollLeft || 0));
         }
-        applyHomeScrollTop(y);
       };
-      requestAnimationFrame(() => apply(true));
-      setTimeout(() => apply(true), 80);
-      setTimeout(() => apply(false), 240);
+      requestAnimationFrame(() => apply(true, false));
+      setTimeout(() => apply(true, false), 80);
+      setTimeout(() => apply(true, false), 240);
       setTimeout(() => {
-        apply(false);
+        apply(true, true);
         scheduleUiSnapshotSave();
       }, 520);
       return true;
@@ -31310,7 +31341,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     }
 
     function homeSectionCards(section) {
-      return section ? Array.from(section.querySelectorAll(".home-rail > .card")).filter(canFastHomeFocus) : [];
+      return section ? Array.from(section.querySelectorAll(".home-rail > .card")).filter((card) => !card.classList.contains("home-more-card") && canFastHomeFocus(card)) : [];
     }
 
     function homeFirstTarget() {
@@ -31336,7 +31367,11 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       }
       if (active === hero) {
         if (key === "ArrowUp") return isVisibleFocusable(searchLauncher) ? searchLauncher : active;
-        if (key === "ArrowDown") return homeFirstTarget() || active;
+        if (key === "ArrowDown") {
+          const target = homeFirstTarget() || active;
+          if (target !== active && target.closest && target.closest(".home-section")) state.homeV14.homeSectionEntryTarget = target;
+          return target;
+        }
         if (key === "ArrowLeft" || key === "ArrowRight") return active;
         return null;
       }
@@ -31348,7 +31383,20 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const currentCards = homeSectionCards(section);
       const ownMore = section.querySelector && section.querySelector(".home-section-more");
       if (more) {
-        if (key === "ArrowDown" || key === "ArrowUp") return more;
+        if (key === "ArrowUp") {
+          for (let previous = sectionIndex - 1; previous >= 0; previous--) {
+            const previousCards = homeSectionCards(sections[previous]);
+            if (previousCards.length) return previousCards[0];
+          }
+          return isVisibleFocusable(hero) ? hero : more;
+        }
+        if (key === "ArrowDown") {
+          for (let next = sectionIndex + 1; next < sections.length; next++) {
+            const nextCards = homeSectionCards(sections[next]);
+            if (nextCards.length) return nextCards[0];
+          }
+          return more;
+        }
         if (key === "ArrowLeft") return currentCards[currentCards.length - 1] || more;
         if (key === "ArrowRight") return more;
         return null;
@@ -31529,8 +31577,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
     document.addEventListener("focusin", (event) => syncFocusedCardHalo(event.target), true);
 
-    function focusRemoteTarget(target) {
+    function focusRemoteTarget(target, options) {
       if (!target) return;
+      const home = state.homeV14;
+      const sectionEntry = !!(home && home.homeSectionEntryTarget === target);
+      if (sectionEntry) home.homeSectionEntryTarget = null;
+      const focusOptions = Object.assign({}, options || {}, sectionEntry ? { alignHomeSectionHead: true } : {});
       const previous = document.activeElement;
       try {
         target.focus({ preventScroll: true });
@@ -31549,19 +31601,22 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         updateTvDiagnostic();
       }
       maybeAppendGridForFocus(target);
-      scheduleFocusInView(target);
+      scheduleFocusInView(target, focusOptions);
     }
-    function scheduleFocusInView(target) {
+    function scheduleFocusInView(target, options) {
       state.focusScrollTarget = target;
+      state.focusScrollOptions = options || null;
       if (state.focusScrollTimer) return;
       state.focusScrollTimer = requestAnimationFrame(() => {
         const target = state.focusScrollTarget;
+        const options = state.focusScrollOptions;
         state.focusScrollTimer = 0;
         state.focusScrollTarget = null;
+        state.focusScrollOptions = null;
         const liveTarget = document.activeElement && document.activeElement.isConnected ? document.activeElement : target;
         if (liveTarget && liveTarget.isConnected) {
           syncFocusedCardHalo(liveTarget);
-          keepFocusInView(liveTarget);
+          keepFocusInView(liveTarget, options);
         }
       });
     }
@@ -31927,7 +31982,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return { x: 0, y: next - before };
     }
 
-    function revealHomeFocusedTarget(target) {
+    function revealHomeFocusedTarget(target, options) {
+      const opts = options || {};
       const root = document.scrollingElement || document.documentElement;
       const homeHeroAction = $("homeHeroAction");
       if (isHomeRouteActive() && target === homeHeroAction) {
@@ -31943,6 +31999,14 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const section = target && target.closest ? target.closest(".home-section") : null;
       const sectionHead = section && section.querySelector ? section.querySelector(".home-section-head") : null;
       const headRect = sectionHead && sectionHead.getBoundingClientRect ? sectionHead.getBoundingClientRect() : null;
+      if (opts.alignHomeSectionHead && headRect && headRect.height > 0) {
+        const before = homeScrollTop();
+        const desired = before + headRect.top - topLimit;
+        const max = Math.max(0, Number(root.scrollHeight || document.documentElement.scrollHeight || 0) - Number(root.clientHeight || height || 0));
+        const next = Math.max(0, Math.min(max, desired));
+        if (Math.abs(next - before) > .5) applyHomeScrollTop(next);
+        return { x: 0, y: next - before };
+      }
       const groupHeight = headRect ? itemRect.bottom - headRect.top : 0;
       const groupFits = !!(headRect && headRect.height > 0 && itemRect.height > 0 && groupHeight <= bottomLimit - topLimit);
       let delta = 0;
@@ -31977,7 +32041,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return { x: 0, y: next - before };
     }
 
-    function revealFocusedTarget(target) {
+    function revealFocusedTarget(target, options) {
       if (!target || !target.getBoundingClientRect || !isTvLikeDevice()) return { x: 0, y: 0 };
       let deltaX = 0;
       let deltaY = 0;
@@ -32016,7 +32080,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         const secondaryDelta = revealSecondaryFocusedTarget(target);
         deltaY += secondaryDelta.y;
       } else if (!(connectionBody && connectionBody.contains(target)) && !(suggestPanel && suggestPanel.contains(target)) && !(imageContent && imageContent.contains(target))) {
-        const homeDelta = revealHomeFocusedTarget(target);
+        const homeDelta = revealHomeFocusedTarget(target, options);
         deltaY += homeDelta.y;
       }
       if (isTvDiagnosticEnabled()) {
@@ -32087,10 +32151,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       updateTvDiagnostic();
       return results;
     }
-    function keepFocusInView(target) {
+    function keepFocusInView(target, options) {
       if (!target) return;
       if (isTvLikeDevice()) {
-        revealFocusedTarget(target);
+        revealFocusedTarget(target, options);
         return;
       }
       const rect = target.getBoundingClientRect();
