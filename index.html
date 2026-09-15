@@ -5938,6 +5938,49 @@
       .home-rail { padding-left: 18px !important; padding-right: 18px !important; }
     }
 
+    /* Mobile Home uses the same Search launcher in two orientations: a
+       compact icon in portrait and the existing expanded pill in landscape.
+       The actual Search form, IME, and submit handlers remain unchanged. */
+    @media (orientation: portrait) and (max-width: 719px),
+           (orientation: portrait) and (pointer: coarse) {
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-search-launcher-wrap {
+        top: 16px;
+        left: auto;
+        right: 16px;
+        width: 46px;
+        transform: none;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-search-launcher {
+        width: 46px;
+        min-height: 46px;
+        justify-content: center;
+        gap: 0;
+        padding: 0;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-search-launcher > span {
+        display: none;
+      }
+    }
+
+    @media (orientation: landscape) and (pointer: coarse) {
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-search-launcher-wrap {
+        top: 16px;
+        left: 50%;
+        right: auto;
+        width: min(560px, calc(100% - 32px));
+        transform: translateX(-50%);
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-search-launcher {
+        min-height: 50px;
+        gap: 12px;
+        padding: 0 20px;
+        font-size: 16px;
+      }
+    }
+
   </style>
   <style id="home-v145-style">
     html.tv-mode .focus-halo-edge-left:focus,
@@ -5967,6 +6010,17 @@
       html.tv-mode #home.home-root .home-hero-dots,
       html.tv-preview #home.home-root .home-hero-dots {
         bottom: calc(clamp(54px, 5.2vw, 78px) + 25px);
+      }
+
+      html.tv-mode #home.home-root .home-search-launcher-wrap,
+      html.tv-preview #home.home-root .home-search-launcher-wrap {
+        width: min(620px, calc(100% - (2 * var(--home-v14-gut))));
+      }
+
+      html.tv-mode #home.home-root .home-search-launcher,
+      html.tv-preview #home.home-root .home-search-launcher {
+        min-height: 56px;
+        padding: 0 22px;
       }
 
       /* The rail viewport is the same outer frame as the TV Hero.  Its
@@ -6354,7 +6408,7 @@
       box-shadow: none !important;
     }
 
-    @media (max-width: 719px) {
+    @media (max-width: 719px), (pointer: coarse) {
       html:not(.tv-mode):not(.tv-preview) #home.home-root .home-rail > .card {
         background: transparent !important;
         border: 0 !important;
