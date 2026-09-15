@@ -500,7 +500,7 @@
       display: flex;
       align-items: stretch;
       display: grid;
-      grid-template-columns: minmax(0, 1fr) auto auto;
+      grid-template-columns: minmax(0, 1fr) auto;
       gap: 10px;
       margin: 14px 0 8px;
       position: relative;
@@ -4502,7 +4502,7 @@
        （DOM 中 #connectionDock 已移动进搜索表单，功能面板随之带过去）
        ------------------------------------------------------------ */
     .search {
-      grid-template-columns: auto minmax(0, 1fr) auto auto;
+      grid-template-columns: auto minmax(0, 1fr) auto;
     }
 
     #connectionDock {
@@ -4600,10 +4600,6 @@
        ------------------------------------------------------------ */
     .search {
       grid-template-columns: auto minmax(0, 1fr);
-    }
-
-    #homeSettingBtn {
-      display: none !important;
     }
 
     /* 给输入框右侧留出图标空间 */
@@ -5217,7 +5213,7 @@
       width: clamp(250px, 24vw, 390px);
       min-width: 220px;
       margin: 0;
-      grid-template-columns: minmax(0, 1fr) auto auto;
+      grid-template-columns: minmax(0, 1fr) auto;
       gap: 7px;
       align-items: center;
       z-index: 85;
@@ -5282,9 +5278,64 @@
       background: rgba(191, 233, 255, .18) !important;
     }
 
-    #home.home-root #homeSettingBtn { display: grid !important; }
-
     .home-search:focus-within { z-index: 95; }
+
+    /* Phase 3 Sidebar: a lightweight, real navigation overlay on the same
+       immersive canvas.  It never participates in Home layout sizing. */
+    .home-sidebar {
+      position: fixed;
+      z-index: 120;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      width: clamp(190px, 11vw, 205px);
+      padding: 28px 16px 30px;
+      pointer-events: auto;
+      background: linear-gradient(90deg, rgba(8, 11, 16, .9) 0%, rgba(8, 11, 16, .58) 72%, rgba(8, 11, 16, 0) 100%);
+    }
+
+    .home-sidebar[hidden] { display: none !important; }
+    .home-sidebar-nav,
+    .home-sidebar-tools {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .home-sidebar-tools { margin-top: 22px; }
+    .home-sidebar-item {
+      display: flex;
+      align-items: center;
+      width: 100%;
+      min-height: 54px;
+      margin: 0;
+      padding: 0 14px;
+      border: 0;
+      border-radius: 8px;
+      color: rgba(255, 255, 255, .72);
+      background: transparent;
+      box-shadow: none;
+      text-align: left;
+      font-size: clamp(14px, .9vw, 17px);
+      font-weight: 600;
+      white-space: nowrap;
+      transition: background-color 140ms ease, color 140ms ease, transform 140ms ease;
+    }
+    .home-sidebar-item:focus,
+    .home-sidebar-item:active {
+      outline: none;
+      color: #fff;
+      background: rgba(255, 255, 255, .14);
+      box-shadow: none;
+      transform: translateX(5px);
+    }
+    html.tv-mode .home-sidebar-item { transition: none; }
+    html.tv-mode #home.home-root .home-sidebar {
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
 
     /* Home exposes one launcher only.  The real Search form is moved into
        #searchPageFormHost by openSearchPage(), so Search keeps its existing
@@ -5400,7 +5451,7 @@
     .home-hero-content {
       position: absolute;
       z-index: 2;
-      top: calc(clamp(220px, 13vw, 270px) + 80px);
+      top: calc(clamp(220px, 13vw, 270px) + 116px);
       left: var(--home-v14-gut);
       max-width: min(700px, 48vw);
       padding: 0;
@@ -6100,7 +6151,7 @@
 
     #searchPageFormHost #searchForm {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) auto auto;
+      grid-template-columns: minmax(0, 1fr) auto;
       align-items: center;
       gap: 10px;
       width: 100%;
@@ -6110,7 +6161,6 @@
     #searchPageFormHost #connectionDock { display: none !important; }
     #searchPageFormHost #searchInput { display: block !important; min-height: 48px; }
     #searchPageFormHost #searchSubmitBtn { position: static !important; min-height: 48px; }
-    #searchPageFormHost #homeSettingBtn { display: none !important; }
     #searchPageResultsHost { width: 100%; min-width: 0; }
     #searchPageResultsHost > #searchSection { margin-top: 0; }
 
@@ -6257,6 +6307,10 @@
 </head>
 <body>
   <main class="app home-root" id="home">
+    <aside class="home-sidebar" id="homeSidebar" hidden aria-hidden="true" aria-label="主导航">
+      <nav class="home-sidebar-nav" id="homeSidebarNav" aria-label="内容导航"></nav>
+      <div class="home-sidebar-tools" id="homeSidebarTools" aria-label="工具"></div>
+    </aside>
     <div class="home-search-launcher-wrap" id="homeSearchLauncherWrap">
       <button class="home-search-launcher focusable" id="homeSearchLauncher" type="button" aria-controls="searchPage" aria-label="打开搜索">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m16.5 16.5 4 4"></path></svg>
@@ -6333,9 +6387,6 @@
       <button class="btn blue focusable" id="searchSubmitBtn" type="submit" aria-label="搜索" title="搜索">
         <svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
         搜索
-      </button>
-      <button class="icon-btn focusable" id="homeSettingBtn" type="button" aria-label="设置" title="设置">
-        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
       </button>
       <div class="suggest-panel" id="suggestPanel" role="listbox"></div>
     </form>
@@ -15946,6 +15997,10 @@ utils.encode = function encode(arr, enc) {
         secondaryReturn: null,
         secondaryHistoryBackPending: false,
         searchHistoryBackPending: false,
+        sidebarOpen: false,
+        sidebarReturnTarget: null,
+        sidebarReturnScrollY: 0,
+        sidebarFocusId: "",
         initialHomeFocusPending: false,
         coldHomeFocusPending: false,
         coldHomeFallbackTarget: null,
@@ -20276,6 +20331,246 @@ utils.encode = function encode(arr, enc) {
       return state.activeList === "all" && homeUiRoute() === "home";
     }
 
+    function isSidebarOpen() {
+      const sidebar = $("homeSidebar");
+      return !!(sidebar && state.homeV14 && state.homeV14.sidebarOpen && !sidebar.hidden);
+    }
+
+    function sidebarConfiguredList(preferredId) {
+      const wanted = normalizeLegacyCategoryId(preferredId);
+      return visibleTmdbLists().find((list) => normalizeLegacyCategoryId(list && list.id) === wanted) || null;
+    }
+
+    function sidebarNavigationItems() {
+      const items = [
+        { key: "live", label: "直播", action: "live" },
+        { key: "recent", label: "最近观看", action: "secondary", listId: "recent" },
+        { key: "latest", label: "最新上线", action: "secondary", listId: "now-playing" },
+        { key: "movie", label: "电影", action: "secondary", listId: "movie" },
+        { key: "tv", label: "电视剧", action: "secondary", listId: "tv" },
+        { key: "anime", label: "动画", action: "secondary", listId: "anime" },
+        { key: "documentary", label: "纪录片", action: "secondary", listId: "documentary" }
+      ];
+      return items.map((item) => {
+        if (item.action !== "secondary" || item.listId === "recent") return item;
+        const configured = sidebarConfiguredList(item.listId);
+        return configured ? Object.assign({}, item, { listId: configured.id }) : null;
+      }).filter(Boolean);
+    }
+
+    function sidebarExistingAppAction() {
+      const methodNames = ["openApps", "openAppGrid", "openLauncher", "openAppList", "openApplications"];
+      const roots = [];
+      try { if (typeof sdk === "function") roots.push(sdk()); } catch (e) {}
+      if (window.fm) roots.push(window.fm, window.fm.app, window.fm.native, window.fm.bridge);
+      if (window.fongmi) roots.push(window.fongmi, window.fongmi.app, window.fongmi.native, window.fongmi.bridge);
+      for (const root of roots) {
+        if (!root) continue;
+        for (const name of methodNames) {
+          if (typeof root[name] === "function") return { name, root };
+        }
+      }
+      return null;
+    }
+
+    function sidebarFocusableItems() {
+      const sidebar = $("homeSidebar");
+      return sidebar ? Array.from(sidebar.querySelectorAll(".home-sidebar-item")).filter(isVisibleFocusable) : [];
+    }
+
+    function renderSidebar() {
+      const nav = $("homeSidebarNav");
+      const tools = $("homeSidebarTools");
+      if (!nav || !tools) return false;
+      // Do not replace a live Sidebar while its button owns DOM focus.  Home
+      // data renders can happen while a native action is in flight; replacing
+      // the focused node would create a focus island and lose the session.
+      if (isSidebarOpen() && nav.children.length) return true;
+      const makeItem = (item) => {
+        const button = document.createElement("button");
+        button.className = "home-sidebar-item focusable";
+        button.type = "button";
+        if (item.action === "settings") button.id = "sidebarSettings";
+        if (item.action === "apps") button.id = "sidebarApps";
+        button.dataset.sidebarKey = item.key;
+        button.dataset.sidebarAction = item.action;
+        if (item.listId) button.dataset.sidebarListId = item.listId;
+        button.textContent = item.label;
+        button.addEventListener("focus", () => {
+          if (state.homeV14) state.homeV14.sidebarFocusId = item.key;
+        });
+        button.addEventListener("click", () => activateSidebarItem(button));
+        return button;
+      };
+      nav.replaceChildren(...sidebarNavigationItems().map(makeItem));
+      const toolItems = [];
+      const appAction = sidebarExistingAppAction();
+      if (appAction) toolItems.push({ key: "apps", label: "应用", action: "apps", nativeName: appAction.name });
+      toolItems.push({ key: "settings", label: "设置", action: "settings" });
+      tools.replaceChildren(...toolItems.map(makeItem));
+      return true;
+    }
+
+    function sidebarReturnContext() {
+      const home = state.homeV14 || {};
+      return {
+        target: home.sidebarReturnTarget && home.sidebarReturnTarget.isConnected ? home.sidebarReturnTarget : null,
+        focus: home.sidebarReturnFocus || null,
+        scrollY: Math.max(0, Number(home.sidebarReturnScrollY || 0))
+      };
+    }
+
+    function restoreSidebarHomeFocus(context) {
+      const saved = context || {};
+      const restore = () => {
+        if (!isHomeRouteActive()) return;
+        applyHomeScrollTop(Math.max(0, Number(saved.scrollY || 0)));
+        let target = isVisibleFocusable(saved.target) ? saved.target : null;
+        if (!target && saved.focus) target = findHomeReturnTarget({ focus: saved.focus });
+        if (!target) target = initialHomeFocus();
+        if (target) focusHomeReturnTarget(target);
+      };
+      requestAnimationFrame(restore);
+    }
+
+    function openSidebar() {
+      if (!isHomeRouteActive() || isConnectionPanelOpen() || isSearchSuggestOpen()) return false;
+      const sidebar = $("homeSidebar");
+      if (!sidebar) return false;
+      renderSidebar();
+      if (!state.homeV14.sidebarOpen) {
+        const active = document.activeElement;
+        const target = isVisibleFocusable(active) && !sidebar.contains(active) ? active : currentHomeFocus() || initialHomeFocus();
+        state.homeV14.sidebarReturnTarget = target && target.isConnected ? target : null;
+        state.homeV14.sidebarReturnFocus = target ? homeFocusSnapshot(target, target.__mediaItem || null) : null;
+        state.homeV14.sidebarReturnScrollY = homeScrollTop();
+      }
+      state.homeV14.sidebarOpen = true;
+      sidebar.hidden = false;
+      sidebar.setAttribute("aria-hidden", "false");
+      const remembered = state.homeV14.sidebarFocusId;
+      const target = sidebarFocusableItems().find((item) => item.dataset.sidebarKey === remembered) || sidebarFocusableItems()[0];
+      if (target) requestAnimationFrame(() => focusRemoteTarget(target));
+      return true;
+    }
+
+    function closeSidebar(options) {
+      const opts = options || {};
+      const sidebar = $("homeSidebar");
+      if (!sidebar || !state.homeV14 || !state.homeV14.sidebarOpen) return false;
+      const context = sidebarReturnContext();
+      state.homeV14.sidebarOpen = false;
+      sidebar.hidden = true;
+      sidebar.setAttribute("aria-hidden", "true");
+      state.homeV14.sidebarReturnTarget = null;
+      state.homeV14.sidebarReturnFocus = null;
+      state.homeV14.sidebarReturnScrollY = 0;
+      if (opts.restore !== false && isHomeRouteActive()) restoreSidebarHomeFocus(context);
+      return context;
+    }
+
+    function activateSidebarItem(button) {
+      if (!button || !button.dataset) return false;
+      const action = button.dataset.sidebarAction || "";
+      if (action === "live") {
+        rememberFocusReturn();
+        openLiveHome();
+        return true;
+      }
+      if (action === "settings") {
+        openSettingHome();
+        return true;
+      }
+      if (action === "apps") {
+        const nativeAction = sidebarExistingAppAction();
+        if (!nativeAction) return false;
+        try { Promise.resolve(nativeAction.root[nativeAction.name].call(nativeAction.root)).catch((error) => toast("打开应用失败：" + (error && error.message || "unknown"))); } catch (error) { toast("打开应用失败：" + (error && error.message || "unknown")); }
+        return true;
+      }
+      if (action === "secondary") {
+        const context = closeSidebar({ restore: false });
+        const listId = normalizeLegacyCategoryId(button.dataset.sidebarListId || "");
+        if (!listId) return false;
+        return openSecondaryCatalog(listId, {
+          originSection: listId,
+          originTarget: context && context.target,
+          returnTarget: context && context.target,
+          returnFocus: context && context.focus,
+          returnScrollY: context && context.scrollY,
+          fromSidebar: true
+        });
+      }
+      return false;
+    }
+
+    function handleSidebarDirectionalKey(key, event) {
+      if (!isSidebarOpen()) return false;
+      const sidebar = $("homeSidebar");
+      const active = document.activeElement;
+      if (!sidebar || !active || !sidebar.contains(active)) return false;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+      const items = sidebarFocusableItems();
+      const index = items.indexOf(active);
+      if (key === "ArrowRight") {
+        closeSidebar();
+        return true;
+      }
+      if (key === "ArrowLeft") return true;
+      if (key !== "ArrowUp" && key !== "ArrowDown") return true;
+      const delta = key === "ArrowDown" ? 1 : -1;
+      const target = items[Math.max(0, Math.min(items.length - 1, index + delta))];
+      if (target && target !== active) focusRemoteTarget(target);
+      return true;
+    }
+
+    function handleSidebarBackKey(event) {
+      if (!isSidebarOpen()) return false;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+      closeSidebar();
+      return true;
+    }
+
+    function handleSidebarMenuKey(event) {
+      if (normalizeRemoteKey(event) !== "Menu") return false;
+      if (isSidebarOpen()) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+        closeSidebar();
+        return true;
+      }
+      if (!isHomeRouteActive() || focusScopeRoot() !== document || isConnectionPanelOpen() || isSearchSuggestOpen() || isTextEditingElement(document.activeElement)) return false;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+      return openSidebar();
+    }
+
+    function isHomeLeftBoundary(active) {
+      if (!active || !isHomeRouteActive() || focusScopeRoot() !== document) return false;
+      if (active.closest && active.closest("#homeSidebar")) return false;
+      const rail = active.closest && active.closest(".home-rail");
+      if (rail && active.classList && active.classList.contains("card")) {
+        const cards = Array.from(rail.children || []).filter((item) => item.classList && item.classList.contains("card") && canFastHomeFocus(item));
+        return cards[0] === active;
+      }
+      if (active === $("homeHeroAction") || active === $("homeSearchLauncher")) return true;
+      return !nearestFocusable("ArrowLeft", active);
+    }
+
+    function syncSidebarVisibility() {
+      const sidebar = $("homeSidebar");
+      if (!sidebar || !state.homeV14) return;
+      const visible = isHomeRouteActive() && !!state.homeV14.sidebarOpen;
+      sidebar.hidden = !visible;
+      sidebar.setAttribute("aria-hidden", visible ? "false" : "true");
+      if (!visible) state.homeV14.sidebarOpen = false;
+    }
+
     function syncHomeRoutePresentation() {
       const isHome = isHomeRouteActive();
       const route = homeUiRoute();
@@ -20294,6 +20589,7 @@ utils.encode = function encode(arr, enc) {
       const launcher = $("homeSearchLauncherWrap");
       if (launcher) launcher.hidden = !isHome;
       if (!isHome) stopHomeHeroAutoplay();
+      syncSidebarVisibility();
       return isHome;
     }
 
@@ -21030,6 +21326,7 @@ utils.encode = function encode(arr, enc) {
       const homeRoot = $("home");
       if (!homeRoot || !isHomeRouteActive()) return;
       setHomeOnlyPresentationVisible(true);
+      renderSidebar();
       renderHomeHero();
       renderHomeRecent();
       renderHomeHot();
@@ -21804,10 +22101,17 @@ utils.encode = function encode(arr, enc) {
         }
       }
       const active = document.activeElement;
+      const returnTarget = opts.returnTarget && opts.returnTarget.isConnected
+        ? opts.returnTarget
+        : opts.originTarget && opts.originTarget.isConnected
+        ? opts.originTarget
+        : active;
       state.homeV14.secondaryReturn = {
-        scrollY: homeScrollTop(),
-        focusId: active && active.id || "",
-        originSection: opts.originSection || listId
+        scrollY: opts.returnScrollY == null ? homeScrollTop() : Math.max(0, Number(opts.returnScrollY || 0)),
+        focusId: returnTarget && returnTarget.id || "",
+        focus: opts.returnFocus || homeFocusSnapshot(returnTarget, returnTarget && returnTarget.__mediaItem || null),
+        originSection: opts.originSection || listId,
+        fromSidebar: !!opts.fromSidebar
       };
       state.homeV14.secondaryListId = listId;
       state.homeV14.secondaryFocusRestore = null;
@@ -21948,9 +22252,10 @@ utils.encode = function encode(arr, enc) {
       renderAll({ deferContent: false });
       const restore = () => {
         applyHomeScrollTop(Math.max(0, Number(saved.scrollY || 0)));
-        let target = null;
-        if (saved.originSection === "now-playing") target = $("homeHotMore");
-        if (saved.originSection === "recent") target = $("homeRecentMore");
+        let target = saved.focus ? findHomeReturnTarget({ focus: saved.focus }) : null;
+        if (!target && saved.focusId) target = $(saved.focusId);
+        if (!target && saved.originSection === "now-playing") target = $("homeHotMore");
+        if (!target && saved.originSection === "recent") target = $("homeRecentMore");
         if (!target && saved.originSection) target = document.querySelector(`[data-home-more-id="${String(saved.originSection).replace(/"/g, "\\\"")}"]`);
         if (!target) target = initialHomeFocus();
         if (target) focusRemoteTarget(target);
@@ -29483,7 +29788,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if ($("homeSearchLauncher")) $("homeSearchLauncher").addEventListener("click", openSearchPage);
       if ($("homeRecentMore")) $("homeRecentMore").addEventListener("click", () => openSecondaryCatalog("recent", { originSection: "recent", originTarget: $("homeRecentMore") }));
       if ($("homeHotMore")) $("homeHotMore").addEventListener("click", () => openSecondaryCatalog("now-playing", { originSection: "now-playing", originTarget: $("homeHotMore") }));
-      $("homeSettingBtn").addEventListener("click", openSettingHome);
       document.querySelectorAll("[data-home-hot-source]").forEach((button) => {
         if (button.dataset.homeHotSourceBound === "1") return;
         button.dataset.homeHotSourceBound = "1";
@@ -29756,7 +30060,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         const card = recentWatchingCard(event.target);
         if (!card || card !== recentDelete.armedCard && card !== recentDelete.pendingCard) cancelRecentDeleteArm();
       }, true);
-      document.addEventListener("focusin", () => {
+      document.addEventListener("focusin", (event) => {
+        if (isSidebarOpen() && event.target && event.target.closest && event.target.closest("#homeSidebar")) {
+          state.homeV14.sidebarFocusId = event.target.dataset && event.target.dataset.sidebarKey || state.homeV14.sidebarFocusId || "";
+        }
         const recentDelete = state.recentDelete;
         const trackedCard = recentDelete && (recentDelete.armedCard || recentDelete.pendingCard || recentDelete.remotePressCard);
         if (trackedCard && !trackedCard.contains(document.activeElement)) cancelRecentDeleteArm();
@@ -29782,6 +30089,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           updateTvDiagnostic();
         }
         const el = document.activeElement;
+        if (key === "Menu" && handleSidebarMenuKey(event)) return;
         const editing = isTextEditingElement(el);
         if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(key) && state.recentDelete && (state.recentDelete.armedKey || state.recentDelete.pendingKey || state.recentDelete.remotePressLocked)) cancelRecentDeleteArm();
         if (!editing && shouldThrottleRemoteNav(key, event, el)) {
@@ -29810,6 +30118,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           return;
         }
         if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(key)) {
+          if (handleSidebarDirectionalKey(key, event)) return;
           if (handleHomeHeroDirectionalKey(key, event)) return;
           if (handleSearchSuggestDirectionalKey(key, event)) return;
           if (handleClearSearchDirectionalKey(key, event)) return;
@@ -29838,6 +30147,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           return;
         }
         if (key === "Escape" || key === "Backspace") {
+          if (handleSidebarBackKey(event)) return;
           if (exitBlockSelectMode()) {
             event.preventDefault();
             return;
@@ -29877,6 +30187,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         if (handleScrollableOverlayKey(key, event)) return;
         if (handlePanDirectionalKey(key, event)) return;
         if (handleDetailDirectionalKey(key, event)) return;
+        if (key === "ArrowLeft" && isHomeLeftBoundary(el)) {
+          event.preventDefault();
+          if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+          openSidebar();
+          return;
+        }
         const target = fastHomeDirectionalTarget(key, el) || nearestFocusable(key);
         if (target) {
           event.preventDefault();
@@ -29895,6 +30211,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           const el = document.activeElement;
           if (el && isTextEditingElement(el) && !el.readOnly) return;
         }
+        if (handleSidebarBackKey(event)) return;
         if (state.recentDelete && (state.recentDelete.armedKey || state.recentDelete.pendingKey || state.recentDelete.remotePressLocked)) {
           cancelRecentDeleteArm();
           event.preventDefault();
@@ -30797,8 +31114,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     }
 
     function normalizeRemoteKey(event) {
-      if (["Enter", "Escape", "Backspace", "BrowserBack", "GoBack", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) return event.key === "BrowserBack" || event.key === "GoBack" ? "Escape" : event.key;
-      const map = { 13: "Enter", 23: "Enter", 66: "Enter", 4: "Escape", 8: "Backspace", 27: "Escape", 10009: "Escape", 461: "Escape", 19: "ArrowUp", 20: "ArrowDown", 21: "ArrowLeft", 22: "ArrowRight" };
+      if (["Enter", "Escape", "Backspace", "BrowserBack", "GoBack", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Menu", "ContextMenu"].includes(event.key)) return event.key === "BrowserBack" || event.key === "GoBack" ? "Escape" : event.key === "ContextMenu" ? "Menu" : event.key;
+      const map = { 13: "Enter", 23: "Enter", 66: "Enter", 4: "Escape", 8: "Backspace", 27: "Escape", 82: "Menu", 10009: "Escape", 461: "Escape", 19: "ArrowUp", 20: "ArrowDown", 21: "ArrowLeft", 22: "ArrowRight" };
       return map[event.keyCode || event.which] || "";
     }
 
@@ -31103,6 +31420,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
     function focusDiagnosticScope(el) {
       if (!el) return "";
+      if (el.closest && el.closest("#homeSidebar")) return "SIDEBAR";
       if (el.closest && el.closest("#panTabs, #panResultList")) return "PAN_RESULTS";
       if (el.closest && el.closest("#detailSheet")) return "DETAIL";
       if (el.closest && el.closest("#searchForm")) return "SEARCH";
@@ -31113,6 +31431,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
     function focusDiagnosticScrollScope(el) {
       if (!el) return "";
+      if (el.closest && el.closest("#homeSidebar")) return "SIDEBAR";
       if (el.closest && el.closest("#imageViewer, #syncSheet, #connectionBody, #suggestPanel")) return "OVERLAY";
       if (el.closest && el.closest("#panResultList")) return "PAN_RESULTS";
       if (el.closest && el.closest("#seasonTabs, .rail, #panTabs")) return "HORIZONTAL_RAIL";
@@ -31587,6 +31906,20 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       check("PHASE1_SEARCH_RETURN_NO_LEGACY_HOME_ROUTE", searchCloseSource.includes('state.homeV14.route = "home"') && searchCloseSource.includes('state.activeList = "all"') && !searchCloseSource.includes("restoreRoute") && !searchCloseSource.includes("saved.route"), "Search return always restores Home", "STATIC_HOOK");
       const legacySnapshotArrayText = ["[", '"home"', ", ", '"live"', ", ", '"recent"', ", ", '"catalog"', "]"].join("");
       check("PHASE1_SNAPSHOT_NO_LEGACY_HOME_ROUTE_RESTORE", routeSource.includes("normalizeHomePresentationRoute") && !String(restoreUiSnapshot).includes(legacySnapshotArrayText), "snapshot restore accepts only current presentation routes", "STATIC_HOOK");
+      const sidebarSource = String(renderSidebar) + String(openSidebar) + String(closeSidebar) + String(handleSidebarDirectionalKey) + String(handleSidebarMenuKey);
+      check("PHASE3_SIDEBAR_SINGLE_DOM", document.querySelectorAll("#homeSidebar").length === 1 && document.querySelectorAll("#homeSidebarNav").length === 1 && document.querySelectorAll("#homeSidebarTools").length === 1, "one Sidebar overlay exists", "DOM_ASSERTION");
+      check("PHASE3_SIDEBAR_REAL_NAVIGATION", sidebarSource.includes("openSecondaryCatalog") && sidebarSource.includes("openLiveHome") && sidebarSource.includes("openSettingHome"), "Sidebar uses existing navigation/actions", "STATIC_HOOK");
+      check("PHASE3_SIDEBAR_NOT_ROUTE", HOME_PRESENTATION_ROUTES.join(",") === "home,search,secondary" && !sidebarSource.includes('pushState'), "Sidebar does not create a presentation route", "STATIC_HOOK");
+      check("PHASE3_SIDEBAR_MENU_KEY", String(normalizeRemoteKey).includes('82: "Menu"') && String(handleSidebarMenuKey).includes("openSidebar"), "Menu/keyCode 82 opens Sidebar", "STATIC_HOOK");
+      check("PHASE3_SIDEBAR_FOCUS_SCOPE", String(focusScopeRoot).includes('isSidebarOpen()') && String(handleSidebarDirectionalKey).includes("closeSidebar"), "Sidebar owns directional focus while open", "STATIC_HOOK");
+      check("PHASE3_SIDEBAR_LEFT_FALLBACK", typeof isHomeLeftBoundary === "function" && String(isHomeLeftBoundary).includes("home-rail"), "Home left boundary has a Sidebar fallback", "STATIC_HOOK");
+      const legacySettingId = ["home", "Setting", "Btn"].join("");
+      check("PHASE3_SETTING_BUTTON_REMOVED", !document.getElementById(legacySettingId) && !document.documentElement.innerHTML.includes(legacySettingId), "legacy Home/Search setting button is absent", "DOM_ASSERTION");
+      const legacyThreeColumnMarker = ["grid-template-columns: minmax(0, 1fr) auto", " auto"].join("");
+      check("PHASE3_SEARCH_FORM_TWO_COLUMNS", !document.documentElement.innerHTML.includes(legacyThreeColumnMarker), "Search form has no third setting column", "STATIC_HOOK");
+      check("PHASE3_HERO_CONTENT_OFFSET", document.documentElement.innerHTML.includes("top: calc(clamp(220px, 13vw, 270px) + 116px)"), "Hero foreground uses the requested Phase 3 offset", "STATIC_HOOK");
+      check("PHASE3_HERO_DOTS_UNCHANGED", document.documentElement.innerHTML.includes("bottom: calc(clamp(40px, 4vw, 72px) - 40px)"), "Hero dots remain on the Phase 2 rule", "STATIC_HOOK");
+      check("PHASE3_NO_VVEE_FOCUS_ENGINE", !document.documentElement.innerHTML.includes("_tvGridFastNav") && !document.documentElement.innerHTML.includes("_tvSetFocus") && !document.documentElement.innerHTML.includes("_tvNearest"), "only the existing Nostr focus engine remains", "STATIC_HOOK");
       runtimeRequired("PHASE1_HOME_DPAD_RUNTIME", "requires TV/browser directional interaction");
       runtimeRequired("PHASE1_HOME_VISUAL_RUNTIME", "requires 1920x1080 preview comparison");
       if (state.tvDiag) state.tvDiag.tests = results;
@@ -31643,6 +31976,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if ($("imageViewer") && $("imageViewer").classList.contains("active")) return $("imageViewer");
       if ($("syncSheet") && $("syncSheet").classList.contains("active")) return $("syncSheet");
       if ($("detailSheet") && $("detailSheet").classList.contains("active")) return $("detailSheet");
+      if (isSidebarOpen()) return $("homeSidebar");
       return document;
     }
 
@@ -31715,6 +32049,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     function buildUiSnapshot() {
       const panList = $("panResultList");
       const detail = $("detailSheet");
+      const snapshotFocus = isSidebarOpen() ? state.homeV14.sidebarReturnTarget : document.activeElement;
       return {
         version: 1,
         savedAt: Date.now(),
@@ -31731,7 +32066,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         homeReturn: state.homeReturn || null,
         homeRoute: homeUiRoute(),
         homeRailScroll: homeRailScrollSnapshot(),
-        homeFocus: ["home", "search", "secondary"].includes(uiSnapshotRoute()) ? homeFocusSnapshot(document.activeElement, document.activeElement && document.activeElement.__mediaItem) : null,
+        homeFocus: ["home", "search", "secondary"].includes(uiSnapshotRoute()) ? homeFocusSnapshot(snapshotFocus, snapshotFocus && snapshotFocus.__mediaItem) : null,
         search: {
           keyword: currentSearchKeyword(),
           items: (state.searchItems || []).slice(0, 18).map(normalizeSnapshot),
@@ -31988,7 +32323,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const now = Date.now();
       if (!opts.force && now - Number(state.resume.lastAt || 0) < 650) return;
       state.resume.lastAt = now;
-      const settingReturnTarget = state.focusReturnEl === $("homeSettingBtn");
+      const nativeHomeReturnTarget = state.focusReturnEl;
+      const nativeHomeReturn = nativeHomeReturnTarget === $("connectionToggle") || !!(nativeHomeReturnTarget && nativeHomeReturnTarget.closest && nativeHomeReturnTarget.closest("#homeSidebar"));
       const isPanPlaybackReturn = !!(state.pan.playbackReturn && $("detailSheet") && $("detailSheet").classList.contains("active") && $("panSearchBlock") && $("panSearchBlock").classList.contains("active"));
       lockViewportWidth();
       fitConnectionPanel();
@@ -32011,7 +32347,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           requestAnimationFrame(() => home.style.transform = "");
         }
       }
-      if (settingReturnTarget && isVisibleFocusable($("homeSettingBtn"))) restoreFocusReturn($("homeSettingBtn"));
+      if (nativeHomeReturn && isVisibleFocusable(nativeHomeReturnTarget)) restoreFocusReturn(nativeHomeReturnTarget);
       scheduleUiSnapshotSave();
     }
 
