@@ -34758,7 +34758,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         normalizeActiveListForViewport();
         ensureHomeHeaderOrderV147();
         renderChips();
-        syncHomeRoutePresentationV147();
+        syncHomeRouteV147();
         if (opts.deferContent) scheduleHomeContentRender({ afterPaint: true });
         else renderHomeContentV147();
         renderMetrics();
@@ -34831,7 +34831,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         state.activeList = "all";
         state.homeV14.searchHistoryBackPending = false;
         setHomeOnlyV147(false);
-        syncHomeRoutePresentationV147();
+        syncHomeRouteV147();
         renderSearch();
         scheduleUiSnapshotSave();
         requestAnimationFrame(() => focusRemoteTarget($("searchInput") || $("searchPageBack")));
@@ -35118,7 +35118,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       runTvAdaptationSelfTests = runTvAdaptationSelfTestsV147;
 
       renderHomeSidebar();
-      syncHomeRoutePresentationV147();
+      syncHomeRouteV147();
     })();
 
     boot().catch(function(e) {
