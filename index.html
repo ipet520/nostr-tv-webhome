@@ -34224,6 +34224,13 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         return !!(target.closest("[data-sidebar-key]") || target === $("connectionToggle") || target === $("homeSettingBtn"));
       }
 
+      function v147SidebarContextKey(target) {
+        if (!target || !target.closest) return "";
+        const section = target.closest(".home-section");
+        const key = section ? v147SectionKey(section) : "";
+        return key && v147SidebarSpecs().some((item) => item.id === key) ? key : "";
+      }
+
       function renderHomeSidebar() {
         const sidebar = $("homeSidebar");
         const list = $("homeSidebarList");
@@ -34283,7 +34290,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         home.sidebarOpen = true;
         renderHomeSidebar();
         syncHomeRoutePresentation();
-        const target = v147SidebarItems()[0];
+        const contextKey = v147SidebarContextKey(active);
+        const sidebarItems = v147SidebarItems();
+        const target = sidebarItems.find((item) => item.dataset && item.dataset.sidebarKey === contextKey) || sidebarItems[0];
         requestAnimationFrame(() => { if (target) focusRemoteTarget(target); });
         if (isTvDiagnosticEnabled()) console.debug("[Nostr TV][HOME_SIDEBAR_OPEN]", { reason: reason || "", origin: home.sidebarOriginToken });
         return true;
