@@ -5390,16 +5390,19 @@
     }
     html.tv-mode .home-sidebar-item { transition: none; }
     html.tv-mode #home.home-root .home-sidebar {
-      top: 14px;
-      bottom: 14px;
       background: linear-gradient(90deg, rgba(8, 11, 16, .82) 0%, rgba(8, 11, 16, .68) 72%, rgba(8, 11, 16, .34) 100%);
       -webkit-backdrop-filter: blur(18px) saturate(1.15);
       backdrop-filter: blur(18px) saturate(1.15);
     }
 
-    html.tv-preview #home.home-root .home-sidebar {
-      top: 14px;
-      bottom: 14px;
+    html.tv-mode #home.home-root .home-sidebar-nav,
+    html.tv-preview #home.home-root .home-sidebar-nav {
+      transform: translateY(10px);
+    }
+
+    html.tv-mode #home.home-root .home-sidebar-tools,
+    html.tv-preview #home.home-root .home-sidebar-tools {
+      transform: translateY(-10px);
     }
 
     /* Home exposes one launcher only.  The real Search form is moved into
