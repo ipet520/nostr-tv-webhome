@@ -5400,7 +5400,7 @@
     .home-hero-content {
       position: absolute;
       z-index: 2;
-      top: clamp(220px, 13vw, 270px);
+      top: calc(clamp(220px, 13vw, 270px) + 80px);
       left: var(--home-v14-gut);
       max-width: min(700px, 48vw);
       padding: 0;
@@ -5470,7 +5470,7 @@
     .home-hero-dots {
       position: absolute;
       right: var(--home-v14-gut);
-      bottom: clamp(40px, 4vw, 72px);
+      bottom: calc(clamp(40px, 4vw, 72px) - 40px);
       z-index: 3;
       display: flex;
       align-items: center;
