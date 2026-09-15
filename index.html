@@ -6239,9 +6239,9 @@
     html.tv-preview .secondary-page button:focus:not(.card):not(.episode-card):not(.person-card) {
       background: rgba(255, 255, 255, .18);
       color: #fff;
-      outline: 3px solid rgba(120, 210, 255, .95) !important;
-      outline-offset: 2px !important;
-      box-shadow: 0 0 0 2px rgba(120, 210, 255, .18), 0 0 18px rgba(80, 180, 255, .35) !important;
+      outline: 2px solid rgba(120, 210, 255, .95) !important;
+      outline-offset: 1px !important;
+      box-shadow: 0 0 0 1px rgba(120, 210, 255, .18), 0 0 12px rgba(80, 180, 255, .3) !important;
       transform: scale(1.06);
       z-index: 5;
       transform-origin: center center;
@@ -31989,7 +31989,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       else if (itemRect.right > rightLimit) delta = itemRect.right - rightLimit;
       const before = Number(container.scrollLeft || 0);
       const max = Math.max(0, Number(container.scrollWidth || 0) - Number(container.clientWidth || 0));
-      const next = Math.max(0, Math.min(max, before + delta));
+      const firstFilterOption = container.classList && container.classList.contains("secondary-filter-row")
+        ? container.querySelector(".secondary-filter-option")
+        : null;
+      const next = target === firstFilterOption ? 0 : Math.max(0, Math.min(max, before + delta));
       if (Math.abs(next - before) > .5) container.scrollLeft = next;
       return { x: next - before, y: 0 };
     }
