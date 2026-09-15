@@ -5359,6 +5359,10 @@
       margin: 0;
       border-radius: 8px;
     }
+    .home-sidebar #connectionBody {
+      top: auto;
+      bottom: calc(100% + 8px);
+    }
     .home-sidebar #connectionToggle {
       min-height: 54px;
       height: auto;
@@ -5664,6 +5668,48 @@
       box-shadow: none;
     }
 
+    .home-more-card {
+      display: flex;
+      align-items: stretch;
+      justify-content: stretch;
+      padding: 0 !important;
+      color: var(--home-v14-muted);
+    }
+
+    .home-more-card-body {
+      width: 100%;
+      aspect-ratio: 2 / 3;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, .07);
+      color: currentColor;
+    }
+
+    .home-more-card.landscape-card .home-more-card-body {
+      aspect-ratio: 16 / 9;
+    }
+
+    .home-more-card-icon {
+      font-size: clamp(30px, 2.2vw, 44px);
+      line-height: 1;
+      color: #fff;
+    }
+
+    .home-more-card-label {
+      font-size: clamp(13px, .9vw, 17px);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .home-more-card:focus .home-more-card-body {
+      background: rgba(191, 233, 255, .16);
+      color: #fff;
+    }
+
     .home-rail {
       width: 100%;
       max-width: 100%;
@@ -5911,7 +5957,17 @@
     /* TV landscape sections share the full-width Hero outer frame. */
     @media (orientation: landscape) and (min-width: 901px) {
       html.tv-mode #home.home-root,
-      html.tv-preview #home.home-root { --home-section-gut: clamp(16px, 2vw, 36px); }
+      html.tv-preview #home.home-root { --home-section-gut: 16px; }
+
+      html.tv-mode #home.home-root .home-hero-content,
+      html.tv-preview #home.home-root .home-hero-content {
+        transform: translateY(-25px);
+      }
+
+      html.tv-mode #home.home-root .home-hero-dots,
+      html.tv-preview #home.home-root .home-hero-dots {
+        bottom: calc(clamp(54px, 5.2vw, 78px) + 25px);
+      }
 
       /* The rail viewport is the same outer frame as the TV Hero.  Its
          content gutter is intentional presentation spacing, not a centered
@@ -5922,10 +5978,10 @@
         max-width: none;
         margin-left: 0;
         margin-right: 0;
-        padding-left: var(--home-section-gut) !important;
-        padding-right: var(--home-section-gut) !important;
-        scroll-padding-left: var(--home-section-gut);
-        scroll-padding-right: var(--home-section-gut);
+        padding-left: 16px !important;
+        padding-right: 16px !important;
+        scroll-padding-left: 16px;
+        scroll-padding-right: 16px;
       }
     }
 
@@ -6509,7 +6565,7 @@
       <div class="home-section-head">
         <h2 class="home-section-title" id="homeRecentTitle">最近观看</h2>
         <span class="home-section-line" aria-hidden="true"></span>
-        <button class="home-section-more focusable" id="homeRecentMore" type="button" tabindex="0">更多</button>
+        <button class="home-section-more focusable" id="homeRecentMore" type="button" tabindex="0">查看更多</button>
       </div>
       <div class="home-rail rail" id="homeRecentRail" data-rail-key="home:recent" data-home-list-id="recent"></div>
     </section>
@@ -6518,10 +6574,10 @@
       <div class="home-section-head">
         <h2 class="home-section-title" id="recommendTitle">最新上线</h2>
         <span class="home-section-line" aria-hidden="true"></span>
-        <button class="home-section-more focusable" id="homeHotMore" type="button" tabindex="0">更多</button>
+        <button class="home-section-more focusable" id="homeHotMore" type="button" tabindex="0">查看更多</button>
       </div>
       <div class="block-select-hint home-block-select-hint" id="blockSelectHint">屏蔽选择模式：按 OK 切换屏蔽，按返回退出</div>
-      <div class="home-rail rail" id="recommendRail" data-rail-key="home:recommend" data-home-list-id="recommend"></div>
+      <div class="home-rail rail" id="recommendRail" data-rail-key="home:recommend" data-home-list-id="now-playing"></div>
     </section>
 
     <section class="home-section home-list-section" id="listSection" aria-label="首页内容">
@@ -17896,7 +17952,42 @@ utils.encode = function encode(arr, enc) {
         event.preventDefault();
         event.stopPropagation();
       }
-      setConnectionPanelOpen(!$("connectionDock").classList.contains("open"));
+      const open = !$("connectionDock").classList.contains("open");
+      setConnectionPanelOpen(open);
+      if (open) revealConnectionPanel();
+    }
+
+    function revealConnectionPanel() {
+      const panel = $("connectionBody");
+      if (!panel || !panel.classList.contains("open")) return false;
+      requestAnimationFrame(() => {
+        if (!panel.isConnected || !panel.classList.contains("open")) return;
+        const scroller = document.scrollingElement || document.documentElement;
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+        const safe = 16;
+        const dock = $("connectionDock");
+        if (dock && dock.getBoundingClientRect) {
+          const dockRect = dock.getBoundingClientRect();
+          const available = Math.max(160, Math.floor(dockRect.top - safe - 8));
+          panel.style.maxHeight = `${available}px`;
+        }
+        const rect = panel.getBoundingClientRect();
+        let delta = 0;
+        if (rect.top < safe) delta = rect.top - safe;
+        else if (rect.bottom > viewportHeight - safe) delta = rect.bottom - (viewportHeight - safe);
+        if (delta && scroller) {
+          const max = Math.max(0, Number(scroller.scrollHeight || 0) - Number(scroller.clientHeight || viewportHeight || 0));
+          const current = Number(scroller.scrollTop || 0);
+          const next = Math.max(0, Math.min(max, current + delta));
+          if (Math.abs(next - current) > .5) scroller.scrollTop = next;
+        }
+        requestAnimationFrame(() => {
+          if (!panel.isConnected || !panel.classList.contains("open")) return;
+          const target = connectionPanelItems()[0];
+          if (target) focusRemoteTarget(target);
+        });
+      });
+      return true;
     }
 
     function clearRelayBackfillTimers() {
@@ -20713,10 +20804,8 @@ utils.encode = function encode(arr, enc) {
       requestAnimationFrame(ensureScrollablePage);
     }
 
-    function homeSectionVariant(list) {
-      const id = String(list && list.id || "").toLowerCase();
-      const mediaType = String(list && list.mediaType || "").toLowerCase();
-      return mediaType === "tv" || /(?:tv|series|music)/.test(id) ? "landscape" : "portrait";
+    function homeSectionVariant(list, index) {
+      return Number(index || 0) % 2 === 0 ? "landscape" : "portrait";
     }
 
     function homeSectionPriority(list, index) {
@@ -20734,17 +20823,16 @@ utils.encode = function encode(arr, enc) {
     function homeSectionConfig() {
       return visibleTmdbLists()
         .filter((list) => list && list.id !== "all" && list.id !== "now-playing")
-        .map((list, index) => {
-          const variant = homeSectionVariant(list);
-          return {
-            listId: list.id,
-            title: list.title || list.id,
-            variant,
-            initialLimit: homeRailLimit(variant),
-            priority: homeSectionPriority(list, index)
-          };
-        })
-        .sort((a, b) => a.priority - b.priority);
+        .map((list, index) => ({
+          listId: list.id,
+          title: list.title || list.id,
+          priority: homeSectionPriority(list, index)
+        }))
+        .sort((a, b) => a.priority - b.priority)
+        .map((config, index) => {
+          const variant = homeSectionVariant({ id: config.listId }, index);
+          return Object.assign({}, config, { variant, initialLimit: homeRailLimit(variant) });
+        });
     }
 
     function homeRailColumnTarget(variant, width) {
@@ -21066,7 +21154,8 @@ utils.encode = function encode(arr, enc) {
         rail.replaceChildren(empty);
         return;
       }
-      if (rail.dataset.homeRenderKeys === renderKeys && rail.children.length === limited.length) {
+      const expectedChildren = limited.length + (opts.homeMore ? 1 : 0);
+      if (rail.dataset.homeRenderKeys === renderKeys && rail.children.length === expectedChildren) {
         observeHomeImages(rail);
         return;
       }
@@ -21076,6 +21165,8 @@ utils.encode = function encode(arr, enc) {
         landscape: variant === "landscape",
         allowNoPoster: !!opts.allowNoPoster,
         recentWatching: !!opts.recentWatching,
+        homeMore: !!opts.homeMore,
+        homeMoreListId: rail.dataset.homeListId || "",
         homeLazy: true,
         homeEagerCount: Number(opts.homeEagerCount == null ? 4 : opts.homeEagerCount),
         railKey: rail.dataset.railKey
@@ -21094,7 +21185,7 @@ utils.encode = function encode(arr, enc) {
         <div class="home-section-head">
           <h2 class="home-section-title" id="${titleId}"></h2>
           <span class="home-section-line" aria-hidden="true"></span>
-          <button class="home-section-more focusable" type="button" tabindex="0" data-home-more-id="${escapeAttr(config.listId)}">更多</button>
+          <button class="home-section-more focusable" type="button" tabindex="0" data-home-more-id="${escapeAttr(config.listId)}">查看更多</button>
         </div>
         <div class="home-rail rail" data-home-list-id="${escapeAttr(config.listId)}"></div>
       `;
@@ -21141,6 +21232,7 @@ utils.encode = function encode(arr, enc) {
         fillHomeRail(rail, items, {
           variant: config.variant,
           limit: config.initialLimit,
+          homeMore: true,
           railKey: `home:${config.listId}`,
           homeEagerCount: 4
         });
@@ -21164,10 +21256,11 @@ utils.encode = function encode(arr, enc) {
       }
       section.hidden = false;
       fillHomeRail(rail, items, {
-        variant: "portrait",
-        limit: homeRailLimit("portrait"),
+        variant: "landscape",
+        limit: homeRailLimit("landscape"),
         allowNoPoster: true,
         recentWatching: true,
+        homeMore: true,
         railKey: "home:recent",
         homeEagerCount: 4
       });
@@ -22356,7 +22449,7 @@ utils.encode = function encode(arr, enc) {
         return;
       }
       const items = resolved.items;
-      if (items.length) fillHomeRail(rail, items, { variant: "portrait", limit: homeRailLimit("portrait"), railKey: "home:hot" });
+      if (items.length) fillHomeRail(rail, items, { variant: "portrait", limit: homeRailLimit("portrait"), homeMore: true, railKey: "home:hot" });
       else showHomeRailStatus(rail, page && page.loaded ? "暂无最新上线" : "最新上线加载中...", { variant: "portrait" });
       updateBlockSelectUi();
       if (opts.hotOnly) recordHomeV14Diag();
@@ -22488,6 +22581,20 @@ utils.encode = function encode(arr, enc) {
       fillRail(rail, items, options);
     }
 
+    function createHomeRailMoreCard(listId, landscape) {
+      const button = document.createElement("button");
+      const id = normalizeLegacyCategoryId(listId || "");
+      if (!id) return null;
+      button.className = "card focusable home-card home-more-card" + (landscape ? " landscape-card" : "");
+      button.type = "button";
+      button.dataset.homeMoreCard = "1";
+      button.dataset.homeMoreId = id;
+      button.setAttribute("aria-label", "查看更多");
+      button.innerHTML = '<span class="home-more-card-body"><span class="home-more-card-icon" aria-hidden="true">›</span><span class="home-more-card-label">查看更多</span></span>';
+      button.addEventListener("click", () => openSecondaryCatalog(id, { originSection: id, originTarget: button }));
+      return button;
+    }
+
     function fillRail(rail, items, options) {
       if (!rail) return;
       const opts = options || {};
@@ -22505,13 +22612,18 @@ utils.encode = function encode(arr, enc) {
       const savedLeft = key ? state.railScroll[key] || 0 : 0;
       const detailRail = !!($("detailSheet") && $("detailSheet").contains(rail));
       const landscape = typeof opts.landscape === "boolean" ? opts.landscape : detailRail && useLargeDetailLayout();
-      rail.replaceChildren(...items.map((item, index) => mediaCard(item, index, {
+      const children = items.map((item, index) => mediaCard(item, index, {
         landscape,
         home: !!opts.home,
         homeLazy: !!opts.homeLazy && isTvLikeDevice() && index >= Number(opts.homeEagerCount == null ? 4 : opts.homeEagerCount),
         searchResult: opts.searchResult === true,
         searchQuery: opts.searchQuery || ""
-      })));
+      }));
+      if (opts.homeMore) {
+        const more = createHomeRailMoreCard(opts.homeMoreListId || rail.dataset.homeListId, landscape);
+        if (more) children.push(more);
+      }
+      rail.replaceChildren(...children);
       if (savedLeft) requestAnimationFrame(() => rail.scrollLeft = savedLeft);
       if (!rail.dataset.scrollBound) {
         rail.dataset.scrollBound = "1";
@@ -31236,21 +31348,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const currentCards = homeSectionCards(section);
       const ownMore = section.querySelector && section.querySelector(".home-section-more");
       if (more) {
-        if (key === "ArrowDown") {
-          if (currentCards[0]) return currentCards[0];
-          for (let next = sectionIndex + 1; next < sections.length; next++) {
-            const nextCards = homeSectionCards(sections[next]);
-            if (nextCards.length) return nextCards[0];
-          }
-          return more;
-        }
-        if (key === "ArrowUp") {
-          for (let index = sectionIndex - 1; index >= 0; index--) {
-            const cards = homeSectionCards(sections[index]);
-            if (cards.length) return cards[cards.length - 1];
-          }
-          return isVisibleFocusable(hero) ? hero : more;
-        }
+        if (key === "ArrowDown" || key === "ArrowUp") return more;
         if (key === "ArrowLeft") return currentCards[currentCards.length - 1] || more;
         if (key === "ArrowRight") return more;
         return null;
