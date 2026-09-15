@@ -5172,19 +5172,21 @@
        数据、业务卡片、焦点和加载仍由 Nostr 原有内核提供。
        ============================================================ */
     :root {
-      --home-v14-bg: #080808;
-      --home-v14-surface: #151515;
+      --home-v14-bg: #080b10;
+      --home-v14-surface: transparent;
       --home-v14-text: #f4f4f4;
       --home-v14-muted: rgba(255, 255, 255, .62);
       --home-v14-accent: #bfe9ff;
       --home-v14-nav-h: 54px;
-      --home-v14-gut: clamp(18px, 3.75vw, 72px);
+      --home-v14-gut: clamp(18px, 4.6vw, 88px);
       --home-tv-safe-x: 16px;
-      --home-v14-gap: clamp(10px, .72vw, 16px);
+      --home-v14-gap: clamp(14px, .95vw, 18px);
       --home-v14-safe-bottom: max(24px, var(--fm-safe-bottom, 0px), env(safe-area-inset-bottom, 0px));
     }
 
     #home.home-root {
+      position: relative;
+      isolation: isolate;
       width: 100%;
       max-width: none;
       min-width: 0;
@@ -5192,7 +5194,17 @@
       padding: 0 0 var(--home-v14-safe-bottom);
       overflow-x: hidden;
       color: var(--home-v14-text);
-      background: var(--home-v14-bg);
+      background: linear-gradient(180deg, #080b10 0%, #080b10 72%, #07090d 100%);
+    }
+
+    #home.home-root::before {
+      content: "";
+      position: absolute;
+      z-index: -1;
+      inset: 0 0 auto;
+      height: clamp(640px, 42vw, 780px);
+      pointer-events: none;
+      background: linear-gradient(180deg, rgba(8, 11, 16, .12) 0%, rgba(8, 11, 16, .12) 42%, rgba(8, 11, 16, .82) 92%, #080b10 100%);
     }
 
     #home.home-root[hidden],
@@ -5274,6 +5286,65 @@
 
     .home-search:focus-within { z-index: 95; }
 
+    /* Home exposes one launcher only.  The real Search form is moved into
+       #searchPageFormHost by openSearchPage(), so Search keeps its existing
+       input, IME, submit, and suggestion behavior. */
+    .home-search-launcher-wrap {
+      position: absolute;
+      z-index: 12;
+      top: clamp(28px, 2.8vw, 52px);
+      left: 50%;
+      width: min(680px, calc(100% - (2 * var(--home-v14-gut))));
+      transform: translateX(-50%);
+    }
+
+    .home-search-launcher-wrap[hidden],
+    .home-search-launcher[hidden] {
+      display: none !important;
+    }
+
+    .home-search-launcher {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      width: 100%;
+      min-height: 60px;
+      padding: 0 24px;
+      border: 1px solid rgba(255, 255, 255, .16);
+      border-radius: 999px;
+      background: rgba(16, 22, 31, .56);
+      color: rgba(255, 255, 255, .7);
+      font-size: clamp(16px, 1.05vw, 20px);
+      text-align: left;
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+      transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease;
+    }
+
+    .home-search-launcher .icon {
+      width: 22px;
+      height: 22px;
+      flex: 0 0 22px;
+      color: rgba(255, 255, 255, .82);
+    }
+
+    .home-search-launcher:focus {
+      outline: none;
+      border-color: rgba(191, 233, 255, .72);
+      background: rgba(22, 32, 45, .78);
+      color: #fff;
+      transform: translateY(-4px);
+      box-shadow: none;
+    }
+
+    #home.home-root.home-route-active #searchForm {
+      display: none !important;
+    }
+
+    #home.home-root:not(.home-route-active) .home-search-launcher-wrap {
+      display: none !important;
+    }
+
     .home-search-section {
       margin-top: clamp(18px, 2vw, 30px);
       overflow: visible;
@@ -5282,15 +5353,11 @@
     #homeHero {
       position: relative;
       width: 100%;
-      min-height: 41vw;
-      max-height: 410px;
+      min-height: clamp(610px, 36.5vw, 720px);
+      max-height: 720px;
       overflow: hidden;
       isolation: isolate;
-      background: var(--home-v14-bg);
-    }
-
-    @media (min-width: 1200px) {
-      #homeHero { max-height: 450px; }
+      background: transparent;
     }
 
     .home-hero-slides,
@@ -5314,8 +5381,8 @@
     }
 
     .home-hero-slide-bg {
-      background-color: #151515;
-      background-position: center 20%;
+      background-color: #111820;
+      background-position: center 18%;
       background-repeat: no-repeat;
       background-size: cover;
     }
@@ -5326,21 +5393,21 @@
       z-index: 1;
       pointer-events: none;
       background:
-        linear-gradient(90deg, rgba(8, 8, 8, .88) 0%, rgba(8, 8, 8, .55) 36%, rgba(8, 8, 8, .08) 64%, transparent 100%),
-        linear-gradient(0deg, rgba(8, 8, 8, .86) 0%, rgba(8, 8, 8, .25) 45%, rgba(8, 8, 8, .05) 100%);
+        linear-gradient(90deg, rgba(8, 11, 16, .94) 0%, rgba(8, 11, 16, .62) 34%, rgba(8, 11, 16, .12) 66%, transparent 100%),
+        linear-gradient(0deg, #080b10 0%, rgba(8, 11, 16, .86) 10%, rgba(8, 11, 16, .3) 40%, rgba(8, 11, 16, .04) 72%, transparent 100%);
     }
 
     .home-hero-content {
       position: absolute;
       z-index: 2;
-      left: 0;
-      bottom: clamp(30px, 4vw, 58px);
-      max-width: min(500px, 54%);
-      padding: 0 clamp(20px, 4vw, 54px);
+      top: clamp(180px, 10vw, 220px);
+      left: var(--home-v14-gut);
+      max-width: min(700px, 48vw);
+      padding: 0;
       display: flex;
       flex-direction: column;
       align-items: flex-start;
-      gap: 8px;
+      gap: 12px;
     }
 
     .home-hero-logo-wrap {
@@ -5364,7 +5431,7 @@
       max-width: 100%;
       margin: 0;
       color: #fff;
-      font-size: clamp(24px, 2.4vw, 36px);
+      font-size: clamp(30px, 3.1vw, 60px);
       font-weight: 800;
       line-height: 1.1;
       letter-spacing: -.02em;
@@ -5380,14 +5447,15 @@
     }
 
     .home-hero-action {
-      min-height: 32px;
-      padding: 0 16px;
+      min-height: 48px;
+      padding: 0 22px;
       border: 0;
       border-radius: 999px;
       background: #fff;
       color: #111;
       font-size: clamp(14px, .95vw, 18px);
       font-weight: 700;
+      transition: transform 160ms ease, background-color 160ms ease;
     }
 
     .home-hero-action:focus {
@@ -5396,12 +5464,13 @@
       background: rgba(191, 233, 255, .96);
       color: #06111b;
       box-shadow: none;
+      transform: translateY(-4px);
     }
 
     .home-hero-dots {
       position: absolute;
-      right: clamp(20px, 2vw, 30px);
-      bottom: 14px;
+      right: var(--home-v14-gut);
+      bottom: clamp(70px, 6vw, 104px);
       z-index: 3;
       display: flex;
       align-items: center;
@@ -5423,8 +5492,14 @@
     .home-section {
       width: 100%;
       min-width: 0;
-      margin: clamp(22px, 2vw, 34px) 0 0;
+      margin: clamp(42px, 2.8vw, 56px) 0 0;
       overflow: visible;
+    }
+
+    /* The first rail belongs to the Hero canvas; its header/rail starts
+       inside the bottom fade instead of opening a separate panel. */
+    .home-recent-section {
+      margin-top: clamp(-150px, -7vw, -110px);
     }
 
     .home-section[hidden] { display: none !important; }
@@ -5433,25 +5508,22 @@
       min-width: 0;
       display: flex;
       align-items: center;
-      gap: 10px;
-      min-height: 34px;
-      padding: 8px var(--home-section-gut, var(--home-v14-gut)) 6px;
+      gap: 12px;
+      min-height: 36px;
+      padding: 0 var(--home-section-gut, var(--home-v14-gut)) 8px;
     }
 
     .home-section-title {
       flex: 0 0 auto;
       margin: 0;
       color: #fff;
-      font-size: clamp(17px, 1.25vw, 24px);
+      font-size: clamp(20px, 1.45vw, 28px);
       font-weight: 700;
       line-height: 1.2;
     }
 
     .home-section-line {
-      flex: 1 1 auto;
-      min-width: 20px;
-      height: 1px;
-      background: rgba(255, 255, 255, .18);
+      display: none;
     }
 
     .home-section-more {
@@ -5460,7 +5532,7 @@
       flex: 0 0 auto;
       gap: 5px;
       min-height: 32px;
-      padding: 0 2px 0 10px;
+      padding: 0 0 0 10px;
       border: 0;
       border-radius: 4px;
       color: var(--home-v14-muted);
@@ -5482,7 +5554,7 @@
       color: #fff;
       outline: none;
       outline-offset: 0;
-      background: rgba(191, 233, 255, .12);
+      background: transparent;
       border-color: transparent;
       box-shadow: none;
     }
@@ -5495,7 +5567,7 @@
       flex-wrap: nowrap !important;
       align-items: flex-start;
       gap: var(--home-v14-gap);
-      padding: 10px var(--home-section-gut, var(--home-v14-gut)) 18px !important;
+      padding: 28px var(--home-section-gut, var(--home-v14-gut)) 18px !important;
       scroll-padding-inline: var(--home-section-gut, var(--home-v14-gut));
       overflow-x: auto !important;
       overflow-y: visible !important;
@@ -5514,14 +5586,47 @@
       max-width: none !important;
       min-width: 0;
       contain: layout style;
+      border: 0 !important;
+      border-radius: 0;
+      background: transparent !important;
+      box-shadow: none !important;
       -webkit-backdrop-filter: none;
       backdrop-filter: none;
+      overflow: visible;
+      transition: transform 160ms ease;
+      transform: translateZ(0);
+    }
+
+    .home-rail > .card:focus {
+      z-index: 3;
+      outline: none !important;
+      border: 0 !important;
+      box-shadow: none !important;
+      transform: translateY(-18px) translateZ(0) !important;
+    }
+
+    .home-rail > .card .poster-wrap,
+    .home-rail > .card > .poster {
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .home-rail > .card .poster-wrap {
+      width: 100%;
+      max-width: 100%;
+      margin: 0;
+    }
+
+    .home-rail > .card > .poster {
+      width: 100%;
+      max-width: 100%;
+      margin: 0;
     }
 
     .home-rail > .card .card-title {
       min-height: 1.25em;
       margin-top: 0;
-      font-size: clamp(12px, .86vw, 17px);
+      font-size: clamp(14px, .92vw, 18px);
       line-height: 1.25;
       white-space: nowrap;
       overflow: hidden;
@@ -5533,19 +5638,21 @@
     .home-rail > .card:not(.recent-card) .card-body,
     .home-rail > .card.recent-card .card-body {
       padding: 7px 8px 8px;
-      border-top-color: rgba(255, 255, 255, .08);
-      background: rgba(12, 12, 12, .72);
+      padding-left: 0;
+      padding-right: 0;
+      border: 0 !important;
+      background: transparent !important;
     }
 
     .home-rail > .card .rating-badge {
-      top: 7px;
+      top: 8px;
       right: auto;
       left: 7px;
       min-width: 28px;
       height: 20px;
       font-size: clamp(10px, .7vw, 14px);
-      background: rgba(8, 8, 8, .78);
-      border-color: rgba(255, 255, 255, .22);
+      background: rgba(8, 11, 16, .78);
+      border-color: transparent;
       color: #fff;
       -webkit-backdrop-filter: none;
       backdrop-filter: none;
@@ -5567,10 +5674,10 @@
       display: grid;
       place-items: center;
       padding: 12px;
-      border: 1px solid rgba(255, 255, 255, .08);
-      border-radius: 6px;
+      border: 0;
+      border-radius: 0;
       color: var(--home-v14-muted);
-      background: rgba(21, 21, 21, .86);
+      background: transparent;
       font-size: clamp(12px, .8vw, 16px);
       text-align: center;
     }
@@ -5614,21 +5721,19 @@
 
     html.tv-mode #home.home-root,
     html.tv-preview #home.home-root {
-      --home-v14-gut: var(--home-tv-safe-x);
-      --home-section-gut: var(--home-tv-safe-x);
+      --home-section-gut: var(--home-v14-gut);
     }
 
     html.tv-mode #home.home-root #homeHero,
     html.tv-preview #home.home-root #homeHero {
-      width: calc(100% - (2 * var(--home-tv-safe-x)));
-      margin-left: var(--home-tv-safe-x);
-      margin-right: var(--home-tv-safe-x);
+      width: 100%;
+      margin-left: 0;
+      margin-right: 0;
     }
 
     html.tv-mode #home.home-root *,
     html.tv-preview #home.home-root * {
       animation: none !important;
-      transition: none !important;
     }
 
     html.tv-mode #home.home-root .home-rail > .card,
@@ -5641,27 +5746,32 @@
 
     html.tv-mode #home.home-root .home-rail > .card:focus,
     html.tv-preview #home.home-root .home-rail > .card:focus {
-      transform: translateY(-1px) scale(1.025) translateZ(0);
+      transform: translateY(-18px) translateZ(0) !important;
     }
 
     /* V1.4.5.7: make the existing TV Home rails denser without changing the
        Home DOM, card semantics, or focus/reveal engine. */
     html.tv-mode #home.home-root .home-section,
     html.tv-preview #home.home-root .home-section {
-      margin-top: clamp(16px, 1.5vw, 26px);
+      margin-top: clamp(42px, 2.8vw, 56px);
+    }
+
+    html.tv-mode #home.home-root .home-recent-section,
+    html.tv-preview #home.home-root .home-recent-section {
+      margin-top: clamp(-150px, -7vw, -110px);
     }
 
     html.tv-mode #home.home-root .home-section-head,
     html.tv-preview #home.home-root .home-section-head {
       min-height: 30px;
-      padding-top: 5px;
-      padding-bottom: 4px;
+      padding-top: 0;
+      padding-bottom: 8px;
     }
 
     html.tv-mode #home.home-root .home-rail,
     html.tv-preview #home.home-root .home-rail {
-      padding-top: 6px !important;
-      padding-bottom: 12px !important;
+      padding-top: 28px !important;
+      padding-bottom: 18px !important;
     }
 
     @media (max-width: 900px) {
@@ -5674,7 +5784,10 @@
     @media (max-width: 600px) {
       .home-search { grid-column: 1 / -1; width: 100%; min-width: 0; margin: 0 0 8px; }
       #homeHero { min-height: 300px; max-height: 390px; }
-      .home-hero-content { left: 0; right: 0; bottom: 28px; max-width: 86%; padding-left: 18px; padding-right: 18px; }
+      .home-search-launcher-wrap { top: 20px; width: calc(100% - 36px); }
+      .home-search-launcher { min-height: 52px; padding: 0 18px; }
+      .home-hero-content { left: 18px; right: 18px; top: auto; bottom: 28px; max-width: 86%; }
+      .home-recent-section { margin-top: 24px; }
       .home-section-head { padding-left: 18px; padding-right: 18px; }
       .home-rail { padding-left: 18px !important; padding-right: 18px !important; }
     }
@@ -5698,21 +5811,21 @@
     /* TV landscape sections share the full-width Hero outer frame. */
     @media (orientation: landscape) and (min-width: 901px) {
       html.tv-mode #home.home-root,
-      html.tv-preview #home.home-root { --home-section-gut: var(--home-tv-safe-x); }
+      html.tv-preview #home.home-root { --home-section-gut: var(--home-v14-gut); }
 
-      /* The rail viewport is the same outer frame as the TV Hero.  Keep the
-         first card on that frame edge; the safe reveal distance is handled by
-         the focus resolver instead of a leading track spacer. */
+      /* The rail viewport is the same outer frame as the TV Hero.  Its
+         content gutter is intentional presentation spacing, not a centered
+         wrapper or a leading track spacer. */
       html.tv-mode #home.home-root .home-rail,
       html.tv-preview #home.home-root .home-rail {
-        width: calc(100% - (2 * var(--home-tv-safe-x)));
+        width: 100%;
         max-width: none;
-        margin-left: var(--home-tv-safe-x);
-        margin-right: var(--home-tv-safe-x);
-        padding-left: 0 !important;
-        padding-right: 0 !important;
-        scroll-padding-left: var(--home-tv-safe-x);
-        scroll-padding-right: var(--home-tv-safe-x);
+        margin-left: 0;
+        margin-right: 0;
+        padding-left: var(--home-section-gut) !important;
+        padding-right: var(--home-section-gut) !important;
+        scroll-padding-left: var(--home-section-gut);
+        scroll-padding-right: var(--home-section-gut);
       }
     }
 
@@ -6031,6 +6144,30 @@
       font-size: clamp(15px, 1vw, 19px);
     }
 
+    /* Final Home-only focus contract: a media item floats upward without
+       resizing, outlining, filtering, or turning into a panel.  This rule
+       intentionally follows the shared TV card focus styles above. */
+    html.tv-mode #home.home-root .home-rail > .card:focus,
+    html.tv-preview #home.home-root .home-rail > .card:focus {
+      transform: translateY(-18px) translateZ(0) !important;
+      outline: none !important;
+      outline-offset: 0 !important;
+      border: 0 !important;
+      box-shadow: none !important;
+      background: transparent !important;
+    }
+
+    #home.home-root .home-rail > .card:focus img {
+      filter: none !important;
+    }
+
+    /* Keep the Home rating as a quiet in-poster label; the shared legacy
+       badge treatment must not turn a frameless poster into a panel. */
+    #home.home-root .home-rail > .card .rating-badge {
+      border: 0 !important;
+      box-shadow: none !important;
+    }
+
     @media (max-width: 900px) {
       #searchHotRail { --home-card-width: clamp(112px, 28vw, 148px); }
     }
@@ -6120,6 +6257,12 @@
 </head>
 <body>
   <main class="app home-root" id="home">
+    <div class="home-search-launcher-wrap" id="homeSearchLauncherWrap">
+      <button class="home-search-launcher focusable" id="homeSearchLauncher" type="button" aria-controls="searchPage" aria-label="打开搜索">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m16.5 16.5 4 4"></path></svg>
+        <span>搜索电影、剧集…</span>
+      </button>
+    </div>
     <form class="search home-search" id="searchForm" autocomplete="off" hidden>
         <aside class="connection-dock" id="connectionDock">
           <button class="connection-toggle focusable" id="connectionToggle" type="button" aria-expanded="false" aria-controls="connectionBody">
@@ -20148,6 +20291,8 @@ utils.encode = function encode(arr, enc) {
       if (secondary) secondary.hidden = route !== "secondary";
       const form = $("searchForm");
       if (form && route !== "search") form.hidden = true;
+      const launcher = $("homeSearchLauncherWrap");
+      if (launcher) launcher.hidden = !isHome;
       if (!isHome) stopHomeHeroAutoplay();
       return isHome;
     }
@@ -20255,7 +20400,9 @@ utils.encode = function encode(arr, enc) {
         if (value >= 480) return 3;
         return 2;
       }
-      if (value >= 1600) return 11;
+      // Phase 2 canvas density: keep the existing TV scale factor while
+      // giving 1920px Home rails the vvee-sized ~180px poster target.
+      if (value >= 1600) return 10;
       if (value >= 1200) return 9;
       if (value >= 900) return 7;
       if (value >= 640) return 5;
@@ -21001,7 +21148,9 @@ utils.encode = function encode(arr, enc) {
         if (searchRail) searchRail.scrollLeft = Math.max(0, Number(saved.searchRailScrollLeft || 0));
         const searchHotRail = $("searchHotRail");
         if (searchHotRail) searchHotRail.scrollLeft = Math.max(0, Number(saved.searchHotRailScrollLeft || 0));
-        const target = isVisibleFocusable($("searchSubmitBtn")) ? $("searchSubmitBtn") : initialHomeFocus();
+        const target = isVisibleFocusable($("homeSearchLauncher"))
+          ? $("homeSearchLauncher")
+          : isVisibleFocusable($("searchSubmitBtn")) ? $("searchSubmitBtn") : initialHomeFocus();
         if (target) focusRemoteTarget(target);
       };
       requestAnimationFrame(restore);
@@ -22396,8 +22545,9 @@ utils.encode = function encode(arr, enc) {
           <img class="poster" alt="" ${imageAttrs(posterSrc, imageOpt)}>
           ${people > 0 ? `<span class="card-people">${escapeHtml(people)}人</span>` : ""}
           ${recentWatching ? `<span class="recent-delete-indicator" aria-hidden="true">🗑</span>` : ""}
+          ${home && rating ? `<span class="rating-badge">${escapeHtml(rating)}</span>` : ""}
         </div>
-        ${rating ? `<span class="rating-badge">${escapeHtml(rating)}</span>` : ""}
+        ${!home && rating ? `<span class="rating-badge">${escapeHtml(rating)}</span>` : ""}
         <div class="card-body">
           <div class="card-title">${escapeHtml(item.title)}</div>
           <div class="card-meta">${escapeHtml(item.remark)}</div>
@@ -29330,6 +29480,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if ($("searchPageBack")) $("searchPageBack").addEventListener("click", requestCloseSearchPage);
       if ($("searchHistoryClear")) $("searchHistoryClear").addEventListener("click", clearSearchHistory);
       if ($("secondaryCatalogBack")) $("secondaryCatalogBack").addEventListener("click", requestCloseSecondaryCatalog);
+      if ($("homeSearchLauncher")) $("homeSearchLauncher").addEventListener("click", openSearchPage);
       if ($("homeRecentMore")) $("homeRecentMore").addEventListener("click", () => openSecondaryCatalog("recent", { originSection: "recent", originTarget: $("homeRecentMore") }));
       if ($("homeHotMore")) $("homeHotMore").addEventListener("click", () => openSecondaryCatalog("now-playing", { originSection: "now-playing", originTarget: $("homeHotMore") }));
       $("homeSettingBtn").addEventListener("click", openSettingHome);
@@ -30687,9 +30838,15 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (!isTvLikeDevice() || !isHomeRouteActive() || focusScopeRoot() !== document) return null;
       const home = $("home");
       if (!home || !active) return null;
+      const searchLauncher = $("homeSearchLauncher");
       const hero = $("homeHeroAction");
+      if (active === searchLauncher) {
+        if (key === "ArrowDown") return isVisibleFocusable(hero) ? hero : homeFirstTarget() || active;
+        if (key === "ArrowUp" || key === "ArrowLeft" || key === "ArrowRight") return active;
+        return null;
+      }
       if (active === hero) {
-        if (key === "ArrowUp") return active;
+        if (key === "ArrowUp") return isVisibleFocusable(searchLauncher) ? searchLauncher : active;
         if (key === "ArrowDown") return homeFirstTarget() || active;
         if (key === "ArrowLeft" || key === "ArrowRight") return active;
         return null;
