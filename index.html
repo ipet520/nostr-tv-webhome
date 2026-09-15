@@ -5291,10 +5291,12 @@
       display: flex;
       flex-direction: column;
       justify-content: center;
-      width: clamp(190px, 11vw, 205px);
-      padding: 28px 16px 30px;
+      width: clamp(166px, 9vw, 180px);
+      padding: 24px 10px 26px;
       pointer-events: auto;
-      background: linear-gradient(90deg, rgba(8, 11, 16, .9) 0%, rgba(8, 11, 16, .58) 72%, rgba(8, 11, 16, 0) 100%);
+      background: linear-gradient(90deg, rgba(8, 11, 16, .82) 0%, rgba(8, 11, 16, .68) 72%, rgba(8, 11, 16, .34) 100%);
+      -webkit-backdrop-filter: blur(18px) saturate(1.15);
+      backdrop-filter: blur(18px) saturate(1.15);
     }
 
     .home-sidebar[hidden] { display: none !important; }
@@ -5304,14 +5306,18 @@
       flex-direction: column;
       gap: 4px;
     }
-    .home-sidebar-tools { margin-top: 22px; }
+    .home-sidebar-tools {
+      margin-top: 18px;
+      padding-top: 14px;
+    }
     .home-sidebar-item {
       display: flex;
       align-items: center;
       width: 100%;
       min-height: 54px;
       margin: 0;
-      padding: 0 14px;
+      gap: 10px;
+      padding: 0 10px;
       border: 0;
       border-radius: 8px;
       color: rgba(255, 255, 255, .72);
@@ -5322,6 +5328,17 @@
       font-weight: 600;
       white-space: nowrap;
       transition: background-color 140ms ease, color 140ms ease, transform 140ms ease;
+    }
+    .home-sidebar-item .home-sidebar-icon {
+      display: block;
+      width: 22px;
+      height: 22px;
+      flex: 0 0 22px;
+      color: currentColor;
+    }
+    .home-sidebar-item .home-sidebar-label {
+      min-width: 0;
+      overflow: visible;
     }
     .home-sidebar-item:focus,
     .home-sidebar-item:active {
@@ -5345,17 +5362,21 @@
     .home-sidebar #connectionToggle {
       min-height: 54px;
       height: auto;
-      justify-content: flex-start;
-      gap: 12px;
-      padding: 0 14px;
+      justify-content: center;
+      gap: 0;
+      padding: 0 10px;
       border-radius: 8px;
     }
     .home-sidebar #connectionDock .connection-title {
-      display: inline;
-      font-size: clamp(14px, .9vw, 17px);
-      font-weight: 600;
+      display: none !important;
     }
     .home-sidebar #connectionDock .connection-arrow { display: none; }
+    .home-sidebar #connectionToggle .dot {
+      width: 22px;
+      height: 22px;
+      flex: 0 0 22px;
+      margin: 0;
+    }
     .home-sidebar #connectionToggle:focus,
     .home-sidebar #connectionToggle:active {
       color: #fff;
@@ -5365,8 +5386,9 @@
     }
     html.tv-mode .home-sidebar-item { transition: none; }
     html.tv-mode #home.home-root .home-sidebar {
-      -webkit-backdrop-filter: none;
-      backdrop-filter: none;
+      background: linear-gradient(90deg, rgba(8, 11, 16, .82) 0%, rgba(8, 11, 16, .68) 72%, rgba(8, 11, 16, .34) 100%);
+      -webkit-backdrop-filter: blur(18px) saturate(1.15);
+      backdrop-filter: blur(18px) saturate(1.15);
     }
 
     /* Home exposes one launcher only.  The real Search form is moved into
@@ -5553,22 +5575,22 @@
     .home-hero-dots {
       position: absolute;
       right: var(--home-v14-gut);
-      bottom: calc(clamp(40px, 4vw, 72px) - 40px);
+      bottom: clamp(54px, 5.2vw, 78px);
       z-index: 3;
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 7px;
     }
 
     .home-hero-dot {
-      width: 7px;
-      height: 7px;
+      width: 9px;
+      height: 9px;
       border-radius: 999px;
       background: rgba(255, 255, 255, .42);
     }
 
     .home-hero-dot.active {
-      width: 20px;
+      width: 24px;
       background: #fff;
     }
 
@@ -5582,7 +5604,7 @@
     /* The first rail belongs to the Hero canvas; its header/rail starts
        inside the bottom fade instead of opening a separate panel. */
     .home-recent-section {
-      margin-top: clamp(-150px, -7vw, -110px);
+      margin-top: clamp(16px, 1.1vw, 22px);
     }
 
     .home-section[hidden] { display: none !important; }
@@ -5804,7 +5826,7 @@
 
     html.tv-mode #home.home-root,
     html.tv-preview #home.home-root {
-      --home-section-gut: var(--home-v14-gut);
+      --home-section-gut: clamp(16px, 2vw, 36px);
     }
 
     html.tv-mode #home.home-root #homeHero,
@@ -5837,11 +5859,6 @@
     html.tv-mode #home.home-root .home-section,
     html.tv-preview #home.home-root .home-section {
       margin-top: clamp(20px, 1.3vw, 26px);
-    }
-
-    html.tv-mode #home.home-root .home-recent-section,
-    html.tv-preview #home.home-root .home-recent-section {
-      margin-top: clamp(-150px, -7vw, -110px);
     }
 
     html.tv-mode #home.home-root .home-section-head,
@@ -5894,7 +5911,7 @@
     /* TV landscape sections share the full-width Hero outer frame. */
     @media (orientation: landscape) and (min-width: 901px) {
       html.tv-mode #home.home-root,
-      html.tv-preview #home.home-root { --home-section-gut: var(--home-v14-gut); }
+      html.tv-preview #home.home-root { --home-section-gut: clamp(16px, 2vw, 36px); }
 
       /* The rail viewport is the same outer frame as the TV Hero.  Its
          content gutter is intentional presentation spacing, not a centered
@@ -20373,6 +20390,20 @@ utils.encode = function encode(arr, enc) {
       return visibleTmdbLists().find((list) => normalizeLegacyCategoryId(list && list.id) === wanted) || null;
     }
 
+    function sidebarIconMarkup(key) {
+      const shapes = {
+        live: '<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M8 21h8"/><path d="M12 19v2"/><path d="m9 3 3 3 3-3"/>',
+        recent: '<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/><path d="M12 7v5l3 2"/>',
+        latest: '<path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3Z"/><path d="m19 16 .8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16Z"/>',
+        movie: '<path d="M4 5h16v14H4z"/><path d="m4 9 16 0"/><path d="m8 5 3 4"/><path d="m14 5 3 4"/><path d="M10 13.5 15 16l-5 2.5v-5Z"/>',
+        tv: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m8 3 4 2 4-2"/><path d="M8 19v2h8v-2"/>',
+        anime: '<circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4V8Z"/><path d="M5 5 3 3"/><path d="m19 5 2-2"/>',
+        documentary: '<path d="M5 4h10a4 4 0 0 1 4 4v12H9a4 4 0 0 0-4 0V4Z"/><path d="M5 4v16"/><path d="M9 8h6"/><path d="M9 12h6"/>',
+        settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>'
+      };
+      return '<svg class="icon home-sidebar-icon" viewBox="0 0 24 24" aria-hidden="true">' + (shapes[key] || shapes.latest) + "</svg>";
+    }
+
     function sidebarNavigationItems() {
       const items = [
         { key: "live", label: "直播", action: "live" },
@@ -20411,12 +20442,13 @@ utils.encode = function encode(arr, enc) {
         button.dataset.sidebarKey = item.key;
         button.dataset.sidebarAction = item.action;
         if (item.listId) button.dataset.sidebarListId = item.listId;
+        const icon = sidebarIconMarkup(item.key);
         if (item.action === "settings") {
           button.setAttribute("aria-label", item.label);
           button.title = item.label;
-          button.innerHTML = `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg><span>${escapeHtml(item.label)}</span>`;
+          button.innerHTML = icon + '<span class="home-sidebar-label">' + escapeHtml(item.label) + '</span>';
         } else {
-          button.textContent = item.label;
+          button.innerHTML = icon + '<span class="home-sidebar-label">' + escapeHtml(item.label) + '</span>';
         }
         button.addEventListener("focus", () => {
           if (state.homeV14) state.homeV14.sidebarFocusId = item.key;
@@ -20437,9 +20469,9 @@ utils.encode = function encode(arr, enc) {
         connectionToggle.setAttribute("aria-label", "基础设置");
         connectionToggle.dataset.sidebarKey = "grid";
         connectionToggle.dataset.sidebarAction = "grid";
-        tools.appendChild(connectionDock);
       }
       tools.appendChild(makeItem({ key: "settings", label: "设置", action: "settings" }));
+      if (connectionDock && connectionToggle) tools.appendChild(connectionDock);
       return true;
     }
 
@@ -20748,7 +20780,7 @@ utils.encode = function encode(arr, enc) {
       const local = ranked(allItems());
       const candidates = uniqueMedia(primary.concat(fallback, local));
       const hasBackdrop = (item) => !!(item && (item.landscape || item.backdrop || item.backdropUrl || item.backdropPath || item.backdrop_path));
-      return candidates.filter(hasBackdrop).concat(candidates.filter((item) => !hasBackdrop(item))).slice(0, 6);
+      return candidates.filter(hasBackdrop).concat(candidates.filter((item) => !hasBackdrop(item))).slice(0, 10);
     }
 
     const HOME_HERO_AUTOPLAY_MS = 5000;
@@ -20984,7 +21016,7 @@ utils.encode = function encode(arr, enc) {
     function focusColdHomeHeroIfReady() {
       const home = state.homeV14;
       if (!home || !home.coldHomeFocusPending || !isTvLikeDevice() || !isHomeRouteActive()) return false;
-      const target = $("homeHeroAction");
+      const target = $("homeSearchLauncher");
       if (!isVisibleFocusable(target)) return false;
       const active = document.activeElement;
       const fallbackTarget = home.coldHomeFallbackTarget;
@@ -22671,7 +22703,7 @@ utils.encode = function encode(arr, enc) {
 
     function coldHomeInitialFocus() {
       if (focusScopeRoot() !== document || !isHomeRouteActive() || !isTvLikeDevice()) return null;
-      const target = $("homeHeroAction");
+      const target = $("homeSearchLauncher");
       return isVisibleFocusable(target) ? target : null;
     }
 
@@ -22686,9 +22718,9 @@ utils.encode = function encode(arr, enc) {
       const wantsColdHome = !state.remoteInitialFocused && isHomeRouteActive() && isTvLikeDevice();
       const coldTarget = wantsColdHome ? coldHomeInitialFocus() : null;
       if (wantsColdHome && state.homeV14.coldHomeFocusPending && !coldTarget && !opts.allowHomeFallback) return;
-      // Do not briefly focus the Hot header while Home is still preparing its
-      // Hero.  A late initial-focus timer may opt into a non-Hero fallback if
-      // the data source really produced no Hero candidate.
+      // Do not briefly focus a Home content target while the initial Home
+      // presentation is still preparing.  A late initial-focus timer may opt
+      // into a fallback only when the data source really produced no target.
       if (wantsColdHome && !coldTarget && !opts.allowHomeFallback) return;
       if (wantsColdHome && !coldTarget && opts.allowHomeFallback) {
         state.homeV14.coldHomeFallbackTarget = initialHomeFocus() || firstContentFocus() || null;
@@ -22699,9 +22731,9 @@ utils.encode = function encode(arr, enc) {
       state.homeV14.initialHomeFocusPending = true;
       requestAnimationFrame(() => {
         try {
-          // The Hero may have become ready between the fallback timer and
-          // this frame.  Never let the queued Hot fallback overwrite it.
-          if (wantsColdHome && document.activeElement === $("homeHeroAction")) return;
+          // The launcher may have become ready between the fallback timer and
+          // this frame.  Never let the queued fallback overwrite it.
+          if (wantsColdHome && document.activeElement === $("homeSearchLauncher")) return;
           focusRemoteTarget(target);
         }
         finally { state.homeV14.initialHomeFocusPending = false; }
@@ -22763,7 +22795,7 @@ utils.encode = function encode(arr, enc) {
 
     function initialHomeFocus() {
       if (focusScopeRoot() !== document) return null;
-      if (isHomeRouteActive() && isVisibleFocusable($("homeHeroAction"))) return $("homeHeroAction");
+      if (isHomeRouteActive() && isVisibleFocusable($("homeSearchLauncher"))) return $("homeSearchLauncher");
       return firstContentFocus();
     }
 
