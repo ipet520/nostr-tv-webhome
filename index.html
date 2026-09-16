@@ -16845,8 +16845,6 @@ utils.encode = function encode(arr, enc) {
       tvFullscreen: false,
       detailReturn: null,
       detailPreload: null,
-      detailDirectPreparation: null,
-      detailPlayIntent: null,
       detailEpisodeTarget: null,
       historyResume: null,
       homeReturn: null,
@@ -19381,7 +19379,6 @@ utils.encode = function encode(arr, enc) {
       pan.sessionTerminal = true;
       pan.sessionTerminalReason = String(reason || phase);
       endPanSearchSession(pan.sessionTerminalReason);
-      syncDetailDirectPreparation("session_terminal");
       if (opts.render !== false && isPanSearchActive()) {
         renderPanResults();
         scheduleUiSnapshotSave();
@@ -20048,11 +20045,6 @@ utils.encode = function encode(arr, enc) {
     }
 
     function beginDetailPreload(item) {
-      // 主详情页现在由唯一的 Direct preparation 负责资源准备。
-      // 旧入口仅保留给没有该详情 Direct 生命周期的其他/旧场景；
-      // 同一影片已有 Direct task 时必须复用，不能再启动 preload 搜索。
-      const directTask = detailDirectPreparationTaskFor(item);
-      if (directTask) return directTask;
       const key = detailPreloadKeyFor(item);
       if (!key) return null;
       const current = state.detailPreload;
@@ -20071,133 +20063,6 @@ utils.encode = function encode(arr, enc) {
       return task;
     }
 
-    function detailDirectPreparationKeyFor(item) {
-      if (!item || (item.mediaType !== "tv" && item.mediaType !== "movie")) return "";
-      const keyword = panKeyword(item);
-      return keyword ? `${panSearchItemKey(item)}|${keyword}` : "";
-    }
-
-    function clearDetailPlayIntent(reason) {
-      if (!state.detailPlayIntent) return false;
-      state.detailPlayIntent = null;
-      return true;
-    }
-
-    function clearDetailDirectPreparation(reason) {
-      const hadPreparation = !!state.detailDirectPreparation;
-      state.detailDirectPreparation = null;
-      clearDetailPlayIntent(reason || "detail_preparation_cleared");
-      return hadPreparation;
-    }
-
-    function detailDirectPreparationFor(item) {
-      const entry = state.detailDirectPreparation;
-      if (!entry || !item || entry.item !== item || entry.itemKey !== panSearchItemKey(item)) return null;
-      const lifecycle = getPanSearchLifecycleFor(item);
-      if (!lifecycle.sameSession
-        || Number(lifecycle.sessionId || 0) !== Number(entry.sessionId || 0)
-        || String(state.pan.viewToken || "") !== String(entry.viewToken || "")) return null;
-      return { entry, lifecycle };
-    }
-
-    function detailDirectPreparationTaskFor(item) {
-      const entry = state.detailDirectPreparation;
-      if (!entry || !item || entry.item !== item || entry.itemKey !== panSearchItemKey(item)) return null;
-      return entry.task || null;
-    }
-
-    function beginDetailDirectPreparation(item) {
-      const key = detailDirectPreparationKeyFor(item);
-      if (!key || state.selected !== item) return null;
-      const current = state.detailDirectPreparation;
-      if (current && current.key === key && current.task) return current.task;
-      clearDetailDirectPreparation("new_detail_direct_preparation");
-      const entry = {
-        key,
-        item,
-        itemKey: panSearchItemKey(item),
-        task: null,
-        sessionId: 0,
-        viewToken: "",
-        initialSettled: false
-      };
-      state.detailDirectPreparation = entry;
-      const task = searchPanResources(item, {
-        silent: true,
-        mode: "direct",
-        origin: "direct",
-        forceNewSession: true
-      });
-      entry.sessionId = Number(state.pan.sessionId || 0);
-      entry.viewToken = String(state.pan.viewToken || "");
-      entry.task = Promise.resolve(task).catch(() => {});
-      entry.task.then(() => {
-        if (state.detailDirectPreparation !== entry) return;
-        entry.initialSettled = true;
-        syncDetailDirectPreparation("initial_settled");
-      });
-      return entry.task;
-    }
-
-    function rememberDetailPlayIntent(item) {
-      const current = detailDirectPreparationFor(item);
-      if (!current || !current.lifecycle.active) return false;
-      const existing = state.detailPlayIntent;
-      if (existing && existing.item === item
-        && Number(existing.sessionId || 0) === Number(current.lifecycle.sessionId || 0)
-        && String(existing.viewToken || "") === String(state.pan.viewToken || "")) return true;
-      state.detailPlayIntent = {
-        item,
-        itemKey: panSearchItemKey(item),
-        sessionId: Number(current.lifecycle.sessionId || 0),
-        viewToken: String(state.pan.viewToken || ""),
-        at: Date.now()
-      };
-      return true;
-    }
-
-    function detailPreparationFailureMessage(lifecycle) {
-      const kind = String(lifecycle && lifecycle.failureKind || "");
-      return lifecycle && (lifecycle.transportExhausted || panRequestFailureIsRetryable(kind))
-        ? "连接失败，请手动重试"
-        : "暂无可播放资源，可使用聚搜或盘搜";
-    }
-
-    function syncDetailDirectPreparation(reason) {
-      const intent = state.detailPlayIntent;
-      if (!intent) return false;
-      const detail = $("detailSheet");
-      if (!detail || !detail.classList.contains("active")) {
-        clearDetailPlayIntent(reason || "detail_inactive");
-        return false;
-      }
-      const item = state.selected;
-      const current = detailDirectPreparationFor(item);
-      if (!current || intent.item !== item
-        || intent.itemKey !== panSearchItemKey(item)
-        || Number(intent.sessionId || 0) !== Number(current.lifecycle.sessionId || 0)
-        || String(intent.viewToken || "") !== String(state.pan.viewToken || "")) {
-        clearDetailPlayIntent(reason || "detail_preparation_replaced");
-        return false;
-      }
-      const lifecycle = current.lifecycle;
-      if (lifecycle.qbCount > 0) {
-        clearDetailPlayIntent("qb_ready");
-        if (typeof _directPlayPending !== "undefined" && _directPlayPending) return false;
-        playBestQuark(item, {
-          detailPrimary: true,
-          suppressAutoPan: true,
-          forceFreshDirect: false
-        }).catch(() => {});
-        return true;
-      }
-      if (lifecycle.terminal) {
-        clearDetailPlayIntent("preparation_terminal");
-        toast(detailPreparationFailureMessage(lifecycle));
-      }
-      return false;
-    }
-
     function detailPreloadPendingFor(item) {
       const key = detailPreloadKeyFor(item);
       return !!(key && state.detailPreload && state.detailPreload.key === key && state.detailPreload.pending);
@@ -20206,13 +20071,7 @@ utils.encode = function encode(arr, enc) {
     function detailDirectPlayReadyFor(item) {
       if (!item) return false;
       const lifecycle = getPanSearchLifecycleFor(item);
-      return !!(lifecycle.sameSession && lifecycle.qbCount > 0);
-    }
-
-    function detailPlayPreparationPendingFor(item) {
-      if (!item) return false;
-      const lifecycle = getPanSearchLifecycleFor(item);
-      return !!(lifecycle.sameSession && lifecycle.active);
+      return !!(lifecycle.sameSession && lifecycle.origin === "direct" && lifecycle.qbCount > 0);
     }
 
     function handleDetailPrimaryAction() {
@@ -20224,22 +20083,9 @@ utils.encode = function encode(arr, enc) {
         return;
       }
       if (!item) return;
-      if (typeof _directPlayPending !== "undefined" && _directPlayPending && _directPlayPending.item === item) return;
-      const lifecycle = getPanSearchLifecycleFor(item);
-      const hasCurrentQuarkOrBaidu = lifecycle.sameSession && lifecycle.qbCount > 0;
-      if (!hasCurrentQuarkOrBaidu && detailPlayPreparationPendingFor(item)) {
-        rememberDetailPlayIntent(item);
-        toast("资源正在准备，请稍候");
-        return;
-      }
-      // Ready 只负责 UI 指示；显式点击“播放”始终回到既有 Direct 播放链。
-      // 当前生命周期有可播候选时复用；终止或没有当前生命周期时才创建新的 Direct session。
-      clearDetailPlayIntent("explicit_play");
-      playBestQuark(item, {
-        detailPrimary: true,
-        suppressAutoPan: true,
-        forceFreshDirect: !hasCurrentQuarkOrBaidu
-      });
+      // 播放/准备统一由同一个 playBestQuark action 处理；若当前是
+      // prepareOnly action，由 playBestQuark 内部记录 playRequested 并继续等待。
+      playBestQuark(item, { detailPrimary: true, suppressAutoPan: true });
     }
 
     function updateDetailContinueButton() {
@@ -26575,10 +26421,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const opts = options || {};
       const detailWasActive = $("detailSheet") && $("detailSheet").classList.contains("active");
       const sameSelected = state.selected === item;
-      if (state.selected && state.selected !== item) clearDirectPlayStatus(0, "selected_change");
+      if (state.selected && state.selected !== item) {
+        clearDirectPlayStatus(0, "selected_change");
+        cancelPendingDirectPlay("selected_change");
+      }
       if (!detailWasActive || !sameSelected || !opts.keepPan) {
         state.detailPreload = null;
-        clearDetailDirectPreparation("detail_open_reset");
       }
       if (!opts.historyResume) state.historyResume = null;
       if (opts.episodeTarget || opts.historyContext) setDetailPlaybackTarget(item, opts.episodeTarget || opts.historyContext);
@@ -26589,7 +26437,11 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (!opts.keepPan) resetPanSearch();
       // 详情生命周期建立后立即启动唯一的 Direct 准备任务；详情请求与
       // Direct 资源搜索并行。该任务只准备结果，不执行播放或打开盘搜页。
-      beginDetailDirectPreparation(item);
+      playBestQuark(item, {
+        detailPrimary: true,
+        suppressAutoPan: true,
+        prepareOnly: true
+      }).catch(() => {});
       ensureSheetViewport($("detailSheet"));
       syncDetailLayout();
       document.body.classList.add("detail-active");
@@ -27023,13 +26875,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       scheduleDetailTextClamp();
       renderDetailCoverFromDetail(item, detail);
       renderCast(detail.credits && detail.credits.cast || []);
-      const directPreparationTask = detailDirectPreparationTaskFor(item);
       if (item.mediaType === "tv") {
         renderSeasons(item, detail);
       }
       if (state.historyResume && state.historyResume.mediaKey === mediaDomKey(item)
         && state.historyResume.autoResume !== false) {
-        resumePanHistoryPlayback(item, state.historyResume, directPreparationTask).catch(() => {});
+        resumePanHistoryPlayback(item, state.historyResume).catch(() => {});
       }
       loadRecommendations(item);
       normalizeRails();
@@ -27932,7 +27783,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
     function resetPanSearchState(hideBlock, options) {
       const opts = options || {};
-      clearDetailPlayIntent(opts.reason || "pan_session_reset");
       const preserveResults = !!opts.preserveResults;
       const preserveHealth = !!opts.preserveHealth;
       const preserveFocus = !!opts.preserveFocus;
@@ -28486,19 +28336,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return String(item && item.title || "").trim();
     }
 
-    // 兼容旧的分集预热入口：不参与详情主播放准备。
-    // 当前详情项已有 Direct preparation 时只等待同一 Promise；其他旧场景
-    // 仍保留原来的静默预热行为，不弹盘搜页、不抢焦点。
+    // 进入剧集（tv）详情页即后台静默预搜盘搜资源，缩短点击分集后的等待时间。
+    // 仅预加载、不弹盘搜页、不抢焦点；点击分集时若已有同剧结果会直接复用
+    // （见 playEpisodeViaPan 的 sameSeries 判断），播放判断逻辑保持不变。
     async function preloadPanForSeries(item) {
       if (!item || (item.mediaType !== "tv" && item.mediaType !== "movie")) return;  // 剧集 + 电影
       if (state.selected !== item) return;              // 详情页已切走则放弃
-      // 当前详情项的主资源准备已经统一为 Direct lifecycle。
-      // 旧分集预热 API 仍保留，但不能为同一详情项再创建 preload lifecycle。
-      const directTask = detailDirectPreparationTaskFor(item);
-      if (directTask) {
-        await directTask;
-        return;
-      }
       const keyword = panKeyword(item);
       if (!keyword) return;
       const warm = () => (item.mediaType === "movie" ? warmMoviePanHealth(item) : warmEpisodePanHealth(item));
@@ -28723,6 +28566,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     function panDirectPlayCancelReason(action) {
       if (!action) return "action_replaced";
       if (_directPlayPending !== action || action.token !== _directPlayPending.token) return "action_replaced";
+      if (action.cancelReason) return action.cancelReason;
       if (state.selected !== action.item) return "selected_changed";
       if (action.searchStarted && state.pan.keyword && state.pan.keyword !== action.keyword) return "keyword_replaced";
       if (action.viewTokenBound && state.pan.viewToken !== action.viewToken) {
@@ -29007,7 +28851,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     function suppressDirectPlayPanFallback(action, message) {
       if (!action || !action.suppressAutoPan) return false;
       clearDirectPlayStatus(action.token, "detail_primary_no_source");
-      if (message) toast(message);
+      // 纯 prepareOnly 失败保持静默；只有用户明确按过播放，
+      // 才向用户报告失败，且不打开第二套盘搜流程。
+      if (!action.prepareOnly || action.playRequested) {
+        if (message) toast(message);
+      }
+      action.playRequested = false;
       return true;
     }
 
@@ -29017,13 +28866,31 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     let _directPlayActionSeq = 0;
     let _directPlayPending = null;
 
+    function cancelPendingDirectPlay(reason) {
+      const action = typeof _directPlayPending !== "undefined" ? _directPlayPending : null;
+      if (!action) return false;
+      action.playRequested = false;
+      action.cancelReason = String(reason || "direct_play_cancelled");
+      return true;
+    }
+
     async function playBestQuark(item, options) {
       if (!item) return;
       const opts = options || {};
       if (_directPlayPending) {
-        if (_directPlayPending.item === item) return _directPlayPending.promise;
+        if (_directPlayPending.item === item) {
+          // 详情进入时的 prepareOnly 与用户点击必须共享同一个 action。
+          // 这里只改变当前 action 的意图，不创建新的搜索/session。
+          if (_directPlayPending.prepareOnly && !_directPlayPending.playRequested && !opts.prepareOnly) {
+            _directPlayPending.playRequested = true;
+            isRepeatClickWithinWindow(`qb:${item.tmdbId || item.title}`);
+            toast("资源正在准备，请稍候");
+          }
+          return _directPlayPending.promise;
+        }
         if (state.selected === _directPlayPending.item) return _directPlayPending.promise;
       }
+      const prepareOnly = !!opts.prepareOnly;
       const action = {
         item,
         token: ++_directPlayActionSeq,
@@ -29041,6 +28908,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         newInitialAttemptCount: null,
         detailPrimary: !!opts.detailPrimary,
         suppressAutoPan: !!opts.suppressAutoPan,
+        prepareOnly,
+        playRequested: !prepareOnly,
         forceFreshDirect: !!opts.forceFreshDirect,
         startedAt: Date.now(),
         waitStartedAt: Date.now(),
@@ -29048,10 +28917,13 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         promise: null
       };
       _directPlayPending = action;
-      showDirectPlayStatus(action.token, "SEARCHING", DIRECT_PLAY_STATUS_TEXT.SEARCHING, "play_click");
+      showDirectPlayStatus(action.token, "SEARCHING", DIRECT_PLAY_STATUS_TEXT.SEARCHING, prepareOnly ? "detail_prepare" : "play_click");
       action.promise = (async () => {
         const keyword = action.keyword;
-        if (!keyword || !panDirectPlayActionIsCurrent(action)) return;
+        if (!keyword || !panDirectPlayActionIsCurrent(action)) {
+          action.playRequested = false;
+          return;
+        }
         let lifecycle = getPanSearchLifecycleFor(item);
         action.oldSession = {
           sessionId: Number(lifecycle.sessionId || 0),
@@ -29069,28 +28941,34 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         }
         recordPanDirectPlayDiag("CLICK", item, lifecycle, action.startedAt, null, action);
         const currentCounts = panDirectPlayResultCounts(state.pan.results);
-        let hasCurrentQuarkOrBaidu = lifecycle.sameSession && (currentCounts.quarkCount > 0 || currentCounts.baiduCount > 0);
+        const currentIsDetailDirect = !action.detailPrimary || lifecycle.origin === "direct";
+        let hasCurrentQuarkOrBaidu = currentIsDetailDirect && lifecycle.sameSession
+          && (currentCounts.quarkCount > 0 || currentCounts.baiduCount > 0);
         if (hasCurrentQuarkOrBaidu) {
           action.sessionReuseDecision = "USE_EXISTING_QB";
           recordDirectPlaySessionDiag(action, action.sessionReuseDecision, lifecycle);
         }
         if (!hasCurrentQuarkOrBaidu) {
-          // A terminal/expired lifecycle may retain results, but it is never an
-          // execution source for a new Play action. Empty dead lifecycles must
-          // start a fresh Direct session instead of entering the old final branch.
+          // prepareOnly 结束后，用户再次显式播放且仍没有 QB 候选时，
+          // 才建立 fresh Direct session；prepareOnly 自身不会开启第二条搜索。
+          const explicitPlayNeedsFreshDirect = action.detailPrimary && !action.prepareOnly
+            && action.playRequested && currentIsDetailDirect;
           const shouldStartSearch = action.forceFreshDirect
+            || explicitPlayNeedsFreshDirect
             || !lifecycle.sameSession
+            || !currentIsDetailDirect
             || lifecycle.expired
-            || lifecycle.terminal && !lifecycle.hasResults
             || lifecycle.idle && !lifecycle.hasResults;
           if (shouldStartSearch) {
             action.sessionReuseDecision = "CREATE_FRESH_DIRECT";
             recordDirectPlaySessionDiag(action, action.sessionReuseDecision, lifecycle);
             toast("正在搜索资源…");
             if (state.pan.loading && state.pan.keyword !== keyword) resetPanSearchState(false);
-            if (!panDirectPlayActionIsCurrent(action)) return;
+            if (!panDirectPlayActionIsCurrent(action)) {
+              action.playRequested = false;
+              return;
+            }
             action.searchStarted = true;
-            // The action may have been bound to a terminal Preload/Direct token.
             // A fresh lifecycle must bind this action to its new view token.
             action.viewToken = "";
             action.viewTokenBound = false;
@@ -29109,7 +28987,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             recordDirectPlaySessionDiag(action, action.sessionReuseDecision, lifecycle);
           }
           const waited = await waitForPanDirectPlay(action);
-          if (waited.result === "CANCELLED" || waited.cancelled || !panDirectPlayActionIsCurrent(action)) return;
+          if (waited.result === "CANCELLED" || waited.cancelled || !panDirectPlayActionIsCurrent(action)) {
+            action.playRequested = false;
+            return;
+          }
           recordDirectPlaySessionDiag(action, action.sessionReuseDecision, waited.lifecycle || getPanSearchLifecycleFor(item));
           if (waited.result === "DIRECT_TRANSPORT_EXHAUSTED") {
             recordPanDirectPlayDiag("DIRECT_TRANSPORT_EXHAUSTED", item, waited.lifecycle || getPanSearchLifecycleFor(item), action.startedAt, null, action);
@@ -29141,7 +29022,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             return;
           }
         }
-        if (!panDirectPlayActionIsCurrent(action)) return;
+        if (!panDirectPlayActionIsCurrent(action)) {
+          action.playRequested = false;
+          return;
+        }
         lifecycle = getPanSearchLifecycleFor(item);
         if (hasCurrentQuarkOrBaidu) {
           recordPanDirectHandoffStage("FOUND_QB", item, action, { foundFromCurrentLifecycle: true });
@@ -29151,10 +29035,14 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         // 1 分钟内重复点击同一部 → 排名前 5 的夸克/百度资源里随机换一个；
         // 首次点击 / 超过 1 分钟 → 固定取排名第 1
         const clickKey = `qb:${item.tmdbId || item.title}`;
-        const isRepeat = isRepeatClickWithinWindow(clickKey);
+        // 自动 prepareOnly 不是用户点击，不能污染手动播放的重复点击窗口。
+        const isRepeat = action.prepareOnly ? false : isRepeatClickWithinWindow(clickKey);
         recordPanDirectHandoffStage("PICK_START", item, action, { repeatClick: !!isRepeat });
         const pick = await pickQuarkBaiduTop5(item, isRepeat, action);
-        if (!panDirectPlayActionIsCurrent(action)) return;
+        if (!panDirectPlayActionIsCurrent(action)) {
+          action.playRequested = false;
+          return;
+        }
         const after = panDirectPlayCandidateSummary(item);
         recordPanDirectPlayDiag("CANDIDATE_AFTER", item, getPanSearchLifecycleFor(item), action.startedAt, Object.assign(after, { selectedCandidate: panDirectPlayCandidateLabel(pick) }), action);
         if (!pick) {
@@ -29163,7 +29051,15 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           openPanForDirectPlay(item, "播放资源不可用，打开盘搜", { actionId: action.token });
           return;
         }
+        if (action.prepareOnly && !action.playRequested) {
+          // 自动准备只把同一 lifecycle 留在 Ready 状态，绝不自动交给原生播放器。
+          clearDirectPlayStatus(action.token, "prepare_only_ready");
+          updateDetailContinueButton();
+          return;
+        }
         if (isRepeat) toast(`已换源 · ${panDiskName(pick.diskType)}`);
+        // 播放开始前消费一次性请求，避免后续状态刷新重复触发播放。
+        action.playRequested = false;
         await playPanResult(pick, { prechecked: true, handoffAction: action });
       })();
       try {
@@ -29319,7 +29215,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (state.selected && $("detailSheet") && $("detailSheet").classList.contains("active")) {
         updateDetailContinueButton();
       }
-      syncDetailDirectPreparation("results_updated");
       scheduleUiSnapshotSave();
       return state.pan.results;
     }
@@ -30367,11 +30262,11 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       try {
         const pan = sdk().pan || {};
         if (!pan.play) throw new Error("当前 App 不支持 pan.play");
-        clearDetailPlayIntent("play_started");
         // 用 localStorage 持久化标记，WebView 被挂起后 JS 内存会丢失
         // 但 localStorage 会保留，visibilitychange/pageshow/fmresume 恢复时可以读到
         localStorage.setItem("fm_pan_playing", "1");
         state.pan.isPlaying = true;
+        cancelPendingDirectPlay("play_started");
         const result = pan.play(payload);  // 不 await，原生接管后 Promise 可能永不 resolve
         if (opts.handoffAction) recordPanDirectHandoffStage("PAN_PLAY_CALLED", selectedItem, opts.handoffAction, { panPlayReturnedThenable: !!(result && typeof result.then === "function") });
         if (result && typeof result.catch === "function") {
@@ -30416,7 +30311,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const sheet = $("detailSheet");
       if (!sheet) return;
       clearDirectPlayStatus(0, "route_leave");
-      clearDetailDirectPreparation("detail_closed");
+      cancelPendingDirectPlay("detail_closed");
       // 防止动画期间重复触发
       if (sheet.classList.contains("sheet-closing")) return;
 
