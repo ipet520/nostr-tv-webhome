@@ -16845,6 +16845,8 @@ utils.encode = function encode(arr, enc) {
       tvFullscreen: false,
       detailReturn: null,
       detailPreload: null,
+      detailDirectPreparation: null,
+      detailPlayIntent: null,
       detailEpisodeTarget: null,
       historyResume: null,
       homeReturn: null,
@@ -19379,6 +19381,7 @@ utils.encode = function encode(arr, enc) {
       pan.sessionTerminal = true;
       pan.sessionTerminalReason = String(reason || phase);
       endPanSearchSession(pan.sessionTerminalReason);
+      syncDetailDirectPreparation("session_terminal");
       if (opts.render !== false && isPanSearchActive()) {
         renderPanResults();
         scheduleUiSnapshotSave();
@@ -20063,6 +20066,133 @@ utils.encode = function encode(arr, enc) {
       return task;
     }
 
+    function detailDirectPreparationKeyFor(item) {
+      if (!item || (item.mediaType !== "tv" && item.mediaType !== "movie")) return "";
+      const keyword = panKeyword(item);
+      return keyword ? `${panSearchItemKey(item)}|${keyword}` : "";
+    }
+
+    function clearDetailPlayIntent(reason) {
+      if (!state.detailPlayIntent) return false;
+      state.detailPlayIntent = null;
+      return true;
+    }
+
+    function clearDetailDirectPreparation(reason) {
+      const hadPreparation = !!state.detailDirectPreparation;
+      state.detailDirectPreparation = null;
+      clearDetailPlayIntent(reason || "detail_preparation_cleared");
+      return hadPreparation;
+    }
+
+    function detailDirectPreparationFor(item) {
+      const entry = state.detailDirectPreparation;
+      if (!entry || !item || entry.item !== item || entry.itemKey !== panSearchItemKey(item)) return null;
+      const lifecycle = getPanSearchLifecycleFor(item);
+      if (!lifecycle.sameSession
+        || Number(lifecycle.sessionId || 0) !== Number(entry.sessionId || 0)
+        || String(state.pan.viewToken || "") !== String(entry.viewToken || "")) return null;
+      return { entry, lifecycle };
+    }
+
+    function detailDirectPreparationTaskFor(item) {
+      const entry = state.detailDirectPreparation;
+      if (!entry || !item || entry.item !== item || entry.itemKey !== panSearchItemKey(item)) return null;
+      return entry.task || null;
+    }
+
+    function beginDetailDirectPreparation(item) {
+      const key = detailDirectPreparationKeyFor(item);
+      if (!key || state.selected !== item) return null;
+      const current = state.detailDirectPreparation;
+      if (current && current.key === key && current.task) return current.task;
+      clearDetailDirectPreparation("new_detail_direct_preparation");
+      const entry = {
+        key,
+        item,
+        itemKey: panSearchItemKey(item),
+        task: null,
+        sessionId: 0,
+        viewToken: "",
+        initialSettled: false
+      };
+      state.detailDirectPreparation = entry;
+      const task = searchPanResources(item, {
+        silent: true,
+        mode: "direct",
+        origin: "direct",
+        forceNewSession: true
+      });
+      entry.sessionId = Number(state.pan.sessionId || 0);
+      entry.viewToken = String(state.pan.viewToken || "");
+      entry.task = Promise.resolve(task).catch(() => {});
+      entry.task.then(() => {
+        if (state.detailDirectPreparation !== entry) return;
+        entry.initialSettled = true;
+        syncDetailDirectPreparation("initial_settled");
+      });
+      return entry.task;
+    }
+
+    function rememberDetailPlayIntent(item) {
+      const current = detailDirectPreparationFor(item);
+      if (!current || !current.lifecycle.active) return false;
+      const existing = state.detailPlayIntent;
+      if (existing && existing.item === item
+        && Number(existing.sessionId || 0) === Number(current.lifecycle.sessionId || 0)
+        && String(existing.viewToken || "") === String(state.pan.viewToken || "")) return true;
+      state.detailPlayIntent = {
+        item,
+        itemKey: panSearchItemKey(item),
+        sessionId: Number(current.lifecycle.sessionId || 0),
+        viewToken: String(state.pan.viewToken || ""),
+        at: Date.now()
+      };
+      return true;
+    }
+
+    function detailPreparationFailureMessage(lifecycle) {
+      const kind = String(lifecycle && lifecycle.failureKind || "");
+      return lifecycle && (lifecycle.transportExhausted || panRequestFailureIsRetryable(kind))
+        ? "连接失败，请手动重试"
+        : "暂无可播放资源，可使用聚搜或盘搜";
+    }
+
+    function syncDetailDirectPreparation(reason) {
+      const intent = state.detailPlayIntent;
+      if (!intent) return false;
+      const detail = $("detailSheet");
+      if (!detail || !detail.classList.contains("active")) {
+        clearDetailPlayIntent(reason || "detail_inactive");
+        return false;
+      }
+      const item = state.selected;
+      const current = detailDirectPreparationFor(item);
+      if (!current || intent.item !== item
+        || intent.itemKey !== panSearchItemKey(item)
+        || Number(intent.sessionId || 0) !== Number(current.lifecycle.sessionId || 0)
+        || String(intent.viewToken || "") !== String(state.pan.viewToken || "")) {
+        clearDetailPlayIntent(reason || "detail_preparation_replaced");
+        return false;
+      }
+      const lifecycle = current.lifecycle;
+      if (lifecycle.qbCount > 0) {
+        clearDetailPlayIntent("qb_ready");
+        if (typeof _directPlayPending !== "undefined" && _directPlayPending) return false;
+        playBestQuark(item, {
+          detailPrimary: true,
+          suppressAutoPan: true,
+          forceFreshDirect: false
+        }).catch(() => {});
+        return true;
+      }
+      if (lifecycle.terminal) {
+        clearDetailPlayIntent("preparation_terminal");
+        toast(detailPreparationFailureMessage(lifecycle));
+      }
+      return false;
+    }
+
     function detailPreloadPendingFor(item) {
       const key = detailPreloadKeyFor(item);
       return !!(key && state.detailPreload && state.detailPreload.key === key && state.detailPreload.pending);
@@ -20077,7 +20207,7 @@ utils.encode = function encode(arr, enc) {
     function detailPlayPreparationPendingFor(item) {
       if (!item) return false;
       const lifecycle = getPanSearchLifecycleFor(item);
-      return detailPreloadPendingFor(item) || !!(lifecycle.sameSession && lifecycle.active);
+      return !!(lifecycle.sameSession && lifecycle.active);
     }
 
     function handleDetailPrimaryAction() {
@@ -20089,17 +20219,21 @@ utils.encode = function encode(arr, enc) {
         return;
       }
       if (!item) return;
-      const ready = detailDirectPlayReadyFor(item);
-      if (!ready && detailPlayPreparationPendingFor(item)) {
+      if (typeof _directPlayPending !== "undefined" && _directPlayPending && _directPlayPending.item === item) return;
+      const lifecycle = getPanSearchLifecycleFor(item);
+      const hasCurrentQuarkOrBaidu = lifecycle.sameSession && lifecycle.qbCount > 0;
+      if (!hasCurrentQuarkOrBaidu && detailPlayPreparationPendingFor(item)) {
+        rememberDetailPlayIntent(item);
         toast("资源正在准备，请稍候");
         return;
       }
       // Ready 只负责 UI 指示；显式点击“播放”始终回到既有 Direct 播放链。
-      // 预加载终止但无夸克/百度时，要求 playBestQuark 创建新的 Direct session。
+      // 当前生命周期有可播候选时复用；终止或没有当前生命周期时才创建新的 Direct session。
+      clearDetailPlayIntent("explicit_play");
       playBestQuark(item, {
         detailPrimary: true,
         suppressAutoPan: true,
-        forceFreshDirect: !ready
+        forceFreshDirect: !hasCurrentQuarkOrBaidu
       });
     }
 
@@ -26437,7 +26571,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const detailWasActive = $("detailSheet") && $("detailSheet").classList.contains("active");
       const sameSelected = state.selected === item;
       if (state.selected && state.selected !== item) clearDirectPlayStatus(0, "selected_change");
-      if (!detailWasActive || !sameSelected || !opts.keepPan) state.detailPreload = null;
+      if (!detailWasActive || !sameSelected || !opts.keepPan) {
+        state.detailPreload = null;
+        clearDetailDirectPreparation("detail_open_reset");
+      }
       if (!opts.historyResume) state.historyResume = null;
       if (opts.episodeTarget || opts.historyContext) setDetailPlaybackTarget(item, opts.episodeTarget || opts.historyContext);
       else if (!sameSelected && !opts.restore) state.detailEpisodeTarget = null;
@@ -26445,8 +26582,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       state.selected = item;
       state.detail = null;
       if (!opts.keepPan) resetPanSearch();
-      // 详情生命周期建立后立即复用现有静默盘搜预加载；详情请求与盘搜并行。
-      beginDetailPreload(item);
+      // 详情生命周期建立后立即启动唯一的 Direct 准备任务；详情请求与
+      // Direct 资源搜索并行。该任务只准备结果，不执行播放或打开盘搜页。
+      beginDetailDirectPreparation(item);
       ensureSheetViewport($("detailSheet"));
       syncDetailLayout();
       document.body.classList.add("detail-active");
@@ -26880,16 +27018,13 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       scheduleDetailTextClamp();
       renderDetailCoverFromDetail(item, detail);
       renderCast(detail.credits && detail.credits.cast || []);
-      let preloadTask = null;
+      const directPreparationTask = detailDirectPreparationTaskFor(item);
       if (item.mediaType === "tv") {
         renderSeasons(item, detail);
-        preloadTask = beginDetailPreload(item);    // 复用 openDetail 已启动的同一份预加载 Promise
-      } else if (item.mediaType === "movie") {
-        preloadTask = beginDetailPreload(item);    // 复用 openDetail 已启动的同一份预加载 Promise
       }
       if (state.historyResume && state.historyResume.mediaKey === mediaDomKey(item)
         && state.historyResume.autoResume !== false) {
-        resumePanHistoryPlayback(item, state.historyResume, preloadTask).catch(() => {});
+        resumePanHistoryPlayback(item, state.historyResume, directPreparationTask).catch(() => {});
       }
       loadRecommendations(item);
       normalizeRails();
@@ -27792,6 +27927,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
     function resetPanSearchState(hideBlock, options) {
       const opts = options || {};
+      clearDetailPlayIntent(opts.reason || "pan_session_reset");
       const preserveResults = !!opts.preserveResults;
       const preserveHealth = !!opts.preserveHealth;
       const preserveFocus = !!opts.preserveFocus;
@@ -29171,6 +29307,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (state.selected && $("detailSheet") && $("detailSheet").classList.contains("active")) {
         updateDetailContinueButton();
       }
+      syncDetailDirectPreparation("results_updated");
       scheduleUiSnapshotSave();
       return state.pan.results;
     }
@@ -30218,6 +30355,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       try {
         const pan = sdk().pan || {};
         if (!pan.play) throw new Error("当前 App 不支持 pan.play");
+        clearDetailPlayIntent("play_started");
         // 用 localStorage 持久化标记，WebView 被挂起后 JS 内存会丢失
         // 但 localStorage 会保留，visibilitychange/pageshow/fmresume 恢复时可以读到
         localStorage.setItem("fm_pan_playing", "1");
@@ -30266,6 +30404,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const sheet = $("detailSheet");
       if (!sheet) return;
       clearDirectPlayStatus(0, "route_leave");
+      clearDetailDirectPreparation("detail_closed");
       // 防止动画期间重复触发
       if (sheet.classList.contains("sheet-closing")) return;
 
