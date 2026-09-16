@@ -6345,7 +6345,11 @@
       right: 0;
       bottom: clamp(18px, 3vh, 38px);
       left: 0;
-      height: clamp(254px, 31vh, 340px);
+      /* Keep the horizontal scrollport taller than the card plus its Home
+         focus lift.  The card remains bottom-aligned; the extra area is
+         only vertical paint headroom so the raised poster is not clipped by
+         the scroll container. */
+      height: calc(clamp(254px, 31vh, 340px) + 56px);
       overflow: visible;
     }
 
@@ -6428,7 +6432,8 @@
       z-index: 7;
       outline: none;
       border: 0 !important;
-      box-shadow: 0 5px 20px rgba(0, 0, 0, .28) !important;
+      box-shadow: none !important;
+      background: transparent !important;
       transform: translateY(-18px) translateZ(0) !important;
     }
 
