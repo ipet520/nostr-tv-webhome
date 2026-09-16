@@ -6289,10 +6289,9 @@
       overflow: hidden;
       isolation: isolate;
       background: #070a10;
-      --weekly-copy-top: clamp(120px, 20vh, 220px);
+      --weekly-copy-top: clamp(96px, 15vh, 170px);
       --weekly-rail-bottom: clamp(18px, 3vh, 38px);
       --weekly-rail-height: calc(clamp(254px, 31vh, 340px) + 56px);
-      --weekly-copy-rail-gap: clamp(18px, 1.5vw, 28px);
     }
 
     .secondary-page.weekly-secondary-page .weekly-secondary-backdrop {
@@ -6368,8 +6367,7 @@
       left: clamp(22px, 3.8vw, 72px);
       width: min(560px, 43vw);
       max-width: calc(100% - 44px);
-      max-height: calc(100vh - var(--weekly-copy-top) - var(--weekly-rail-height) - var(--weekly-rail-bottom) - var(--weekly-copy-rail-gap));
-      overflow: hidden;
+      overflow: visible;
       color: #fff;
       text-shadow: 0 2px 16px rgba(0, 0, 0, .42);
     }
