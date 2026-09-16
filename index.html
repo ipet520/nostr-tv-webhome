@@ -5601,24 +5601,27 @@
     }
 
     .home-hero-action {
-      min-height: 48px;
-      padding: 0 22px;
+      min-height: 0;
+      padding: 0;
       border: 0;
-      border-radius: 999px;
-      background: #fff;
-      color: #111;
+      border-radius: 0;
+      background: transparent;
+      color: rgba(255, 255, 255, .9);
       font-size: clamp(14px, .95vw, 18px);
-      font-weight: 700;
-      transition: transform 160ms ease, background-color 160ms ease;
+      font-weight: 600;
+      line-height: 1.35;
+      text-shadow: 0 1px 10px rgba(0, 0, 0, .28);
+      transition: color 160ms ease, opacity 160ms ease;
     }
 
     .home-hero-action:focus {
       outline: none;
       outline-offset: 0;
-      background: rgba(191, 233, 255, .96);
-      color: #06111b;
-      box-shadow: 0 0 0 2px rgba(191, 233, 255, .22), 0 6px 18px rgba(0, 0, 0, .22);
-      transform: translateY(-2px);
+      border: 0;
+      background: transparent;
+      color: rgba(255, 255, 255, .9);
+      box-shadow: none;
+      transform: none;
     }
 
     .home-hero-dots {
@@ -6769,17 +6772,16 @@
       text-align: center !important;
     }
 
-    /* Hero CTA is the only focused visual hint.  Keep this after the shared
-       TV control reset so the Hero presentation never becomes a rectangle. */
+    /* The Hero detail copy is a non-focusable, lightweight hint. */
     html.tv-mode #home.home-root .home-hero-action:focus,
     html.tv-preview #home.home-root .home-hero-action:focus {
       outline: 0 !important;
       outline-offset: 0 !important;
       border: 0 !important;
-      box-shadow: 0 0 0 2px rgba(191, 233, 255, .22), 0 6px 18px rgba(0, 0, 0, .22) !important;
-      background: rgba(191, 233, 255, .96) !important;
-      color: #06111b !important;
-      transform: translateY(-2px) !important;
+      box-shadow: none !important;
+      background: transparent !important;
+      color: rgba(255, 255, 255, .9) !important;
+      transform: none !important;
     }
 
   </style>
@@ -7011,7 +7013,7 @@
       <div class="rail" id="searchRail"></div>
     </section>
 
-    <section class="home-hero" id="homeHero" aria-labelledby="homeHeroTitle">
+    <section class="home-hero focusable" id="homeHero" role="button" tabindex="0" aria-labelledby="homeHeroTitle">
       <div class="home-hero-slides" id="homeHeroSlides" aria-live="polite"></div>
       <div class="home-hero-shade" aria-hidden="true"></div>
       <div class="home-hero-content">
@@ -7023,7 +7025,7 @@
         <div class="home-hero-meta" id="homeHeroMeta"></div>
         <div class="home-hero-status" id="homeHeroStatus" hidden></div>
         <p class="home-hero-overview" id="homeHeroOverview" hidden></p>
-        <button class="home-hero-action focusable" id="homeHeroAction" type="button">查看详情 <span aria-hidden="true">›</span></button>
+        <div class="home-hero-action" id="homeHeroAction" aria-hidden="true">查看详情 <span aria-hidden="true">›</span></div>
       </div>
       <div class="home-hero-dots" id="homeHeroDots" aria-hidden="true"></div>
     </section>
@@ -21390,7 +21392,7 @@ utils.encode = function encode(arr, enc) {
         const cards = Array.from(rail.children || []).filter((item) => item.classList && item.classList.contains("card") && canFastHomeFocus(item));
         return cards[0] === active;
       }
-      if (active === $("homeHeroAction") || active === $("homeSearchLauncher")) return true;
+      if (active === $("homeHero") || active === $("homeSearchLauncher")) return true;
       return !nearestFocusable("ArrowLeft", active);
     }
 
@@ -21924,7 +21926,7 @@ utils.encode = function encode(arr, enc) {
       clearHomeHeroAutoplayResume();
       home.heroAutoplayResumeTimer = setTimeout(() => {
         home.heroAutoplayResumeTimer = 0;
-        if (document.activeElement === $("homeHeroAction")) {
+        if (document.activeElement === $("homeHero")) {
           home.heroAutoplayPaused = true;
           return;
         }
@@ -21933,13 +21935,13 @@ utils.encode = function encode(arr, enc) {
       }, 9000);
     }
 
-    function bindHomeHeroFocus(action) {
-      if (!action || action.dataset.homeHeroFocusBound === "1") return;
-      action.dataset.homeHeroFocusBound = "1";
-      action.addEventListener("focus", () => {
+    function bindHomeHeroFocus(hero) {
+      if (!hero || hero.dataset.homeHeroFocusBound === "1") return;
+      hero.dataset.homeHeroFocusBound = "1";
+      hero.addEventListener("focus", () => {
         pauseHomeHeroAutoplay();
       });
-      action.addEventListener("blur", () => {
+      hero.addEventListener("blur", () => {
         resumeHomeHeroAutoplayLater();
       });
     }
@@ -21969,8 +21971,9 @@ utils.encode = function encode(arr, enc) {
     }
 
     function openHomeHeroDetail(event) {
+      const hero = $("homeHero");
       const action = $("homeHeroAction");
-      const item = action && action.__homeHeroItem;
+      const item = hero && hero.__homeHeroItem || action && action.__homeHeroItem;
       if (!item) return false;
       // A programmatic click from the remote-confirm path has no useful
       // keyboard event of its own.  Arm the same one-shot guard here as a
@@ -21980,7 +21983,7 @@ utils.encode = function encode(arr, enc) {
       // The Home Hero CTA is a detail entry point only.  Keep playback on the
       // existing Detail/Play path; never turn this CTA into a direct player call.
       pauseHomeHeroAutoplay();
-      openDetail(item, { returnTarget: action });
+      openDetail(item, { returnTarget: hero });
       return true;
     }
 
@@ -22057,10 +22060,11 @@ utils.encode = function encode(arr, enc) {
       const meta = $("homeHeroMeta");
       const status = $("homeHeroStatus");
       const overview = $("homeHeroOverview");
+      const hero = $("homeHero");
       const action = $("homeHeroAction");
       const logoWrap = $("homeHeroLogoWrap");
       const logo = $("homeHeroLogo");
-      if (!title || !meta || !action) return false;
+      if (!title || !meta || !action || !hero) return false;
       title.textContent = item && item.title || "正在准备首页";
       const date = detail && (detail.release_date || detail.first_air_date) || item && (item.releaseDate || item.firstAirDate) || "";
       const year = String(date).slice(0, 4);
@@ -22080,15 +22084,15 @@ utils.encode = function encode(arr, enc) {
         logo.alt = item && item.title || "";
       }
       title.classList.toggle("has-logo", !!(logoWrap && !logoWrap.hidden));
-      action.disabled = !item;
-      action.classList.toggle("focusable", !!item);
-      action.tabIndex = item ? 0 : -1;
+      hero.tabIndex = item ? 0 : -1;
+      hero.setAttribute("aria-disabled", item ? "false" : "true");
+      hero.__homeHeroItem = item;
       action.__homeHeroItem = item;
       action.dataset.homeAction = "detail";
-      bindHomeHeroFocus(action);
-      if (!action.dataset.homeBound) {
-        action.dataset.homeBound = "1";
-        action.addEventListener("click", (event) => {
+      bindHomeHeroFocus(hero);
+      if (!hero.dataset.homeBound) {
+        hero.dataset.homeBound = "1";
+        hero.addEventListener("click", (event) => {
           if (Date.now() < Number(state.homeV14.heroSwipeSuppressClickUntil || 0)) {
             event.preventDefault();
             event.stopPropagation();
@@ -22243,7 +22247,7 @@ utils.encode = function encode(arr, enc) {
     function focusColdHomeHeroIfReady() {
       const home = state.homeV14;
       if (!home || !home.coldHomeFocusPending || !isTvLikeDevice() || !isHomeRouteActive()) return false;
-      const target = $("homeSearchLauncher");
+      const target = $("homeHero");
       if (!isVisibleFocusable(target)) return false;
       const active = document.activeElement;
       const fallbackTarget = home.coldHomeFallbackTarget;
@@ -24071,7 +24075,7 @@ utils.encode = function encode(arr, enc) {
 
     function coldHomeInitialFocus() {
       if (focusScopeRoot() !== document || !isHomeRouteActive() || !isTvLikeDevice()) return null;
-      const target = $("homeSearchLauncher");
+      const target = $("homeHero");
       return isVisibleFocusable(target) ? target : null;
     }
 
@@ -24163,7 +24167,7 @@ utils.encode = function encode(arr, enc) {
 
     function initialHomeFocus() {
       if (focusScopeRoot() !== document) return null;
-      if (isHomeRouteActive() && isVisibleFocusable($("homeSearchLauncher"))) return $("homeSearchLauncher");
+      if (isHomeRouteActive() && isVisibleFocusable($("homeHero"))) return $("homeHero");
       return firstContentFocus();
     }
 
@@ -25713,8 +25717,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         secondaryGridScrollLeft: secondaryGrid ? Math.max(0, Number(secondaryGrid.scrollLeft || 0)) : 0,
         searchRailScrollLeft: homeUiRoute() === "search" ? Math.max(0, Number(($('searchRail') || {}).scrollLeft || 0)) : 0,
         mediaKey: mediaDomKey(item),
-        focus: target && target.id === "homeHeroAction" ? { type: "id", key: target.id } : homeFocusSnapshot(target, item),
-        heroIndex: target && target.id === "homeHeroAction" ? Math.max(0, Number(state.homeV14.heroIndex || 0)) : null,
+        focus: target && (target.id === "homeHero" || target.id === "homeHeroAction") ? { type: "id", key: "homeHero" } : homeFocusSnapshot(target, item),
+        heroIndex: target && (target.id === "homeHero" || target.id === "homeHeroAction") ? Math.max(0, Number(state.homeV14.heroIndex || 0)) : null,
         searchHotRailScrollLeft: homeUiRoute() === "search" ? Math.max(0, Number(($('searchHotRail') || {}).scrollLeft || 0)) : 0,
         at: Date.now()
       };
@@ -25766,6 +25770,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (!saved) return null;
       const focus = saved.focus || {};
       if (focus.type === "media") return findHomeReturnMediaTarget(saved, focus);
+      if (focus.type === "id" && focus.key === "homeHeroAction") return $("homeHero");
       if (focus.type === "id" && focus.key) return $(focus.key);
       return null;
     }
@@ -25814,16 +25819,16 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const apply = (withFocus, allowMissingSectionFallback) => {
         if ($("detailSheet") && $("detailSheet").classList.contains("active")) return;
         applyHomeScrollTop(y);
-        const heroReturn = !!(saved.focus && saved.focus.type === "id" && saved.focus.key === "homeHeroAction");
+        const heroReturn = !!(saved.focus && saved.focus.type === "id" && (saved.focus.key === "homeHero" || saved.focus.key === "homeHeroAction"));
         if (heroReturn && Number.isFinite(Number(saved.heroIndex))) setHomeHeroIndex(Number(saved.heroIndex), { resetTimer: false });
         const target = withFocus ? findHomeReturnTarget(saved) : null;
         const sectionTarget = withFocus && mediaReturn ? findHomeReturnSectionTarget(saved) : null;
         if (target || sectionTarget) focusHomeReturnTarget(target || sectionTarget);
         else if (withFocus && !mediaReturn) {
-          const fallback = isVisibleFocusable($("homeHeroAction")) ? $("homeHeroAction") : initialHomeFocus();
+          const fallback = isVisibleFocusable($("homeHero")) ? $("homeHero") : initialHomeFocus();
           if (fallback) focusHomeReturnTarget(fallback);
         } else if (withFocus && allowMissingSectionFallback && !findHomeReturnSection(saved)) {
-          const fallback = isVisibleFocusable($("homeHeroAction")) ? $("homeHeroAction") : initialHomeFocus();
+          const fallback = isVisibleFocusable($("homeHero")) ? $("homeHero") : initialHomeFocus();
           if (fallback) focusHomeReturnTarget(fallback);
         }
         if (saved.route === "search" && $("searchRail")) $("searchRail").scrollLeft = Math.max(0, Number(saved.searchRailScrollLeft || 0));
@@ -31477,8 +31482,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       }
       const searchResult = firstSearchResultFocusTarget();
       if (searchResult) return searchResult;
-      if (state.activeList === "all" && isVisibleFocusable($("homeHeroAction"))) {
-        return $("homeHeroAction");
+      if (state.activeList === "all" && isVisibleFocusable($("homeHero"))) {
+        return $("homeHero");
       }
       if (state.activeList === "all" && typeof homeFirstTarget === "function") {
         const homeTarget = homeFirstTarget();
@@ -31503,8 +31508,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     function handleHomeHeroDirectionalKey(key, event) {
       if (!isTvLikeDevice() || focusScopeRoot() !== document || isConnectionPanelOpen() || isSearchSuggestOpen()) return false;
       if (key !== "ArrowLeft" && key !== "ArrowRight") return false;
-      const action = $("homeHeroAction");
-      if (state.activeList !== "all" || !action || document.activeElement !== action || !isVisibleFocusable(action)) return false;
+      const hero = $("homeHero");
+      if (state.activeList !== "all" || !hero || document.activeElement !== hero || !isVisibleFocusable(hero)) return false;
       const items = Array.isArray(state.homeV14.heroItems) ? state.homeV14.heroItems : [];
       if (items.length <= 1) return false;
       const delta = key === "ArrowRight" ? 1 : -1;
@@ -31734,7 +31739,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         selectPanType(panType);
         return true;
       }
-      if (el === $("homeHeroAction")) armHomeHeroConfirmGuard(event);
+      if (el === $("homeHero")) armHomeHeroConfirmGuard(event);
       if (typeof el.click === "function") {
         el.click();
       } else {
@@ -32610,7 +32615,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         const more = section.querySelector(".home-section-more");
         if (isVisibleFocusable(more)) return more;
       }
-      return $("homeHeroAction") && isVisibleFocusable($("homeHeroAction")) ? $("homeHeroAction") : currentHomeFocus();
+      return $("homeHero") && isVisibleFocusable($("homeHero")) ? $("homeHero") : currentHomeFocus();
     }
 
     function homeTarget(key, active) {
@@ -32618,7 +32623,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const home = $("home");
       if (!home || !active) return null;
       const searchLauncher = $("homeSearchLauncher");
-      const hero = $("homeHeroAction");
+      const hero = $("homeHero");
       if (active === searchLauncher) {
         if (key === "ArrowDown") return isVisibleFocusable(hero) ? hero : homeFirstTarget() || active;
         if (key === "ArrowUp" || key === "ArrowLeft" || key === "ArrowRight") return active;
@@ -33255,8 +33260,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     function revealHomeFocusedTarget(target, options) {
       const opts = options || {};
       const root = document.scrollingElement || document.documentElement;
-      const homeHeroAction = $("homeHeroAction");
-      if (isHomeRouteActive() && target === homeHeroAction) {
+      const homeHero = $("homeHero");
+      if (isHomeRouteActive() && target === homeHero) {
         const beforeTop = homeScrollTop();
         if (beforeTop > 0) applyHomeScrollTop(0);
         return { x: 0, y: -beforeTop };
@@ -33500,7 +33505,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
     function firstContentFocus() {
       const root = focusScopeRoot();
-      const selectors = ["#homeHeroAction", "#home .home-rail .card", "#recommendRail .card", "#listStack .card", "#searchRail .card", "#searchHotRail .card", ".focusable:not(#searchInput)"];
+      const selectors = ["#homeHero", "#home .home-rail .card", "#recommendRail .card", "#listStack .card", "#searchRail .card", "#searchHotRail .card", ".focusable:not(#searchInput)"];
       for (const selector of selectors) {
         const target = Array.from(root.querySelectorAll(selector)).find(isVisibleFocusable);
         if (target) return target;
