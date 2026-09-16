@@ -23927,6 +23927,7 @@ utils.encode = function encode(arr, enc) {
       const children = items.map((item, index) => mediaCard(item, index, {
         landscape,
         home: !!opts.home,
+        weeklyHome: !!opts.weeklyHome,
         weekly: !!opts.weekly,
         homeLazy: !!opts.homeLazy && isTvLikeDevice() && index >= Number(opts.homeEagerCount == null ? 4 : opts.homeEagerCount),
         searchResult: opts.searchResult === true,
