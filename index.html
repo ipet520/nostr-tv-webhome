@@ -20048,6 +20048,11 @@ utils.encode = function encode(arr, enc) {
     }
 
     function beginDetailPreload(item) {
+      // 主详情页现在由唯一的 Direct preparation 负责资源准备。
+      // 旧入口仅保留给没有该详情 Direct 生命周期的其他/旧场景；
+      // 同一影片已有 Direct task 时必须复用，不能再启动 preload 搜索。
+      const directTask = detailDirectPreparationTaskFor(item);
+      if (directTask) return directTask;
       const key = detailPreloadKeyFor(item);
       if (!key) return null;
       const current = state.detailPreload;
@@ -28481,12 +28486,19 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return String(item && item.title || "").trim();
     }
 
-    // 进入剧集（tv）详情页即后台静默预搜盘搜资源，缩短点击分集后的等待时间。
-    // 仅预加载、不弹盘搜页、不抢焦点；点击分集时若已有同剧结果会直接复用
-    // （见 playEpisodeViaPan 的 sameSeries 判断），播放判断逻辑保持不变。
+    // 兼容旧的分集预热入口：不参与详情主播放准备。
+    // 当前详情项已有 Direct preparation 时只等待同一 Promise；其他旧场景
+    // 仍保留原来的静默预热行为，不弹盘搜页、不抢焦点。
     async function preloadPanForSeries(item) {
       if (!item || (item.mediaType !== "tv" && item.mediaType !== "movie")) return;  // 剧集 + 电影
       if (state.selected !== item) return;              // 详情页已切走则放弃
+      // 当前详情项的主资源准备已经统一为 Direct lifecycle。
+      // 旧分集预热 API 仍保留，但不能为同一详情项再创建 preload lifecycle。
+      const directTask = detailDirectPreparationTaskFor(item);
+      if (directTask) {
+        await directTask;
+        return;
+      }
       const keyword = panKeyword(item);
       if (!keyword) return;
       const warm = () => (item.mediaType === "movie" ? warmMoviePanHealth(item) : warmEpisodePanHealth(item));
