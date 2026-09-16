@@ -16482,6 +16482,19 @@ utils.encode = function encode(arr, enc) {
         imageDeferredCount: 0,
         heroCandidateCount: 0,
         heroExtraTmdbRequestCount: 0,
+        heroFeed: {
+          items: [],
+          loading: false,
+          loaded: false,
+          loadedAt: 0,
+          error: "",
+          promise: null,
+          requestSeq: 0,
+          poolCount: 0,
+          detailRequests: 0,
+          weeklyMerged: false,
+          sourceStats: null
+        },
         heroItems: [],
         heroIndex: 0,
         heroItem: null,
@@ -17310,7 +17323,10 @@ utils.encode = function encode(arr, enc) {
         firstItemTitle: latest.items[0] && latest.items[0].title || "",
         firstItems: latest.items.slice(0, 10).map((item) => ({ title: item.title || "", mediaType: item.mediaType || "", update: item.weeklyUpdateText || "" }))
       }));
-      if (isHomeRouteActive()) renderHomeHot();
+      if (isHomeRouteActive()) {
+        renderHomeHot();
+        mergeHomeLatestIntoHeroFeed({ render: true });
+      }
       return latest;
     }
 
@@ -21458,13 +21474,291 @@ utils.encode = function encode(arr, enc) {
       return requested > 0 ? Math.min(desired, requested) : desired;
     }
 
+    const HOME_HERO_FINAL_LIMIT = 6;
+    const HOME_HERO_PREFETCH_LIMIT = 10;
+    const HOME_HERO_CACHE_TTL_MS = 45 * 60 * 1000;
+    const HOME_HERO_DETAIL_CONCURRENCY = 5;
+
+    function homeHeroFeedState() {
+      const home = state.homeV14;
+      if (!home) return null;
+      if (!home.heroFeed) {
+        home.heroFeed = {
+          items: [], loading: false, loaded: false, loadedAt: 0, error: "",
+          promise: null, requestSeq: 0, poolCount: 0, detailRequests: 0, weeklyMerged: false, sourceStats: null
+        };
+      }
+      return home.heroFeed;
+    }
+
+    function homeHeroIdentity(item) {
+      if (!item) return "";
+      const mediaType = String(item.mediaType || item.media_type || "").toLowerCase();
+      let tmdbId = String(item.tmdbId || "").trim();
+      if (!tmdbId && /^tmdb:(movie|tv):[^:]+$/i.test(String(item.id || ""))) tmdbId = String(item.id).split(":").slice(2).join(":");
+      return (mediaType === "movie" || mediaType === "tv") && tmdbId ? `${mediaType}:${tmdbId}` : "";
+    }
+
+    function homeHeroTitleKey(item) {
+      return normalizeTitle(item && (item.title || item.name || ""));
+    }
+
+    function homeHeroBackdrop(item) {
+      return String(item && (item.landscape || item.backdrop || item.backdropUrl || item.backdropPath || item.backdrop_path || "") || "").trim();
+    }
+
+    function homeHeroFreshnessScore(item) {
+      const value = latestDateOnly(item && (item.releaseDate || item.firstAirDate || item.release_date || item.first_air_date || ""));
+      if (!value) return 0;
+      const stamp = Date.parse(`${value}T00:00:00Z`);
+      if (!Number.isFinite(stamp)) return 0;
+      const days = (Date.now() - stamp) / 86400000;
+      if (days < -30) return 0;
+      if (days <= 14) return Math.max(0, 18 - Math.max(0, days) * 0.65);
+      if (days <= 120) return Math.max(0, 9 - (days - 14) * 0.075);
+      return 0;
+    }
+
+    function homeHeroNormalizeSourceItem(raw, source, index) {
+      if (!raw || !raw.id) return null;
+      const mediaType = String(source.mediaType || raw.media_type || raw.mediaType || "").toLowerCase();
+      if (mediaType !== "movie" && mediaType !== "tv") return null;
+      const normalized = normalizeTmdb(Object.assign({}, raw, { media_type: mediaType }), {
+        id: "home-hero", title: "首页 Hero", mediaType
+      }, index);
+      if (!homeHeroIdentity(normalized) || !normalized.title) return null;
+      normalized.voteCount = Number(raw.vote_count || raw.voteCount || 0);
+      normalized.heroSourceKinds = [source.kind];
+      normalized.heroRaw = raw;
+      normalized.heroDetailEnriched = false;
+      return normalized;
+    }
+
+    function homeHeroMergeCandidate(map, candidate) {
+      const key = homeHeroIdentity(candidate);
+      if (!key || !candidate) return;
+      const previous = map.get(key);
+      const merged = Object.assign({}, previous || {}, candidate);
+      ["title", "pic", "landscape", "image", "desc", "releaseDate", "voteAverage", "voteCount", "originalLanguage", "originCountries"].forEach((field) => {
+        if ((merged[field] == null || merged[field] === "") && previous && previous[field] != null) merged[field] = previous[field];
+      });
+      merged.heroSourceKinds = Array.from(new Set([].concat(previous && previous.heroSourceKinds || [], candidate.heroSourceKinds || [])));
+      merged.heroRaw = candidate.heroRaw || previous && previous.heroRaw || null;
+      map.set(key, merged);
+    }
+
+    function homeHeroNostrSignals() {
+      const signals = new Map();
+      filterBlocked(Array.isArray(state.hot && state.hot.items) ? state.hot.items : []).forEach((item) => {
+        const identity = homeHeroIdentity(item);
+        if (!identity) return;
+        const heat = Math.max(0, Number(item.people || item.count || 0));
+        signals.set(identity, { heat, rank: signals.size + 1 });
+      });
+      return signals;
+    }
+
+    function homeHeroNostrBoost(item, signals) {
+      const signal = signals && signals.get(homeHeroIdentity(item));
+      if (!signal) return 0;
+      return Math.min(16, 4 + Math.log1p(signal.heat || 1) * 2.4);
+    }
+
+    function homeHeroEligible(item) {
+      const identity = homeHeroIdentity(item);
+      const title = String(item && item.title || "").trim();
+      const backdrop = homeHeroBackdrop(item);
+      const popularity = Math.max(0, Number(item && item.popularity || 0));
+      const voteCount = Math.max(0, Number(item && (item.voteCount || item.vote_count) || 0));
+      const fresh = homeHeroFreshnessScore(item) > 0;
+      if (!identity || !title || !backdrop || !hasPoster(item)) return false;
+      if (popularity < 1.2 && voteCount < 20 && !fresh) return false;
+      if (popularity < 0.45 && voteCount < 80 && !fresh) return false;
+      return true;
+    }
+
+    function homeHeroScore(item, signals) {
+      const popularity = Math.min(160, Math.max(0, Number(item && item.popularity || 0)));
+      const rating = Math.min(10, Math.max(0, Number(item && (item.voteAverage || item.vote_average) || 0)));
+      const votes = Math.min(14, Math.log10(Math.max(1, Number(item && (item.voteCount || item.vote_count) || 0) + 1)) * 3.2);
+      const freshness = homeHeroFreshnessScore(item);
+      const backdrop = homeHeroBackdrop(item) ? 10 : 0;
+      const nostr = homeHeroNostrBoost(item, signals);
+      return popularity * 0.48 + rating * 2.7 + votes + freshness + backdrop + nostr;
+    }
+
+    function homeHeroRank(items, signals) {
+      return (Array.isArray(items) ? items : [])
+        .filter(homeHeroEligible)
+        .map((item) => Object.assign({}, item, { heroScore: homeHeroScore(item, signals) }))
+        .sort((a, b) => Number(b.heroScore || 0) - Number(a.heroScore || 0));
+    }
+
+    function homeHeroSelect(items, limit, signals) {
+      const rankedItems = homeHeroRank(items, signals || homeHeroNostrSignals());
+      const selected = [];
+      const titleKeys = new Set();
+      rankedItems.forEach((item) => {
+        if (selected.length >= Number(limit || HOME_HERO_FINAL_LIMIT)) return;
+        const titleKey = homeHeroTitleKey(item);
+        if (titleKey && titleKeys.has(titleKey)) return;
+        selected.push(item);
+        if (titleKey) titleKeys.add(titleKey);
+      });
+      if (selected.length < Number(limit || HOME_HERO_FINAL_LIMIT)) {
+        rankedItems.forEach((item) => {
+          if (selected.length >= Number(limit || HOME_HERO_FINAL_LIMIT)) return;
+          if (!selected.some((entry) => homeHeroIdentity(entry) === homeHeroIdentity(item))) selected.push(item);
+        });
+      }
+      return selected;
+    }
+
+    function homeHeroFallbackCandidates() {
+      const sources = [];
+      if (Array.isArray(state.fallback)) sources.push(...state.fallback);
+      if (Array.isArray(state.homeLatest && state.homeLatest.items)) sources.push(...state.homeLatest.items);
+      if (Array.isArray(state.searchHot && state.searchHot.items)) sources.push(...state.searchHot.items);
+      sources.push(...allItems());
+      return homeHeroSelect(uniqueMedia(filterBlocked(sources)), HOME_HERO_FINAL_LIMIT, homeHeroNostrSignals());
+    }
+
+    function mergeHomeLatestIntoHeroFeed(options) {
+      const feed = homeHeroFeedState();
+      if (!feed || feed.loading || !feed.loaded || feed.weeklyMerged || !state.homeLatest || !state.homeLatest.loaded) return false;
+      feed.weeklyMerged = true;
+      const weekly = filterBlocked(state.homeLatest.items || []).slice(0, 12);
+      if (!weekly.length) return false;
+      const next = homeHeroSelect((feed.items || []).concat(weekly), HOME_HERO_FINAL_LIMIT, homeHeroNostrSignals());
+      const changed = next.map(homeHeroIdentity).join("|") !== (feed.items || []).map(homeHeroIdentity).join("|");
+      feed.items = next;
+      if (changed && (!options || options.render !== false) && isHomeRouteActive()) renderHomeHero();
+      return changed;
+    }
+
+    function homeHeroBackdropFromDetail(candidate, detail) {
+      const entries = Array.isArray(detail && detail.images && detail.images.backdrops) ? detail.images.backdrops.filter((entry) => entry && entry.file_path) : [];
+      const usable = entries.filter((entry) => !entry.width || Number(entry.width) >= 800 || !entry.aspect_ratio || Number(entry.aspect_ratio) >= 1.45);
+      if (usable.length) {
+        usable.sort((a, b) => {
+          const ratioScore = (entry) => 5 - Math.min(5, Math.abs(Number(entry.aspect_ratio || 1.777) - 1.777) * 4);
+          const qualityScore = (entry) => ratioScore(entry) + Math.min(4, Number(entry.width || 0) / 1000) + Math.min(3, Number(entry.vote_average || 0) * 0.35) + Math.min(2, Math.log10(Number(entry.vote_count || 0) + 1) * 0.5);
+          return qualityScore(b) - qualityScore(a);
+        });
+        return imageUrl(usable[0].file_path, true);
+      }
+      return homeHeroBackdrop(candidate);
+    }
+
+    async function homeHeroEnrichCandidate(candidate) {
+      const mediaType = String(candidate && candidate.mediaType || "").toLowerCase();
+      const tmdbId = String(candidate && candidate.tmdbId || "").trim();
+      if (!candidate || !tmdbId || (mediaType !== "movie" && mediaType !== "tv")) return candidate;
+      const detail = await requestJson(tmdbUrl({
+        id: "home-hero-detail",
+        title: "首页 Hero",
+        endpoint: `${mediaType}/${encodeURIComponent(tmdbId)}`,
+        mediaType,
+        params: { language: "zh-CN", append_to_response: "images" }
+      }), 18);
+      const raw = Object.assign({}, candidate.heroRaw || {}, detail || {}, { id: detail && detail.id || tmdbId, media_type: mediaType });
+      const normalized = normalizeTmdb(raw, { id: "home-hero-detail", title: "首页 Hero", mediaType }, 0);
+      const enriched = Object.assign({}, candidate, normalized);
+      enriched.pic = enriched.pic || candidate.pic || "";
+      enriched.landscape = homeHeroBackdropFromDetail(candidate, detail) || candidate.landscape || "";
+      enriched.image = enriched.landscape || enriched.image || candidate.image || candidate.pic || "";
+      enriched.voteCount = Number(detail && detail.vote_count || candidate.voteCount || 0);
+      enriched.heroSourceKinds = candidate.heroSourceKinds || [];
+      enriched.heroRaw = raw;
+      enriched.heroDetail = detail || null;
+      enriched.heroDetailEnriched = true;
+      return enriched;
+    }
+
+    async function loadHomeHeroFeed() {
+      const feed = homeHeroFeedState();
+      if (!feed) return null;
+      if (feed.loading) return feed.promise || feed;
+      feed.loading = true;
+      feed.error = "";
+      const requestSeq = ++feed.requestSeq;
+      const sources = [
+        { kind: "tmdb-trending-week", endpoint: "trending/all/week", mediaType: "" },
+        { kind: "tmdb-movie-now-playing", endpoint: "movie/now_playing", mediaType: "movie" },
+        { kind: "tmdb-tv-on-the-air", endpoint: "tv/on_the_air", mediaType: "tv" }
+      ];
+      const promise = Promise.all(sources.map((source) => requestJson(tmdbUrl({
+        id: "home-hero-source", title: "首页 Hero", endpoint: source.endpoint, mediaType: source.mediaType,
+        params: { language: "zh-CN" }
+      }), 18).then((body) => ({ source, body: body || {}, ok: true })).catch((error) => ({ source, body: null, ok: false, error })))).then(async (responses) => {
+        if (feed.requestSeq !== requestSeq) return feed;
+        const candidates = new Map();
+        const sourceStats = {};
+        let successCount = 0;
+        responses.forEach((result) => {
+          const source = result.source;
+          const values = result.ok && result.body && Array.isArray(result.body.results) ? result.body.results : [];
+          sourceStats[source.kind] = values.length;
+          if (result.ok) successCount += 1;
+          values.forEach((raw, index) => homeHeroMergeCandidate(candidates, homeHeroNormalizeSourceItem(raw, source, index)));
+        });
+        if (state.homeLatest && state.homeLatest.loaded) {
+          filterBlocked(state.homeLatest.items || []).slice(0, 12).forEach((item) => {
+            const candidate = Object.assign({}, item, { heroSourceKinds: ["weekly-feed"], heroRaw: item.weeklyDetail || item });
+            homeHeroMergeCandidate(candidates, candidate);
+          });
+          sourceStats["weekly-feed"] = Math.min(12, (state.homeLatest.items || []).length);
+        }
+        const signals = homeHeroNostrSignals();
+        const prefetch = homeHeroSelect(Array.from(candidates.values()), HOME_HERO_PREFETCH_LIMIT, signals);
+        feed.poolCount = prefetch.length;
+        const details = await weeklyMapLimit(prefetch, HOME_HERO_DETAIL_CONCURRENCY, (candidate) => homeHeroEnrichCandidate(candidate));
+        feed.detailRequests = prefetch.length;
+        const enriched = details.map((result, index) => result && result.ok && result.value ? result.value : prefetch[index]).filter(Boolean);
+        let finalItems = homeHeroSelect(enriched, HOME_HERO_FINAL_LIMIT, signals);
+        if (finalItems.length < HOME_HERO_FINAL_LIMIT) {
+          finalItems = homeHeroSelect(finalItems.concat(homeHeroFallbackCandidates()), HOME_HERO_FINAL_LIMIT, signals);
+        }
+        feed.items = finalItems.slice(0, HOME_HERO_FINAL_LIMIT);
+        feed.weeklyMerged = !!(state.homeLatest && state.homeLatest.loaded);
+        feed.loaded = true;
+        feed.loadedAt = Date.now();
+        feed.loading = false;
+        feed.error = feed.items.length || successCount ? "" : "加载失败";
+        feed.sourceStats = Object.assign({ successCount, candidateCount: candidates.size }, sourceStats);
+        if (isHomeRouteActive()) renderHomeHero();
+        return feed;
+      }).catch((error) => {
+        if (feed.requestSeq !== requestSeq) return feed;
+        feed.loading = false;
+        feed.loaded = true;
+        feed.loadedAt = Date.now();
+        feed.error = String(error && error.message || "加载失败");
+        feed.detailRequests = 0;
+        if (!feed.items.length) feed.items = homeHeroFallbackCandidates();
+        if (isHomeRouteActive()) renderHomeHero();
+        return feed;
+      });
+      feed.promise = promise;
+      promise.then(() => { if (feed.promise === promise) feed.promise = null; }, () => { if (feed.promise === promise) feed.promise = null; });
+      return promise;
+    }
+
+    function ensureHomeHeroFeed() {
+      if (!isHomeRouteActive()) return false;
+      const feed = homeHeroFeedState();
+      if (!feed || feed.loading) return false;
+      if (feed.loaded && feed.loadedAt && Date.now() - feed.loadedAt < HOME_HERO_CACHE_TTL_MS) return false;
+      loadHomeHeroFeed().catch(() => {});
+      return true;
+    }
+
     function homeHeroCandidates() {
-      const primary = filterBlocked(preferenceItems());
-      const fallback = filterBlocked(state.fallback || []);
-      const local = ranked(allItems());
-      const candidates = uniqueMedia(primary.concat(fallback, local));
-      const hasBackdrop = (item) => !!(item && (item.landscape || item.backdrop || item.backdropUrl || item.backdropPath || item.backdrop_path));
-      return candidates.filter(hasBackdrop).concat(candidates.filter((item) => !hasBackdrop(item))).slice(0, 10);
+      const feed = homeHeroFeedState();
+      const cached = feed && filterBlocked(feed.items || []);
+      return cached && cached.length
+        ? homeHeroSelect(cached, HOME_HERO_FINAL_LIMIT, homeHeroNostrSignals()).slice(0, HOME_HERO_FINAL_LIMIT)
+        : homeHeroFallbackCandidates();
     }
 
     const HOME_HERO_AUTOPLAY_MS = 5000;
@@ -21660,6 +21954,7 @@ utils.encode = function encode(arr, enc) {
         return;
       }
       stopHomeHeroAutoplay();
+      mergeHomeLatestIntoHeroFeed({ render: false });
       const slides = $("homeHeroSlides");
       const dots = $("homeHeroDots");
       if (!slides || !dots) return;
@@ -21667,11 +21962,13 @@ utils.encode = function encode(arr, enc) {
       const previousItem = state.homeV14.heroItem;
       const previousIndex = Math.max(0, Number(state.homeV14.heroIndex || 0));
       const previousKey = previousItem && mediaRenderKey(previousItem);
-      const nextIndex = previousKey ? Math.max(0, candidates.findIndex((entry) => mediaRenderKey(entry) === previousKey)) : previousIndex;
+      const previousCandidateIndex = previousKey ? candidates.findIndex((entry) => mediaRenderKey(entry) === previousKey) : -1;
+      const nextIndex = previousCandidateIndex >= 0 ? previousCandidateIndex : previousIndex;
       const activeIndex = candidates.length ? Math.min(candidates.length - 1, nextIndex) : 0;
       const item = candidates[activeIndex] || null;
       state.homeV14.heroCandidateCount = candidates.length;
-      state.homeV14.heroExtraTmdbRequestCount = 0;
+      const feed = homeHeroFeedState();
+      state.homeV14.heroExtraTmdbRequestCount = Number(feed && feed.detailRequests || 0);
       state.homeV14.heroItems = candidates;
       state.homeV14.heroIndex = activeIndex;
       state.homeV14.heroItem = item;
@@ -21695,6 +21992,7 @@ utils.encode = function encode(arr, enc) {
       updateHomeHeroPresentation(item);
       focusColdHomeHeroIfReady();
       scheduleHomeHeroAutoplay();
+      ensureHomeHeroFeed();
     }
 
     function focusColdHomeHeroIfReady() {
@@ -22054,7 +22352,11 @@ utils.encode = function encode(arr, enc) {
         homeListConcurrentRequests: home.activeLoads,
         homeListMaxConcurrentRequests: home.maxConcurrent,
         heroCandidateCount: Number(home.heroCandidateCount || 0),
-        heroExtraTmdbRequestCount: 0,
+        heroPoolCandidateCount: Number(home.heroFeed && home.heroFeed.poolCount || 0),
+        heroExtraTmdbRequestCount: Number(home.heroExtraTmdbRequestCount || 0),
+        heroCacheTtlMs: HOME_HERO_CACHE_TTL_MS,
+        heroCacheAgeMs: home.heroFeed && home.heroFeed.loadedAt ? Math.max(0, Date.now() - Number(home.heroFeed.loadedAt)) : 0,
+        heroSourceStats: home.heroFeed && home.heroFeed.sourceStats || null,
         hotSource: homeHotSource(),
         hotRenderSource: homeRoot.querySelector("#recommendSection") && homeRoot.querySelector("#recommendSection").dataset.hotSource || "",
         hotRenderDataPath: homeRoot.querySelector("#recommendRail") && homeRoot.querySelector("#recommendRail").dataset.hotDataPath || "",
