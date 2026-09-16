@@ -6685,6 +6685,41 @@
       #searchHotRail { --home-card-width: clamp(112px, 28vw, 148px); }
     }
 
+    /* Final media-card surface contract.  Keep this after the shared TV
+       focus rules so Home and Weekly cannot regain a panel frame. */
+    #home.home-root .home-rail > .card,
+    #home.home-root .home-rail > .card:focus,
+    #secondaryCatalog.weekly-secondary-page #secondaryCatalogGrid.weekly-secondary-rail > .weekly-card,
+    #secondaryCatalog.weekly-secondary-page #secondaryCatalogGrid.weekly-secondary-rail > .weekly-card:focus {
+      border: 0 !important;
+      border-color: transparent !important;
+      outline: 0 !important;
+      outline-offset: 0 !important;
+      box-shadow: none !important;
+      background: transparent !important;
+    }
+
+    #home.home-root .home-rail > .card .card-body,
+    #home.home-root .home-rail > .card .poster-wrap,
+    #home.home-root .home-rail > .card > .poster,
+    #secondaryCatalog.weekly-secondary-page #secondaryCatalogGrid.weekly-secondary-rail > .weekly-card .card-body,
+    #secondaryCatalog.weekly-secondary-page #secondaryCatalogGrid.weekly-secondary-rail > .weekly-card .poster-wrap,
+    #secondaryCatalog.weekly-secondary-page #secondaryCatalogGrid.weekly-secondary-rail > .weekly-card > .poster {
+      border: 0 !important;
+      border-color: transparent !important;
+      outline: 0 !important;
+      outline-offset: 0 !important;
+      box-shadow: none !important;
+      background: transparent !important;
+    }
+
+    #home.home-root .home-rail > .card .card-title,
+    #secondaryCatalog.weekly-secondary-page #secondaryCatalogGrid.weekly-secondary-rail > .weekly-card .card-title,
+    .secondary-page:not(.weekly-secondary-page) .media-grid > .card .card-title {
+      width: 100%;
+      text-align: center !important;
+    }
+
   </style>
   <style id="tv-diagnostic-v1">
     html.tv-mode .tv-diagnostic {
