@@ -6729,6 +6729,12 @@
       background: rgba(191, 233, 255, .16) !important;
     }
 
+    /* Detail playback entry: only the existing play triangle communicates
+       that the current detail lifecycle has a directly consumable source. */
+    #detailContinueBtn[data-ready="true"] > .icon {
+      color: #55e58a !important;
+    }
+
     html.tv-mode .secondary-page button:focus:not(.card):not(.episode-card):not(.person-card),
     html.tv-preview .secondary-page button:focus:not(.card):not(.episode-card):not(.person-card) {
       background: rgba(255, 255, 255, .18);
@@ -7263,13 +7269,13 @@
       </div>
     </div>
     <div class="actions">
-      <button class="btn primary focusable" id="detailContinueBtn" type="button" style="display:none" aria-hidden="true">
+      <button class="btn primary focusable" id="detailContinueBtn" type="button" aria-hidden="false">
         <svg class="icon" viewBox="0 0 24 24"><path d="M8 5v14l11-7Z"/></svg>
-        <span id="detailContinueText">继续观看</span>
+        <span id="detailContinueText">播放</span>
       </button>
       <button class="btn primary focusable" id="detailSearchBtn" type="button">
         <svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-        <span id="detailSearchText">播放</span>
+        <span id="detailSearchText">聚搜</span>
       </button>
       <button class="btn focusable" id="panSearchBtn" type="button">
         <svg class="icon" viewBox="0 0 24 24"><path d="M6.2 18.3h11.6a4.1 4.1 0 0 0 .42-8.18 6.2 6.2 0 0 0-11.9 1.68A3.28 3.28 0 0 0 6.2 18.3Z"/></svg>
@@ -16838,6 +16844,7 @@ utils.encode = function encode(arr, enc) {
       previewMode: false,
       tvFullscreen: false,
       detailReturn: null,
+      detailPreload: null,
       detailEpisodeTarget: null,
       historyResume: null,
       homeReturn: null,
@@ -18639,6 +18646,9 @@ utils.encode = function encode(arr, enc) {
         progress.classList.toggle("active", state.pan.progress.active);
         progress.setAttribute("aria-hidden", "true");
       }
+      if (state.selected && $("detailSheet") && $("detailSheet").classList.contains("active")) {
+        updateDetailContinueButton();
+      }
       return state.pan.progress;
     }
 
@@ -20028,17 +20038,84 @@ utils.encode = function encode(arr, enc) {
       return (state.recent.items || []).find((history) => detailHistoryMatches(item, history)) || null;
     }
 
+    function detailPreloadKeyFor(item) {
+      if (!item || (item.mediaType !== "tv" && item.mediaType !== "movie")) return "";
+      const keyword = panKeyword(item);
+      return keyword ? `${panSearchItemKey(item)}|${keyword}` : "";
+    }
+
+    function beginDetailPreload(item) {
+      const key = detailPreloadKeyFor(item);
+      if (!key) return null;
+      const current = state.detailPreload;
+      if (current && current.key === key && current.task) return current.task;
+      const entry = { key, itemKey: panSearchItemKey(item), pending: true, task: null };
+      const task = Promise.resolve(preloadPanForSeries(item)).catch(() => {});
+      entry.task = task;
+      state.detailPreload = entry;
+      task.then(() => {
+        if (state.detailPreload !== entry) return;
+        entry.pending = false;
+        if (state.selected === item && $("detailSheet") && $("detailSheet").classList.contains("active")) {
+          updateDetailContinueButton();
+        }
+      });
+      return task;
+    }
+
+    function detailPreloadPendingFor(item) {
+      const key = detailPreloadKeyFor(item);
+      return !!(key && state.detailPreload && state.detailPreload.key === key && state.detailPreload.pending);
+    }
+
+    function detailDirectPlayReadyFor(item) {
+      if (!item) return false;
+      const lifecycle = getPanSearchLifecycleFor(item);
+      return !!(lifecycle.sameSession && lifecycle.qbCount > 0);
+    }
+
+    function detailPlayPreparationPendingFor(item) {
+      if (!item) return false;
+      const lifecycle = getPanSearchLifecycleFor(item);
+      return detailPreloadPendingFor(item) || !!(lifecycle.sameSession && lifecycle.active);
+    }
+
+    function handleDetailPrimaryAction() {
+      const item = state.selected;
+      const button = $("detailContinueBtn");
+      const history = button && button.__historyItem || findDetailContinueHistory(item);
+      if (history) {
+        openDetailContinueHistory();
+        return;
+      }
+      if (!item) return;
+      if (detailDirectPlayReadyFor(item)) {
+        playBestQuark(item);
+        return;
+      }
+      if (detailPlayPreparationPendingFor(item)) {
+        toast("资源正在准备，请稍候");
+        return;
+      }
+      toast("暂无可播放资源，可使用聚搜或盘搜");
+    }
+
     function updateDetailContinueButton() {
       const button = $("detailContinueBtn");
+      const continueText = $("detailContinueText");
       const searchText = $("detailSearchText");
       if (!button) return;
       const match = findDetailContinueHistory(state.selected);
       const actions = button.closest(".actions");
       button.__historyItem = match || null;
-      button.style.display = match ? "" : "none";
-      button.setAttribute("aria-hidden", match ? "false" : "true");
+      button.style.display = "";
+      button.setAttribute("aria-hidden", "false");
+      if (continueText) continueText.textContent = match ? "续播" : "播放";
       if (actions) actions.classList.toggle("has-continue", !!match);
-      if (searchText) searchText.textContent = "播放";
+      const ready = !!match || detailDirectPlayReadyFor(state.selected);
+      button.classList.toggle("is-ready", ready);
+      button.dataset.ready = ready ? "true" : "false";
+      if (searchText) searchText.textContent = "聚搜";
     }
 
     function shouldRefreshRecentList() {
@@ -26357,6 +26434,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const detailWasActive = $("detailSheet") && $("detailSheet").classList.contains("active");
       const sameSelected = state.selected === item;
       if (state.selected && state.selected !== item) clearDirectPlayStatus(0, "selected_change");
+      if (!detailWasActive || !sameSelected || !opts.keepPan) state.detailPreload = null;
       if (!opts.historyResume) state.historyResume = null;
       if (opts.episodeTarget || opts.historyContext) setDetailPlaybackTarget(item, opts.episodeTarget || opts.historyContext);
       else if (!sameSelected && !opts.restore) state.detailEpisodeTarget = null;
@@ -26364,6 +26442,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       state.selected = item;
       state.detail = null;
       if (!opts.keepPan) resetPanSearch();
+      // 详情生命周期建立后立即复用现有静默盘搜预加载；详情请求与盘搜并行。
+      beginDetailPreload(item);
       ensureSheetViewport($("detailSheet"));
       syncDetailLayout();
       document.body.classList.add("detail-active");
@@ -26800,9 +26880,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       let preloadTask = null;
       if (item.mediaType === "tv") {
         renderSeasons(item, detail);
-        preloadTask = preloadPanForSeries(item);   // 进剧集详情页即后台静默预搜盘搜，缩短点分集等待
+        preloadTask = beginDetailPreload(item);    // 复用 openDetail 已启动的同一份预加载 Promise
       } else if (item.mediaType === "movie") {
-        preloadTask = preloadPanForSeries(item);   // 电影也后台预搜 + 预热夸克，配合"搜索播放"短按秒开
+        preloadTask = beginDetailPreload(item);    // 复用 openDetail 已启动的同一份预加载 Promise
       }
       if (state.historyResume && state.historyResume.mediaKey === mediaDomKey(item)
         && state.historyResume.autoResume !== false) {
@@ -28205,7 +28285,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       // 后台静默盘搜（不弹盘搜页）；已有同一生命周期（包括终态空结果）则复用。
       // 没有生命周期时只交给带一次性 guard 的 preload 入口，避免每次点分集都重开搜索。
       const lifecycle = getPanSearchLifecycleFor(item);
-      if (!lifecycle.sameSession && !state.pan.loading) preloadPanForSeries(item).catch(() => {});
+      if (!lifecycle.sameSession && !state.pan.loading) beginDetailPreload(item);
 
       // 1 分钟内重复点击「同一集」→ 自动换源：改用夸克/百度排名前 5 随机挑一个；
       // 首次点击 / 超过 1 分钟 → 维持原逻辑（115 单集优先，逐级回退）
@@ -29069,6 +29149,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       });
       state.pan.results = Array.from(map.values());
       ensureActivePanType();
+      if (state.selected && $("detailSheet") && $("detailSheet").classList.contains("active")) {
+        updateDetailContinueButton();
+      }
       scheduleUiSnapshotSave();
       return state.pan.results;
     }
@@ -31795,61 +31878,11 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       })();
       if ($("closeDetailBtn")) $("closeDetailBtn").addEventListener("click", () => closeDetail(false));
       // mobileDetailBackBtn 已移除
-      $("detailContinueBtn").addEventListener("click", () => {
-        openDetailContinueHistory();
+      $("detailContinueBtn").addEventListener("click", handleDetailPrimaryAction);
+      $("detailSearchBtn").addEventListener("click", () => {
+        if (!state.selected) return;
+        nativeSearch(state.selected.title).catch(() => {});
       });
-      (function setupDetailSearchBtn() {
-        const btn = $("detailSearchBtn");
-        if (!btn) return;
-        const LONG_MS = 500;
-        let timer = 0, fired = false, suppressClickUntil = 0;
-        // 原来的"搜索"功能（宿主原生搜索）——长按触发
-        function doSearch() {
-          if (!state.selected) return;
-          rememberWatchIntent(state.selected, "search");
-          startWatchTracking(state.selected);
-          nativeSearch(state.selected.title);
-        }
-        // 短按：电影/剧集 → 直接播放最优画质夸克（剧集播整季包，不影响点单集）；其它 → 原搜索
-        function doShort() {
-          if (!state.selected) return;
-          const mt = state.selected.mediaType;
-          if (mt === "movie" || mt === "tv") playBestQuark(state.selected);
-          else doSearch();
-        }
-        function startHold() {
-          fired = false;
-          if (timer) clearTimeout(timer);
-          timer = setTimeout(() => {
-            timer = 0; fired = true; suppressClickUntil = Date.now() + 700;
-            doSearch();
-          }, LONG_MS);
-        }
-        function cancelHold() { if (timer) { clearTimeout(timer); timer = 0; } }
-        btn.addEventListener("pointerdown", startHold);
-        btn.addEventListener("pointerup", cancelHold);
-        btn.addEventListener("pointerleave", cancelHold);
-        btn.addEventListener("pointercancel", cancelHold);
-        btn.addEventListener("click", (event) => {
-          if (fired || Date.now() < suppressClickUntil) { event.preventDefault(); event.stopPropagation(); fired = false; return; }
-          doShort();
-        });
-        btn.addEventListener("keydown", (event) => {
-          const key = normalizeRemoteKey(event);
-          if (key !== "Enter" && event.key !== " ") return;
-          event.preventDefault();
-          if (event.repeat) return;
-          startHold();
-        });
-        btn.addEventListener("keyup", (event) => {
-          const key = normalizeRemoteKey(event);
-          if (key !== "Enter" && event.key !== " ") return;
-          event.preventDefault();
-          cancelHold();
-          if (fired) { fired = false; return; }
-          doShort();
-        });
-      })();
       $("panSearchBtn").addEventListener("click", () => {
         if (!state.selected) return;
         clearDirectPlayStatus(0, "manual_pan");
@@ -32237,8 +32270,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       // 状态按钮（呼吸灯）有自己的 keydown/keyup（短按开面板、长按进设置）。
       // 这里不要再 click 它，否则 TV 端会出现 keydown 开、keyup 关的“闪一下就没了”。
       if (el === $("connectionToggle")) return false;
-      // 搜索播放按钮有自己的 keydown/keyup（短按播放、长按搜索），这里不再 click，避免双触发。
-      if (el === $("detailSearchBtn")) return false;
       event.preventDefault();
       event.stopPropagation();
       if (state.blocked.longPressFired) {
