@@ -6203,6 +6203,247 @@
       padding-bottom: 48px;
     }
 
+    /* The existing now-playing Secondary route becomes the Weekly Feed
+       presentation in place.  It keeps the same page node, history entry,
+       Detail handoff, and focus scope as every other Secondary page. */
+    .weekly-secondary-backdrop,
+    .weekly-secondary-shade,
+    .weekly-secondary-copy {
+      display: none;
+    }
+
+    .secondary-page.weekly-secondary-page {
+      position: relative;
+      height: 100vh;
+      min-height: 100vh;
+      padding: 0;
+      overflow: hidden;
+      isolation: isolate;
+      background: #070a10;
+    }
+
+    .secondary-page.weekly-secondary-page .weekly-secondary-backdrop {
+      display: block;
+      position: absolute;
+      z-index: 0;
+      inset: 0;
+      background-color: #10151d;
+      background-position: center center;
+      background-repeat: no-repeat;
+      background-size: cover;
+      opacity: 1;
+    }
+
+    .secondary-page.weekly-secondary-page .weekly-secondary-backdrop-next {
+      z-index: 1;
+      opacity: 0;
+      transition: opacity 220ms ease;
+    }
+
+    .secondary-page.weekly-secondary-page .weekly-secondary-backdrop-next.is-visible {
+      opacity: 1;
+    }
+
+    .secondary-page.weekly-secondary-page .weekly-secondary-shade {
+      display: block;
+      position: absolute;
+      z-index: 2;
+      inset: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(90deg, rgba(4, 7, 12, .94) 0%, rgba(4, 7, 12, .7) 38%, rgba(4, 7, 12, .18) 74%, rgba(4, 7, 12, .18) 100%),
+        linear-gradient(0deg, rgba(4, 7, 12, .98) 0%, rgba(4, 7, 12, .76) 19%, rgba(4, 7, 12, .12) 58%, rgba(4, 7, 12, .18) 100%);
+    }
+
+    .secondary-page.weekly-secondary-page .secondary-page-head {
+      position: absolute;
+      z-index: 6;
+      top: clamp(18px, 3vh, 34px);
+      right: clamp(22px, 3.8vw, 72px);
+      left: clamp(22px, 3.8vw, 72px);
+      min-height: 44px;
+      margin: 0;
+    }
+
+    .secondary-page.weekly-secondary-page .secondary-page-head h1 {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+
+    .secondary-page.weekly-secondary-page .secondary-page-back {
+      background: rgba(8, 12, 18, .5);
+      -webkit-backdrop-filter: blur(10px);
+      backdrop-filter: blur(10px);
+    }
+
+    .secondary-page.weekly-secondary-page .secondary-page-count {
+      color: rgba(255, 255, 255, .8);
+      text-shadow: 0 1px 8px rgba(0, 0, 0, .45);
+    }
+
+    .secondary-page.weekly-secondary-page .weekly-secondary-copy {
+      display: block;
+      position: absolute;
+      z-index: 4;
+      top: clamp(150px, 24vh, 250px);
+      left: clamp(22px, 3.8vw, 72px);
+      width: min(560px, 43vw);
+      max-width: calc(100% - 44px);
+      color: #fff;
+      text-shadow: 0 2px 16px rgba(0, 0, 0, .42);
+    }
+
+    .weekly-secondary-copy h2 {
+      max-width: 100%;
+      margin: 0 0 12px;
+      color: #fff;
+      font-size: clamp(30px, 3.5vw, 64px);
+      font-weight: 800;
+      line-height: 1.08;
+      letter-spacing: -.02em;
+    }
+
+    .weekly-secondary-meta,
+    .weekly-secondary-update {
+      min-height: 1.4em;
+      color: rgba(255, 255, 255, .82);
+      font-size: clamp(15px, 1.1vw, 21px);
+      line-height: 1.45;
+    }
+
+    .weekly-secondary-update {
+      margin-top: 3px;
+      color: rgba(191, 233, 255, .94);
+      font-weight: 650;
+    }
+
+    .weekly-secondary-overview {
+      display: -webkit-box;
+      max-width: 100%;
+      margin: 14px 0 0;
+      overflow: hidden;
+      color: rgba(255, 255, 255, .78);
+      font-size: clamp(14px, .95vw, 18px);
+      line-height: 1.65;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 3;
+    }
+
+    .secondary-page.weekly-secondary-page .secondary-catalog-filters {
+      display: none !important;
+    }
+
+    .secondary-page.weekly-secondary-page .secondary-catalog-scroll {
+      position: absolute;
+      z-index: 5;
+      right: 0;
+      bottom: clamp(18px, 3vh, 38px);
+      left: 0;
+      height: clamp(254px, 31vh, 340px);
+      overflow: visible;
+    }
+
+    .secondary-page.weekly-secondary-page #secondaryCatalogGrid.weekly-secondary-rail {
+      display: flex;
+      align-items: flex-end;
+      width: 100%;
+      height: 100%;
+      min-width: 0;
+      gap: clamp(10px, 1vw, 18px);
+      padding: 28px clamp(22px, 3.8vw, 72px) 0 !important;
+      overflow-x: auto !important;
+      overflow-y: visible !important;
+      scrollbar-width: none;
+      scroll-padding-inline: clamp(22px, 3.8vw, 72px);
+      overscroll-behavior-x: contain;
+      touch-action: pan-x;
+      contain: layout style;
+    }
+
+    .secondary-page.weekly-secondary-page #secondaryCatalogGrid.weekly-secondary-rail::-webkit-scrollbar {
+      display: none;
+    }
+
+    .weekly-secondary-rail > .weekly-card {
+      position: relative;
+      flex: 0 0 clamp(132px, 10vw, 190px) !important;
+      width: clamp(132px, 10vw, 190px) !important;
+      max-width: none !important;
+      min-width: 0;
+      overflow: visible;
+      border: 0 !important;
+      border-radius: 0;
+      background: transparent !important;
+      box-shadow: none !important;
+      transform: translateZ(0);
+      transition: transform 180ms ease;
+    }
+
+    .weekly-secondary-rail > .weekly-card .poster-wrap {
+      width: 100%;
+      aspect-ratio: 2 / 3;
+      overflow: hidden;
+      border-radius: 8px;
+      background: rgba(0, 0, 0, .24);
+    }
+
+    .weekly-secondary-rail > .weekly-card .poster {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .weekly-secondary-rail > .weekly-card .card-body {
+      min-height: 38px;
+      padding: 8px 0 0;
+      border: 0 !important;
+      background: transparent !important;
+    }
+
+    .weekly-secondary-rail > .weekly-card .card-title {
+      overflow: hidden;
+      color: rgba(255, 255, 255, .9);
+      font-size: clamp(13px, .9vw, 17px);
+      line-height: 1.3;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .weekly-secondary-rail > .weekly-card .rating-badge {
+      top: 8px;
+      right: auto;
+      left: 8px;
+      background: rgba(8, 11, 16, .76);
+      border-color: transparent;
+      color: #fff;
+    }
+
+    .weekly-secondary-rail > .weekly-card:focus {
+      z-index: 7;
+      outline: none;
+      border: 0 !important;
+      box-shadow: 0 5px 20px rgba(0, 0, 0, .28) !important;
+      transform: translateY(-18px) translateZ(0) !important;
+    }
+
+    .secondary-page.weekly-secondary-page .secondary-catalog-load-status {
+      position: absolute;
+      right: 0;
+      bottom: 4px;
+      left: 0;
+      z-index: 6;
+      min-height: 20px;
+      padding: 0;
+      color: rgba(255, 255, 255, .72);
+      text-align: center;
+    }
+
     #searchPageFormHost {
       width: min(880px, 100%);
       margin: 0 auto 18px;
@@ -6634,10 +6875,19 @@
     </section>
 
     <section class="secondary-page secondary-catalog" id="secondaryCatalog" hidden aria-labelledby="secondaryCatalogTitle">
+      <div class="weekly-secondary-backdrop" id="weeklySecondaryBackdrop" aria-hidden="true"></div>
+      <div class="weekly-secondary-backdrop weekly-secondary-backdrop-next" id="weeklySecondaryBackdropNext" aria-hidden="true"></div>
+      <div class="weekly-secondary-shade" aria-hidden="true"></div>
       <div class="secondary-page-head">
         <button class="secondary-page-back focusable" id="secondaryCatalogBack" type="button">返回</button>
         <h1 id="secondaryCatalogTitle">分类</h1>
         <span class="secondary-page-count" id="secondaryCatalogCount"></span>
+      </div>
+      <div class="weekly-secondary-copy" aria-live="polite">
+        <h2 id="weeklySecondaryTitle"></h2>
+        <div class="weekly-secondary-meta" id="weeklySecondaryMeta"></div>
+        <div class="weekly-secondary-update" id="weeklySecondaryUpdate"></div>
+        <p class="weekly-secondary-overview" id="weeklySecondaryOverview"></p>
       </div>
       <div class="secondary-catalog-filters" id="secondaryCatalogFilters" hidden></div>
       <div class="secondary-catalog-scroll">
@@ -6683,7 +6933,7 @@
 
     <section class="home-section home-hot-section home-recommend-section" id="recommendSection" hidden aria-labelledby="recommendTitle" data-home-hot-section="1">
       <div class="home-section-head">
-        <h2 class="home-section-title" id="recommendTitle">最新上线</h2>
+        <h2 class="home-section-title" id="recommendTitle">本周更新</h2>
         <span class="home-section-line" aria-hidden="true"></span>
         <button class="home-section-more focusable" id="homeHotMore" type="button" tabindex="0">查看更多</button>
       </div>
@@ -16013,13 +16263,10 @@ utils.encode = function encode(arr, enc) {
         lists: [
           {
             id: "now-playing",
-            title: "热门",
-            hint: "全站趋势与热榜",
-            mediaType: "movie",
-            sources: [
-              { endpoint: "movie/now_playing", mediaType: "movie", params: { language: "zh-CN" } },
-              { endpoint: "discover/movie", mediaType: "movie", params: { with_original_language: "zh", sort_by: "popularity.desc", "primary_release_date_gte": "today-60", "primary_release_date_lte": "today+3", vote_count_gte: "5", language: "zh-CN" } }
-            ]
+            title: "本周更新",
+            hint: "本自然周更新的影视内容",
+            mediaType: "all",
+            sources: []
           },
           {
             id: "all",
@@ -16170,7 +16417,7 @@ utils.encode = function encode(arr, enc) {
       catalog: {},
       catalogPage: {},
       recent: { items: [], loading: false, loaded: false, error: "", refreshedAt: 0, diag: null },
-      homeLatest: { items: [], loading: false, loaded: false, error: "", loadedAt: 0, requestSeq: 0, diag: null },
+      homeLatest: { items: [], loading: false, loaded: false, error: "", loadedAt: 0, requestSeq: 0, diag: null, promise: null },
       gridRender: {},
       gridColumnCache: {},
       fallback: [],
@@ -16201,6 +16448,7 @@ utils.encode = function encode(arr, enc) {
         heroConfirmGuard: null,
         heroSwipe: null,
         heroSwipeSuppressClickUntil: 0,
+        weeklyBackdropToken: 0,
         resizeFrame: 0,
         route: "home",
         secondaryListId: "",
@@ -16210,6 +16458,7 @@ utils.encode = function encode(arr, enc) {
         secondaryActiveQueryKey: "",
         secondaryQueryPlan: null,
         secondaryFocusRestore: null,
+        secondaryWeeklyInitialFocusPending: false,
         secondaryReturn: null,
         secondaryHistoryBackPending: false,
         searchHistoryBackPending: false,
@@ -16644,9 +16893,13 @@ utils.encode = function encode(arr, enc) {
       };
     }
 
-    const HOME_LATEST_LOOKBACK_DAYS = 60;
-    const HOME_LATEST_MAX_AGE_DAYS = 90;
-    const HOME_LATEST_LIMIT = 24;
+    const HOME_WEEKLY_TV_DISCOVER_PAGES = 2;
+    const HOME_WEEKLY_TV_CANDIDATE_LIMIT = 40;
+    const HOME_WEEKLY_TV_LIMIT = 22;
+    const HOME_WEEKLY_MOVIE_LIMIT = 6;
+    const HOME_WEEKLY_TOTAL_LIMIT = 28;
+    const HOME_WEEKLY_DETAIL_CONCURRENCY = 5;
+    const HOME_WEEKLY_TIMEZONE = "Asia/Shanghai";
 
     function latestDateOnly(value) {
       const match = String(value == null ? "" : value).trim().match(/^(\d{4}-\d{2}-\d{2})/);
@@ -16674,112 +16927,246 @@ utils.encode = function encode(arr, enc) {
       return (mediaType === "movie" || mediaType === "tv") && tmdbId ? `${mediaType}:${tmdbId}` : "";
     }
 
-    function latestDayOffset(date, todayValue) {
-      const a = Date.parse(`${date}T00:00:00Z`);
-      const b = Date.parse(`${todayValue}T00:00:00Z`);
-      return Number.isFinite(a) && Number.isFinite(b) ? Math.floor((b - a) / 86400000) : NaN;
+    function weeklyShanghaiToday() {
+      try {
+        const parts = new Intl.DateTimeFormat("en-US", {
+          timeZone: HOME_WEEKLY_TIMEZONE,
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit"
+        }).formatToParts(new Date());
+        const values = parts.reduce((result, part) => {
+          if (part && part.type) result[part.type] = part.value;
+          return result;
+        }, {});
+        const value = `${values.year || ""}-${values.month || ""}-${values.day || ""}`;
+        return latestDateOnly(value) || today();
+      } catch (e) {
+        return today();
+      }
     }
 
-    function sortLatestReleasedItems(items, options) {
-      const opts = options || {};
-      const todayValue = latestDateOnly(opts.today) || today();
-      const month = todayValue.slice(0, 7);
-      const lookback = Math.max(0, Number(opts.lookbackDays == null ? HOME_LATEST_LOOKBACK_DAYS : opts.lookbackDays));
-      const rank = (item) => {
-        const date = latestReleaseDate(item);
-        const age = date ? latestDayOffset(date, todayValue) : NaN;
-        if (!date || !Number.isFinite(age) || age < 0) return 3;
-        if (date.slice(0, 7) === month) return 0;
-        if (age <= lookback) return 1;
-        return 2;
+    function weeklyAddDays(dateValue, amount) {
+      const date = new Date(`${latestDateOnly(dateValue) || today()}T00:00:00Z`);
+      date.setUTCDate(date.getUTCDate() + Number(amount || 0));
+      return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+    }
+
+    function weeklyDateRange() {
+      const todayValue = weeklyShanghaiToday();
+      const weekday = new Date(`${todayValue}T00:00:00Z`).getUTCDay();
+      const start = weeklyAddDays(todayValue, -((weekday + 6) % 7));
+      return { start, today: todayValue, tomorrow: weeklyAddDays(todayValue, 1), end: weeklyAddDays(start, 6), timezone: HOME_WEEKLY_TIMEZONE };
+    }
+
+    function weeklyDateInRange(value, from, to) {
+      const date = latestDateOnly(value);
+      return !!date && date >= from && date <= to;
+    }
+
+    function weeklyEpisodeCode(episode) {
+      if (!episode) return "";
+      const season = Number(episode.season_number);
+      const number = Number(episode.episode_number);
+      const seasonText = Number.isFinite(season) ? `S${String(season).padStart(2, "0")}` : "";
+      const episodeText = Number.isFinite(number) ? `E${String(number).padStart(2, "0")}` : "";
+      return `${seasonText}${episodeText}`;
+    }
+
+    function weeklyDateLabel(value) {
+      const date = latestDateOnly(value);
+      if (!date) return "";
+      const parts = date.split("-");
+      return `${Number(parts[1])}月${Number(parts[2])}日`;
+    }
+
+    function weeklyWeekdayLabel(value) {
+      const date = latestDateOnly(value);
+      if (!date) return "";
+      const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
+      return ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][weekday] || "";
+    }
+
+    function weeklyGenreText(item) {
+      const labels = typeof SECONDARY_GENRE_LABELS === "object" ? SECONDARY_GENRE_LABELS : {};
+      return (Array.isArray(item && item.genreIds) ? item.genreIds : [])
+        .map((id) => labels[String(id)] || "")
+        .filter(Boolean)
+        .slice(0, 2)
+        .join(" / ");
+    }
+
+    function weeklyMetaText(item) {
+      const type = item && item.mediaType === "tv" ? "电视剧" : "电影";
+      const year = String(item && (item.firstAirDate || item.releaseDate) || "").slice(0, 4);
+      const genres = weeklyGenreText(item);
+      return [year, genres || type].filter(Boolean).join(" · ");
+    }
+
+    function weeklyUpdateText(item, range) {
+      const current = range || weeklyDateRange();
+      if (!item || item.mediaType !== "tv") {
+        return `本周新片${item && item.releaseDate ? ` · ${weeklyDateLabel(item.releaseDate)}上映` : ""}`;
+      }
+      const last = item.weeklyLastEpisode;
+      const next = item.weeklyNextEpisode;
+      const lastDate = latestDateOnly(last && last.air_date);
+      const nextDate = latestDateOnly(next && next.air_date);
+      if (lastDate === current.today) return `${weeklyEpisodeCode(last) || "最新一集"} · 今天更新`;
+      if (nextDate === current.today) return `${weeklyEpisodeCode(next) || "下一集"} · 今天更新`;
+      if (weeklyDateInRange(lastDate, current.start, current.today)) return `更新至${weeklyEpisodeCode(last) || "最新一集"} · ${weeklyDateLabel(lastDate)}更新`;
+      if (weeklyDateInRange(nextDate, current.tomorrow, current.end)) return `${weeklyEpisodeCode(next) || "下一集"} · ${weeklyWeekdayLabel(nextDate)}更新`;
+      return "本周更新";
+    }
+
+    function weeklyClassifyTv(detail, range) {
+      const lastDate = latestDateOnly(detail && detail.last_episode_to_air && detail.last_episode_to_air.air_date);
+      const nextDate = latestDateOnly(detail && detail.next_episode_to_air && detail.next_episode_to_air.air_date);
+      const updated = weeklyDateInRange(lastDate, range.start, range.today);
+      const todayUpdate = lastDate === range.today || nextDate === range.today;
+      const upcoming = weeklyDateInRange(nextDate, range.tomorrow, range.end);
+      return {
+        updated,
+        todayUpdate,
+        upcoming,
+        keep: updated || todayUpdate || upcoming,
+        status: todayUpdate ? "today" : updated ? "updated" : upcoming ? "upcoming" : ""
       };
+    }
+
+    async function weeklyMapLimit(items, limit, worker) {
+      const values = Array.isArray(items) ? items : [];
+      const results = new Array(values.length);
+      let cursor = 0;
+      const run = async () => {
+        while (true) {
+          const index = cursor++;
+          if (index >= values.length) return;
+          try {
+            results[index] = { ok: true, value: await worker(values[index], index) };
+          } catch (error) {
+            results[index] = { ok: false, error };
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(Math.max(1, Number(limit || 1)), values.length) }, () => run()));
+      return results;
+    }
+
+    function weeklySourceIdentity(item, mediaType) {
+      const type = String(mediaType || item && (item.media_type || item.mediaType) || "").toLowerCase();
+      const id = String(item && item.id || item && item.tmdbId || "").trim();
+      return type && id ? `${type}:${id}` : "";
+    }
+
+    function weeklyItemDate(item) {
+      return latestDateOnly(item && (item.weeklyLastEpisodeDate || item.weeklyNextEpisodeDate || item.releaseDate || item.firstAirDate)) || "";
+    }
+
+    function sortWeeklyItems(items) {
+      const order = { today: 0, updated: 1, upcoming: 2, movie: 3 };
       return (Array.isArray(items) ? items : []).slice().sort((a, b) => {
-        const rankDelta = rank(a) - rank(b);
-        if (rankDelta) return rankDelta;
-        const dateDelta = latestReleaseDate(b).localeCompare(latestReleaseDate(a));
+        const orderDelta = Number(order[a && a.weeklyStatus] == null ? 9 : order[a.weeklyStatus]) - Number(order[b && b.weeklyStatus] == null ? 9 : order[b.weeklyStatus]);
+        if (orderDelta) return orderDelta;
+        const dateDelta = weeklyItemDate(b).localeCompare(weeklyItemDate(a));
         if (dateDelta) return dateDelta;
         return Number(b && b.popularity || 0) - Number(a && a.popularity || 0);
       });
     }
 
-    function filterLatestReleasedItems(items, options) {
-      const opts = options || {};
-      const todayValue = latestDateOnly(opts.today) || today();
-      const minDate = latestDateOnly(opts.minDate) || "";
-      return (Array.isArray(items) ? items : []).filter((item) => {
-        const date = latestReleaseDate(item);
-        return !!date && date <= todayValue && (!minDate || date >= minDate);
-      });
-    }
-
     function homeLatestSources() {
-      return [
-        {
-          key: "discoverMovie",
-          id: "home-latest-discover-movie",
-          title: "最新上线",
-          endpoint: "discover/movie",
-          mediaType: "movie",
-          params: {
-            sort_by: "primary_release_date.desc",
-            primary_release_date_gte: "today-60",
-            primary_release_date_lte: "today",
-            vote_count_gte: "3",
-            language: "zh-CN"
-          }
-        },
-        {
-          key: "discoverTv",
-          id: "home-latest-discover-tv",
-          title: "最新上线",
-          endpoint: "discover/tv",
-          mediaType: "tv",
-          params: {
-            sort_by: "first_air_date.desc",
-            first_air_date_gte: "today-60",
-            first_air_date_lte: "today",
-            include_null_first_air_dates: "false",
-            vote_count_gte: "3",
-            language: "zh-CN"
-          }
-        },
-        {
-          key: "nowPlayingPage1",
-          id: "home-latest-now-playing-1",
-          title: "最新上线",
-          endpoint: "movie/now_playing",
-          mediaType: "movie",
-          page: 1,
-          params: { language: "zh-CN" }
-        },
-        {
-          key: "nowPlayingPage2",
-          id: "home-latest-now-playing-2",
-          title: "最新上线",
-          endpoint: "movie/now_playing",
-          mediaType: "movie",
-          page: 2,
-          params: { language: "zh-CN" }
-        }
+      const range = weeklyDateRange();
+      const regions = [
+        { key: "zh", language: "zh", country: "CN|HK|TW", requestLanguage: "zh-CN" },
+        { key: "ko", language: "ko", country: "KR", requestLanguage: "zh-CN" },
+        { key: "ja", language: "ja", country: "JP", requestLanguage: "zh-CN" },
+        { key: "en", language: "en", country: "US|GB|CA|AU", requestLanguage: "zh-CN" }
       ];
+      const sources = [];
+      regions.forEach((region) => {
+        for (let page = 1; page <= HOME_WEEKLY_TV_DISCOVER_PAGES; page++) {
+          sources.push({
+            key: `tv-${region.key}-${page}`,
+            kind: "tv-discover",
+            id: `home-weekly-tv-${region.key}-${page}`,
+            title: "本周更新",
+            endpoint: "discover/tv",
+            mediaType: "tv",
+            page,
+            region: region.key,
+            params: {
+              air_date_gte: range.start,
+              air_date_lte: range.end,
+              timezone: HOME_WEEKLY_TIMEZONE,
+              with_original_language: region.language,
+              with_origin_country: region.country,
+              sort_by: "popularity.desc",
+              include_null_first_air_dates: "false",
+              language: region.requestLanguage
+            }
+          });
+        }
+      });
+      [1, 2].forEach((page) => sources.push({
+        key: `movie-now-playing-${page}`,
+        kind: "movie-now-playing",
+        id: `home-weekly-movie-now-playing-${page}`,
+        title: "本周更新",
+        endpoint: "movie/now_playing",
+        mediaType: "movie",
+        page,
+        params: { language: "zh-CN" }
+      }));
+      [1, 2].forEach((page) => sources.push({
+        key: `movie-discover-${page}`,
+        kind: "movie-discover",
+        id: `home-weekly-movie-discover-${page}`,
+        title: "本周更新",
+        endpoint: "discover/movie",
+        mediaType: "movie",
+        page,
+        params: {
+          primary_release_date_gte: range.start,
+          primary_release_date_lte: range.end,
+          sort_by: "popularity.desc",
+          include_adult: "false",
+          language: "zh-CN"
+        }
+      }));
+      return sources;
     }
 
     function recordHomeLatestDiag(diag) {
-      const value = Object.assign({ source: "latest" }, diag || {});
+      const value = Object.assign({ source: "weekly-feed" }, diag || {});
       state.homeLatest.diag = value;
       state.tvDiag.homeLatest = value;
       if (isTvDiagnosticEnabled()) {
-        try { console.debug("[Nostr TV][HOME_LATEST_DIAG]", JSON.stringify(value)); } catch (e) {}
+        try { console.debug("[Nostr TV][HOME_WEEKLY_DIAG]", JSON.stringify(value)); } catch (e) {}
       }
       return value;
     }
 
     async function loadHomeLatest() {
       const latest = state.homeLatest;
-      if (!latest || latest.loading || latest.loaded) return latest;
+      if (!latest) return latest;
+      if (latest.loading) return latest.promise || latest;
+      if (latest.loaded) return latest;
+      const promise = Promise.resolve().then(() => loadHomeLatestInternal(latest));
+      latest.promise = promise;
+      promise.then(() => {
+        if (latest.promise === promise) latest.promise = null;
+      }, () => {
+        if (latest.promise === promise) latest.promise = null;
+      });
+      return promise;
+    }
+
+    async function loadHomeLatestInternal(latest) {
       latest.loading = true;
       latest.error = "";
       const requestSeq = ++latest.requestSeq;
+      const range = weeklyDateRange();
+      latest.range = range;
       if (isHomeRouteActive()) renderHomeHot();
       const sources = homeLatestSources();
       const responses = await Promise.all(sources.map((source) => Promise.resolve()
@@ -16787,51 +17174,100 @@ utils.encode = function encode(arr, enc) {
         .then((body) => ({ source, body: body || {}, error: null }))
         .catch((error) => ({ source, body: null, error }))));
       if (latest.requestSeq !== requestSeq) return latest;
-      const merged = [];
-      const counts = { discoverMovieCount: 0, discoverTvCount: 0, nowPlayingPage1Count: 0, nowPlayingPage2Count: 0 };
+      const tvCandidatesById = new Map();
+      const movieCandidatesById = new Map();
+      const counts = { tvDiscoverResponses: 0, tvDiscoverCandidateCount: 0, movieNowPlayingCandidateCount: 0, movieDiscoverCandidateCount: 0, tvDetailSuccessCount: 0, tvDetailFailureCount: 0 };
       let goodCount = 0;
       responses.forEach(({ source, body, error }) => {
         if (error || !body) return;
         goodCount += 1;
         const values = Array.isArray(body.results) ? body.results : [];
-        const normalized = values.map((item, index) => normalizeTmdb(item, source, index)).filter((item) => {
-          if (!item) return false;
-          item.mediaType = source.mediaType;
-          item.releaseDate = latestReleaseDate(Object.assign({}, item, {
-            release_date: item.releaseDate,
-            first_air_date: item.releaseDate
-          }));
-          return hasPoster(item) && !!latestIdentity(item);
-        });
-        counts[`${source.key}Count`] = normalized.length;
-        merged.push(...normalized);
+        if (source.kind === "tv-discover") {
+          counts.tvDiscoverResponses += 1;
+          values.forEach((item) => {
+            const key = weeklySourceIdentity(item, "tv");
+            if (!key) return;
+            const candidate = Object.assign({}, item, { media_type: "tv", weeklyRegion: source.region });
+            const previous = tvCandidatesById.get(key);
+            if (!previous || Number(candidate.popularity || 0) > Number(previous.popularity || 0)) tvCandidatesById.set(key, candidate);
+          });
+        } else {
+          values.forEach((item) => {
+            const key = weeklySourceIdentity(item, "movie");
+            if (!key) return;
+            const candidate = Object.assign({}, item, { media_type: "movie", weeklyMovieSource: source.kind });
+            const previous = movieCandidatesById.get(key);
+            if (!previous || Number(candidate.popularity || 0) > Number(previous.popularity || 0)) movieCandidatesById.set(key, candidate);
+          });
+          counts[source.kind === "movie-discover" ? "movieDiscoverCandidateCount" : "movieNowPlayingCandidateCount"] += values.length;
+        }
       });
-      const todayValue = today();
-      const minDate = (() => {
-        const date = new Date();
-        date.setDate(date.getDate() - HOME_LATEST_MAX_AGE_DAYS);
-        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-      })();
-      const dedupedMap = new Map();
-      merged.forEach((item) => {
-        const key = latestIdentity(item);
-        if (key && !dedupedMap.has(key)) dedupedMap.set(key, item);
+      const tvCandidates = Array.from(tvCandidatesById.values()).sort((a, b) => Number(b.popularity || 0) - Number(a.popularity || 0)).slice(0, HOME_WEEKLY_TV_CANDIDATE_LIMIT);
+      counts.tvDiscoverCandidateCount = tvCandidates.length;
+      const tvDetails = await weeklyMapLimit(tvCandidates, HOME_WEEKLY_DETAIL_CONCURRENCY, (candidate) => requestJson(tmdbUrl({
+        id: "weekly-tv-detail",
+        title: "本周更新",
+        endpoint: `tv/${encodeURIComponent(String(candidate.id))}`,
+        mediaType: "tv",
+        params: { language: "zh-CN" }
+      }), 18));
+      const tvItems = [];
+      tvDetails.forEach((result, index) => {
+        if (!result || !result.ok || !result.value) {
+          counts.tvDetailFailureCount += 1;
+          return;
+        }
+        counts.tvDetailSuccessCount += 1;
+        const candidate = tvCandidates[index];
+        const detail = result.value;
+        const classification = weeklyClassifyTv(detail, range);
+        if (!classification.keep) return;
+        const merged = Object.assign({}, candidate, detail, { id: detail.id || candidate.id, media_type: "tv" });
+        if (!merged.poster_path) merged.poster_path = candidate.poster_path || "";
+        if (!merged.backdrop_path) merged.backdrop_path = candidate.backdrop_path || "";
+        if (!merged.name) merged.name = candidate.name || candidate.original_name || "未命名";
+        const item = normalizeTmdb(merged, { id: "weekly", title: "本周更新", mediaType: "tv" }, tvItems.length);
+        item.firstAirDate = latestDateOnly(detail.first_air_date || candidate.first_air_date);
+        item.weeklyLastEpisode = detail.last_episode_to_air || null;
+        item.weeklyNextEpisode = detail.next_episode_to_air || null;
+        item.weeklyLastEpisodeDate = latestDateOnly(item.weeklyLastEpisode && item.weeklyLastEpisode.air_date);
+        item.weeklyNextEpisodeDate = latestDateOnly(item.weeklyNextEpisode && item.weeklyNextEpisode.air_date);
+        item.releaseDate = item.weeklyLastEpisodeDate || item.weeklyNextEpisodeDate || item.firstAirDate || "";
+        item.weeklyStatus = classification.status;
+        item.weeklyUpdateText = weeklyUpdateText(item, range);
+        item.weeklyMetaText = weeklyMetaText(item);
+        item.weeklyDetail = detail;
+        if (hasPoster(item) && latestIdentity(item)) tvItems.push(item);
       });
-      const sorted = sortLatestReleasedItems(Array.from(dedupedMap.values()), { lookbackDays: HOME_LATEST_LOOKBACK_DAYS, today: todayValue });
-      const filtered = filterLatestReleasedItems(sorted, { today: todayValue, minDate });
-      latest.items = filtered.slice(0, HOME_LATEST_LIMIT);
+      const movieItemsById = new Map();
+      Array.from(movieCandidatesById.values()).forEach((raw, index) => {
+        const releaseDate = latestDateOnly(raw.release_date);
+        if (!weeklyDateInRange(releaseDate, range.start, range.end)) return;
+        const item = normalizeTmdb(raw, { id: "weekly", title: "本周更新", mediaType: "movie" }, index);
+        item.releaseDate = releaseDate;
+        item.weeklyStatus = "movie";
+        item.weeklyUpdateText = weeklyUpdateText(item, range);
+        item.weeklyMetaText = weeklyMetaText(item);
+        if (hasPoster(item) && latestIdentity(item)) movieItemsById.set(latestIdentity(item), item);
+      });
+      const sortedTv = sortWeeklyItems(tvItems).slice(0, HOME_WEEKLY_TV_LIMIT);
+      const remainingMovieSlots = Math.max(0, HOME_WEEKLY_TOTAL_LIMIT - sortedTv.length);
+      const sortedMovies = sortWeeklyItems(Array.from(movieItemsById.values())).slice(0, Math.min(HOME_WEEKLY_MOVIE_LIMIT, remainingMovieSlots));
+      latest.items = sortedTv.concat(sortedMovies);
       latest.loading = false;
       latest.loaded = true;
       latest.loadedAt = Date.now();
       latest.error = goodCount ? "" : "加载失败";
       recordHomeLatestDiag(Object.assign({}, counts, {
-        mergedCount: merged.length,
-        dedupedCount: dedupedMap.size,
-        filteredCount: filtered.length,
+        weekStart: range.start,
+        weekEnd: range.end,
+        today: range.today,
+        timezone: range.timezone,
+        tvRenderedCount: sortedTv.length,
+        movieRenderedCount: sortedMovies.length,
         renderedCount: latest.items.length,
         firstItemTitle: latest.items[0] && latest.items[0].title || "",
-        firstItemDate: latest.items[0] && latestReleaseDate(latest.items[0]) || "",
-        firstItems: latest.items.slice(0, 10).map((item) => ({ title: item.title || "", mediaType: item.mediaType || "", releaseDate: latestReleaseDate(item) }))
+        firstItems: latest.items.slice(0, 10).map((item) => ({ title: item.title || "", mediaType: item.mediaType || "", update: item.weeklyUpdateText || "" }))
       }));
       if (isHomeRouteActive()) renderHomeHot();
       return latest;
@@ -16852,16 +17288,22 @@ utils.encode = function encode(arr, enc) {
       return true;
     }
 
-    function resolveHomeLatestItems() {
+    function resolveHomeWeeklyItems() {
       const page = state.homeLatest || null;
       return {
-        source: "latest",
+        source: "weekly-feed",
         items: filterBlocked(page && page.items || []),
         page,
         loading: !!(page && page.loading),
         error: page && page.error || "",
         path: "state.homeLatest.items"
       };
+    }
+
+    // Keep the established function name as a compatibility boundary for
+    // diagnostics and the existing Home renderer; its data is now Weekly.
+    function resolveHomeLatestItems() {
+      return resolveHomeWeeklyItems();
     }
 
     async function setHomeHotSource(source) {
@@ -20612,7 +21054,7 @@ utils.encode = function encode(arr, enc) {
       const items = [
         { key: "live", label: "直播", action: "live" },
         { key: "recent", label: "最近观看", action: "secondary", listId: "recent" },
-        { key: "latest", label: "最新上线", action: "secondary", listId: "now-playing" },
+        { key: "latest", label: "本周更新", action: "secondary", listId: "now-playing" },
         { key: "movie", label: "电影", action: "secondary", listId: "movie" },
         { key: "tv", label: "电视剧", action: "secondary", listId: "tv" },
         { key: "anime", label: "动画", action: "secondary", listId: "anime" },
@@ -21754,7 +22196,7 @@ utils.encode = function encode(arr, enc) {
     const SECONDARY_TV_REGION_IDS = ["CN", "HK", "TW", "KR", "JP", "US", "GB"];
     const SECONDARY_ANIMATION_REGION_IDS = ["CN", "JP"];
     const SECONDARY_FILTER_SCHEMA = {
-      "now-playing": ["mediaType", "year", "sort"],
+      "now-playing": [],
       movie: ["genre", "region", "year", "sort"],
       tv: ["genre", "region", "year", "sort"],
       anime: ["region", "year", "sort"],
@@ -21769,18 +22211,14 @@ utils.encode = function encode(arr, enc) {
       const existing = home.secondaryFilters[id];
       const filters = home.secondaryFilters[id] = Object.assign(secondaryFilterDefaults(), home.secondaryFilters[id] || {});
       filters.lastFocused = Object.assign({}, filters.lastFocused || {});
-      // 最新上线的默认排序必须是日期优先；保留用户之后明确选择的“默认”。
-      if (id === "now-playing" && !existing) {
-        filters.sort = "latest";
-        filters.lastFocused.sort = "latest";
-      }
+      // Weekly Feed has no catalog filter rows; retain the state boundary so
+      // older snapshots can still be read without reviving the old filters.
       return filters;
     }
     function secondaryCatalogBaseItems(id) {
       if (normalizeLegacyCategoryId(id) === "recent") return recentWatchingItems();
-      // now-playing is retained only as a legacy route id.  Its Secondary
-      // catalog is independently paged from Discover and must not expose the
-      // old Hot/catalog cache while the first page is loading.
+      // now-playing is the finite Weekly Feed route.  It is populated from
+      // state.homeLatest by loadSecondaryPage instead of the catalog cache.
       if (normalizeLegacyCategoryId(id) === "now-playing") return [];
       return filterBlocked(state.catalog && state.catalog[id] || []);
     }
@@ -21888,7 +22326,7 @@ utils.encode = function encode(arr, enc) {
     }
     function secondaryFilterKey(id, filters) {
       id = normalizeLegacyCategoryId(id);
-      return JSON.stringify([id, id === "now-playing" ? "latest-discover" : id === "recent" ? "local-history" : "tmdb", filters.mediaType, filters.genre, filters.region, filters.year, filters.sort]);
+      return JSON.stringify([id, id === "now-playing" ? "weekly-feed" : id === "recent" ? "local-history" : "tmdb", filters.mediaType, filters.genre, filters.region, filters.year, filters.sort]);
     }
     function secondaryGetQuery(id) {
       id = normalizeLegacyCategoryId(id);
@@ -21901,7 +22339,7 @@ utils.encode = function encode(arr, enc) {
         query = home.secondaryQueries[key] = {
           key,
           listId: id,
-          source: id === "now-playing" ? "latest-discover" : id === "recent" ? "local-history" : "tmdb",
+          source: id === "now-playing" ? "weekly-feed" : id === "recent" ? "local-history" : "tmdb",
           page: 0,
           totalPages: 0,
           totalResults: 0,
@@ -21965,60 +22403,14 @@ utils.encode = function encode(arr, enc) {
       return { entry, server, client };
     }
 
-    function secondaryLatestSources(filters) {
-      const sort = filters && filters.sort === "hot" ? "popularity.desc" : filters && filters.sort === "rating" ? "vote_average.desc" : "{date}";
-      const sources = [];
-      if (!filters || filters.mediaType === "all" || filters.mediaType === "movie") {
-        sources.push({
-          id: "now-playing",
-          title: "最新上线",
-          endpoint: "discover/movie",
-          mediaType: "movie",
-          params: {
-            sort_by: sort === "{date}" ? "primary_release_date.desc" : sort,
-            include_adult: "false",
-            language: "zh-CN"
-          }
-        });
-      }
-      if (!filters || filters.mediaType === "all" || filters.mediaType === "tv") {
-        sources.push({
-          id: "now-playing",
-          title: "最新上线",
-          endpoint: "discover/tv",
-          mediaType: "tv",
-          params: {
-            sort_by: sort === "{date}" ? "first_air_date.desc" : sort,
-            include_adult: "false",
-            include_null_first_air_dates: "false",
-            language: "zh-CN"
-          }
-        });
-      }
-      if (filters && filters.year === "all") {
-        sources.forEach((source) => {
-          if (source.mediaType === "tv") {
-            source.params.first_air_date_gte = "today-60";
-            source.params.first_air_date_lte = "today";
-          } else {
-            source.params.primary_release_date_gte = "today-60";
-            source.params.primary_release_date_lte = "today";
-          }
-        });
-      }
-      return sources;
+    function secondaryLatestSources() {
+      // The old 60-day Discover catalog is intentionally retired for this
+      // route.  `now-playing` is served by the finite Weekly Feed loader.
+      return [];
     }
 
-    function sortSecondaryLatestItems(items, filters) {
-      const source = Array.isArray(items) ? items : [];
-      const metric = (item, key) => Number(item && item[key] || 0);
-      if (filters && filters.sort === "hot") {
-        return source.slice().sort((a, b) => metric(b, "popularity") - metric(a, "popularity") || latestReleaseDate(b).localeCompare(latestReleaseDate(a)));
-      }
-      if (filters && filters.sort === "rating") {
-        return source.slice().sort((a, b) => metric(b, "voteAverage") - metric(a, "voteAverage") || metric(b, "popularity") - metric(a, "popularity") || latestReleaseDate(b).localeCompare(latestReleaseDate(a)));
-      }
-      return sortLatestReleasedItems(source, { lookbackDays: HOME_LATEST_LOOKBACK_DAYS });
+    function sortSecondaryLatestItems(items) {
+      return sortWeeklyItems(items);
     }
 
     function secondaryQuerySourceLists(id, filters, query) {
@@ -22026,7 +22418,7 @@ utils.encode = function encode(arr, enc) {
       const server = [], client = [], endpointMap = [];
       let configured;
       if (id === "now-playing") {
-        configured = secondaryLatestSources(filters);
+        configured = [];
       } else if (SECONDARY_FULL_CATALOG_IDS.has(id)) {
         // Home sources intentionally use recent windows.  Secondary pages
         // use dedicated canonical Discover sources so year=all means the
@@ -22085,11 +22477,11 @@ utils.encode = function encode(arr, enc) {
     }
     function secondaryFilterGroups(id, items) {
       id = normalizeLegacyCategoryId(id);
-      if (id === "recent") return [];
+      if (id === "recent" || id === "now-playing") return [];
       const source = Array.isArray(items) ? items : [];
       const schema = secondaryFilterSchemaKeys(id);
       const list = getList(id);
-      const configured = id === "now-playing" ? secondaryLatestSources(secondaryFilterState(id)) : secondaryConfigSources(id);
+      const configured = id === "now-playing" ? [] : secondaryConfigSources(id);
       const discover = configured.some(secondaryIsDiscoverSource);
       const moviePage = id === "movie" || String(list && list.mediaType || "").toLowerCase() === "movie";
       const tvPage = id === "tv" || String(list && list.mediaType || "").toLowerCase() === "tv";
@@ -22123,6 +22515,7 @@ utils.encode = function encode(arr, enc) {
     }
     function secondaryFilterItems(id, baseItems) {
       id = normalizeLegacyCategoryId(id);
+      if (id === "now-playing") return filterBlocked(Array.isArray(baseItems) ? baseItems : []);
       const filters = secondaryFilterState(id);
       const query = secondaryActiveQuery(id);
       const serverFilters = new Set(query && query.listId === id ? query.serverSideFilters || [] : []);
@@ -22210,6 +22603,42 @@ utils.encode = function encode(arr, enc) {
         if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
         return query;
       }
+      if (id === "now-playing") {
+        query.loading = true;
+        query.error = "";
+        const requestSeq = ++query.requestSeq;
+        if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
+        try {
+          await loadHomeLatest();
+        } catch (error) {
+          if (query.requestSeq === requestSeq) {
+            query.loading = false;
+            query.loaded = true;
+            query.error = "加载失败";
+            query.hasMore = false;
+            if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
+          }
+          return query;
+        }
+        if (query.requestSeq !== requestSeq) return query;
+        const items = filterBlocked(state.homeLatest && state.homeLatest.items || []);
+        query.loading = false;
+        query.loaded = true;
+        query.error = state.homeLatest && state.homeLatest.error || "";
+        query.page = 1;
+        query.totalPages = 1;
+        query.totalResults = items.length;
+        query.hasMore = false;
+        query.finite = true;
+        query.items = items.slice();
+        query.serverSideFilters = [];
+        query.clientSideFilters = [];
+        query.endpointMap = ["discover/tv", "tv/{id}", "movie/now_playing", "discover/movie"];
+        query.sourceStates = [];
+        state.homeV14.secondaryPage = 1;
+        if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
+        return query;
+      }
       if (page > 1 && !query.hasMore && !query.error) return query;
       query.loading = true;
       query.error = "";
@@ -22265,14 +22694,6 @@ utils.encode = function encode(arr, enc) {
         return query;
       }
       query.items = uniqueMedia((query.items || []).concat(incoming));
-      if (id === "now-playing") {
-        const minDate = filters.year === "all" ? (() => {
-          const date = new Date();
-          date.setDate(date.getDate() - HOME_LATEST_LOOKBACK_DAYS);
-          return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-        })() : "";
-        query.items = filterLatestReleasedItems(sortSecondaryLatestItems(query.items, filters), { minDate });
-      }
       query.page = Math.max(page, ...plan.sourceStates.map((sourceState) => Number(sourceState.page || 0)));
       query.totalPages = Math.max(page, ...plan.sourceStates.map((sourceState) => Number(sourceState.totalPages || 0)));
       const totals = plan.sourceStates.map((sourceState) => Number(sourceState.totalResults)).filter(Number.isFinite);
@@ -22381,12 +22802,17 @@ utils.encode = function encode(arr, enc) {
       };
       state.homeV14.secondaryListId = listId;
       state.homeV14.secondaryFocusRestore = null;
+      state.homeV14.secondaryWeeklyInitialFocusPending = listId === "now-playing";
       state.homeV14.secondaryHistoryBackPending = false;
       secondaryFilterState(listId);
       state.homeV14.secondaryPage = 1;
       state.homeV14.route = "secondary";
       setHomeOnlyPresentationVisible(false);
       syncHomeRoutePresentation();
+      // The Weekly route is a full-screen presentation on the existing
+      // Secondary page node.  Start that page at its own top while the
+      // existing return snapshot keeps the Home scroll position intact.
+      if (listId === "now-playing") applyHomeScrollTop(0);
       const query = secondaryGetQuery(listId);
       renderSecondaryCatalog();
       if (listId === "recent") {
@@ -22425,9 +22851,122 @@ utils.encode = function encode(arr, enc) {
           });
         }
       } else if (!query.loaded && !query.loading) loadSecondaryPage(listId, query, 1).catch(() => {});
-      requestAnimationFrame(() => focusRemoteTarget($("secondaryCatalogBack")));
+      requestAnimationFrame(() => {
+        if (listId === "now-playing") {
+          if (!focusWeeklySecondaryInitial()) focusRemoteTarget($("secondaryCatalogBack"));
+        } else focusRemoteTarget($("secondaryCatalogBack"));
+      });
       scheduleUiSnapshotSave();
       return true;
+    }
+
+    function weeklyBackgroundValue(url) {
+      const value = String(url || "").trim();
+      if (!value) return "";
+      return `url("${value.replace(/\\/g, "\\\\").replace(/"/g, "\\\"").replace(/\)/g, "%29")}")`;
+    }
+
+    function updateWeeklySecondaryHero(item) {
+      const title = $("weeklySecondaryTitle");
+      const meta = $("weeklySecondaryMeta");
+      const update = $("weeklySecondaryUpdate");
+      const overview = $("weeklySecondaryOverview");
+      if (!item) {
+        if (title) title.textContent = "本周更新";
+        if (meta) meta.textContent = "";
+        if (update) update.textContent = "";
+        if (overview) overview.textContent = "";
+        return;
+      }
+      if (title) title.textContent = item.title || "未命名";
+      if (meta) meta.textContent = item.weeklyMetaText || weeklyMetaText(item);
+      if (update) update.textContent = item.weeklyUpdateText || weeklyUpdateText(item, state.homeLatest && state.homeLatest.range || weeklyDateRange());
+      if (overview) overview.textContent = item.desc || "";
+      const current = $("weeklySecondaryBackdrop");
+      const next = $("weeklySecondaryBackdropNext");
+      if (!current) return;
+      const source = displayImage(item.landscape || item.image || item.pic, { size: "w1920" });
+      const fallback = displayImage(item.pic, { size: "w780" });
+      const firstImage = current.style.backgroundImage;
+      if (!firstImage && fallback) current.style.backgroundImage = weeklyBackgroundValue(fallback);
+      if (!source) return;
+      const token = ++state.homeV14.weeklyBackdropToken;
+      const apply = () => {
+        if (token !== Number(state.homeV14.weeklyBackdropToken || 0)) return;
+        if (!next) {
+          current.style.backgroundImage = weeklyBackgroundValue(source);
+          return;
+        }
+        next.style.backgroundImage = weeklyBackgroundValue(source);
+        next.classList.add("is-visible");
+        setTimeout(() => {
+          if (token !== Number(state.homeV14.weeklyBackdropToken || 0)) return;
+          current.style.backgroundImage = next.style.backgroundImage;
+          next.classList.remove("is-visible");
+        }, 240);
+      };
+      const image = new Image();
+      image.onload = apply;
+      image.onerror = () => {
+        if (!firstImage && fallback && token === Number(state.homeV14.weeklyBackdropToken || 0)) current.style.backgroundImage = weeklyBackgroundValue(fallback);
+      };
+      image.src = source;
+    }
+
+    function focusWeeklySecondaryInitial() {
+      if (homeUiRoute() !== "secondary" || state.homeV14.secondaryListId !== "now-playing") return false;
+      const grid = $("secondaryCatalogGrid");
+      const card = grid && Array.from(grid.querySelectorAll(".weekly-card")).find((item) => isVisibleFocusable(item));
+      if (!card) return false;
+      state.homeV14.secondaryWeeklyInitialFocusPending = false;
+      focusRemoteTarget(card);
+      updateWeeklySecondaryHero(card.__mediaItem || null);
+      return true;
+    }
+
+    function syncSecondaryCatalogPresentation(listId) {
+      const page = $("secondaryCatalog");
+      const grid = $("secondaryCatalogGrid");
+      const weekly = listId === "now-playing";
+      if (page) {
+        page.classList.toggle("weekly-secondary-page", weekly);
+        page.dataset.secondaryKind = weekly ? "weekly" : "catalog";
+      }
+      if (!grid) return weekly;
+      if (weekly) {
+        grid.classList.remove("media-grid");
+        grid.classList.add("rail", "weekly-secondary-rail");
+        grid.dataset.railKey = "secondary:weekly";
+      } else {
+        grid.classList.remove("rail", "weekly-secondary-rail");
+        grid.classList.add("media-grid");
+        grid.dataset.railKey = `secondary:${listId}`;
+      }
+      return weekly;
+    }
+
+    function renderWeeklySecondaryCatalog(query, items) {
+      const grid = $("secondaryCatalogGrid");
+      const status = $("secondaryCatalogLoadStatus");
+      if (!grid) return;
+      syncSecondaryCatalogPresentation("now-playing");
+      grid.dataset.listId = "secondary:now-playing";
+      grid.dataset.secondaryQueryKey = query && query.key || "";
+      if (status) status.textContent = query && query.loading ? "本周更新加载中…" : query && query.error ? "本周更新加载失败" : items.length ? "" : query && query.loaded ? "暂无本周更新" : "";
+      if (query && query.loading && !query.page) {
+        showGridStatus(grid, "本周更新加载中…");
+      } else if (query && query.error && !query.page) {
+        showGridStatus(grid, "本周更新加载失败");
+      } else if (!query || !query.loaded) {
+        showGridStatus(grid, "本周更新加载中…");
+      } else if (!items.length) {
+        showGridStatus(grid, "暂无本周更新");
+      } else {
+        fillRail(grid, items, { weekly: true, railKey: "secondary:weekly" });
+        const active = grid.querySelector(".weekly-card:focus") || grid.querySelector(".weekly-card");
+        if (active) updateWeeklySecondaryHero(active.__mediaItem || null);
+        if (state.homeV14.secondaryWeeklyInitialFocusPending) requestAnimationFrame(() => focusWeeklySecondaryInitial());
+      }
     }
 
     function renderSecondaryCatalog() {
@@ -22435,10 +22974,19 @@ utils.encode = function encode(arr, enc) {
       const listId = state.homeV14.secondaryListId;
       const list = getList(listId);
       const isRecent = listId === "recent";
-      const title = isRecent ? "最近观看" : listId === "now-playing" ? "最新上线" : list && list.title || "分类";
+      const isWeekly = listId === "now-playing";
+      const title = isRecent ? "最近观看" : isWeekly ? "本周更新" : list && list.title || "分类";
       const query = secondaryActiveQuery(listId) || secondaryGetQuery(listId);
       const grid = $("secondaryCatalogGrid");
       const baseItems = isRecent ? recentWatchingItems() : query.loaded ? filterBlocked(query.items || []) : secondaryCatalogBaseItems(listId);
+      if (isWeekly) {
+        syncSecondaryCatalogPresentation(listId);
+        renderWeeklySecondaryCatalog(query, baseItems);
+        if ($("secondaryCatalogTitle")) $("secondaryCatalogTitle").textContent = title;
+        if ($("secondaryCatalogCount")) $("secondaryCatalogCount").textContent = query.loaded ? `${baseItems.length} 部` : "";
+        return;
+      }
+      syncSecondaryCatalogPresentation(listId);
       if (isRecent && query.loaded) query.items = baseItems.slice();
       const items = isRecent ? uniqueRecentWatchingMedia(baseItems) : secondaryFilterItems(listId, baseItems);
       const activeClientFilter = (query.clientSideFilters || []).some((key) => {
@@ -22513,6 +23061,7 @@ utils.encode = function encode(arr, enc) {
       state.homeV14.route = "home";
       state.homeV14.secondaryListId = "";
       state.homeV14.secondaryFocusRestore = null;
+      state.homeV14.secondaryWeeklyInitialFocusPending = false;
       state.homeV14.secondaryReturn = null;
       state.activeList = "all";
       renderAll({ deferContent: false });
@@ -22546,6 +23095,7 @@ utils.encode = function encode(arr, enc) {
       section.dataset.hotSource = resolved.source;
       rail.dataset.hotSource = resolved.source;
       rail.dataset.hotDataPath = resolved.path;
+      rail.dataset.weeklyDataPath = resolved.path;
       if (previousSource && previousSource !== resolved.source) {
         rail.dataset.homeRenderKeys = "";
         rail.replaceChildren();
@@ -22554,16 +23104,16 @@ utils.encode = function encode(arr, enc) {
       ensureHomeLatestData();
       const page = resolved.page;
       if (page && page.loading && !resolved.items.length) {
-        showHomeRailStatus(rail, "最新上线加载中...", { variant: "portrait" });
+        showHomeRailStatus(rail, "本周更新加载中...", { variant: "portrait" });
         return;
       }
       if (page && page.error) {
-        showHomeRailStatus(rail, "最新上线加载失败", { variant: "portrait" });
+        showHomeRailStatus(rail, "本周更新加载失败", { variant: "portrait" });
         return;
       }
       const items = resolved.items;
       if (items.length) fillHomeRail(rail, items, { variant: "portrait", limit: homeRailLimit("portrait"), homeMore: true, railKey: "home:hot" });
-      else showHomeRailStatus(rail, page && page.loaded ? "暂无最新上线" : "最新上线加载中...", { variant: "portrait" });
+      else showHomeRailStatus(rail, page && page.loaded ? "暂无本周更新" : "本周更新加载中...", { variant: "portrait" });
       updateBlockSelectUi();
       if (opts.hotOnly) recordHomeV14Diag();
     }
@@ -22728,6 +23278,7 @@ utils.encode = function encode(arr, enc) {
       const children = items.map((item, index) => mediaCard(item, index, {
         landscape,
         home: !!opts.home,
+        weekly: !!opts.weekly,
         homeLazy: !!opts.homeLazy && isTvLikeDevice() && index >= Number(opts.homeEagerCount == null ? 4 : opts.homeEagerCount),
         searchResult: opts.searchResult === true,
         searchQuery: opts.searchQuery || ""
@@ -22737,6 +23288,10 @@ utils.encode = function encode(arr, enc) {
         if (more) children.push(more);
       }
       rail.replaceChildren(...children);
+      if (opts.weekly) children.forEach((card) => {
+        if (!card || !card.classList || !card.classList.contains("weekly-card")) return;
+        card.addEventListener("focus", () => updateWeeklySecondaryHero(card.__mediaItem || null));
+      });
       if (savedLeft) requestAnimationFrame(() => rail.scrollLeft = savedLeft);
       if (!rail.dataset.scrollBound) {
         rail.dataset.scrollBound = "1";
@@ -23096,9 +23651,10 @@ utils.encode = function encode(arr, enc) {
       const recent = item.source === "history" && !recentWatching;
       const landscape = !!opts.landscape;
       const home = !!opts.home;
+      const weekly = !!opts.weekly;
       const searchResult = opts.searchResult === true;
       const searchQuery = String(opts.searchQuery || "").trim();
-      button.className = "card focusable" + (people > 0 ? " has-people" : "") + (recent ? " recent-card" : "") + (recentWatching ? " recent-watching-card" : "") + (landscape ? " landscape-card" : "") + (home ? " home-card" : "");
+      button.className = "card focusable" + (people > 0 ? " has-people" : "") + (recent ? " recent-card" : "") + (recentWatching ? " recent-watching-card" : "") + (landscape ? " landscape-card" : "") + (home ? " home-card" : "") + (weekly ? " weekly-card" : "");
       button.type = "button";
       button.dataset.cardIndex = String(index || 0);
       if (key) button.dataset.mediaKey = key;
@@ -23107,6 +23663,7 @@ utils.encode = function encode(arr, enc) {
         button.dataset.recentWatching = "1";
         button.dataset.recentMediaKey = recentWatchingMediaKey(item);
       }
+      if (weekly) button.dataset.weeklyCard = "1";
       if (searchResult && searchQuery) {
         button.dataset.searchResult = "1";
         button.dataset.searchQuery = searchQuery;
@@ -31568,6 +32125,13 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         return active;
       }
       if (grid && grid.contains(active) && active.classList && active.classList.contains("card")) {
+        if (grid.classList.contains("weekly-secondary-rail")) {
+          const index = cards.indexOf(active);
+          if (key === "ArrowLeft") return cards[index - 1] || active;
+          if (key === "ArrowRight") return cards[index + 1] || active;
+          if (key === "ArrowUp") return back || active;
+          return active;
+        }
         const index = cards.indexOf(active), columns = Math.max(1, gridColumns(grid)), rowIndex = index >= 0 ? Math.floor(index / columns) : 0;
         if (index < 0) return active;
         if (key === "ArrowLeft") return index % columns > 0 ? cards[index - 1] : active;
