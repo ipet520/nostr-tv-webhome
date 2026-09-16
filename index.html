@@ -5492,6 +5492,7 @@
       opacity: 0;
       pointer-events: none;
       background: #111;
+      transition: opacity 260ms ease;
     }
 
     .home-hero-slide.active {
@@ -5512,8 +5513,8 @@
       z-index: 1;
       pointer-events: none;
       background:
-        linear-gradient(90deg, rgba(8, 11, 16, .94) 0%, rgba(8, 11, 16, .62) 34%, rgba(8, 11, 16, .12) 66%, transparent 100%),
-        linear-gradient(0deg, #080b10 0%, rgba(8, 11, 16, .86) 10%, rgba(8, 11, 16, .3) 40%, rgba(8, 11, 16, .04) 72%, transparent 100%);
+        linear-gradient(90deg, rgba(8, 11, 16, .94) 0%, rgba(8, 11, 16, .7) 24%, rgba(8, 11, 16, .27) 46%, rgba(8, 11, 16, .05) 68%, transparent 100%),
+        linear-gradient(0deg, rgba(8, 11, 16, .78) 0%, rgba(8, 11, 16, .38) 13%, rgba(8, 11, 16, .12) 38%, rgba(8, 11, 16, .03) 68%, transparent 100%);
     }
 
     .home-hero-content {
@@ -5527,6 +5528,10 @@
       flex-direction: column;
       align-items: flex-start;
       gap: 12px;
+      border: 0;
+      outline: 0;
+      box-shadow: none;
+      background: transparent;
     }
 
     .home-hero-logo-wrap {
@@ -5559,10 +5564,40 @@
     .home-hero-title.has-logo { display: none; }
 
     .home-hero-meta {
-      min-height: 1.35em;
       color: rgba(255, 255, 255, .75);
       font-size: clamp(14px, 1.05vw, 20px);
       line-height: 1.4;
+    }
+
+    .home-hero-tagline,
+    .home-hero-status {
+      max-width: 100%;
+      color: rgba(255, 255, 255, .84);
+      font-size: clamp(14px, 1.02vw, 19px);
+      line-height: 1.35;
+    }
+
+    .home-hero-tagline {
+      font-weight: 600;
+      color: rgba(255, 255, 255, .9);
+    }
+
+    .home-hero-overview {
+      max-width: min(650px, 100%);
+      margin: 0;
+      color: rgba(255, 255, 255, .78);
+      font-size: clamp(14px, .98vw, 18px);
+      line-height: 1.55;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 3;
+      overflow: hidden;
+    }
+
+    .home-hero-tagline[hidden],
+    .home-hero-status[hidden],
+    .home-hero-overview[hidden] {
+      display: none !important;
     }
 
     .home-hero-action {
@@ -5582,8 +5617,8 @@
       outline-offset: 0;
       background: rgba(191, 233, 255, .96);
       color: #06111b;
-      box-shadow: none;
-      transform: translateY(-4px);
+      box-shadow: 0 0 0 2px rgba(191, 233, 255, .22), 0 6px 18px rgba(0, 0, 0, .22);
+      transform: translateY(-2px);
     }
 
     .home-hero-dots {
@@ -5593,18 +5628,20 @@
       z-index: 3;
       display: flex;
       align-items: center;
-      gap: 7px;
+      gap: 8px;
     }
 
     .home-hero-dot {
-      width: 9px;
-      height: 9px;
-      border-radius: 999px;
+      width: 22px;
+      height: 3px;
+      border-radius: 2px;
       background: rgba(255, 255, 255, .42);
+      transition: width 180ms ease, background-color 180ms ease;
     }
 
     .home-hero-dot.active {
-      width: 24px;
+      width: 42px;
+      height: 4px;
       background: #fff;
     }
 
@@ -6005,6 +6042,18 @@
     html.tv-preview .focus-halo-edge-both:focus {
       transform: translateY(-1px) scale(1) translateZ(0) !important;
       transform-origin: center center;
+    }
+
+    html.tv-mode #home.home-root #homeHero:focus,
+    html.tv-preview #home.home-root #homeHero:focus,
+    html.tv-mode #home.home-root .home-hero-content:focus,
+    html.tv-mode #home.home-root .home-hero-content:focus-within,
+    html.tv-preview #home.home-root .home-hero-content:focus,
+    html.tv-preview #home.home-root .home-hero-content:focus-within {
+      outline: 0 !important;
+      border: 0 !important;
+      box-shadow: none !important;
+      background: transparent !important;
     }
 
     /* TV landscape sections share the full-width Hero outer frame. */
@@ -6957,8 +7006,11 @@
           <img id="homeHeroLogo" class="home-hero-logo" alt="">
         </div>
         <h1 class="home-hero-title" id="homeHeroTitle">正在准备首页</h1>
+        <div class="home-hero-tagline" id="homeHeroTagline" hidden></div>
         <div class="home-hero-meta" id="homeHeroMeta"></div>
-        <button class="home-hero-action focusable" id="homeHeroAction" type="button">查看详情</button>
+        <div class="home-hero-status" id="homeHeroStatus" hidden></div>
+        <p class="home-hero-overview" id="homeHeroOverview" hidden></p>
+        <button class="home-hero-action focusable" id="homeHeroAction" type="button">查看详情 <span aria-hidden="true">›</span></button>
       </div>
       <div class="home-hero-dots" id="homeHeroDots" aria-hidden="true"></div>
     </section>
@@ -16499,6 +16551,10 @@ utils.encode = function encode(arr, enc) {
         heroIndex: 0,
         heroItem: null,
         heroTimer: 0,
+        heroAutoplayPaused: false,
+        heroAutoplayResumeTimer: 0,
+        heroBackdropSeq: 0,
+        heroBackdropCache: {},
         heroConfirmGuard: null,
         heroSwipe: null,
         heroSwipeSuppressClickUntil: 0,
@@ -21761,6 +21817,39 @@ utils.encode = function encode(arr, enc) {
         : homeHeroFallbackCandidates();
     }
 
+    function homeHeroBackdropUrl(item) {
+      const value = homeHeroBackdrop(item);
+      return value ? displayImage(value, { size: "w1280" }) : "";
+    }
+
+    function homeHeroBackdropCss(url) {
+      return url ? `url("${String(url).replace(/\\/g, "\\\\").replace(/"/g, "%22")}")` : "";
+    }
+
+    function preloadHomeHeroBackdrop(url) {
+      const source = String(url || "").trim();
+      const home = state.homeV14;
+      if (!source || !home) return Promise.resolve(false);
+      const cache = home.heroBackdropCache || (home.heroBackdropCache = {});
+      if (cache[source] === true) return Promise.resolve(true);
+      if (cache[source] && typeof cache[source].then === "function") return cache[source];
+      if (typeof Image !== "function") return Promise.resolve(false);
+      const promise = new Promise((resolve) => {
+        const image = new Image();
+        image.onload = () => {
+          cache[source] = true;
+          resolve(true);
+        };
+        image.onerror = () => {
+          delete cache[source];
+          resolve(false);
+        };
+        image.src = source;
+      });
+      cache[source] = promise;
+      return promise;
+    }
+
     const HOME_HERO_AUTOPLAY_MS = 5000;
 
     function clearHomeHeroConfirmGuard() {
@@ -21797,9 +21886,49 @@ utils.encode = function encode(arr, enc) {
       return true;
     }
 
+    function clearHomeHeroAutoplayResume() {
+      const home = state.homeV14;
+      if (home && home.heroAutoplayResumeTimer) clearTimeout(home.heroAutoplayResumeTimer);
+      if (home) home.heroAutoplayResumeTimer = 0;
+    }
+
     function stopHomeHeroAutoplay() {
       if (state.homeV14.heroTimer) clearTimeout(state.homeV14.heroTimer);
       state.homeV14.heroTimer = 0;
+    }
+
+    function pauseHomeHeroAutoplay() {
+      const home = state.homeV14;
+      if (!home) return;
+      home.heroAutoplayPaused = true;
+      clearHomeHeroAutoplayResume();
+      stopHomeHeroAutoplay();
+    }
+
+    function resumeHomeHeroAutoplayLater() {
+      const home = state.homeV14;
+      if (!home) return;
+      clearHomeHeroAutoplayResume();
+      home.heroAutoplayResumeTimer = setTimeout(() => {
+        home.heroAutoplayResumeTimer = 0;
+        if (document.activeElement === $("homeHeroAction")) {
+          home.heroAutoplayPaused = true;
+          return;
+        }
+        home.heroAutoplayPaused = false;
+        scheduleHomeHeroAutoplay();
+      }, 9000);
+    }
+
+    function bindHomeHeroFocus(action) {
+      if (!action || action.dataset.homeHeroFocusBound === "1") return;
+      action.dataset.homeHeroFocusBound = "1";
+      action.addEventListener("focus", () => {
+        pauseHomeHeroAutoplay();
+      });
+      action.addEventListener("blur", () => {
+        resumeHomeHeroAutoplayLater();
+      });
     }
 
     function homeHeroCanAutoplay() {
@@ -21810,6 +21939,7 @@ utils.encode = function encode(arr, enc) {
         && !hero.hidden
         && hero.isConnected !== false
         && items.length > 1
+        && !state.homeV14.heroAutoplayPaused
         && !document.hidden;
     }
 
@@ -21836,22 +21966,99 @@ utils.encode = function encode(arr, enc) {
       if (event && event.detail === 0 && !(state.homeV14 && state.homeV14.heroConfirmGuard)) armHomeHeroConfirmGuard(event);
       // The Home Hero CTA is a detail entry point only.  Keep playback on the
       // existing Detail/Play path; never turn this CTA into a direct player call.
+      pauseHomeHeroAutoplay();
       openDetail(item, { returnTarget: action });
       return true;
     }
 
+    function homeHeroPresentationDetail(item) {
+      return item && (item.heroDetail || item.weeklyDetail || item.heroRaw) || {};
+    }
+
+    function homeHeroPresentationGenres(item, detail) {
+      const names = [];
+      const add = (value) => {
+        const text = String(value || "").trim();
+        if (text && !names.includes(text)) names.push(text);
+      };
+      (Array.isArray(detail && detail.genres) ? detail.genres : []).forEach((genre) => add(genre && (genre.name || genre.title)));
+      const raw = item && item.heroRaw;
+      if (!names.length && raw && Array.isArray(raw.genres)) raw.genres.forEach((genre) => add(genre && (genre.name || genre.title)));
+      const labels = typeof SECONDARY_GENRE_LABELS === "object" ? SECONDARY_GENRE_LABELS : {};
+      const ids = Array.isArray(detail && detail.genre_ids) ? detail.genre_ids : raw && Array.isArray(raw.genre_ids) ? raw.genre_ids : item && Array.isArray(item.genreIds) ? item.genreIds : [];
+      ids.forEach((id) => add(labels[String(id)] || ""));
+      return names.slice(0, 3);
+    }
+
+    function homeHeroPresentationOverview(item, detail) {
+      const raw = item && item.heroRaw;
+      const candidates = [detail && detail.overview, raw && raw.overview, item && item.overview];
+      return candidates.map((value) => String(value || "").trim()).find(Boolean) || "";
+    }
+
+    function homeHeroPresentationEpisodeLabel(episode) {
+      const code = weeklyEpisodeCode(episode);
+      if (code) return code;
+      const number = Number(episode && (episode.episode_number || episode.episodeNumber));
+      return Number.isFinite(number) && number > 0 ? `第${number}集` : "";
+    }
+
+    function homeHeroPresentationStatus(item, detail) {
+      if (!item) return "";
+      if (item.mediaType !== "tv") {
+        const runtime = detailRuntime(detail || {}, item);
+        const releaseDate = latestDateOnly(detail && (detail.release_date || detail.primary_release_date) || item.releaseDate);
+        const release = releaseDate ? `${weeklyDateLabel(releaseDate)}上映` : "";
+        return [runtime, release].filter(Boolean).join(" · ");
+      }
+      const weekly = String(item.weeklyUpdateText || "").trim();
+      if (weekly && weekly !== "本周更新") return weekly;
+      const last = detail && detail.last_episode_to_air || item.weeklyLastEpisode;
+      const next = detail && detail.next_episode_to_air || item.weeklyNextEpisode;
+      const lastDate = latestDateOnly(last && last.air_date);
+      const nextDate = latestDateOnly(next && next.air_date);
+      const lastLabel = homeHeroPresentationEpisodeLabel(last);
+      if (lastLabel || lastDate) {
+        const dateLabel = lastDate === weeklyShanghaiToday() ? "今天更新" : lastDate ? `${weeklyDateLabel(lastDate)}更新` : "";
+        return [`更新至${lastLabel || "最新一集"}`, dateLabel].filter(Boolean).join(" · ");
+      }
+      const nextLabel = homeHeroPresentationEpisodeLabel(next);
+      if (nextLabel || nextDate) {
+        const dateLabel = nextDate === weeklyShanghaiToday() ? "今天更新" : nextDate ? `${weeklyWeekdayLabel(nextDate)}更新` : "";
+        return [nextLabel || "下一集", dateLabel].filter(Boolean).join(" · ");
+      }
+      return weekly;
+    }
+
+    function setHomeHeroOptionalText(node, value) {
+      if (!node) return;
+      const text = String(value || "").trim();
+      node.textContent = text;
+      node.hidden = !text;
+    }
+
     function updateHomeHeroPresentation(item) {
+      const detail = homeHeroPresentationDetail(item);
       const title = $("homeHeroTitle");
+      const tagline = $("homeHeroTagline");
       const meta = $("homeHeroMeta");
+      const status = $("homeHeroStatus");
+      const overview = $("homeHeroOverview");
       const action = $("homeHeroAction");
       const logoWrap = $("homeHeroLogoWrap");
       const logo = $("homeHeroLogo");
       if (!title || !meta || !action) return false;
       title.textContent = item && item.title || "正在准备首页";
-      const year = item && String(item.releaseDate || "").slice(0, 4) || "";
+      const date = detail && (detail.release_date || detail.first_air_date) || item && (item.releaseDate || item.firstAirDate) || "";
+      const year = String(date).slice(0, 4);
       const kind = item && item.mediaType === "tv" ? "剧集" : item ? "电影" : "";
-      const rating = item && Number(item.voteAverage || 0) > 0 ? Number(item.voteAverage).toFixed(1) + " 分" : "";
-      meta.textContent = [year, kind, rating].filter(Boolean).join(" · ");
+      const genres = homeHeroPresentationGenres(item, detail);
+      const ratingValue = Number(detail && detail.vote_average || item && item.voteAverage || 0);
+      const rating = ratingValue > 0 ? `${ratingValue.toFixed(1)} 分` : "";
+      meta.textContent = [year, kind, genres.length ? genres.join(" / ") : "", rating].filter(Boolean).join(" · ");
+      setHomeHeroOptionalText(tagline, detail && (detail.tagline || detail.tag_line) || item && item.tagline);
+      setHomeHeroOptionalText(status, homeHeroPresentationStatus(item, detail));
+      setHomeHeroOptionalText(overview, homeHeroPresentationOverview(item, detail));
       const existingLogo = item && (item.logo || item.logoUrl || item.logoPath || item.logo_path) || "";
       if (logoWrap && logo) {
         const logoSrc = existingLogo ? displayImage(existingLogo, { size: "w780" }) : "";
@@ -21865,6 +22072,7 @@ utils.encode = function encode(arr, enc) {
       action.tabIndex = item ? 0 : -1;
       action.__homeHeroItem = item;
       action.dataset.homeAction = "detail";
+      bindHomeHeroFocus(action);
       if (!action.dataset.homeBound) {
         action.dataset.homeBound = "1";
         action.addEventListener("click", (event) => {
@@ -21936,9 +22144,32 @@ utils.encode = function encode(arr, enc) {
       const next = ((Number(index) % count) + count) % count;
       state.homeV14.heroIndex = next;
       state.homeV14.heroItem = items[next] || null;
-      Array.from(slides.children || []).forEach((slide, slideIndex) => slide.classList.toggle("active", slideIndex === next));
       Array.from(dots.children || []).forEach((dot, dotIndex) => dot.classList.toggle("active", dotIndex === next));
       updateHomeHeroPresentation(state.homeV14.heroItem);
+      if (opts.manual) pauseHomeHeroAutoplay();
+      const targetSlide = slides.children[next];
+      const targetBackground = targetSlide && targetSlide.querySelector(".home-hero-slide-bg");
+      const backgroundUrl = homeHeroBackdropUrl(state.homeV14.heroItem);
+      const token = ++state.homeV14.heroBackdropSeq;
+      const activate = () => {
+        Array.from(slides.children || []).forEach((slide, slideIndex) => slide.classList.toggle("active", slideIndex === next));
+      };
+      if (!targetSlide || !targetBackground || !backgroundUrl || targetBackground.dataset.homeHeroLoadedSrc === backgroundUrl || state.homeV14.heroBackdropCache && state.homeV14.heroBackdropCache[backgroundUrl] === true) {
+        if (targetBackground && backgroundUrl) {
+          targetBackground.style.backgroundImage = homeHeroBackdropCss(backgroundUrl);
+          targetBackground.dataset.homeHeroLoadedSrc = backgroundUrl;
+        }
+        activate();
+      } else {
+        preloadHomeHeroBackdrop(backgroundUrl).then((loaded) => {
+          if (token !== state.homeV14.heroBackdropSeq) return;
+          if (loaded) {
+            targetBackground.style.backgroundImage = homeHeroBackdropCss(backgroundUrl);
+            targetBackground.dataset.homeHeroLoadedSrc = backgroundUrl;
+            activate();
+          }
+        });
+      }
       if (opts.resetTimer !== false) scheduleHomeHeroAutoplay();
       return true;
     }
@@ -21972,14 +22203,15 @@ utils.encode = function encode(arr, enc) {
       state.homeV14.heroItems = candidates;
       state.homeV14.heroIndex = activeIndex;
       state.homeV14.heroItem = item;
+      state.homeV14.heroBackdropSeq += 1;
       slides.replaceChildren(...candidates.map((entry, index) => {
         const slide = document.createElement("div");
         slide.className = "home-hero-slide" + (index === activeIndex ? " active" : "");
         slide.dataset.heroIndex = String(index);
         const bg = document.createElement("div");
         bg.className = "home-hero-slide-bg";
-        const image = displayImage(entry.landscape || entry.backdrop || entry.backdropUrl || entry.image || entry.pic, { size: "w1280" });
-        if (image) bg.style.backgroundImage = `url("${String(image).replace(/\\/g, "\\\\").replace(/"/g, "%22")}")`;
+        const image = homeHeroBackdropUrl(entry);
+        if (image) bg.style.backgroundImage = homeHeroBackdropCss(image);
         slide.appendChild(bg);
         return slide;
       }));
@@ -25469,6 +25701,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         searchRailScrollLeft: homeUiRoute() === "search" ? Math.max(0, Number(($('searchRail') || {}).scrollLeft || 0)) : 0,
         mediaKey: mediaDomKey(item),
         focus: target && target.id === "homeHeroAction" ? { type: "id", key: target.id } : homeFocusSnapshot(target, item),
+        heroIndex: target && target.id === "homeHeroAction" ? Math.max(0, Number(state.homeV14.heroIndex || 0)) : null,
         searchHotRailScrollLeft: homeUiRoute() === "search" ? Math.max(0, Number(($('searchHotRail') || {}).scrollLeft || 0)) : 0,
         at: Date.now()
       };
@@ -25568,6 +25801,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const apply = (withFocus, allowMissingSectionFallback) => {
         if ($("detailSheet") && $("detailSheet").classList.contains("active")) return;
         applyHomeScrollTop(y);
+        const heroReturn = !!(saved.focus && saved.focus.type === "id" && saved.focus.key === "homeHeroAction");
+        if (heroReturn && Number.isFinite(Number(saved.heroIndex))) setHomeHeroIndex(Number(saved.heroIndex), { resetTimer: false });
         const target = withFocus ? findHomeReturnTarget(saved) : null;
         const sectionTarget = withFocus && mediaReturn ? findHomeReturnSectionTarget(saved) : null;
         if (target || sectionTarget) focusHomeReturnTarget(target || sectionTarget);
