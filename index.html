@@ -6772,6 +6772,62 @@
       text-align: center !important;
     }
 
+    /* Keep every Home section header on one shared visual baseline.  The
+       middle rule is part of the header row, not an extra navigation item. */
+    #home.home-root .home-section-head {
+      align-items: center;
+      gap: 12px;
+    }
+
+    #home.home-root .home-section-line {
+      display: block;
+      flex: 1 1 auto;
+      min-width: 24px;
+      height: 1px;
+      align-self: center;
+      background: linear-gradient(90deg, rgba(255, 255, 255, .28), rgba(255, 255, 255, .1));
+      opacity: .8;
+    }
+
+    #home.home-root .home-section-more {
+      min-height: 30px;
+      padding: 0;
+      gap: 4px;
+      line-height: 1.2;
+    }
+
+    #home.home-root #recommendRail > .home-weekly-card.has-weekly-update .card-body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: calc(clamp(17.5px, 1.15vw, 22.5px) + 15px);
+      min-height: 0;
+      padding: 0;
+    }
+
+    #home.home-root #recommendRail > .home-weekly-card.has-weekly-update .card-title,
+    #home.home-root #recommendRail > .home-weekly-card.has-weekly-update .home-weekly-update {
+      width: 100%;
+      margin: 0;
+      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    #home.home-root #recommendRail > .home-weekly-card.has-weekly-update .card-title {
+      min-height: 0;
+      flex: 0 0 auto;
+    }
+
+    #home.home-root #recommendRail > .home-weekly-card.has-weekly-update .home-weekly-update {
+      flex: 0 0 auto;
+      color: rgba(226, 234, 242, .64);
+      font-size: clamp(10px, .68vw, 13px);
+      line-height: 1.1;
+    }
+
     /* The Hero detail copy is a non-focusable, lightweight hint. */
     html.tv-mode #home.home-root .home-hero-action:focus,
     html.tv-preview #home.home-root .home-hero-action:focus {
@@ -22308,6 +22364,7 @@ utils.encode = function encode(arr, enc) {
         landscape: variant === "landscape",
         allowNoPoster: !!opts.allowNoPoster,
         recentWatching: !!opts.recentWatching,
+        weeklyHome: !!opts.weeklyHome,
         homeMore: !!opts.homeMore,
         homeMoreListId: rail.dataset.homeListId || "",
         homeLazy: true,
@@ -23704,7 +23761,7 @@ utils.encode = function encode(arr, enc) {
         return;
       }
       const items = resolved.items;
-      if (items.length) fillHomeRail(rail, items, { variant: "portrait", limit: homeRailLimit("portrait"), homeMore: true, railKey: "home:hot" });
+      if (items.length) fillHomeRail(rail, items, { variant: "portrait", limit: homeRailLimit("portrait"), homeMore: true, weeklyHome: true, railKey: "home:hot" });
       else showHomeRailStatus(rail, page && page.loaded ? "暂无本周更新" : "本周更新加载中...", { variant: "portrait" });
       updateBlockSelectUi();
       if (opts.hotOnly) recordHomeV14Diag();
@@ -24244,9 +24301,11 @@ utils.encode = function encode(arr, enc) {
       const landscape = !!opts.landscape;
       const home = !!opts.home;
       const weekly = !!opts.weekly;
+      const weeklyHome = home && opts.weeklyHome === true;
+      const weeklyUpdate = weeklyHome ? String(item.weeklyUpdateText || "").trim() : "";
       const searchResult = opts.searchResult === true;
       const searchQuery = String(opts.searchQuery || "").trim();
-      button.className = "card focusable" + (people > 0 ? " has-people" : "") + (recent ? " recent-card" : "") + (recentWatching ? " recent-watching-card" : "") + (landscape ? " landscape-card" : "") + (home ? " home-card" : "") + (weekly ? " weekly-card" : "");
+      button.className = "card focusable" + (people > 0 ? " has-people" : "") + (recent ? " recent-card" : "") + (recentWatching ? " recent-watching-card" : "") + (landscape ? " landscape-card" : "") + (home ? " home-card" : "") + (weeklyHome ? " home-weekly-card" : "") + (weeklyUpdate ? " has-weekly-update" : "") + (weekly ? " weekly-card" : "");
       button.type = "button";
       button.dataset.cardIndex = String(index || 0);
       if (key) button.dataset.mediaKey = key;
@@ -24289,6 +24348,7 @@ utils.encode = function encode(arr, enc) {
         ${!home && rating ? `<span class="rating-badge">${escapeHtml(rating)}</span>` : ""}
         <div class="card-body">
           <div class="card-title">${escapeHtml(item.title)}</div>
+          ${weeklyUpdate ? `<div class="home-weekly-update">${escapeHtml(weeklyUpdate)}</div>` : ""}
           <div class="card-meta">${escapeHtml(item.remark)}</div>
         </div>
       `;
