@@ -6769,6 +6769,19 @@
       text-align: center !important;
     }
 
+    /* Hero CTA is the only focused visual hint.  Keep this after the shared
+       TV control reset so the Hero presentation never becomes a rectangle. */
+    html.tv-mode #home.home-root .home-hero-action:focus,
+    html.tv-preview #home.home-root .home-hero-action:focus {
+      outline: 0 !important;
+      outline-offset: 0 !important;
+      border: 0 !important;
+      box-shadow: 0 0 0 2px rgba(191, 233, 255, .22), 0 6px 18px rgba(0, 0, 0, .22) !important;
+      background: rgba(191, 233, 255, .96) !important;
+      color: #06111b !important;
+      transform: translateY(-2px) !important;
+    }
+
   </style>
   <style id="tv-diagnostic-v1">
     html.tv-mode .tv-diagnostic {
