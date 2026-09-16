@@ -20624,7 +20624,7 @@ utils.encode = function encode(arr, enc) {
       const source = card && card.__mediaItem;
       if (!source) return false;
       if (source.continueContext && source.historyContextEntry) {
-        if (openContinueWatchingContext(source, { returnTarget: card })) return true;
+        if (openContinueWatchingContext(source, { returnTarget: card, autoResume: false })) return true;
       }
       if (source.source === "history") {
         openRecentItem(source);
@@ -24692,7 +24692,7 @@ utils.encode = function encode(arr, enc) {
         return;
       }
       if (item.continueContext) {
-        if (!openContinueWatchingContext(item, { returnTarget: document.activeElement })) toast("暂时无法恢复播放");
+        if (!openContinueWatchingContext(item, { returnTarget: document.activeElement, autoResume: false })) toast("暂时无法恢复播放");
         return;
       }
       if (!historyCanUseVodReplay(item)) {
@@ -24731,7 +24731,7 @@ utils.encode = function encode(arr, enc) {
       }
       if (history.continueContext) {
         rememberDetailReturn(button);
-        if (!openContinueWatchingContext(history, { returnTarget: button })) toast("暂时无法恢复播放");
+        if (!openContinueWatchingContext(history, { returnTarget: button, autoResume: true })) toast("暂时无法恢复播放");
         return;
       }
       if (!historyCanUseVodReplay(history)) {
@@ -25578,6 +25578,7 @@ utils.encode = function encode(arr, enc) {
 
     function openContinueWatchingContext(item, options) {
       if (!item) return false;
+      const opts = options || {};
       const entry = item.historyContextEntry;
       const rawItem = entry && entry.item && typeof entry.item === "object" ? entry.item : item;
       const rawTarget = item.historyContextTarget || entry && (entry.playbackTarget || entry.target) || rawItem;
@@ -25598,12 +25599,12 @@ utils.encode = function encode(arr, enc) {
           landscape: item.landscape || item.backdrop || target.backdrop || "",
           desc: item.desc || item.title || ""
         });
-      const opts = options || {};
       const context = normalizePlaybackTarget(media, target);
       state.historyResume = {
         history: item,
         context,
         mediaKey: mediaDomKey(media),
+        autoResume: opts.autoResume === true,
         at: Date.now()
       };
       if (context) setDetailPlaybackTarget(media, context);
@@ -26799,7 +26800,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       } else if (item.mediaType === "movie") {
         preloadTask = preloadPanForSeries(item);   // 电影也后台预搜 + 预热夸克，配合"搜索播放"短按秒开
       }
-      if (state.historyResume && state.historyResume.mediaKey === mediaDomKey(item)) {
+      if (state.historyResume && state.historyResume.mediaKey === mediaDomKey(item)
+        && state.historyResume.autoResume !== false) {
         resumePanHistoryPlayback(item, state.historyResume, preloadTask).catch(() => {});
       }
       loadRecommendations(item);
