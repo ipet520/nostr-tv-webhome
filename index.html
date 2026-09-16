@@ -16707,7 +16707,7 @@ utils.encode = function encode(arr, enc) {
       activeList: "all",
       catalog: {},
       catalogPage: {},
-      recent: { items: [], loading: false, loaded: false, error: "", refreshedAt: 0, diag: null },
+      recent: { items: [], loading: false, loaded: false, error: "", refreshedAt: 0, diag: null, nativeItems: [], nativeLoaded: false, nativeLoading: false, nativeRefreshedAt: 0 },
       homeLatest: { items: [], loading: false, loaded: false, error: "", loadedAt: 0, requestSeq: 0, diag: null, promise: null },
       gridRender: {},
       gridColumnCache: {},
@@ -16825,6 +16825,7 @@ utils.encode = function encode(arr, enc) {
       directPlayStatus: { active: false, actionId: 0, phase: "", text: "", startedAt: 0, clearTimer: 0 },
       watch: { item: null, timer: 0, bestMs: 0, durationMs: 0, lastAt: 0, published: false, intentAction: "", playbackTarget: null },
       historyContexts: { loaded: false, loading: false, promise: null, entries: [], diag: null },
+      continueIndex: { loaded: false, loading: false, promise: null, entries: [], diag: null },
       recentDelete: { armedKey: "", armedCard: null, pendingKey: "", pendingCard: null, pendingTimer: 0, remotePressLocked: false, remotePressCard: null, remotePressKey: "" },
       detailCover: { images: [], index: 0, timer: 0, token: 0, swipe: null },
       episodeViewer: { episodes: [], effectiveIndexes: [], index: -1, seasonNumber: "", episodeNumber: "", swipe: null },
@@ -17130,6 +17131,7 @@ utils.encode = function encode(arr, enc) {
       if (type === "blockedRecommend") return "fish2018_home_v1_blocked_recommend";
       if (type === "tmdb") return "fish2018_home_v1_tmdb_config";
       if (type === "historyContext") return "fish2018_home_v1_history_context";
+      if (type === "continueIndex") return "fish2018_home_v1_continue_index";
       return type;
     }
 
@@ -19847,6 +19849,7 @@ utils.encode = function encode(arr, enc) {
         pic,
         vodPic: pic,
         image: pic,
+        landscape: context.backdrop || "",
         remark: progressText || (badge ? "继续观看" : ""),
         badge,
         vodRemarks: badge,
@@ -19857,6 +19860,7 @@ utils.encode = function encode(arr, enc) {
         popularity: createTime,
         baseRank: index + 1,
         createTime,
+        updatedAt: createTime,
         position,
         duration,
         nativeHistoryType: String(history && history.type || historyNestedValue(history, ["type", "playType", "kind"]) || ""),
@@ -19866,8 +19870,11 @@ utils.encode = function encode(arr, enc) {
         seasonNumber: context.seasonNumber,
         episodeNumber: context.episodeNumber,
         episodeTitle: context.episodeTitle,
+        backdrop: context.backdrop,
         sourceType: context.sourceType,
         panProvider: context.panProvider,
+        panPassword: context.panPassword,
+        panTitle: context.panTitle,
         panFileName: context.panFileName,
         panFileId: context.panFileId,
         resourceId: context.resourceId,
@@ -20043,10 +20050,9 @@ utils.encode = function encode(arr, enc) {
       if (!opts.silent) setStatus("tmdb", "读取最近观看");
       if (state.activeList === "recent") renderActiveGrid();
       try {
+        await loadContinueIndex();
         await loadHistoryContextIndex();
-        // Recent is the app's media navigation index. It deliberately reads
-        // the existing playback-context cache, not Native History, so a
-        // non-restorable native payload cannot hide a real watched media item.
+        await loadNativeRecentHistory();
         state.recent.items = recentWatchingItems();
         state.recent.loaded = true;
         state.recent.refreshedAt = Date.now();
@@ -20617,6 +20623,13 @@ utils.encode = function encode(arr, enc) {
     function openRecentWatchingDetail(card) {
       const source = card && card.__mediaItem;
       if (!source) return false;
+      if (source.continueContext && source.historyContextEntry) {
+        if (openContinueWatchingContext(source, { returnTarget: card })) return true;
+      }
+      if (source.source === "history") {
+        openRecentItem(source);
+        return true;
+      }
       const mediaType = normalizeHistoryMediaType(source.mediaType || source.media_type);
       const tmdbId = String(source.tmdbId || source.tmdb_id || "").trim();
       if (!tmdbId || (mediaType !== "movie" && mediaType !== "tv")) return false;
@@ -20720,6 +20733,7 @@ utils.encode = function encode(arr, enc) {
       const beforeCards = grid ? Array.from(grid.querySelectorAll(".recent-watching-card")) : [];
       const focusIndex = Math.max(0, beforeCards.indexOf(card));
       cancelRecentDeleteArm();
+      await loadContinueIndex();
       await loadHistoryContextIndex();
       if (state.historyContexts && state.historyContexts.diag && state.historyContexts.diag.error) {
         toast("最近观看删除失败");
@@ -20727,9 +20741,16 @@ utils.encode = function encode(arr, enc) {
       }
       const previous = Array.isArray(state.historyContexts.entries) ? state.historyContexts.entries : [];
       const entries = previous.filter((entry) => recentContextMediaKey(entry) !== key);
-      if (entries.length === previous.length) return false;
-      await persistHistoryContextEntries(entries);
+      const previousIndex = state.continueIndex && Array.isArray(state.continueIndex.entries) ? state.continueIndex.entries : [];
+      const indexEntries = previousIndex.filter((entry) => String(entry && entry.mediaKey || recentContextMediaKey(entry)) !== key);
+      if (entries.length === previous.length && indexEntries.length === previousIndex.length) return false;
+      if (entries.length !== previous.length) await persistHistoryContextEntries(entries);
+      if (indexEntries.length !== previousIndex.length) await persistContinueIndexEntries(indexEntries);
       state.historyContexts.entries = entries;
+      if (state.continueIndex) state.continueIndex.entries = indexEntries;
+      if (state.recent && Array.isArray(state.recent.nativeItems)) {
+        state.recent.nativeItems = state.recent.nativeItems.filter((nativeItem) => recentWatchingMediaKey(nativeItem) !== key);
+      }
       state.recent.items = recentWatchingItems();
       state.recent.loaded = true;
       state.recent.refreshedAt = Date.now();
@@ -24594,12 +24615,29 @@ utils.encode = function encode(arr, enc) {
       return true;
     }
 
-    async function resumePanHistoryPlayback(item, resume, preloadTask) {
-      if (!item || !resume || state.selected !== item || !state.historyResume) return false;
+    function buildDirectPanHistoryItem(target) {
+      if (!target) return null;
+      const url = String(target.lastPlayUrl || "").trim();
+      const provider = String(target.panProvider || "").trim();
+      if (!url || !provider) return null;
+      return {
+        key: "history-direct|" + normalizePanUrl(url),
+        diskType: normalizePanDiskType(provider),
+        provider,
+        url,
+        normalizedUrl: url,
+        password: String(target.panPassword || "").trim(),
+        title: String(target.panTitle || target.panFileName || target.title || "盘搜资源").trim(),
+        fileName: String(target.panFileName || "").trim(),
+        fileId: String(target.panFileId || "").trim(),
+        resourceId: String(target.resourceId || "").trim()
+      };
+    }
+
+    async function resumePanHistoryFromSearch(item, target, preloadTask) {
+      if (!item || state.selected !== item) return false;
       if (preloadTask && typeof preloadTask.then === "function") await preloadTask;
       if (state.selected !== item) return false;
-      const target = normalizePlaybackTarget(item, resume.context || resume.history);
-      if (target) setDetailPlaybackTarget(item, target);
       const waitUntil = Date.now() + 2600;
       while (state.selected === item && Date.now() < waitUntil) {
         const progress = state.pan.progress || {};
@@ -24621,6 +24659,31 @@ utils.encode = function encode(arr, enc) {
       focusFirstPanTab();
       toast("上次播放资源暂不可用，请选择其他资源");
       return false;
+    }
+
+    async function resumePanHistoryPlayback(item, resume, preloadTask) {
+      if (!item || !resume || state.selected !== item || !state.historyResume) return false;
+      const target = normalizePlaybackTarget(item, resume.context || resume.history);
+      if (target) setDetailPlaybackTarget(item, target);
+      const directItem = buildDirectPanHistoryItem(target);
+      if (directItem) {
+        state.historyResume = null;
+        toast("正在恢复上次播放资源…");
+        const onDirectFailure = () => {
+          localStorage.removeItem("fm_pan_playing");
+          state.pan.isPlaying = false;
+          state.pan.playbackReturn = null;
+          resumePanHistoryFromSearch(item, target, preloadTask).catch(() => {});
+        };
+        await playPanResult(directItem, {
+          episodeTarget: target,
+          historyResume: true,
+          prechecked: true,
+          onPlayFailure: onDirectFailure
+        });
+        return true;
+      }
+      return resumePanHistoryFromSearch(item, target, preloadTask);
     }
 
     async function openRecentItem(item) {
@@ -24823,6 +24886,8 @@ utils.encode = function encode(arr, enc) {
         target: playbackReturn.episodeTarget,
         item: playbackReturn.item,
         panProvider: playbackReturn.panProvider,
+        panPassword: playbackReturn.panPassword,
+        panTitle: playbackReturn.panTitle,
         panFileName: playbackReturn.panFileName,
         panFileId: playbackReturn.panFileId,
         resourceId: playbackReturn.resourceId,
@@ -24847,6 +24912,8 @@ utils.encode = function encode(arr, enc) {
         target: entry && (entry.playbackTarget || entry.target),
         item: entry && entry.item,
         panProvider: entry && entry.panProvider,
+        panPassword: entry && entry.panPassword,
+        panTitle: entry && entry.panTitle,
         panFileName: entry && entry.panFileName,
         panFileId: entry && entry.panFileId,
         resourceId: entry && entry.resourceId,
@@ -24886,6 +24953,8 @@ utils.encode = function encode(arr, enc) {
           episodeTitle: target.episodeTitle || item.episodeTitle || "",
           sourceType: target.sourceType || item.sourceType || "",
           panProvider: target.panProvider || candidate.panProvider || item.panProvider || item.provider || "",
+          panPassword: target.panPassword || candidate.panPassword || item.panPassword || item.password || "",
+          panTitle: target.panTitle || candidate.panTitle || item.panTitle || item.title || "",
           panFileName: target.panFileName || candidate.panFileName || item.panFileName || item.fileName || "",
           panFileId: target.panFileId || candidate.panFileId || item.panFileId || item.fileId || "",
           resourceId: target.resourceId || candidate.resourceId || item.resourceId || "",
@@ -24919,12 +24988,15 @@ utils.encode = function encode(arr, enc) {
       const resourceId = String(historyNestedValue(history, ["resourceId", "resource_id", "resourceID"]) || hint && hint.resourceId || "").trim();
       const panFileId = String(historyNestedValue(history, ["panFileId", "pan_file_id", "fileId", "file_id"]) || hint && (hint.panFileId || hint.fileId) || "").trim();
       const panFileName = String(historyNestedValue(history, ["panFileName", "pan_file_name", "fileName", "file_name", "filename"]) || hint && (hint.panFileName || hint.fileName) || "").trim();
+      const panPassword = String(historyNestedValue(history, ["panPassword", "pan_password", "password", "pwd", "passcode"]) || hint && (hint.panPassword || hint.password) || "").trim();
+      const panTitle = String(historyNestedValue(history, ["panTitle", "pan_title", "playTitle", "play_title", "resourceTitle"]) || hint && hint.panTitle || "").trim();
       const lastPlayUrl = String(historyNestedValue(history, ["lastPlayUrl", "last_play_url", "playUrl", "play_url", "episodeUrl", "episode_url", "url"]) || hint && hint.lastPlayUrl || "").trim();
       return {
         siteKey: parts.siteKey,
         vodId: parts.vodId,
         title,
         poster: String(historyNestedValue(history, ["vodPic", "pic", "poster"]) || hint && hint.poster || "").trim(),
+        backdrop: String(historyNestedValue(history, ["backdrop", "landscape", "backdropUrl", "backdrop_url"]) || hint && hint.backdrop || "").trim(),
         mediaType,
         tmdbId,
         seasonNumber,
@@ -24932,6 +25004,8 @@ utils.encode = function encode(arr, enc) {
         episodeTitle: String(historyNestedValue(history, ["episodeTitle", "episode_title"]) || hint && hint.episodeTitle || "").trim(),
         sourceType: String(historyNestedValue(history, ["sourceType", "source_type", "playType", "play_type", "kind", "type", "source"]) || hint && hint.sourceType || "").trim(),
         panProvider: String(historyNestedValue(history, ["panProvider", "pan_provider", "provider", "diskType", "disk_type"]) || hint && (hint.panProvider || hint.provider) || "").trim(),
+        panPassword,
+        panTitle,
         panFileName,
         panFileId,
         resourceId,
@@ -24968,6 +25042,221 @@ utils.encode = function encode(arr, enc) {
       return store.promise;
     }
 
+    function continueIndexMediaKey(item, target) {
+      const context = target || normalizePlaybackTarget(item, item);
+      const tmdbId = String(context && context.tmdbId || item && item.tmdbId || "").trim();
+      const mediaType = normalizeHistoryMediaType(context && context.mediaType || item && item.mediaType);
+      return tmdbId && mediaType ? `${mediaType}:${tmdbId}` : "";
+    }
+
+    function continueIndexFirstValue(values) {
+      return (Array.isArray(values) ? values : []).map((value) => String(value == null ? "" : value).trim()).find(Boolean) || "";
+    }
+
+    function buildContinueIndexEntry(item, playbackTarget, panItem, playedAt, seed) {
+      const source = seed && typeof seed === "object" ? seed : {};
+      const target = normalizePlaybackTarget(item, Object.assign({}, source, playbackTarget || {}));
+      const mediaKey = continueIndexMediaKey(item, target);
+      if (!target || !mediaKey) return null;
+      const pan = panItem && typeof panItem === "object" ? panItem : {};
+      const tmdbId = String(target.tmdbId || "").trim();
+      const mediaType = normalizeHistoryMediaType(target.mediaType);
+      const title = continueIndexFirstValue([target.title, item && item.title, source.title, "最近观看"]);
+      const poster = continueIndexFirstValue([target.poster, item && item.poster, item && item.pic, item && item.image, source.poster]);
+      const backdrop = continueIndexFirstValue([target.backdrop, item && item.backdrop, item && item.landscape, source.backdrop, source.landscape]);
+      const playedAtValue = Number(playedAt || source.playedAt || source.updatedAt || target.updatedAt || Date.now()) || Date.now();
+      const lastPlayUrl = continueIndexFirstValue([
+        pan.normalizedUrl,
+        pan.normalized_url,
+        pan.url,
+        target.lastPlayUrl,
+        source.lastPlayUrl,
+        source.last_play_url
+      ]);
+      const panProvider = continueIndexFirstValue([pan.provider, pan.diskType, target.panProvider, source.panProvider, source.provider]);
+      const panPassword = continueIndexFirstValue([pan.password, pan.pwd, pan.passcode, target.panPassword, source.panPassword, source.password, source.pwd]);
+      const panFileName = continueIndexFirstValue([pan.fileName, pan.file_name, pan.filename, target.panFileName, source.panFileName, source.fileName]);
+      const panTitle = continueIndexFirstValue([pan.title, pan.note, target.panTitle, source.panTitle, source.playTitle, panFileName, title]);
+      const panFileId = continueIndexFirstValue([pan.fileId, pan.file_id, target.panFileId, source.panFileId, source.fileId]);
+      const resourceId = continueIndexFirstValue([pan.resourceId, pan.resource_id, target.resourceId, source.resourceId]);
+      const normalizedTarget = Object.assign({}, target, {
+        tmdbId,
+        mediaType,
+        title,
+        poster,
+        backdrop,
+        panProvider,
+        panPassword,
+        panTitle,
+        panFileName,
+        panFileId,
+        resourceId,
+        lastPlayUrl,
+        updatedAt: playedAtValue
+      });
+      const snapshot = normalizeSnapshot(Object.assign({}, item || {}, {
+        id: `tmdb:${mediaType}:${tmdbId}`,
+        source: "tmdb",
+        tmdbId,
+        mediaType,
+        title,
+        pic: poster || item && item.pic || "",
+        image: poster || item && (item.image || item.pic) || "",
+        landscape: backdrop || item && item.landscape || ""
+      }));
+      return {
+        version: 1,
+        mediaKey,
+        tmdbId,
+        mediaType,
+        title,
+        poster,
+        backdrop,
+        seasonNumber: Math.max(0, Number(normalizedTarget.seasonNumber || 0) || 0),
+        episodeNumber: Math.max(0, Number(normalizedTarget.episodeNumber || 0) || 0),
+        episodeTitle: String(normalizedTarget.episodeTitle || source.episodeTitle || "").trim(),
+        playbackPosition: Math.max(0, Number(normalizedTarget.playbackPosition || source.playbackPosition || 0) || 0),
+        duration: Math.max(0, Number(normalizedTarget.duration || source.duration || 0) || 0),
+        sourceType: continueIndexFirstValue([normalizedTarget.sourceType, source.sourceType, "pan"]),
+        panProvider,
+        panPassword,
+        panTitle,
+        panFileName,
+        panFileId,
+        resourceId,
+        panSearchKeyword: continueIndexFirstValue([normalizedTarget.panSearchKeyword, source.panSearchKeyword, source.panSearchKeyword]),
+        lastPlayUrl,
+        playedAt: playedAtValue,
+        updatedAt: playedAtValue,
+        item: snapshot,
+        playbackTarget: normalizedTarget
+      };
+    }
+
+    function normalizeContinueIndexEntry(entry, index) {
+      if (!entry || typeof entry !== "object") return null;
+      const rawItem = entry.item && typeof entry.item === "object" ? entry.item : entry;
+      const rawTarget = entry.playbackTarget && typeof entry.playbackTarget === "object"
+        ? entry.playbackTarget
+        : entry.target && typeof entry.target === "object" ? entry.target : entry;
+      const target = normalizePlaybackTarget(rawItem, Object.assign({}, entry, rawTarget));
+      if (!target || !target.tmdbId || !normalizeHistoryMediaType(target.mediaType)) return null;
+      return buildContinueIndexEntry(rawItem, target, null, Number(entry.playedAt || entry.updatedAt || target.updatedAt || 0) || Date.now(), entry);
+    }
+
+    async function persistContinueIndexEntries(entries) {
+      await sdk().cache.set(cacheKey("continueIndex"), JSON.stringify({ version: 1, entries: Array.isArray(entries) ? entries : [] }));
+    }
+
+    async function loadContinueIndex() {
+      const store = state.continueIndex || (state.continueIndex = { loaded: false, loading: false, promise: null, entries: [], diag: null });
+      if (store.loaded) return store;
+      if (store.loading && store.promise) return store.promise;
+      store.loading = true;
+      store.promise = (async () => {
+        try {
+          const saved = safeJson(await sdk().cache.get(cacheKey("continueIndex")), null);
+          let rawEntries = saved && Array.isArray(saved.entries) ? saved.entries : [];
+          let migrated = false;
+          if (!rawEntries.length) {
+            await loadHistoryContextIndex();
+            rawEntries = (state.historyContexts && Array.isArray(state.historyContexts.entries) ? state.historyContexts.entries : [])
+              .filter((entry) => {
+                const target = normalizePlaybackTarget(entry && entry.item || entry, entry && (entry.playbackTarget || entry.target) || entry);
+                return !!(target && target.tmdbId && normalizeHistoryMediaType(target.mediaType)
+                  && (target.lastPlayUrl || entry && (entry.lastPlayUrl || entry.panFileId || entry.resourceId)));
+              });
+            migrated = rawEntries.length > 0;
+          }
+          const normalized = rawEntries.map(normalizeContinueIndexEntry).filter(Boolean);
+          const pruned = pruneRecentWatchingEntries(normalized, Date.now());
+          store.entries = pruned.entries;
+          store.diag = Object.assign({}, pruned, { migrated });
+          if (migrated || pruned.changed) await persistContinueIndexEntries(store.entries);
+        } catch (e) {
+          store.entries = [];
+          store.diag = { rawCount: 0, keptCount: 0, mediaCount: 0, changed: false, error: String(e && e.message || "") };
+        }
+        store.loaded = true;
+        store.loading = false;
+        store.promise = null;
+        return store;
+      })();
+      return store.promise;
+    }
+
+    function extractNativeHistoryList(value) {
+      const parsed = typeof value === "string" ? safeJson(value, []) : value;
+      if (Array.isArray(parsed)) return parsed;
+      if (parsed && Array.isArray(parsed.list)) return parsed.list;
+      if (parsed && Array.isArray(parsed.items)) return parsed.items;
+      if (parsed && parsed.data && Array.isArray(parsed.data)) return parsed.data;
+      if (parsed && parsed.data && Array.isArray(parsed.data.list)) return parsed.data.list;
+      return [];
+    }
+
+    async function loadNativeRecentHistory(options) {
+      const opts = options || {};
+      const recent = state.recent;
+      if (!recent) return [];
+      if (recent.nativeLoading) return recent.nativeItems || [];
+      if (recent.nativeLoaded && !opts.refresh) return recent.nativeItems || [];
+      recent.nativeLoading = true;
+      try {
+        const api = sdk();
+        const raw = api && typeof api.history === "function" ? await api.history() : [];
+        recent.nativeItems = normalizeHistoryList(extractNativeHistoryList(raw)).map((item) => Object.assign({}, item, { recentWatching: true }));
+        recent.nativeLoaded = true;
+        recent.nativeRefreshedAt = Date.now();
+      } catch (e) {
+        recent.nativeItems = [];
+        recent.nativeLoaded = true;
+      } finally {
+        recent.nativeLoading = false;
+      }
+      return recent.nativeItems;
+    }
+
+    function refreshRecentWatchingViews(now) {
+      const at = Number(now || Date.now());
+      state.recent.items = recentWatchingItems();
+      state.recent.loaded = true;
+      state.recent.refreshedAt = at;
+      if (isHomeRouteActive()) renderHomeRecent();
+      if (state.activeList === "recent") renderRecentList();
+      if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === "recent") {
+        const query = secondaryActiveQuery("recent") || secondaryGetQuery("recent");
+        query.items = state.recent.items.slice();
+        query.loaded = true;
+        query.loading = false;
+        query.error = "";
+        query.page = 1;
+        query.totalPages = 1;
+        query.totalResults = query.items.length;
+        query.hasMore = false;
+        renderSecondaryCatalog();
+      }
+    }
+
+    async function upsertContinueIndex(item, playbackTarget, panItem) {
+      const entry = buildContinueIndexEntry(item, playbackTarget, panItem, Date.now());
+      if (!entry) return false;
+      try {
+        await loadContinueIndex();
+        const key = entry.mediaKey;
+        const previous = state.continueIndex && Array.isArray(state.continueIndex.entries) ? state.continueIndex.entries : [];
+        const merged = [entry].concat(previous.filter((old) => String(old && (old.mediaKey || recentContextMediaKey(old)) || "") !== key));
+        const pruned = pruneRecentWatchingEntries(merged, entry.playedAt);
+        state.continueIndex.entries = pruned.entries;
+        state.continueIndex.diag = pruned;
+        await persistContinueIndexEntries(pruned.entries);
+        refreshRecentWatchingViews(entry.playedAt);
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+
     function historyContextEntryKey(entry) {
       const target = entry && (entry.playbackTarget || entry.target) || {};
       return [
@@ -24991,7 +25280,11 @@ utils.encode = function encode(arr, enc) {
         updatedAt: now,
         key: String(panItem && panItem.key || ""),
         title: String(item.title || "").trim(),
+        poster: String(item.pic || item.image || "").trim(),
+        backdrop: String(item.backdrop || item.landscape || "").trim(),
         panProvider: String(panItem && (panItem.provider || panItem.diskType) || "").trim(),
+        panPassword: String(panItem && (panItem.password || panItem.pwd || panItem.passcode) || "").trim(),
+        panTitle: String(panItem && (panItem.title || panItem.note) || item.title || "").trim(),
         panFileName: String(panItem && (panItem.fileName || panItem.file_name || panItem.filename) || "").trim(),
         panFileId: String(panItem && (panItem.fileId || panItem.file_id) || "").trim(),
         resourceId: String(panItem && (panItem.resourceId || panItem.resource_id) || "").trim(),
@@ -25040,6 +25333,7 @@ utils.encode = function encode(arr, enc) {
       if (!tmdbId || !mediaType) return null;
       const title = String(target.title || entry.title || rawItem.title || rawItem.name || "继续观看").trim();
       const poster = String(target.poster || rawItem.pic || rawItem.image || rawItem.poster || "").trim();
+      const backdrop = String(target.backdrop || entry.backdrop || rawItem.landscape || rawItem.backdrop || "").trim();
       const position = Math.max(0, Number(target.playbackPosition || entry.position || rawItem.position || 0) || 0);
       const duration = Math.max(0, Number(target.duration || entry.duration || rawItem.duration || 0) || 0);
       const updatedAt = Number(entry.updatedAt || entry.at || target.updatedAt || rawItem.updatedAt || 0) || 0;
@@ -25059,7 +25353,8 @@ utils.encode = function encode(arr, enc) {
         mediaType,
         title,
         pic: poster,
-        image: poster
+        image: poster,
+        landscape: backdrop
       }));
       return Object.assign({}, snapshot, {
         id: "continue:" + groupKey,
@@ -25075,6 +25370,7 @@ utils.encode = function encode(arr, enc) {
         tmdbId,
         mediaType,
         title,
+        backdrop,
         vodName: title,
         pic: poster,
         vodPic: poster,
@@ -25094,6 +25390,8 @@ utils.encode = function encode(arr, enc) {
         episodeTitle: target.episodeTitle || "",
         sourceType: target.sourceType || entry.sourceType || "pan",
         panProvider: target.panProvider || entry.panProvider || "",
+        panPassword: target.panPassword || entry.panPassword || "",
+        panTitle: target.panTitle || entry.panTitle || title,
         panFileName: target.panFileName || entry.panFileName || "",
         panFileId: target.panFileId || entry.panFileId || "",
         resourceId: target.resourceId || entry.resourceId || "",
@@ -25173,8 +25471,9 @@ utils.encode = function encode(arr, enc) {
       const mediaKey = `${item.mediaType}:${item.tmdbId}`;
       return Object.assign({}, item, {
         id: `tmdb:${mediaKey}`,
-        source: "tmdb",
-        continueContext: false,
+        source: "history",
+        continueContext: true,
+        continueIndexEntry: true,
         recentWatching: true,
         recentMediaKey: mediaKey,
         historyKey: `recent:${mediaKey}`,
@@ -25212,24 +25511,33 @@ utils.encode = function encode(arr, enc) {
         .map((entry) => entry.item);
     }
 
+    function recentWatchingPrimaryEntries() {
+      if (state.continueIndex && state.continueIndex.loaded && Array.isArray(state.continueIndex.entries)) {
+        return state.continueIndex.entries;
+      }
+      return state.historyContexts && Array.isArray(state.historyContexts.entries) ? state.historyContexts.entries : [];
+    }
+
     function recentWatchingItems() {
-      const entries = state.historyContexts && Array.isArray(state.historyContexts.entries) ? state.historyContexts.entries : [];
-      const groups = new Map();
+      const entries = recentWatchingPrimaryEntries();
+      const primary = [];
       entries.forEach((entry, index) => {
         const item = normalizeRecentWatchingContext(entry, index);
         if (!item) return;
-        const key = recentWatchingMediaKey(item);
-        const current = groups.get(key);
-        if (!current || Number(item.updatedAt || 0) > Number(current.item.updatedAt || 0)
-          || Number(item.updatedAt || 0) === Number(current.item.updatedAt || 0) && index < current.index) {
-          groups.set(key, { item, index });
-        }
+        primary.push(item);
       });
-      const items = Array.from(groups.values())
-        .sort((a, b) => Number(b.item.updatedAt || 0) - Number(a.item.updatedAt || 0) || a.index - b.index)
-        .map((entry) => entry.item);
+      const primaryKeys = new Set(primary.map((item) => recentWatchingMediaKey(item)).filter(Boolean));
+      const native = (state.recent && Array.isArray(state.recent.nativeItems) ? state.recent.nativeItems : [])
+        .map((item) => Object.assign({}, item, { recentWatching: true }))
+        .filter((item) => {
+          const key = recentWatchingMediaKey(item);
+          return !key || !primaryKeys.has(key);
+        });
+      const items = uniqueRecentWatchingMedia(primary.concat(native));
       const diag = {
         rawContextCount: entries.length,
+        continueIndexCount: primary.length,
+        nativeHistoryCount: native.length,
         uniqueMediaCount: items.length,
         first10: items.slice(0, 10).map((item) => ({
           mediaType: item.mediaType || "",
@@ -25246,7 +25554,7 @@ utils.encode = function encode(arr, enc) {
     }
 
     function continueWatchingContextItems() {
-      const entries = state.historyContexts && Array.isArray(state.historyContexts.entries) ? state.historyContexts.entries : [];
+      const entries = recentWatchingPrimaryEntries();
       const groups = new Map();
       entries.forEach((entry, index) => {
         const item = normalizeContinueWatchingContext(entry, index);
@@ -25287,7 +25595,7 @@ utils.encode = function encode(arr, enc) {
           title: item.title || target.title || "继续观看",
           pic: item.pic || target.poster || "",
           image: item.image || item.pic || target.poster || "",
-          landscape: item.landscape || "",
+          landscape: item.landscape || item.backdrop || target.backdrop || "",
           desc: item.desc || item.title || ""
         });
       const opts = options || {};
@@ -25329,11 +25637,14 @@ utils.encode = function encode(arr, enc) {
         tmdbId,
         title,
         poster: String(value(["poster", "pic", "vodPic"], "") || "").trim(),
+        backdrop: String(value(["backdrop", "landscape", "backdropUrl", "backdrop_url"], "") || "").trim(),
         seasonNumber,
         episodeNumber,
         episodeTitle: String(value(["episodeTitle", "episode_title"], "") || "").trim(),
         sourceType: String(value(["sourceType", "source_type"], "") || "").trim(),
         panProvider: String(value(["panProvider", "pan_provider", "provider"], "") || "").trim(),
+        panPassword: String(value(["panPassword", "pan_password", "password", "pwd", "passcode"], "") || "").trim(),
+        panTitle: String(value(["panTitle", "pan_title", "playTitle", "play_title", "resourceTitle"], "") || "").trim(),
         panFileName: String(value(["panFileName", "pan_file_name", "fileName", "file_name"], "") || "").trim(),
         panFileId: String(value(["panFileId", "pan_file_id", "fileId", "file_id"], "") || "").trim(),
         resourceId: String(value(["resourceId", "resource_id"], "") || "").trim(),
@@ -29480,6 +29791,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         episodeTarget: episodeTarget || currentPlaybackTargetForItem(state.selected) || null,
         item: state.selected ? normalizeSnapshot(state.selected) : null,
         panProvider: item && (item.provider || item.diskType) || "",
+        panPassword: item && (item.password || item.pwd || item.passcode) || "",
+        panTitle: item && (item.title || item.note) || "",
         panFileName: item && (item.fileName || item.file_name || item.filename) || "",
         panFileId: item && (item.fileId || item.file_id) || "",
         resourceId: item && (item.resourceId || item.resource_id) || "",
@@ -29791,6 +30104,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         // Native History 由 pan.play 生成；Recent 直接消费同一份现有
         // playback-context cache，稳定 TMDB/季集上下文不再依赖 Native History。
         saveHistoryPlaybackContext(selectedItem, episodeTarget, item);
+        // Continue Index 是 Home 最近观看的主身份索引；写入失败不得阻塞原生 handoff。
+        upsertContinueIndex(selectedItem, episodeTarget, item);
       }
       try {
         const pan = sdk().pan || {};
@@ -29802,10 +30117,14 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         const result = pan.play(payload);  // 不 await，原生接管后 Promise 可能永不 resolve
         if (opts.handoffAction) recordPanDirectHandoffStage("PAN_PLAY_CALLED", selectedItem, opts.handoffAction, { panPlayReturnedThenable: !!(result && typeof result.then === "function") });
         if (result && typeof result.catch === "function") {
-          result.catch((error) => handlePanPlayFailure(selectedItem, error, opts.handoffAction && opts.handoffAction.token));
+          result.catch((error) => {
+            if (typeof opts.onPlayFailure === "function") opts.onPlayFailure(error);
+            else handlePanPlayFailure(selectedItem, error, opts.handoffAction && opts.handoffAction.token);
+          });
         }
       } catch (e) {
-        handlePanPlayFailure(selectedItem, e, opts.handoffAction && opts.handoffAction.token);
+        if (typeof opts.onPlayFailure === "function") opts.onPlayFailure(e);
+        else handlePanPlayFailure(selectedItem, e, opts.handoffAction && opts.handoffAction.token);
       }
     }
 
