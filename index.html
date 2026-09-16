@@ -17317,8 +17317,30 @@ utils.encode = function encode(arr, enc) {
         .join(" / ");
     }
 
+    function weeklyGenreIds(item) {
+      if (!item) return [];
+      const values = [];
+      if (Array.isArray(item.genreIds)) values.push(...item.genreIds);
+      if (Array.isArray(item.genre_ids)) values.push(...item.genre_ids);
+      if (Array.isArray(item.genres)) item.genres.forEach((genre) => {
+        if (genre && genre.id != null) values.push(genre.id);
+      });
+      return Array.from(new Set(values.map((value) => String(value || "").trim()).filter(Boolean)));
+    }
+
+    function weeklyContentCategory(item, mediaType) {
+      const type = String(mediaType || item && (item.media_type || item.mediaType) || "").toLowerCase();
+      const genres = new Set(weeklyGenreIds(item));
+      const excluded = type === "tv"
+        ? ["99", "10763", "10764", "10766", "10767"]
+        : ["99"];
+      if (excluded.some((id) => genres.has(id))) return "";
+      if (genres.has("16")) return "anime";
+      return type === "tv" ? "tv" : type === "movie" ? "movie" : "";
+    }
+
     function weeklyMetaText(item) {
-      const type = item && item.mediaType === "tv" ? "电视剧" : "电影";
+      const type = item && item.weeklyCategory === "anime" ? "动画" : item && item.mediaType === "tv" ? "电视剧" : "电影";
       const year = String(item && (item.firstAirDate || item.releaseDate) || "").slice(0, 4);
       const genres = weeklyGenreText(item);
       return [year, genres || type].filter(Boolean).join(" · ");
@@ -17346,11 +17368,13 @@ utils.encode = function encode(arr, enc) {
       const updated = weeklyDateInRange(lastDate, range.start, range.today);
       const todayUpdate = lastDate === range.today || nextDate === range.today;
       const upcoming = weeklyDateInRange(nextDate, range.tomorrow, range.end);
+      const category = weeklyContentCategory(detail, "tv");
       return {
         updated,
         todayUpdate,
         upcoming,
-        keep: updated || todayUpdate || upcoming,
+        category,
+        keep: !!category && (updated || todayUpdate || upcoming),
         status: todayUpdate ? "today" : updated ? "updated" : upcoming ? "upcoming" : ""
       };
     }
@@ -17541,7 +17565,7 @@ utils.encode = function encode(arr, enc) {
         counts.tvDetailSuccessCount += 1;
         const candidate = tvCandidates[index];
         const detail = result.value;
-        const classification = weeklyClassifyTv(detail, range);
+        const classification = weeklyClassifyTv(Object.assign({}, candidate, detail), range);
         if (!classification.keep) return;
         const merged = Object.assign({}, candidate, detail, { id: detail.id || candidate.id, media_type: "tv" });
         if (!merged.poster_path) merged.poster_path = candidate.poster_path || "";
@@ -17554,6 +17578,7 @@ utils.encode = function encode(arr, enc) {
         item.weeklyLastEpisodeDate = latestDateOnly(item.weeklyLastEpisode && item.weeklyLastEpisode.air_date);
         item.weeklyNextEpisodeDate = latestDateOnly(item.weeklyNextEpisode && item.weeklyNextEpisode.air_date);
         item.releaseDate = item.weeklyLastEpisodeDate || item.weeklyNextEpisodeDate || item.firstAirDate || "";
+        item.weeklyCategory = classification.category;
         item.weeklyStatus = classification.status;
         item.weeklyUpdateText = weeklyUpdateText(item, range);
         item.weeklyMetaText = weeklyMetaText(item);
@@ -17564,8 +17589,11 @@ utils.encode = function encode(arr, enc) {
       Array.from(movieCandidatesById.values()).forEach((raw, index) => {
         const releaseDate = latestDateOnly(raw.release_date);
         if (!weeklyDateInRange(releaseDate, range.start, range.end)) return;
+        const weeklyCategory = weeklyContentCategory(raw, "movie");
+        if (!weeklyCategory) return;
         const item = normalizeTmdb(raw, { id: "weekly", title: "本周更新", mediaType: "movie" }, index);
         item.releaseDate = releaseDate;
+        item.weeklyCategory = weeklyCategory;
         item.weeklyStatus = "movie";
         item.weeklyUpdateText = weeklyUpdateText(item, range);
         item.weeklyMetaText = weeklyMetaText(item);
@@ -19671,10 +19699,14 @@ utils.encode = function encode(arr, enc) {
     function historyKeyParts(history) {
       const key = String(history && (history.key || history.historyKey || "") || historyNestedValue(history, ["key", "historyKey"]) || "").trim();
       const parts = key.split("@@@");
+      const explicitCid = history && history.cid != null
+        ? history.cid
+        : historyNestedValue(history, ["cid"]);
       return {
         key,
-        siteKey: String(history && (history.siteKey || history.site || "") || historyNestedValue(history, ["siteKey", "site"]) || parts[0] || "").trim(),
-        vodId: String(history && (history.vodId || history.videoId || "") || historyNestedValue(history, ["vodId", "videoId"]) || parts.slice(1).join("@@@") || "").trim()
+        siteKey: String(parts[0] || history && (history.siteKey || history.site || "") || historyNestedValue(history, ["siteKey", "site"]) || "").trim(),
+        vodId: String(parts[1] || history && (history.vodId || history.videoId || "") || historyNestedValue(history, ["vodId", "videoId"]) || "").trim(),
+        cid: String(explicitCid != null && String(explicitCid).trim() ? explicitCid : parts[2] || "").trim()
       };
     }
 
@@ -19856,6 +19888,7 @@ utils.encode = function encode(arr, enc) {
         historyStableKey: stableKey,
         siteKey: parts.siteKey,
         vodId: parts.vodId,
+        cid: parts.cid,
         tmdbId: context.tmdbId,
         mediaType: context.mediaType,
         title,
@@ -20795,6 +20828,131 @@ utils.encode = function encode(arr, enc) {
       return consumeRecentWatchingPress(card);
     }
 
+    function nativeHistoryDeleteCandidates(item, mediaKey) {
+      const nativeItems = state.recent && Array.isArray(state.recent.nativeItems) ? state.recent.nativeItems : [];
+      if (!nativeItems.length) return [];
+      const rawKey = String(item && (item.nativeHistoryKey || item.historyKey || item.key) || "").trim();
+      if (rawKey) {
+        const exact = nativeItems.filter((nativeItem) => String(nativeItem && (nativeItem.nativeHistoryKey || nativeItem.historyKey || nativeItem.key) || "").trim() === rawKey);
+        if (exact.length) return exact;
+      }
+      return nativeItems.filter((nativeItem) => recentWatchingMediaKey(nativeItem) === mediaKey);
+    }
+
+    function nativeHistoryDeleteBaseUrl(device) {
+      const source = device && device.info && typeof device.info === "object"
+        ? Object.assign({}, device.info, device)
+        : device || {};
+      const candidates = [source.ip, source.baseUrl, source.baseURL, source.url, source.httpUrl, source.http].map((value) => String(value || "").trim()).filter(Boolean);
+      for (const candidate of candidates) {
+        if (/^https?:\/\//i.test(candidate)) return candidate.replace(/\/+$/, "");
+        if (/^[^\s/]+(?::\d+)?$/.test(candidate)) return "http://" + candidate.replace(/\/+$/, "");
+      }
+      return "";
+    }
+
+    function nativeHistoryDeleteBody(response) {
+      const body = response && response.body != null ? response.body : response && response.data;
+      if (body && typeof body === "object") return body;
+      if (typeof body === "string") return safeJson(body, {});
+      return {};
+    }
+
+    async function deleteNativeHistoryViaLocalApi(history) {
+      const api = sdk();
+      const request = api && typeof api.req === "function"
+        ? (url, options) => api.req(url, options)
+        : api && api.net && typeof api.net.request === "function"
+          ? (url, options) => api.net.request(url, options)
+          : null;
+      if (!request) return { ok: false, status: 0, reason: "REQUEST_UNAVAILABLE" };
+      let device = null;
+      try {
+        if (api && typeof api.device === "function") device = await api.device();
+        else if (api && api.device && typeof api.device.info === "function") device = await api.device.info();
+        else if (api && api.device && typeof api.device.info === "object") device = api.device.info;
+      } catch (e) {
+        return { ok: false, status: 0, reason: "DEVICE_INFO_FAILED", message: String(e && e.message || e || "") };
+      }
+      const baseUrl = nativeHistoryDeleteBaseUrl(device);
+      if (!baseUrl) return { ok: false, status: 0, reason: "LOCAL_API_ADDRESS_UNAVAILABLE" };
+      const parts = historyKeyParts(history);
+      const context = historyPlaybackContext(history) || {};
+      const historyKey = String(history && (history.nativeHistoryKey || history.historyKey || history.key) || parts.key || "").trim();
+      const siteKey = String(history && history.siteKey || parts.siteKey || context.siteKey || "").trim();
+      const vodId = String(history && history.vodId || parts.vodId || context.vodId || "").trim();
+      const cid = String(history && history.cid != null && String(history.cid).trim() ? history.cid : parts.cid || context.cid || "").trim();
+      const payload = {};
+      if (historyKey) payload.historyKey = historyKey;
+      if (siteKey) payload.siteKey = siteKey;
+      if (vodId) payload.vodId = vodId;
+      if (cid) payload.cid = /^\d+$/.test(cid) ? Number(cid) : cid;
+      if (!payload.historyKey && (!payload.siteKey || !payload.vodId)) {
+        return { ok: false, status: 0, reason: "NATIVE_HISTORY_KEY_UNAVAILABLE" };
+      }
+      const endpoint = baseUrl + "/api/playback/progress/delete";
+      let response;
+      try {
+        response = await request(endpoint, {
+          method: "POST",
+          responseType: "text",
+          timeout: 24,
+          headers: { "Content-Type": "application/json; charset=utf-8" },
+          body: JSON.stringify(payload)
+        });
+      } catch (e) {
+        return { ok: false, status: 0, reason: "REQUEST_FAILED", endpoint, payload, message: String(e && e.message || e || "") };
+      }
+      const data = nativeHistoryDeleteBody(response);
+      const status = Number(response && (response.status || response.code) || 0);
+      const apiCode = Number(data && data.code);
+      const effectiveStatus = status || (apiCode >= 100 ? apiCode : 0);
+      const result = { ok: false, status: effectiveStatus, endpoint, payload, data };
+      if (effectiveStatus === 404 || apiCode === 404) {
+        result.reason = "ENDPOINT_NOT_FOUND";
+        return result;
+      }
+      if (effectiveStatus === 403 || apiCode === 403) {
+        result.reason = "FORBIDDEN";
+        result.message = String(data && (data.message || data.error) || "本机 API 修改未开启");
+        return result;
+      }
+      if (response && response.error) {
+        result.reason = "REQUEST_ERROR";
+        result.message = String(response.error);
+        return result;
+      }
+      if (response && response.ok === false || effectiveStatus >= 400) {
+        result.reason = "HTTP_ERROR";
+        result.message = String(data && (data.message || data.error) || "HTTP " + effectiveStatus);
+        return result;
+      }
+      const action = String(data && data.action || "").toLowerCase();
+      const affected = Number(data && data.affected || 0);
+      const confirmed = data && data.success === true
+        || action === "delete"
+        || action === "deleted"
+        || action === "removed"
+        || affected > 0
+        || (data && data.success == null && (apiCode === 0 || apiCode === 200) && !data.error);
+      if (!confirmed) {
+        result.reason = "DELETE_NOT_CONFIRMED";
+        result.message = String(data && (data.message || data.error) || "原生历史删除未确认");
+        return result;
+      }
+      result.ok = true;
+      result.reason = "DELETED";
+      return result;
+    }
+
+    function nativeHistoryDeleteFailureText(result) {
+      const item = result || {};
+      if (item.reason === "FORBIDDEN") return "原生历史删除受 App 设置限制：" + (item.message || "本机 API 修改未开启");
+      if (item.reason === "ENDPOINT_NOT_FOUND") return "当前 App 未提供原生历史删除接口";
+      if (item.reason === "LOCAL_API_ADDRESS_UNAVAILABLE" || item.reason === "REQUEST_UNAVAILABLE") return "当前 App 未暴露可用的原生历史删除接口";
+      return "最近观看删除失败" + (item.message ? "：" + item.message : "");
+    }
+
     async function deleteRecentWatchingMedia(item, card) {
       const key = recentWatchingMediaKey(item);
       if (!key) return false;
@@ -20812,7 +20970,20 @@ utils.encode = function encode(arr, enc) {
       const entries = previous.filter((entry) => recentContextMediaKey(entry) !== key);
       const previousIndex = state.continueIndex && Array.isArray(state.continueIndex.entries) ? state.continueIndex.entries : [];
       const indexEntries = previousIndex.filter((entry) => String(entry && entry.mediaKey || recentContextMediaKey(entry)) !== key);
-      if (entries.length === previous.length && indexEntries.length === previousIndex.length) return false;
+      const nativeCandidates = entries.length === previous.length && indexEntries.length === previousIndex.length
+        ? nativeHistoryDeleteCandidates(item, key)
+        : [];
+      if (entries.length === previous.length && indexEntries.length === previousIndex.length) {
+        if (!nativeCandidates.length) return false;
+        for (const nativeItem of nativeCandidates) {
+          const result = await deleteNativeHistoryViaLocalApi(nativeItem);
+          if (!result.ok) {
+            toast(nativeHistoryDeleteFailureText(result));
+            return false;
+          }
+        }
+        await loadNativeRecentHistory({ refresh: true });
+      }
       if (entries.length !== previous.length) await persistHistoryContextEntries(entries);
       if (indexEntries.length !== previousIndex.length) await persistContinueIndexEntries(indexEntries);
       state.historyContexts.entries = entries;
@@ -22549,15 +22720,39 @@ utils.encode = function encode(arr, enc) {
       rail.replaceChildren(status);
     }
 
+    function homeDomesticPreferred(item, mediaType) {
+      const type = String(mediaType || "").toLowerCase();
+      if (!item || (type !== "movie" && type !== "tv")) return false;
+      if (type === "movie") {
+        return String(item.originalLanguage || item.original_language || "").trim().toLowerCase() === "zh";
+      }
+      const countries = Array.isArray(item.originCountries)
+        ? item.originCountries
+        : Array.isArray(item.origin_country) ? item.origin_country : String(item.originCountries || item.origin_country || "").split(/[|,\s]+/);
+      return countries.map((value) => String(value || "").trim().toUpperCase()).some((value) => value === "CN" || value === "HK" || value === "TW");
+    }
+
+    function prioritizeHomeDomestic(items, mediaType, limit) {
+      const source = Array.isArray(items) ? items : [];
+      const preferred = source.filter((item) => homeDomesticPreferred(item, mediaType));
+      if (!preferred.length) return source;
+      const others = source.filter((item) => !homeDomesticPreferred(item, mediaType));
+      const target = Math.max(1, Math.ceil(Number(limit || 0) / 2));
+      const preferredFront = preferred.slice(0, Math.min(preferred.length, target));
+      return preferredFront.concat(others, preferred.slice(preferredFront.length));
+    }
+
     function fillHomeRail(rail, items, options) {
       if (!rail) return;
       const opts = options || {};
       const variant = opts.variant === "landscape" ? "landscape" : "portrait";
       const source = Array.isArray(items) ? items : [];
-      const unique = opts.recentWatching
+      const uniqueSource = opts.recentWatching
         ? uniqueRecentWatchingMedia(source)
         : opts.allowNoPoster ? uniqueHistoryMedia(source) : uniqueMedia(source);
-      const limited = unique.slice(0, Number(opts.limit || homeRailLimit(variant)));
+      const limit = Number(opts.limit || homeRailLimit(variant));
+      const unique = opts.homeDomesticType ? prioritizeHomeDomestic(uniqueSource, opts.homeDomesticType, limit) : uniqueSource;
+      const limited = unique.slice(0, limit);
       const renderKeys = limited.map(mediaRenderKey).join("\n");
       rail.dataset.homeVariant = variant;
       rail.dataset.railKey = opts.railKey || rail.dataset.railKey || rail.id || "";
@@ -22650,6 +22845,7 @@ utils.encode = function encode(arr, enc) {
           variant: config.variant,
           limit: config.initialLimit,
           homeMore: true,
+          homeDomesticType: config.listId === "movie" || config.listId === "tv" ? config.listId : "",
           railKey: `home:${config.listId}`,
           homeEagerCount: 4
         });
@@ -24760,30 +24956,29 @@ utils.encode = function encode(arr, enc) {
         toast("最近观看缺少播放信息");
         return;
       }
+      const context = historyPlaybackContext(item) || {};
+      const nativeSiteKey = String(item.siteKey || context.siteKey || "").trim();
+      const nativeVodId = String(item.vodId || context.vodId || "").trim();
       if (item.continueContext) {
         if (!openContinueWatchingContext(item, { returnTarget: document.activeElement, autoResume: false })) toast("暂时无法恢复播放");
         return;
       }
-      if (!historyCanUseVodReplay(item)) {
-        if (historyCanContinuePlayback(item)) {
-          openPanHistoryItem(item, { returnTarget: document.activeElement });
-          return;
-        }
-        toast("最近观看缺少可恢复上下文");
-        return;
-      }
-      if (!item.siteKey || !item.vodId) {
-        toast("最近观看缺少播放信息");
+      // Native History owns the original site/vod identity.  When it is
+      // present, keep the native route as the primary action regardless of
+      // WebHome's replay-kind classification; TMDB/Detail is compatibility
+      // fallback only for records without a legal native identity.
+      if (!nativeSiteKey || !nativeVodId) {
+        openPanHistoryItem(item, { returnTarget: document.activeElement });
         return;
       }
       try {
-        rememberWatchIntent(item, "view", historyPlaybackContext(item));
+        rememberWatchIntent(item, "view", context);
         // 用 localStorage 持久化标记，WebView 被挂起后 JS 内存会丢失
         // visibilitychange/pageshow/fmresume 恢复时读到此标记，保持当前页面不重置
         localStorage.setItem("fm_pan_playing", "1");
-        await sdk().vod(item.siteKey, item.vodId, item.title, item.pic);
-        await saveHistoryPlaybackContext(item, historyPlaybackContext(item));
-        startWatchTracking(item, historyPlaybackContext(item));
+        await sdk().vod(nativeSiteKey, nativeVodId, item.title || context.title, item.pic || context.poster);
+        await saveHistoryPlaybackContext(item, context);
+        startWatchTracking(item, context);
       } catch (e) {
         localStorage.removeItem("fm_pan_playing");
         toast("打开最近观看失败：" + (e.message || "unknown"));
@@ -25063,6 +25258,7 @@ utils.encode = function encode(arr, enc) {
       return {
         siteKey: parts.siteKey,
         vodId: parts.vodId,
+        cid: parts.cid,
         title,
         poster: String(historyNestedValue(history, ["vodPic", "pic", "poster"]) || hint && hint.poster || "").trim(),
         backdrop: String(historyNestedValue(history, ["backdrop", "landscape", "backdropUrl", "backdrop_url"]) || hint && hint.backdrop || "").trim(),
