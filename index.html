@@ -32852,10 +32852,11 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     function focusRemoteTarget(target, options) {
       if (!target) return;
       const home = state.homeV14;
-      const sectionEntry = !!(home && home.homeSectionEntryTarget === target);
+      const previous = document.activeElement;
+      const heroSectionEntry = previous === $("homeHero") && isHomeRouteActive() && target.closest && target.closest(".home-section");
+      const sectionEntry = !!((home && home.homeSectionEntryTarget === target) || heroSectionEntry);
       if (sectionEntry) home.homeSectionEntryTarget = null;
       const focusOptions = Object.assign({}, options || {}, sectionEntry ? { alignHomeSectionHead: true } : {});
-      const previous = document.activeElement;
       try {
         target.focus({ preventScroll: true });
       } catch (e) {
