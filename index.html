@@ -20089,15 +20089,18 @@ utils.encode = function encode(arr, enc) {
         return;
       }
       if (!item) return;
-      if (detailDirectPlayReadyFor(item)) {
-        playBestQuark(item);
-        return;
-      }
-      if (detailPlayPreparationPendingFor(item)) {
+      const ready = detailDirectPlayReadyFor(item);
+      if (!ready && detailPlayPreparationPendingFor(item)) {
         toast("资源正在准备，请稍候");
         return;
       }
-      toast("暂无可播放资源，可使用聚搜或盘搜");
+      // Ready 只负责 UI 指示；显式点击“播放”始终回到既有 Direct 播放链。
+      // 预加载终止但无夸克/百度时，要求 playBestQuark 创建新的 Direct session。
+      playBestQuark(item, {
+        detailPrimary: true,
+        suppressAutoPan: true,
+        forceFreshDirect: !ready
+      });
     }
 
     function updateDetailContinueButton() {
@@ -28853,14 +28856,22 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return opened;
     }
 
+    function suppressDirectPlayPanFallback(action, message) {
+      if (!action || !action.suppressAutoPan) return false;
+      clearDirectPlayStatus(action.token, "detail_primary_no_source");
+      if (message) toast(message);
+      return true;
+    }
+
     // 直接播放盘搜准备好的夸克/百度资源（"搜索播放"短按）：
     // 首次点击固定取排名第 1（最优画质/最贴合关键字）；1 分钟内再次点击则在排名前 5 里随机换一个。
     // 结果未就绪先复用同标题的完整搜索生命周期；终止后仍无夸克/百度才退回盘搜。
     let _directPlayActionSeq = 0;
     let _directPlayPending = null;
 
-    async function playBestQuark(item) {
+    async function playBestQuark(item, options) {
       if (!item) return;
+      const opts = options || {};
       if (_directPlayPending) {
         if (_directPlayPending.item === item) return _directPlayPending.promise;
         if (state.selected === _directPlayPending.item) return _directPlayPending.promise;
@@ -28880,6 +28891,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         oldSession: null,
         newSessionId: 0,
         newInitialAttemptCount: null,
+        detailPrimary: !!opts.detailPrimary,
+        suppressAutoPan: !!opts.suppressAutoPan,
+        forceFreshDirect: !!opts.forceFreshDirect,
         startedAt: Date.now(),
         waitStartedAt: Date.now(),
         handoffStageStartedAt: 0,
@@ -28916,7 +28930,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           // A terminal/expired lifecycle may retain results, but it is never an
           // execution source for a new Play action. Empty dead lifecycles must
           // start a fresh Direct session instead of entering the old final branch.
-          const shouldStartSearch = !lifecycle.sameSession
+          const shouldStartSearch = action.forceFreshDirect
+            || !lifecycle.sameSession
             || lifecycle.expired
             || lifecycle.terminal && !lifecycle.hasResults
             || lifecycle.idle && !lifecycle.hasResults;
@@ -28950,6 +28965,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           recordDirectPlaySessionDiag(action, action.sessionReuseDecision, waited.lifecycle || getPanSearchLifecycleFor(item));
           if (waited.result === "DIRECT_TRANSPORT_EXHAUSTED") {
             recordPanDirectPlayDiag("DIRECT_TRANSPORT_EXHAUSTED", item, waited.lifecycle || getPanSearchLifecycleFor(item), action.startedAt, null, action);
+            if (suppressDirectPlayPanFallback(action, "连接失败，请手动重试")) return;
             openPanForDirectPlay(item, "盘搜连接异常，正在重新搜索", {
               transportExhausted: true,
               previousFailureKind: state.pan.lastFailureKind || "network",
@@ -28959,6 +28975,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           }
           if (waited.result === "WAIT_BUDGET_EXPIRED") {
             recordPanDirectPlayDiag("OPEN_PAN", item, waited.lifecycle || getPanSearchLifecycleFor(item), action.startedAt, null, action);
+            if (suppressDirectPlayPanFallback(action, "暂无可播放资源，可使用聚搜或盘搜")) return;
             openPanForDirectPlay(item, "暂未找到可直接播放资源，已打开盘搜", { actionId: action.token });
             return;
           }
@@ -28971,6 +28988,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             action.waitResult = "TERMINAL_NO_QB";
             recordPanDirectPlayDiag("TERMINAL_NO_QB", item, lifecycle, action.startedAt, null, action);
             recordPanDirectPlayDiag("OPEN_PAN", item, lifecycle, action.startedAt, null, action);
+            if (suppressDirectPlayPanFallback(action, "暂无可播放资源，可使用聚搜或盘搜")) return;
             openPanForDirectPlay(item, "暂无夸克/百度资源，打开盘搜", { actionId: action.token });
             return;
           }
@@ -28993,6 +29011,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         recordPanDirectPlayDiag("CANDIDATE_AFTER", item, getPanSearchLifecycleFor(item), action.startedAt, Object.assign(after, { selectedCandidate: panDirectPlayCandidateLabel(pick) }), action);
         if (!pick) {
           recordPanDirectPlayDiag("OPEN_PAN", item, getPanSearchLifecycleFor(item), action.startedAt, null, action);
+          if (suppressDirectPlayPanFallback(action, "暂无可播放资源，可使用聚搜或盘搜")) return;
           openPanForDirectPlay(item, "播放资源不可用，打开盘搜", { actionId: action.token });
           return;
         }
