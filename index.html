@@ -29600,8 +29600,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           action.sessionReuseDecision = "NO_RESOURCE_NO_RETRY";
           recordDirectPlaySessionDiag(action, action.sessionReuseDecision, lifecycle);
           const message = detailDirectFailureMessage(currentDirectFailureType);
-          if (suppressDirectPlayPanFallback(action, message)) return;
-          openPanForDirectPlay(item, message, { actionId: action.token });
+          suppressDirectPlayPanFallback(action, message);
           return;
         }
         const connectionFailureNeedsFresh = action.detailPrimary && !prepareOnly
@@ -29662,12 +29661,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           if (waited.result === "DIRECT_TRANSPORT_EXHAUSTED") {
             setDetailDirectFailureType(item, "CONNECTION_FAILED", waited.lifecycle || getPanSearchLifecycleFor(item));
             recordPanDirectPlayDiag("DIRECT_TRANSPORT_EXHAUSTED", item, waited.lifecycle || getPanSearchLifecycleFor(item), action.startedAt, null, action);
-            if (suppressDirectPlayPanFallback(action, "连接失败，请手动重试")) return;
-            openPanForDirectPlay(item, "盘搜连接异常，正在重新搜索", {
-              transportExhausted: true,
-              previousFailureKind: state.pan.lastFailureKind || "network",
-              actionId: action.token
-            });
+            suppressDirectPlayPanFallback(action, "连接失败，请手动重试");
             return;
           }
           if (waited.result === "WAIT_BUDGET_EXPIRED") {
@@ -29675,8 +29669,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             setDetailDirectFailureType(item, failureType, waited.lifecycle || getPanSearchLifecycleFor(item));
             const failureMessage = detailDirectFailureMessage(failureType);
             recordPanDirectPlayDiag("OPEN_PAN", item, waited.lifecycle || getPanSearchLifecycleFor(item), action.startedAt, null, action);
-            if (suppressDirectPlayPanFallback(action, failureMessage)) return;
-            openPanForDirectPlay(item, failureMessage, { actionId: action.token });
+            suppressDirectPlayPanFallback(action, failureMessage);
             return;
           }
           if (waited.result !== "FOUND_QB" && waited.result !== "TERMINAL_NO_QB") return;
@@ -29691,8 +29684,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             action.waitResult = "TERMINAL_NO_QB";
             recordPanDirectPlayDiag("TERMINAL_NO_QB", item, lifecycle, action.startedAt, null, action);
             recordPanDirectPlayDiag("OPEN_PAN", item, lifecycle, action.startedAt, null, action);
-            if (suppressDirectPlayPanFallback(action, failureMessage)) return;
-            openPanForDirectPlay(item, failureMessage, { actionId: action.token });
+            suppressDirectPlayPanFallback(action, failureMessage);
             return;
           }
         }
@@ -29725,8 +29717,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           const failureMessage = detailDirectFailureMessage(failureType);
           state.pan.directReady = null;
           recordPanDirectPlayDiag("OPEN_PAN", item, getPanSearchLifecycleFor(item), action.startedAt, null, action);
-          if (suppressDirectPlayPanFallback(action, failureMessage)) return;
-          openPanForDirectPlay(item, failureMessage, { actionId: action.token });
+          suppressDirectPlayPanFallback(action, failureMessage);
           return;
         }
         const readyLifecycle = getPanSearchLifecycleFor(item);
@@ -30917,9 +30908,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const episodeTarget = normalizePlaybackTarget(selectedItem, opts.episodeTarget || currentPlaybackTargetForItem(selectedItem));
       const payload = buildPanPlayPayload(item);
       if (!payload) {
-        if (opts.handoffAction) updateDirectPlayStatus(opts.handoffAction.token, "OPEN_PAN", DIRECT_PLAY_STATUS_TEXT.OPENING_PAN, "invalid_payload");
-        openPanFallback(selectedItem, "播放资源无效，打开盘搜");
-        if (opts.handoffAction) clearDirectPlayStatusAfterPanOpen(opts.handoffAction.token, "pan_open");
+        if (opts.handoffAction) updateDirectPlayStatus(opts.handoffAction.token, "FINAL_ERROR", DIRECT_PLAY_STATUS_TEXT.FINAL_ERROR, "invalid_payload");
+        toast("播放资源无效，请重新选择资源");
         return;
       }
       if (!opts.prechecked) {
@@ -30982,13 +30972,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       localStorage.removeItem("fm_pan_playing");
       state.pan.isPlaying = false;
       state.pan.playbackReturn = null;
-      const detail = $("detailSheet");
-      if (item && state.selected === item && detail && detail.classList.contains("active")) {
-        updateDirectPlayStatus(actionId, "OPEN_PAN", DIRECT_PLAY_STATUS_TEXT.OPENING_PAN, "play_failure");
-        openPanFallback(item, "播放失败，打开盘搜");
-        clearDirectPlayStatusAfterPanOpen(actionId, "pan_open_after_failure");
-        return;
-      }
       if (actionId && updateDirectPlayStatus(actionId, "FINAL_ERROR", DIRECT_PLAY_STATUS_TEXT.FINAL_ERROR, "play_failure")) {
         const status = state.directPlayStatus;
         clearTimeout(status.clearTimer);
