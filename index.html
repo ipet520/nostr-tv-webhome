@@ -952,17 +952,18 @@
 
     .card-air-status {
       position: absolute;
-      left: 50%;
-      bottom: 7px;
+      left: 0;
+      right: 0;
+      bottom: 0;
       z-index: 4;
       display: block;
-      width: max-content;
-      max-width: calc(100% - 16px);
+      width: 100%;
+      max-width: none;
       box-sizing: border-box;
-      padding: 2px 7px;
+      padding: 2px 8px;
       border: 0;
-      border-radius: 999px;
-      background: rgba(5, 8, 12, .68);
+      border-radius: 0;
+      background: rgba(5, 8, 12, .42);
       color: rgba(245, 248, 252, .88);
       font-size: 10px;
       font-weight: 600;
@@ -972,7 +973,7 @@
       overflow: hidden;
       text-overflow: ellipsis;
       pointer-events: none;
-      transform: translateX(-50%);
+      transform: none;
       text-shadow: 0 1px 2px rgba(0, 0, 0, .55);
     }
 
@@ -981,18 +982,9 @@
     }
 
     .card-air-status.weekly-air-status {
-      right: 6px;
-      bottom: 6px;
-      left: 6px;
-      width: auto;
-      max-width: none;
-      padding: 2px 6px;
-      border-radius: 6px;
-      transform: none;
       white-space: normal;
       overflow: visible;
       text-overflow: clip;
-      line-height: 1.2;
     }
 
     .card.recent-card {
@@ -1153,7 +1145,7 @@
       left: 0;
       right: 0;
       bottom: 0;
-      z-index: 3;
+      z-index: 5;
       height: 3px;
       background: rgba(255, 255, 255, .2);
     }
