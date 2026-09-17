@@ -24564,10 +24564,54 @@ utils.encode = function encode(arr, enc) {
       image.src = source;
     }
 
+    function weeklySecondaryFocusableCards(grid) {
+      return grid && grid.classList.contains("weekly-secondary-rail")
+        ? Array.from(grid.querySelectorAll(".weekly-card")).filter(isVisibleFocusable)
+        : [];
+    }
+
+    function weeklySecondaryFocusSnapshot(grid) {
+      if (!grid || !grid.classList.contains("weekly-secondary-rail")) return null;
+      const active = document.activeElement;
+      if (!active || !grid.contains(active) || !active.classList.contains("weekly-card")) return null;
+      const cards = Array.from(grid.querySelectorAll(".weekly-card"));
+      const index = cards.indexOf(active);
+      if (index < 0) return null;
+      return {
+        mediaKey: String(active.dataset.mediaKey || mediaDomKey(active.__mediaItem) || ""),
+        index
+      };
+    }
+
+    function restoreWeeklySecondaryFocus(snapshot) {
+      if (!snapshot || homeUiRoute() !== "secondary" || state.homeV14.secondaryListId !== "now-playing") return false;
+      const grid = $("secondaryCatalogGrid");
+      if (!grid || !grid.classList.contains("weekly-secondary-rail")) return false;
+      const cards = Array.from(grid.querySelectorAll(".weekly-card"));
+      const visibleCards = weeklySecondaryFocusableCards(grid);
+      if (!visibleCards.length) return false;
+      const mediaKey = String(snapshot.mediaKey || "");
+      let target = mediaKey
+        ? visibleCards.find((card) => String(card.dataset.mediaKey || mediaDomKey(card.__mediaItem) || "") === mediaKey)
+        : null;
+      const index = Number(snapshot.index);
+      if (!target && Number.isFinite(index) && index >= 0) {
+        const indexed = cards[index];
+        target = isVisibleFocusable(indexed)
+          ? indexed
+          : visibleCards[Math.min(Math.floor(index), visibleCards.length - 1)];
+      }
+      if (!target) target = visibleCards[visibleCards.length - 1];
+      if (!target) return false;
+      focusRemoteTarget(target);
+      updateWeeklySecondaryHero(target.__mediaItem || null);
+      return true;
+    }
+
     function focusWeeklySecondaryInitial() {
       if (homeUiRoute() !== "secondary" || state.homeV14.secondaryListId !== "now-playing") return false;
       const grid = $("secondaryCatalogGrid");
-      const card = grid && Array.from(grid.querySelectorAll(".weekly-card")).find((item) => isVisibleFocusable(item));
+      const card = weeklySecondaryFocusableCards(grid)[0] || null;
       if (!card) return false;
       state.homeV14.secondaryWeeklyInitialFocusPending = false;
       focusRemoteTarget(card);
@@ -24601,6 +24645,7 @@ utils.encode = function encode(arr, enc) {
       const status = $("secondaryCatalogLoadStatus");
       if (!grid) return;
       syncSecondaryCatalogPresentation("now-playing");
+      const focusSnapshot = weeklySecondaryFocusSnapshot(grid);
       grid.dataset.listId = "secondary:now-playing";
       grid.dataset.secondaryQueryKey = query && query.key || "";
       if (status) status.textContent = query && query.loading ? "本周更新加载中…" : query && query.error ? "本周更新加载失败" : items.length ? "" : query && query.loaded ? "暂无本周更新" : "";
@@ -24614,9 +24659,10 @@ utils.encode = function encode(arr, enc) {
         showGridStatus(grid, "暂无本周更新");
       } else {
         fillRail(grid, items, { weekly: true, railKey: "secondary:weekly" });
-        const active = grid.querySelector(".weekly-card:focus") || grid.querySelector(".weekly-card");
+        const restored = restoreWeeklySecondaryFocus(focusSnapshot);
+        const active = grid.querySelector(".weekly-card:focus") || (!restored && grid.querySelector(".weekly-card"));
         if (active) updateWeeklySecondaryHero(active.__mediaItem || null);
-        if (state.homeV14.secondaryWeeklyInitialFocusPending) requestAnimationFrame(() => focusWeeklySecondaryInitial());
+        if (!restored && state.homeV14.secondaryWeeklyInitialFocusPending) requestAnimationFrame(() => focusWeeklySecondaryInitial());
       }
     }
 
@@ -34468,9 +34514,13 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (homeUiRoute() !== "secondary" || !active || key.indexOf("Arrow") !== 0) return null;
       const back = $("secondaryCatalogBack"), host = $("secondaryCatalogFilters"), grid = $("secondaryCatalogGrid"), rows = host ? Array.from(host.querySelectorAll(".secondary-filter-row")) : [];
       const buttons = (row) => row ? Array.from(row.querySelectorAll(".secondary-filter-option")).filter(canFastHomeFocus) : [];
-      const cards = grid ? Array.from(grid.querySelectorAll(".card")).filter(canFastHomeFocus) : [];
+      const weeklySecondary = !!(grid && state.homeV14 && state.homeV14.secondaryListId === "now-playing" || grid && grid.classList.contains("weekly-secondary-rail"));
+      const cards = weeklySecondary
+        ? weeklySecondaryFocusableCards(grid)
+        : grid ? Array.from(grid.querySelectorAll(".card")).filter(canFastHomeFocus) : [];
       const firstCard = cards[0] || null;
       if (active === back) {
+        if (weeklySecondary) return key === "ArrowDown" ? firstCard || active : active;
         if (key === "ArrowDown") return rows.length ? secondaryFilterFocusTarget(rows[0], back.getBoundingClientRect().left) || firstCard || active : firstCard || active;
         return active;
       }
@@ -34491,7 +34541,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         return active;
       }
       if (grid && grid.contains(active) && active.classList && active.classList.contains("card")) {
-        if (grid.classList.contains("weekly-secondary-rail")) {
+        if (weeklySecondary && active.classList.contains("weekly-card")) {
           const index = cards.indexOf(active);
           if (key === "ArrowLeft") return cards[index - 1] || active;
           if (key === "ArrowRight") return cards[index + 1] || active;
