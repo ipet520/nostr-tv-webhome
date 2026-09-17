@@ -16717,7 +16717,7 @@ utils.encode = function encode(arr, enc) {
       activeList: "all",
       catalog: {},
       catalogPage: {},
-      recent: { items: [], loading: false, loaded: false, error: "", refreshedAt: 0, diag: null, nativeItems: [], nativeLoaded: false, nativeLoading: false, nativeRefreshedAt: 0 },
+      recent: { items: [], loading: false, loaded: false, error: "", refreshedAt: 0, diag: null, nativeItems: [], nativeLoaded: false, nativeLoading: false, nativeRefreshedAt: 0, nativeError: "", nativeDiag: null },
       homeLatest: { items: [], loading: false, loaded: false, error: "", loadedAt: 0, requestSeq: 0, diag: null, promise: null },
       gridRender: {},
       gridColumnCache: {},
@@ -19716,7 +19716,8 @@ utils.encode = function encode(arr, enc) {
     }
 
     function historyTitleValue(history) {
-      return String(history && (history.vodName || history.title || history.name) || historyNestedValue(history, ["vodName", "title", "name"]) || "").trim();
+      return String(history && (history.vodName || history.vod_name || history.title || history.name || history.showName || history.show_name)
+        || historyNestedValue(history, ["vodName", "vod_name", "title", "name", "showName", "show_name"]) || "").trim();
     }
 
     function historyTypeText(history) {
@@ -19771,12 +19772,17 @@ utils.encode = function encode(arr, enc) {
         (Number.isFinite(duration) && duration > 0);
     }
 
+    function historyHasNativeIdentity(history) {
+      const parts = historyKeyParts(history);
+      return !!(parts.siteKey && parts.vodId);
+    }
+
     function historyVisibilityInfo(history) {
       if (!history || typeof history !== "object") return { visible: false, hiddenReason: "INVALID_RECORD" };
       if (!historyTitleValue(history)) return { visible: false, hiddenReason: "MISSING_TITLE" };
       const explicitReason = historyExplicitInvalidReason(history);
       if (explicitReason) return { visible: false, hiddenReason: explicitReason };
-      if (!historyHasMeaningfulState(history)) return { visible: false, hiddenReason: "INVALID_RECORD" };
+      if (!historyHasMeaningfulState(history) && !historyHasNativeIdentity(history)) return { visible: false, hiddenReason: "INVALID_RECORD" };
       return { visible: true, hiddenReason: "" };
     }
 
@@ -20154,7 +20160,7 @@ utils.encode = function encode(arr, enc) {
       try {
         await loadContinueIndex();
         await loadHistoryContextIndex();
-        await loadNativeRecentHistory();
+        await loadNativeRecentHistory({ refresh: !!opts.refresh });
         state.recent.items = recentWatchingItems();
         state.recent.loaded = true;
         state.recent.refreshedAt = Date.now();
@@ -20828,15 +20834,63 @@ utils.encode = function encode(arr, enc) {
       return consumeRecentWatchingPress(card);
     }
 
+    function nativeHistoryDeleteIdentity(history) {
+      const parts = historyKeyParts(history);
+      const explicitCid = history && history.cid != null
+        ? history.cid
+        : historyNestedValue(history, ["cid"]);
+      const historyKey = String(history && (history.nativeHistoryKey || history.historyKey || history.key) || parts.key || "").trim();
+      const siteKey = String(history && (history.siteKey || history.site) || parts.siteKey || historyNestedValue(history, ["siteKey", "site"]) || "").trim();
+      const vodId = String(history && (history.vodId || history.videoId) || parts.vodId || historyNestedValue(history, ["vodId", "videoId"]) || "").trim();
+      const cid = String(explicitCid != null && String(explicitCid).trim() ? explicitCid : parts.cid || "").trim();
+      return {
+        historyKey,
+        siteKey,
+        vodId,
+        cid,
+        valid: !!(historyKey && cid && siteKey && vodId)
+      };
+    }
+
+    function nativeHistoryDeleteCandidateKey(history) {
+      const identity = nativeHistoryDeleteIdentity(history);
+      return identity.historyKey || [identity.siteKey, identity.vodId, identity.cid].join("@@@");
+    }
+
     function nativeHistoryDeleteCandidates(item, mediaKey) {
       const nativeItems = state.recent && Array.isArray(state.recent.nativeItems) ? state.recent.nativeItems : [];
-      if (!nativeItems.length) return [];
+      const candidates = [];
+      const seen = new Set();
+      const add = (nativeItem) => {
+        if (!nativeItem || !nativeHistoryDeleteIdentity(nativeItem).valid) return;
+        const candidateKey = nativeHistoryDeleteCandidateKey(nativeItem);
+        if (seen.has(candidateKey)) return;
+        seen.add(candidateKey);
+        candidates.push(nativeItem);
+      };
+      add(item);
       const rawKey = String(item && (item.nativeHistoryKey || item.historyKey || item.key) || "").trim();
       if (rawKey) {
-        const exact = nativeItems.filter((nativeItem) => String(nativeItem && (nativeItem.nativeHistoryKey || nativeItem.historyKey || nativeItem.key) || "").trim() === rawKey);
-        if (exact.length) return exact;
+        nativeItems
+          .filter((nativeItem) => String(nativeItem && (nativeItem.nativeHistoryKey || nativeItem.historyKey || nativeItem.key) || "").trim() === rawKey)
+          .forEach(add);
+      } else {
+        nativeItems
+          .filter((nativeItem) => recentWatchingMediaKey(nativeItem) === mediaKey)
+          .forEach(add);
       }
-      return nativeItems.filter((nativeItem) => recentWatchingMediaKey(nativeItem) === mediaKey);
+      return candidates;
+    }
+
+    function nativeHistoryDeleteStillPresent(history) {
+      const target = nativeHistoryDeleteIdentity(history);
+      if (!target.valid) return false;
+      const nativeItems = state.recent && Array.isArray(state.recent.nativeItems) ? state.recent.nativeItems : [];
+      return nativeItems.some((nativeItem) => {
+        const current = nativeHistoryDeleteIdentity(nativeItem);
+        if (!current.valid) return false;
+        return current.historyKey === target.historyKey && current.cid === target.cid;
+      });
     }
 
     function nativeHistoryDeleteBaseUrl(device) {
@@ -20876,19 +20930,18 @@ utils.encode = function encode(arr, enc) {
       }
       const baseUrl = nativeHistoryDeleteBaseUrl(device);
       if (!baseUrl) return { ok: false, status: 0, reason: "LOCAL_API_ADDRESS_UNAVAILABLE" };
-      const parts = historyKeyParts(history);
-      const context = historyPlaybackContext(history) || {};
-      const historyKey = String(history && (history.nativeHistoryKey || history.historyKey || history.key) || parts.key || "").trim();
-      const siteKey = String(history && history.siteKey || parts.siteKey || context.siteKey || "").trim();
-      const vodId = String(history && history.vodId || parts.vodId || context.vodId || "").trim();
-      const cid = String(history && history.cid != null && String(history.cid).trim() ? history.cid : parts.cid || context.cid || "").trim();
+      const identity = nativeHistoryDeleteIdentity(history);
+      const historyKey = identity.historyKey;
+      const siteKey = identity.siteKey;
+      const vodId = identity.vodId;
+      const cid = identity.cid;
       const payload = {};
       if (historyKey) payload.historyKey = historyKey;
       if (siteKey) payload.siteKey = siteKey;
       if (vodId) payload.vodId = vodId;
       if (cid) payload.cid = /^\d+$/.test(cid) ? Number(cid) : cid;
-      if (!payload.historyKey && (!payload.siteKey || !payload.vodId)) {
-        return { ok: false, status: 0, reason: "NATIVE_HISTORY_KEY_UNAVAILABLE" };
+      if (!identity.valid) {
+        return { ok: false, status: 0, reason: "NATIVE_HISTORY_FIELDS_UNAVAILABLE", payload };
       }
       const endpoint = baseUrl + "/api/playback/progress/delete";
       let response;
@@ -20927,21 +20980,9 @@ utils.encode = function encode(arr, enc) {
         result.message = String(data && (data.message || data.error) || "HTTP " + effectiveStatus);
         return result;
       }
-      const action = String(data && data.action || "").toLowerCase();
-      const affected = Number(data && data.affected || 0);
-      const confirmed = data && data.success === true
-        || action === "delete"
-        || action === "deleted"
-        || action === "removed"
-        || affected > 0
-        || (data && data.success == null && (apiCode === 0 || apiCode === 200) && !data.error);
-      if (!confirmed) {
-        result.reason = "DELETE_NOT_CONFIRMED";
-        result.message = String(data && (data.message || data.error) || "原生历史删除未确认");
-        return result;
-      }
       result.ok = true;
-      result.reason = "DELETED";
+      result.reason = "DELETE_REQUEST_ACCEPTED";
+      result.message = String(data && (data.message || data.error) || "");
       return result;
     }
 
@@ -20950,6 +20991,9 @@ utils.encode = function encode(arr, enc) {
       if (item.reason === "FORBIDDEN") return "原生历史删除受 App 设置限制：" + (item.message || "本机 API 修改未开启");
       if (item.reason === "ENDPOINT_NOT_FOUND") return "当前 App 未提供原生历史删除接口";
       if (item.reason === "LOCAL_API_ADDRESS_UNAVAILABLE" || item.reason === "REQUEST_UNAVAILABLE") return "当前 App 未暴露可用的原生历史删除接口";
+      if (item.reason === "NATIVE_HISTORY_FIELDS_UNAVAILABLE") return "原生历史删除所需字段不完整";
+      if (item.reason === "HISTORY_REFRESH_FAILED") return "原生历史刷新失败" + (item.message ? "：" + item.message : "");
+      if (item.reason === "DELETE_NOT_APPLIED") return "原生历史删除未生效" + (item.message ? "：" + item.message : "");
       return "最近观看删除失败" + (item.message ? "：" + item.message : "");
     }
 
@@ -20960,35 +21004,67 @@ utils.encode = function encode(arr, enc) {
       const beforeCards = grid ? Array.from(grid.querySelectorAll(".recent-watching-card")) : [];
       const focusIndex = Math.max(0, beforeCards.indexOf(card));
       cancelRecentDeleteArm();
-      await loadContinueIndex();
-      await loadHistoryContextIndex();
-      if (state.historyContexts && state.historyContexts.diag && state.historyContexts.diag.error) {
-        toast("最近观看删除失败");
-        return false;
-      }
-      const previous = Array.isArray(state.historyContexts.entries) ? state.historyContexts.entries : [];
-      const entries = previous.filter((entry) => recentContextMediaKey(entry) !== key);
-      const previousIndex = state.continueIndex && Array.isArray(state.continueIndex.entries) ? state.continueIndex.entries : [];
-      const indexEntries = previousIndex.filter((entry) => String(entry && entry.mediaKey || recentContextMediaKey(entry)) !== key);
-      const nativeCandidates = entries.length === previous.length && indexEntries.length === previousIndex.length
-        ? nativeHistoryDeleteCandidates(item, key)
-        : [];
-      if (entries.length === previous.length && indexEntries.length === previousIndex.length) {
-        if (!nativeCandidates.length) return false;
+      const nativeCandidates = nativeHistoryDeleteCandidates(item, key);
+      let nativeDeleted = false;
+      if (nativeCandidates.length) {
+        const nativeResults = [];
         for (const nativeItem of nativeCandidates) {
           const result = await deleteNativeHistoryViaLocalApi(nativeItem);
           if (!result.ok) {
             toast(nativeHistoryDeleteFailureText(result));
             return false;
           }
+          nativeResults.push(result);
         }
         await loadNativeRecentHistory({ refresh: true });
+        if (state.recent && state.recent.nativeError) {
+          toast(nativeHistoryDeleteFailureText({ reason: "HISTORY_REFRESH_FAILED", message: state.recent.nativeError }));
+          return false;
+        }
+        if (nativeCandidates.some(nativeHistoryDeleteStillPresent)) {
+          const result = nativeResults[nativeResults.length - 1] || {};
+          result.reason = "DELETE_NOT_APPLIED";
+          result.message = result.message || "本机 API 未删除该历史记录";
+          toast(nativeHistoryDeleteFailureText(result));
+          return false;
+        }
+        nativeDeleted = true;
       }
-      if (entries.length !== previous.length) await persistHistoryContextEntries(entries);
-      if (indexEntries.length !== previousIndex.length) await persistContinueIndexEntries(indexEntries);
-      state.historyContexts.entries = entries;
-      if (state.continueIndex) state.continueIndex.entries = indexEntries;
-      if (state.recent && Array.isArray(state.recent.nativeItems)) {
+
+      let contextReady = !!(state.historyContexts && state.historyContexts.loaded
+        && !(state.historyContexts.diag && state.historyContexts.diag.error)
+        && Array.isArray(state.historyContexts.entries));
+      let indexReady = !!(state.continueIndex && state.continueIndex.loaded
+        && !(state.continueIndex.diag && state.continueIndex.diag.error)
+        && Array.isArray(state.continueIndex.entries));
+      if (!nativeDeleted) {
+        await loadContinueIndex();
+        await loadHistoryContextIndex();
+        if (state.historyContexts && state.historyContexts.diag && state.historyContexts.diag.error) {
+          toast("最近观看删除失败");
+          return false;
+        }
+        contextReady = !!(state.historyContexts && Array.isArray(state.historyContexts.entries));
+        indexReady = !!(state.continueIndex && !(state.continueIndex.diag && state.continueIndex.diag.error)
+          && Array.isArray(state.continueIndex.entries));
+      }
+
+      const previous = contextReady && state.historyContexts && Array.isArray(state.historyContexts.entries)
+        ? state.historyContexts.entries : [];
+      const entries = contextReady ? previous.filter((entry) => recentContextMediaKey(entry) !== key) : previous;
+      const previousIndex = indexReady && state.continueIndex && Array.isArray(state.continueIndex.entries)
+        ? state.continueIndex.entries : [];
+      const indexEntries = indexReady
+        ? previousIndex.filter((entry) => String(entry && entry.mediaKey || recentContextMediaKey(entry)) !== key)
+        : previousIndex;
+      const contextsChanged = entries.length !== previous.length;
+      const indexChanged = indexEntries.length !== previousIndex.length;
+      if (!nativeDeleted && !contextsChanged && !indexChanged) return false;
+      if (contextsChanged) await persistHistoryContextEntries(entries);
+      if (indexChanged) await persistContinueIndexEntries(indexEntries);
+      if (contextReady && state.historyContexts) state.historyContexts.entries = entries;
+      if (indexReady && state.continueIndex) state.continueIndex.entries = indexEntries;
+      if (!nativeDeleted && state.recent && Array.isArray(state.recent.nativeItems)) {
         state.recent.nativeItems = state.recent.nativeItems.filter((nativeItem) => recentWatchingMediaKey(nativeItem) !== key);
       }
       state.recent.items = recentWatchingItems();
@@ -25470,11 +25546,46 @@ utils.encode = function encode(arr, enc) {
       try {
         const api = sdk();
         const raw = api && typeof api.history === "function" ? await api.history() : [];
-        recent.nativeItems = normalizeHistoryList(extractNativeHistoryList(raw)).map((item) => Object.assign({}, item, { recentWatching: true }));
+        const rawList = extractNativeHistoryList(raw);
+        const normalizedList = normalizeHistoryList(rawList);
+        recent.nativeItems = normalizedList.map((item) => Object.assign({}, item, { recentWatching: true }));
+        recent.nativeError = "";
+        const rawSummary = rawList.slice(0, 24).map((history, index) => {
+          const parts = historyKeyParts(history);
+          const restorable = isRestorableHistory(history);
+          return {
+            index,
+            title: historyTitleValue(history),
+            siteKey: parts.siteKey,
+            vodId: parts.vodId,
+            cid: parts.cid,
+            replayKind: historyReplayKind(history, parts, restorable),
+            visible: isVisibleRecentHistory(history),
+            hasNativeIdentity: historyHasNativeIdentity(history)
+          };
+        });
+        const nativeDiag = {
+          rawCount: rawList.length,
+          normalizedCount: normalizedList.length,
+          rawNativeIdentityCount: rawList.filter(historyHasNativeIdentity).length,
+          normalizedNativeIdentityCount: normalizedList.filter(historyHasNativeIdentity).length,
+          rawVodCount: rawList.filter((history) => historyReplayKind(history, null, isRestorableHistory(history)) === "VOD").length,
+          rawPushCount: rawList.filter((history) => historySiteKind(history, null, isRestorableHistory(history)) === "push_agent").length,
+          filteredNativeIdentityCount: rawList.filter(historyHasNativeIdentity).length - normalizedList.filter(historyHasNativeIdentity).length,
+          hiddenReasons: state.tvDiag && state.tvDiag.historyCompat && state.tvDiag.historyCompat.hiddenReasons || {},
+          samples: rawSummary
+        };
+        recent.nativeDiag = nativeDiag;
+        if (state.tvDiag) state.tvDiag.nativeHistoryLoad = nativeDiag;
+        if (isTvDiagnosticEnabled()) {
+          try { console.debug("[Nostr TV][NATIVE_HISTORY_LOAD_DIAG]", nativeDiag); } catch (e) {}
+        }
         recent.nativeLoaded = true;
         recent.nativeRefreshedAt = Date.now();
       } catch (e) {
-        recent.nativeItems = [];
+        recent.nativeError = String(e && e.message || e || "");
+        recent.nativeDiag = { error: recent.nativeError, rawCount: null, normalizedCount: null };
+        if (state.tvDiag) state.tvDiag.nativeHistoryLoad = recent.nativeDiag;
         recent.nativeLoaded = true;
       } finally {
         recent.nativeLoading = false;
