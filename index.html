@@ -20162,10 +20162,13 @@ utils.encode = function encode(arr, enc) {
       if (!opts.silent) setStatus("tmdb", "读取最近观看");
       if (state.activeList === "recent") renderActiveGrid();
       try {
-        await loadContinueIndex();
         await loadHistoryContextIndex();
-        await loadNativeRecentHistory({ refresh: !!opts.refresh });
-        state.recent.items = recentWatchingItems();
+        if (!state.watch || !state.watch.item) await loadPendingWatch();
+        const list = await sdk().history();
+        const normalized = normalizeHistoryList(list);
+        normalized.forEach((item) => recordRecentNativeKeyFlow("RECENT_NATIVE_KEY_AT_LOAD", item));
+        normalized.forEach((item) => { item.recentWatching = true; });
+        state.recent.items = normalized;
         state.recent.loaded = true;
         state.recent.refreshedAt = Date.now();
         if (!opts.silent) setStatus("tmdb", "最近观看 " + state.recent.items.length + " 条");
@@ -20845,7 +20848,7 @@ utils.encode = function encode(arr, enc) {
     }
 
     function nativeHistoryDeleteCandidates(item, mediaKey) {
-      const nativeItems = state.recent && Array.isArray(state.recent.nativeItems) ? state.recent.nativeItems : [];
+      const nativeItems = state.recent && Array.isArray(state.recent.items) ? state.recent.items : [];
       if (!nativeItems.length) return [];
       const rawKey = String(item && (item.nativeHistoryKey || item.historyKey || item.key) || "").trim();
       if (rawKey) {
@@ -21007,14 +21010,14 @@ utils.encode = function encode(arr, enc) {
             return false;
           }
         }
-        const nativeRefreshBefore = Number(state.recent && state.recent.nativeRefreshedAt || 0);
-        await loadNativeRecentHistory({ refresh: true });
-        if (!state.recent || Number(state.recent.nativeRefreshedAt || 0) <= nativeRefreshBefore) {
+        const nativeRefreshBefore = Number(state.recent && state.recent.refreshedAt || 0);
+        await loadRecentList({ refresh: true, silent: true });
+        if (!state.recent || Number(state.recent.refreshedAt || 0) <= nativeRefreshBefore) {
           toast("最近观看删除失败");
           return false;
         }
-        const nativeStillExists = state.recent && Array.isArray(state.recent.nativeItems)
-          && state.recent.nativeItems.some((nativeItem) => recentNativeHistoryKey(nativeItem) === nativeHistoryKey);
+        const nativeStillExists = state.recent && Array.isArray(state.recent.items)
+          && state.recent.items.some((nativeItem) => recentNativeHistoryKey(nativeItem) === nativeHistoryKey);
         if (nativeStillExists) {
           toast(nativeHistoryDeleteFailureText({ reason: "DELETE_NOT_CONFIRMED", message: "原生历史删除未确认" }));
           return false;
@@ -21030,9 +21033,6 @@ utils.encode = function encode(arr, enc) {
       if (continueIndexReady && indexEntries.length !== previousIndex.length) await persistContinueIndexEntries(indexEntries);
       if (historyContextReady && state.historyContexts) state.historyContexts.entries = entries;
       if (continueIndexReady && state.continueIndex) state.continueIndex.entries = indexEntries;
-      state.recent.items = recentWatchingItems();
-      state.recent.loaded = true;
-      state.recent.refreshedAt = Date.now();
       if (isHomeRouteActive()) renderHomeRecent();
       if (state.activeList === "recent") renderRecentList();
       if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === "recent") {
@@ -22899,7 +22899,7 @@ utils.encode = function encode(arr, enc) {
         section.hidden = true;
         return;
       }
-      const items = state.recent.loaded ? recentWatchingItems() : [];
+      const items = state.recent.loaded && Array.isArray(state.recent.items) ? state.recent.items : [];
       if (!items.length) {
         section.hidden = true;
         rail.replaceChildren();
@@ -23317,7 +23317,7 @@ utils.encode = function encode(arr, enc) {
       return filters;
     }
     function secondaryCatalogBaseItems(id) {
-      if (normalizeLegacyCategoryId(id) === "recent") return recentWatchingItems();
+      if (normalizeLegacyCategoryId(id) === "recent") return state.recent && Array.isArray(state.recent.items) ? state.recent.items : [];
       // now-playing is the finite Weekly Feed route.  It is populated from
       // state.homeLatest by loadSecondaryPage instead of the catalog cache.
       if (normalizeLegacyCategoryId(id) === "now-playing") return [];
@@ -23687,7 +23687,7 @@ utils.encode = function encode(arr, enc) {
       if (!query || query.listId !== id || query.loading) return query;
       const page = Math.max(1, Number(pageNumber || 1));
       if (id === "recent") {
-        const items = recentWatchingItems();
+        const items = state.recent && Array.isArray(state.recent.items) ? state.recent.items : [];
         query.loading = false;
         query.loaded = true;
         query.error = "";
@@ -23850,7 +23850,7 @@ utils.encode = function encode(arr, enc) {
 
     function secondaryCatalogItems(listId) {
       listId = normalizeLegacyCategoryId(listId);
-      if (listId === "recent") return recentWatchingItems();
+      if (listId === "recent") return state.recent && Array.isArray(state.recent.items) ? state.recent.items : [];
       const query = homeUiRoute() === "secondary" ? secondaryActiveQuery(listId) : null;
       return secondaryFilterItems(listId, query && query.loaded ? query.items : secondaryCatalogBaseItems(listId));
     }
@@ -23918,7 +23918,7 @@ utils.encode = function encode(arr, enc) {
       renderSecondaryCatalog();
       if (listId === "recent") {
         if (state.recent.loaded) {
-          query.items = recentWatchingItems();
+          query.items = state.recent.items.slice();
           query.loaded = true;
           query.loading = false;
           query.error = "";
@@ -23931,10 +23931,7 @@ utils.encode = function encode(arr, enc) {
           query.loading = true;
           query.loaded = false;
           renderSecondaryCatalog();
-          loadHistoryContextIndex().then(() => {
-            state.recent.items = recentWatchingItems();
-            state.recent.loaded = true;
-            state.recent.refreshedAt = Date.now();
+          loadRecentList({ silent: true }).then(() => {
             query.items = state.recent.items.slice();
             query.loading = false;
             query.loaded = true;
@@ -24079,7 +24076,7 @@ utils.encode = function encode(arr, enc) {
       const title = isRecent ? "最近观看" : isWeekly ? "本周更新" : list && list.title || "分类";
       const query = secondaryActiveQuery(listId) || secondaryGetQuery(listId);
       const grid = $("secondaryCatalogGrid");
-      const baseItems = isRecent ? recentWatchingItems() : query.loaded ? filterBlocked(query.items || []) : secondaryCatalogBaseItems(listId);
+      const baseItems = isRecent ? (state.recent && Array.isArray(state.recent.items) ? state.recent.items : []) : query.loaded ? filterBlocked(query.items || []) : secondaryCatalogBaseItems(listId);
       if (isWeekly) {
         syncSecondaryCatalogPresentation(listId);
         renderWeeklySecondaryCatalog(query, baseItems);
@@ -24302,7 +24299,7 @@ utils.encode = function encode(arr, enc) {
       } else if (!(state.recent.items || []).length) {
         showGridStatus(grid, "暂无最近观看");
       } else {
-        fillGrid(grid, recentWatchingItems());
+        fillGrid(grid, state.recent.items || []);
       }
     }
 
@@ -25533,24 +25530,22 @@ utils.encode = function encode(arr, enc) {
     }
 
     function refreshRecentWatchingViews(now) {
-      const at = Number(now || Date.now());
-      state.recent.items = recentWatchingItems();
-      state.recent.loaded = true;
-      state.recent.refreshedAt = at;
-      if (isHomeRouteActive()) renderHomeRecent();
-      if (state.activeList === "recent") renderRecentList();
-      if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === "recent") {
-        const query = secondaryActiveQuery("recent") || secondaryGetQuery("recent");
-        query.items = state.recent.items.slice();
-        query.loaded = true;
-        query.loading = false;
-        query.error = "";
-        query.page = 1;
-        query.totalPages = 1;
-        query.totalResults = query.items.length;
-        query.hasMore = false;
-        renderSecondaryCatalog();
-      }
+      loadRecentList({ refresh: true, silent: true }).then(() => {
+        if (isHomeRouteActive()) renderHomeRecent();
+        if (state.activeList === "recent") renderRecentList();
+        if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === "recent") {
+          const query = secondaryActiveQuery("recent") || secondaryGetQuery("recent");
+          query.items = state.recent.items.slice();
+          query.loaded = true;
+          query.loading = false;
+          query.error = "";
+          query.page = 1;
+          query.totalPages = 1;
+          query.totalResults = query.items.length;
+          query.hasMore = false;
+          renderSecondaryCatalog();
+        }
+      }).catch(() => {});
     }
 
     async function upsertContinueIndex(item, playbackTarget, panItem) {
@@ -25615,23 +25610,7 @@ utils.encode = function encode(arr, enc) {
         state.historyContexts.entries = pruned.entries;
         state.historyContexts.diag = pruned;
         await persistHistoryContextEntries(pruned.entries);
-        state.recent.items = recentWatchingItems();
-        state.recent.loaded = true;
-        state.recent.refreshedAt = now;
-        if (isHomeRouteActive()) renderHomeRecent();
-        if (state.activeList === "recent") renderRecentList();
-        if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === "recent") {
-          const query = secondaryActiveQuery("recent") || secondaryGetQuery("recent");
-          query.items = state.recent.items.slice();
-          query.loaded = true;
-          query.loading = false;
-          query.error = "";
-          query.page = 1;
-          query.totalPages = 1;
-          query.totalResults = query.items.length;
-          query.hasMore = false;
-          renderSecondaryCatalog();
-        }
+        refreshRecentWatchingViews(now);
         scheduleUiSnapshotSave();
       } catch (e) {}
     }
