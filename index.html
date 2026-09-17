@@ -20188,15 +20188,74 @@ utils.encode = function encode(arr, enc) {
         && detailDirectPlayCandidateKey(candidate) === ready.candidateKey);
     }
 
+    function detailDirectPlayCandidateFor(item) {
+      if (!detailDirectPlayReadyFor(item)) return null;
+      const ready = state.pan && state.pan.directReady;
+      return (state.pan && Array.isArray(state.pan.results) ? state.pan.results : [])
+        .find((candidate) => isQuarkOrBaidu(candidate)
+          && ready
+          && detailDirectPlayCandidateKey(candidate) === ready.candidateKey) || null;
+    }
+
+    function detailContinuePlaybackTargetFor(item, history) {
+      if (!item || !history) return currentPlaybackTargetForItem(item);
+      const entry = history.historyContextEntry;
+      const rawItem = entry && entry.item && typeof entry.item === "object" ? entry.item : history;
+      const rawTarget = history.historyContextTarget
+        || entry && (entry.playbackTarget || entry.target)
+        || rawItem;
+      const source = history.continueContext || entry || history.historyContextTarget
+        ? Object.assign({}, entry || {}, rawTarget || {})
+        : historyPlaybackContext(history);
+      return normalizePlaybackTarget(item, source);
+    }
+
+    async function playDetailDirectReadyCandidate(item, candidate, history, button) {
+      if (!item || !candidate || !detailDirectPlayReadyFor(item)) return false;
+      const episodeTarget = detailContinuePlaybackTargetFor(item, history);
+      if (episodeTarget) setDetailPlaybackTarget(item, episodeTarget);
+      if (history) {
+        // Ready 已经确定了当前 Direct 资源；历史记录只补充季/集和进度上下文，
+        // 不再进入会重新搜索或切换资源的旧续播分支。
+        rememberDetailReturn(button);
+        state.historyResume = null;
+      }
+      await playPanResult(candidate, {
+        prechecked: true,
+        episodeTarget,
+        historyResume: !!history
+      });
+      return true;
+    }
+
     function handleDetailPrimaryAction() {
       const item = state.selected;
+      if (!item) return;
       const button = $("detailContinueBtn");
       const history = button && button.__historyItem || findDetailContinueHistory(item);
+      const readyCandidate = detailDirectPlayCandidateFor(item);
+      if (readyCandidate) {
+        playDetailDirectReadyCandidate(item, readyCandidate, history, button).catch(() => {});
+        return;
+      }
+      // 详情进入时的 prepareOnly 仍在同一个 playBestQuark action 中运行时，
+      // 让原 action 接收一次用户播放意图；不得因为历史按钮形态绕开它。
+      const pending = typeof _directPlayPending !== "undefined" ? _directPlayPending : null;
+      if (pending && pending.item === item && pending.prepareOnly) {
+        playBestQuark(item, { detailPrimary: true, suppressAutoPan: true });
+        return;
+      }
+      // Direct preparation 的失败终态也必须由同一个 playBestQuark action
+      // 处理：NO_RESOURCE 只提示，CONNECTION_FAILED 才允许人工 fresh retry。
+      const directFailureType = detailDirectFailureTypeFor(item);
+      if (directFailureType) {
+        playBestQuark(item, { detailPrimary: true, suppressAutoPan: true });
+        return;
+      }
       if (history) {
         openDetailContinueHistory();
         return;
       }
-      if (!item) return;
       // 播放/准备统一由同一个 playBestQuark action 处理；若当前是
       // prepareOnly action，由 playBestQuark 内部记录 playRequested 并继续等待。
       playBestQuark(item, { detailPrimary: true, suppressAutoPan: true });
@@ -25269,6 +25328,11 @@ utils.encode = function encode(arr, enc) {
     async function openDetailContinueHistory() {
       const button = $("detailContinueBtn");
       const history = button && button.__historyItem || findDetailContinueHistory(state.selected);
+      const readyCandidate = detailDirectPlayCandidateFor(state.selected);
+      if (readyCandidate && history) {
+        await playDetailDirectReadyCandidate(state.selected, readyCandidate, history, button);
+        return;
+      }
       if (!state.selected || !history || !historyCanContinuePlayback(history)) {
         toast("没有可继续观看的记录");
         updateDetailContinueButton();
@@ -29444,7 +29508,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       clearDirectPlayStatus(action.token, "detail_primary_no_source");
       // 纯 prepareOnly 失败保持静默；只有用户明确按过播放，
       // 才向用户报告失败，且不打开第二套盘搜流程。
-      if (!action.prepareOnly || action.playRequested || String(message || "") === "连接失败，请手动重试") {
+      if (!action.prepareOnly || action.playRequested) {
         if (message) toast(message);
       }
       action.playRequested = false;
