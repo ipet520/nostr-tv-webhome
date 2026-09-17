@@ -16879,6 +16879,7 @@ utils.encode = function encode(arr, enc) {
          historyCompat: null,
          historyItem: null,
          nativeHistoryDelete: null,
+         nativeHistoryProgress: null,
          recentWatching: null,
          homeLatest: null,
          searchIme: null,
@@ -25084,13 +25085,20 @@ utils.encode = function encode(arr, enc) {
         return;
       }
       try {
-        rememberWatchIntent(item, "view", context);
+        const nativeIdentity = {
+          siteKey: nativeSiteKey,
+          vodId: nativeVodId,
+          episodeUrl: nativeVodId,
+          episodeName: context.episodeTitle || context.panTitle || context.title || item.title,
+          flag: context.flag || item.flag || ""
+        };
+        rememberWatchIntent(item, "view", context, nativeIdentity);
         // 用 localStorage 持久化标记，WebView 被挂起后 JS 内存会丢失
         // visibilitychange/pageshow/fmresume 恢复时读到此标记，保持当前页面不重置
         localStorage.setItem("fm_pan_playing", "1");
         await sdk().vod(nativeSiteKey, nativeVodId, item.title || context.title, item.pic || context.poster);
         await saveHistoryPlaybackContext(item, context);
-        startWatchTracking(item, context);
+        startWatchTracking(item, context, nativeIdentity);
       } catch (e) {
         localStorage.removeItem("fm_pan_playing");
         toast("打开最近观看失败：" + (e.message || "unknown"));
@@ -25117,8 +25125,16 @@ utils.encode = function encode(arr, enc) {
       }
       try {
         rememberDetailReturn(button);
-        rememberWatchIntent(state.selected, "view", historyPlaybackContext(history));
-        startWatchTracking(state.selected, historyPlaybackContext(history));
+        const historyContext = historyPlaybackContext(history);
+        const nativeIdentity = {
+          siteKey: history.siteKey,
+          vodId: history.vodId,
+          episodeUrl: history.vodId,
+          episodeName: historyContext.episodeTitle || historyContext.panTitle || historyContext.title || state.selected.title,
+          flag: historyContext.flag || history.flag || ""
+        };
+        rememberWatchIntent(state.selected, "view", historyContext, nativeIdentity);
+        startWatchTracking(state.selected, historyContext, nativeIdentity);
         // 用 localStorage 持久化标记，WebView 被挂起后 JS 内存会丢失
         // visibilitychange/pageshow/fmresume 恢复时读到此标记，保持详情页打开不重置
         localStorage.setItem("fm_pan_playing", "1");
@@ -30663,8 +30679,15 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (opts.handoffAction) recordPanDirectHandoffStage("SNAPSHOT_START", selectedItem, opts.handoffAction);
       await rememberPanPlaybackReturnBestEffort(item, opts.handoffAction, episodeTarget);
       if (selectedItem) {
-        rememberWatchIntent(selectedItem, "search", episodeTarget);
-        startWatchTracking(selectedItem, episodeTarget);
+        const nativeIdentity = {
+          siteKey: "push_agent",
+          vodId: payload.url,
+          episodeUrl: payload.url,
+          episodeName: item && (item.fileName || item.file_name || item.filename || item.panFileName || item.title) || selectedItem && selectedItem.title || "",
+          flag: item && (item.flag || item.diskType || item.provider) || ""
+        };
+        rememberWatchIntent(selectedItem, "search", episodeTarget, nativeIdentity);
+        startWatchTracking(selectedItem, episodeTarget, nativeIdentity);
         // Native History 由 pan.play 生成；Recent 直接消费同一份现有
         // playback-context cache，稳定 TMDB/季集上下文不再依赖 Native History。
         saveHistoryPlaybackContext(selectedItem, episodeTarget, item);
@@ -30964,7 +30987,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return true;
     }
 
-    function rememberWatchIntent(item, action, playbackTarget) {
+    function rememberWatchIntent(item, action, playbackTarget, nativeIdentity) {
       if (!item) return;
       state.watch = {
         item: normalizeSnapshot(item),
@@ -30974,12 +30997,191 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         lastAt: Date.now(),
         published: false,
         intentAction: action || "view",
-        playbackTarget: normalizePlaybackTarget(item, playbackTarget || currentPlaybackTargetForItem(item))
+        playbackTarget: normalizePlaybackTarget(item, playbackTarget || currentPlaybackTargetForItem(item)),
+        nativeHistoryIdentity: nativeIdentity
+          ? normalizeNativeHistoryProgressIdentity(item, playbackTarget, nativeIdentity)
+          : null,
+        nativeHistoryWrite: null
       };
       savePendingWatch();
     }
 
-    function startWatchTracking(item, playbackTarget) {
+    function normalizeNativeHistoryProgressIdentity(item, playbackTarget, identity) {
+      const source = identity && typeof identity === "object" ? identity : {};
+      const target = playbackTarget && typeof playbackTarget === "object" ? playbackTarget : {};
+      const selected = item && typeof item === "object" ? item : {};
+      return {
+        siteKey: String(source.siteKey || selected.nativeSiteKey || selected.siteKey || "").trim(),
+        vodId: String(source.vodId || selected.nativeVodId || selected.vodId || "").trim(),
+        flag: String(source.flag || selected.flag || selected.sourceType || "").trim(),
+        episodeName: String(source.episodeName || target.episodeTitle || selected.episodeTitle || "").trim(),
+        episodeUrl: String(source.episodeUrl || source.vodId || "").trim()
+      };
+    }
+
+    function nativeHistoryProgressEpisodeName(watch) {
+      const item = watch && watch.item || {};
+      const target = watch && watch.playbackTarget || {};
+      const identity = watch && watch.nativeHistoryIdentity || {};
+      const direct = [
+        identity.episodeName,
+        target.episodeTitle,
+        item.episodeTitle,
+        item.panFileName,
+        item.panTitle,
+        item.title || item.vodName
+      ].map((value) => String(value || "").trim()).find(Boolean);
+      if (direct) return direct;
+      const season = Math.max(0, Number(target.seasonNumber || item.seasonNumber || 0));
+      const episode = Math.max(0, Number(target.episodeNumber || item.episodeNumber || 0));
+      return season > 0 && episode > 0
+        ? "S" + String(season).padStart(2, "0") + "E" + String(episode).padStart(2, "0")
+        : "";
+    }
+
+    function buildNativeHistoryProgressPayload(watch, status) {
+      const item = watch && watch.item || {};
+      const identity = watch && watch.nativeHistoryIdentity || {};
+      const positionMs = Math.max(0, Math.round(Number(watch && watch.bestMs || status && status.position || 0)));
+      const durationMs = Math.max(0, Math.round(Number(watch && watch.durationMs || status && status.duration || 0)));
+      const siteKey = String(identity.siteKey || "").trim();
+      const vodId = String(identity.vodId || "").trim();
+      const episodeUrl = String(identity.episodeUrl || vodId).trim();
+      if (!siteKey || !vodId || positionMs <= 0 || durationMs <= 0 || !episodeUrl) return null;
+      const speedValue = Number(status && (status.speed != null ? status.speed : status.playbackRate != null ? status.playbackRate : status.rate));
+      const speed = Number.isFinite(speedValue) && speedValue > 0 ? speedValue : 1;
+      return {
+        siteKey,
+        vodId,
+        vodName: String(item.title || item.vodName || "").trim(),
+        vodPic: String(item.pic || item.vodPic || item.image || "").trim(),
+        flag: String(identity.flag || item.flag || item.sourceType || "").trim(),
+        episodeName: nativeHistoryProgressEpisodeName(watch),
+        episodeUrl,
+        positionMs,
+        durationMs,
+        speed,
+        completed: positionMs >= durationMs * 0.92,
+        updatedAt: Date.now()
+      };
+    }
+
+    function nativeHistoryProgressBody(response) {
+      const hasNestedBody = !!(response && (response.body != null || response.data != null));
+      const body = response && response.body != null ? response.body : response && response.data;
+      if (body && typeof body === "object") return body;
+      if (typeof body === "string") return safeJson(body, {});
+      if (!hasNestedBody && response && typeof response === "object") return response;
+      return {};
+    }
+
+    function nativeHistoryProgressAction(data) {
+      const body = data && typeof data === "object" ? data : {};
+      const items = Array.isArray(body.items) ? body.items : [];
+      const itemAction = items[0] && items[0].action;
+      const directAction = String(itemAction || body.action || "").trim().toLowerCase();
+      if (directAction) return directAction;
+      if (Number(body.created || 0) > 0) return "created";
+      if (Number(body.updated || 0) > 0) return "updated";
+      return "";
+    }
+
+    function recordNativeHistoryProgressDiag(payload, endpoint, response, data, outcome, error) {
+      if (!isTvDiagnosticEnabled()) return null;
+      const body = data && typeof data === "object" ? data : {};
+      const items = Array.isArray(body.items) ? body.items : [];
+      const item = items[0] && typeof items[0] === "object" ? items[0] : {};
+      const diag = {
+        endpoint: String(endpoint || ""),
+        request: payload || null,
+        status: Number(response && (response.status || response.code) || 0),
+        action: nativeHistoryProgressAction(body),
+        message: String(item.message || body.message || body.error || error || ""),
+        outcome: String(outcome || "")
+      };
+      state.tvDiag.nativeHistoryProgress = diag;
+      try { console.debug("[Nostr TV][NATIVE_HISTORY_PROGRESS_DIAG]", diag); } catch (e) {}
+      updateTvDiagnostic();
+      return diag;
+    }
+
+    async function nativeHistoryProgressRequestContext() {
+      const api = sdk();
+      const request = api && typeof api.req === "function"
+        ? (url, options) => api.req(url, options)
+        : api && api.net && typeof api.net.request === "function"
+          ? (url, options) => api.net.request(url, options)
+          : null;
+      if (!request) return null;
+      let device = null;
+      try {
+        if (api && typeof api.device === "function") device = await api.device();
+        else if (api && api.device && typeof api.device.info === "function") device = await api.device.info();
+        else if (api && api.device && typeof api.device.info === "object") device = api.device.info;
+      } catch (e) {
+        return null;
+      }
+      const baseUrl = nativeHistoryDeleteBaseUrl(device);
+      return baseUrl ? { request, endpoint: baseUrl + "/api/playback/progress" } : null;
+    }
+
+    async function syncNativeHistoryProgress(watch, status) {
+      if (!watch || state.watch !== watch) return false;
+      const payload = buildNativeHistoryProgressPayload(watch, status);
+      if (!payload) return false;
+      const identityKey = payload.siteKey + "\u001f" + payload.vodId;
+      const write = watch.nativeHistoryWrite || (watch.nativeHistoryWrite = {
+        key: "",
+        positionMs: 0,
+        durationMs: 0,
+        completed: false,
+        inFlight: false,
+        lastAt: 0
+      });
+      if (write.inFlight) return false;
+      const minAdvanceMs = Math.max(15000, Math.round(payload.durationMs * 0.01));
+      if (write.key === identityKey && (write.completed || (!payload.completed && payload.positionMs <= write.positionMs + minAdvanceMs))) return false;
+      write.inFlight = true;
+      let requestContext = null;
+      try {
+        requestContext = await nativeHistoryProgressRequestContext();
+        if (!requestContext) {
+          recordNativeHistoryProgressDiag(payload, "", null, {}, "unavailable");
+          return false;
+        }
+        const response = await requestContext.request(requestContext.endpoint, {
+          method: "POST",
+          responseType: "json",
+          timeout: 24,
+          headers: { "Content-Type": "application/json; charset=utf-8" },
+          body: JSON.stringify(payload)
+        });
+        const data = nativeHistoryProgressBody(response);
+        const statusCode = Number(response && (response.status || response.code) || 0);
+        if (response && response.error || response && response.ok === false || statusCode >= 400) {
+          recordNativeHistoryProgressDiag(payload, requestContext.endpoint, response, data, "http_error");
+          return false;
+        }
+        const action = nativeHistoryProgressAction(data);
+        const accepted = action === "created" || action === "updated";
+        recordNativeHistoryProgressDiag(payload, requestContext.endpoint, response, data, accepted ? action : "not_applied");
+        if (!accepted) return false;
+        write.key = identityKey;
+        write.positionMs = payload.positionMs;
+        write.durationMs = payload.durationMs;
+        write.completed = !!payload.completed;
+        write.lastAt = Date.now();
+        if (state.watch === watch) await loadRecentList({ refresh: true, silent: true });
+        return true;
+      } catch (e) {
+        recordNativeHistoryProgressDiag(payload, requestContext && requestContext.endpoint, null, {}, "request_failed", String(e && e.message || e || ""));
+        return false;
+      } finally {
+        write.inFlight = false;
+      }
+    }
+
+    function startWatchTracking(item, playbackTarget, nativeIdentity) {
       if (!item || !window.fm) return;
       state.watch = {
         item: normalizeSnapshot(item),
@@ -30989,11 +31191,17 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         lastAt: Date.now(),
         published: false,
         intentAction: state.watch.intentAction || "",
-        playbackTarget: normalizePlaybackTarget(item, playbackTarget || state.watch.playbackTarget || currentPlaybackTargetForItem(item))
+        playbackTarget: normalizePlaybackTarget(item, playbackTarget || state.watch.playbackTarget || currentPlaybackTargetForItem(item)),
+        nativeHistoryIdentity: normalizeNativeHistoryProgressIdentity(
+          item,
+          playbackTarget,
+          nativeIdentity || state.watch.nativeHistoryIdentity
+        ),
+        nativeHistoryWrite: null
       };
       savePendingWatch();
       if (!state.watch.timer) state.watch.timer = setInterval(sampleWatchStatus, 12000);
-      sampleWatchStatus();
+      sampleWatchStatus({ skipNativeHistorySync: true });
     }
 
     async function savePendingWatch() {
@@ -31004,6 +31212,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           item: watch.item,
           intentAction: watch.intentAction,
           playbackTarget: watch.playbackTarget || null,
+          nativeHistoryIdentity: watch.nativeHistoryIdentity || null,
           startedAt: watch.lastAt || Date.now(),
           published: !!watch.published
         }));
@@ -31024,7 +31233,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           lastAt: data.startedAt || Date.now(),
           published: !!data.published,
           intentAction: data.intentAction || "search",
-          playbackTarget: data.playbackTarget || normalizePlaybackTarget(data.item, data.item)
+          playbackTarget: data.playbackTarget || normalizePlaybackTarget(data.item, data.item),
+          nativeHistoryIdentity: data.nativeHistoryIdentity || null,
+          nativeHistoryWrite: null
         };
         return state.watch;
       } catch (e) {
@@ -31036,16 +31247,22 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       try { await sdk().cache.del(cacheKey("pendingWatch")); } catch (e) {}
     }
 
-    async function sampleWatchStatus() {
+    async function sampleWatchStatus(options) {
+      const opts = options || {};
       const watch = state.watch;
       if (!watch || !watch.item || !window.fm) return;
       try {
         const status = await fm.stat();
+        if (state.watch !== watch) return;
         const position = Math.max(0, Number(status && status.position || 0));
         const duration = Math.max(0, Number(status && status.duration || 0));
         if (duration > 0) watch.durationMs = duration;
         if (position > watch.bestMs) watch.bestMs = position;
         const completion = watch.durationMs > 0 ? watch.bestMs / watch.durationMs : 0;
+        if (!opts.skipNativeHistorySync) {
+          await syncNativeHistoryProgress(watch, status);
+          if (state.watch !== watch) return;
+        }
         if (watch.bestMs >= WATCH_HEAT_MS && hasHeatIntent(watch) && !watch.published) {
           if (await hasPublishedHeat(watch.item)) {
             watch.published = true;
@@ -33994,6 +34211,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const historyCompatDiag = state.tvDiag.historyCompat;
       const historyItemDiag = state.tvDiag.historyItem;
       const nativeDeleteDiag = state.tvDiag.nativeHistoryDelete;
+      const nativeProgressDiag = state.tvDiag.nativeHistoryProgress;
       const searchImeDiag = state.tvDiag.searchIme;
       const homeV14Diag = state.tvDiag.homeV14;
       const backDiag = state.tvDiag.back;
@@ -34125,6 +34343,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           "failed=" + Number(nativeDeleteDiag.NATIVE_DELETE_BATCH_FAILED || 0),
           nativeDeleteDiag.NATIVE_DELETE_ITEM_ACTION || "",
           nativeDeleteDiag.NATIVE_DELETE_ITEM_MESSAGE || ""
+        ].filter(Boolean).join(" ") : "none"),
+        "native progress: " + (nativeProgressDiag ? [
+          "status=" + Number(nativeProgressDiag.status || 0),
+          nativeProgressDiag.action || "",
+          nativeProgressDiag.outcome || "",
+          nativeProgressDiag.message || ""
         ].filter(Boolean).join(" ") : "none"),
         "home v14: " + (homeV14Diag ? [
           "sections=" + Number(homeV14Diag.sectionCount || 0),
