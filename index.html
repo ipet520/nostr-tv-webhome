@@ -18999,7 +18999,6 @@ utils.encode = function encode(arr, enc) {
       POLLING: "暂未找到可直播放资源，正在继续查找…",
       FOUND_QB: "已找到可播放资源，正在准备播放…",
       STARTING_PLAYER: "已找到可播放资源，正在启动播放器…",
-      OPENING_PAN: "暂未找到可直播放资源，正在打开盘搜…",
       FINAL_ERROR: "暂时无法启动播放"
     };
 
@@ -19010,7 +19009,7 @@ utils.encode = function encode(arr, enc) {
       if (value === "POLLING" || /^POLL(?:_|$)/.test(value)) return "POLLING";
       if (value === "FOUND_QB") return "FOUND_QB";
       if (["PICK_START", "CANDIDATE_BEFORE", "CANDIDATE_AFTER", "HEALTH_CHECK_START", "HEALTH_CHECK_OK", "HEALTH_CHECK_TIMEOUT", "PICK_DONE", "SNAPSHOT_START", "SNAPSHOT_OK", "SNAPSHOT_TIMEOUT", "PAN_PLAY_CALLED"].includes(value)) return "STARTING_PLAYER";
-      if (["OPEN_PAN", "TERMINAL_NO_QB", "WAIT_BUDGET_EXPIRED", "DIRECT_TRANSPORT_EXHAUSTED"].includes(value)) return "OPENING_PAN";
+      if (["TERMINAL_NO_QB", "WAIT_BUDGET_EXPIRED", "DIRECT_TRANSPORT_EXHAUSTED"].includes(value)) return "FINAL_ERROR";
       if (value === "FINAL_ERROR") return "FINAL_ERROR";
       return "";
     }
@@ -25251,11 +25250,7 @@ utils.encode = function encode(arr, enc) {
         return true;
       }
       state.historyResume = null;
-      openPanBlockIfNeeded();
-      updatePostPanFocusState();
-      renderPanResults();
-      focusFirstPanTab();
-      toast("上次播放资源暂不可用，请选择其他资源");
+      toast("上次播放资源暂不可用，可使用盘搜重新选择");
       return false;
     }
 
@@ -25267,17 +25262,10 @@ utils.encode = function encode(arr, enc) {
       if (directItem) {
         state.historyResume = null;
         toast("正在恢复上次播放资源…");
-        const onDirectFailure = () => {
-          localStorage.removeItem("fm_pan_playing");
-          state.pan.isPlaying = false;
-          state.pan.playbackReturn = null;
-          resumePanHistoryFromSearch(item, target, preloadTask).catch(() => {});
-        };
         await playPanResult(directItem, {
           episodeTarget: target,
           historyResume: true,
-          prechecked: true,
-          onPlayFailure: onDirectFailure
+          prechecked: true
         });
         return true;
       }
@@ -28882,23 +28870,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       centerPanSearchBlock();
     }
 
-    // 回退：匹配不到单集 → 打开盘搜、切到 115（若有）、聚焦首条作为高亮，交给用户手动选
+    // 回退：匹配不到单集时只提示；盘搜必须由用户主动进入。
     function fallbackHighlightEpisode(item, season, epNo) {
-      openPanBlockIfNeeded();
-      const has115 = (state.pan.results || []).some((it) => normalizePanDiskType(it.diskType) === "115");
-      if (has115 && state.pan.activeType !== "115") selectPanType("115");
-      else renderPanResults();
-      toast(`未找到第${epNo}集单集资源，已为你打开盘搜`);
-      requestAnimationFrame(() => {
-        const list = $("panResultList");
-        const target = list && list.querySelector(".pan-result-item");
-        if (target) {
-          if (!isTvLikeDevice()) {
-            try { target.scrollIntoView({ block: "center", behavior: "smooth" }); } catch (e) {}
-          }
-          focusRemoteTarget(target);
-        }
-      });
+      toast(`未找到第${epNo}集可播放资源，可使用盘搜`);
+      return false;
     }
 
     let _episodeLoadSeq = 0;
@@ -28981,10 +28956,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         playPanResult(resolved.item, { handoffAction: statusAction, episodeTarget });   // 原生播放器接管，自行显示加载/缓冲
         return;
       }
-      // 实在没有可播资源 → 打开盘搜页让用户手选
-      updateDirectPlayStatus(statusAction.token, "OPEN_PAN", DIRECT_PLAY_STATUS_TEXT.OPENING_PAN, "episode_no_candidate");
+      // 实在没有可播资源时只提示；盘搜由用户主动进入。
+      updateDirectPlayStatus(statusAction.token, "FINAL_ERROR", DIRECT_PLAY_STATUS_TEXT.FINAL_ERROR, "episode_no_candidate");
       fallbackHighlightEpisode(item, season, epNo);
-      clearDirectPlayStatusAfterPanOpen(statusAction.token, "pan_open");
     }
 
     function panKeyword(item) {
@@ -29517,7 +29491,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
     // 直接播放盘搜准备好的夸克/百度资源（"搜索播放"短按）：
     // 首次点击固定取排名第 1（最优画质/最贴合关键字）；1 分钟内再次点击则在排名前 5 里随机换一个。
-    // 结果未就绪先复用同标题的完整搜索生命周期；终止后仍无夸克/百度才退回盘搜。
+    // 结果未就绪先复用同标题的完整搜索生命周期；终止或无候选只报告失败，不自动打开盘搜。
     let _directPlayActionSeq = 0;
     let _directPlayPending = null;
 
@@ -29668,7 +29642,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             const failureType = detailDirectFailureTypeAfterPrepare();
             setDetailDirectFailureType(item, failureType, waited.lifecycle || getPanSearchLifecycleFor(item));
             const failureMessage = detailDirectFailureMessage(failureType);
-            recordPanDirectPlayDiag("OPEN_PAN", item, waited.lifecycle || getPanSearchLifecycleFor(item), action.startedAt, null, action);
+            recordPanDirectPlayDiag("FINAL_ERROR", item, waited.lifecycle || getPanSearchLifecycleFor(item), action.startedAt, null, action);
             suppressDirectPlayPanFallback(action, failureMessage);
             return;
           }
@@ -29683,7 +29657,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             const failureMessage = detailDirectFailureMessage(failureType);
             action.waitResult = "TERMINAL_NO_QB";
             recordPanDirectPlayDiag("TERMINAL_NO_QB", item, lifecycle, action.startedAt, null, action);
-            recordPanDirectPlayDiag("OPEN_PAN", item, lifecycle, action.startedAt, null, action);
+            recordPanDirectPlayDiag("FINAL_ERROR", item, lifecycle, action.startedAt, null, action);
             suppressDirectPlayPanFallback(action, failureMessage);
             return;
           }
@@ -29716,7 +29690,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           setDetailDirectFailureType(item, failureType, getPanSearchLifecycleFor(item));
           const failureMessage = detailDirectFailureMessage(failureType);
           state.pan.directReady = null;
-          recordPanDirectPlayDiag("OPEN_PAN", item, getPanSearchLifecycleFor(item), action.startedAt, null, action);
+          recordPanDirectPlayDiag("FINAL_ERROR", item, getPanSearchLifecycleFor(item), action.startedAt, null, action);
           suppressDirectPlayPanFallback(action, failureMessage);
           return;
         }
