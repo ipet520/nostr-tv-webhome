@@ -16831,7 +16831,7 @@ utils.encode = function encode(arr, enc) {
       tmdb: { config: null, configDirty: false },
       uiPrefs: { loaded: false, homeFullscreenEnabled: true, homeHotSource: "tmdb" },
       blocked: { loaded: false, items: {}, selecting: false, holdTimer: 0, holdTarget: null, longPressFired: false, pointer: null, suppressClickUntil: 0 },
-      pan: { config: null, configDirty: false, loading: false, keyword: "", activeType: "", results: [], health: {}, pending: {}, queued: new Map(), inFlight: new Set(), observer: null, flushTimer: 0, pollTimers: [], pollRound: 0, pollRoundStarted: {}, requestSeq: 0, actualRequestAttempts: 0, lifecycleSeq: 0, sessionId: 0, sessionOrigin: "", sessionItemKey: "", sessionStartedAt: 0, sessionTerminal: false, sessionTerminalReason: "", sessionEndRecorded: false, sessionStartCount: 0, sessionEndCount: 0, sessionTimer: 0, initialAttempts: 0, pollRoundsStarted: 0, pollRoundsCompleted: 0, foregroundRecoveryCount: 0, preloadKey: "", viewToken: "", searchMode: "", initialSucceeded: false, initialResultState: "", lastFailureKind: "", retryRemaining: 0, finalFailure: false, directTransportExhausted: false, renderKeys: "", tabKeys: "", checkEnabled: false, focusKey: "", focusMode: "", playbackReturn: null, progress: { active: false, phase: "", round: 0, totalRounds: 0 }, preflight: null, directReady: null, sessionDiag: null, isPlaying: false },
+      pan: { config: null, configDirty: false, loading: false, keyword: "", activeType: "", results: [], health: {}, pending: {}, queued: new Map(), inFlight: new Set(), observer: null, flushTimer: 0, pollTimers: [], pollRound: 0, pollRoundStarted: {}, requestSeq: 0, actualRequestAttempts: 0, lifecycleSeq: 0, sessionId: 0, sessionOrigin: "", sessionItemKey: "", sessionStartedAt: 0, sessionTerminal: false, sessionTerminalReason: "", sessionEndRecorded: false, sessionStartCount: 0, sessionEndCount: 0, sessionTimer: 0, initialAttempts: 0, pollRoundsStarted: 0, pollRoundsCompleted: 0, foregroundRecoveryCount: 0, preloadKey: "", viewToken: "", searchMode: "", initialSucceeded: false, initialResultState: "", lastFailureKind: "", retryRemaining: 0, finalFailure: false, directTransportExhausted: false, renderKeys: "", tabKeys: "", checkEnabled: false, focusKey: "", focusMode: "", playbackReturn: null, progress: { active: false, phase: "", round: 0, totalRounds: 0 }, preflight: null, directReady: null, directFailure: null, sessionDiag: null, isPlaying: false },
       directPlayStatus: { active: false, actionId: 0, phase: "", text: "", startedAt: 0, clearTimer: 0 },
       watch: { item: null, timer: 0, bestMs: 0, durationMs: 0, lastAt: 0, published: false, intentAction: "", playbackTarget: null },
       historyContexts: { loaded: false, loading: false, promise: null, entries: [], diag: null },
@@ -19339,6 +19339,7 @@ utils.encode = function encode(arr, enc) {
       pan.sessionEndRecorded = false;
       pan.sessionStartCount = Math.max(0, Number(pan.sessionStartCount || 0) + 1);
       pan.directReady = null;
+      pan.directFailure = null;
       clearPanSessionTimer();
       clearPanPollTimers();
       // requestSeq is scoped to the current execution lifecycle. Session guards
@@ -20120,6 +20121,51 @@ utils.encode = function encode(arr, enc) {
       if (!candidate) return "";
       const url = String(candidate.url || "").trim();
       return url ? panHealthKey(candidate) : String(candidate.key || candidate.title || "").trim();
+    }
+
+    function detailDirectFailureTypeFor(item, lifecycle) {
+      const pan = state.pan || {};
+      const current = lifecycle || getPanSearchLifecycleFor(item);
+      const failure = pan.directFailure;
+      if (!item || !failure || !current.sameSession || current.origin !== "direct") return "";
+      if (failure.itemKey !== panSearchItemKey(item)
+        || Number(failure.sessionId || 0) !== Number(current.sessionId || 0)) return "";
+      return ["NO_RESOURCE", "CONNECTION_FAILED"].includes(String(failure.type || ""))
+        ? String(failure.type)
+        : "";
+    }
+
+    function setDetailDirectFailureType(item, type, lifecycle) {
+      const pan = state.pan || {};
+      const current = lifecycle || getPanSearchLifecycleFor(item);
+      const failureType = ["NO_RESOURCE", "CONNECTION_FAILED"].includes(String(type || ""))
+        ? String(type)
+        : "";
+      if (!item || !current.sameSession || current.origin !== "direct") {
+        pan.directFailure = null;
+        return "";
+      }
+      pan.directFailure = failureType ? {
+        itemKey: panSearchItemKey(item),
+        sessionId: Number(current.sessionId || 0),
+        type: failureType
+      } : null;
+      return failureType;
+    }
+
+    function detailDirectFailureTypeAfterPrepare() {
+      const pan = state.pan || {};
+      const initialState = String(pan.initialResultState || "");
+      const receivedValidResponse = !!(pan.initialSucceeded
+        && /^(?:success)(?:_|$)/.test(initialState)
+        && !pan.directTransportExhausted);
+      return receivedValidResponse ? "NO_RESOURCE" : "CONNECTION_FAILED";
+    }
+
+    function detailDirectFailureMessage(type) {
+      return String(type || "") === "CONNECTION_FAILED"
+        ? "连接失败，请手动重试"
+        : "暂无可播放资源，可使用聚搜或盘搜";
     }
 
     function detailDirectPlayReadyFor(item) {
@@ -28370,6 +28416,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       state.pan.finalFailure = false;
       state.pan.directTransportExhausted = false;
       state.pan.directReady = null;
+      state.pan.directFailure = null;
       state.pan.renderKeys = "";
       state.pan.tabKeys = "";
       if (!preserveFocus) {
@@ -29397,7 +29444,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       clearDirectPlayStatus(action.token, "detail_primary_no_source");
       // 纯 prepareOnly 失败保持静默；只有用户明确按过播放，
       // 才向用户报告失败，且不打开第二套盘搜流程。
-      if (!action.prepareOnly || action.playRequested) {
+      if (!action.prepareOnly || action.playRequested || String(message || "") === "连接失败，请手动重试") {
         if (message) toast(message);
       }
       action.playRequested = false;
@@ -29484,9 +29531,20 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           action.initialViewToken = action.viewToken;
         }
         recordPanDirectPlayDiag("CLICK", item, lifecycle, action.startedAt, null, action);
+        const currentDirectFailureType = detailDirectFailureTypeFor(item, lifecycle);
+        if (action.detailPrimary && !prepareOnly && currentDirectFailureType === "NO_RESOURCE") {
+          action.sessionReuseDecision = "NO_RESOURCE_NO_RETRY";
+          recordDirectPlaySessionDiag(action, action.sessionReuseDecision, lifecycle);
+          const message = detailDirectFailureMessage(currentDirectFailureType);
+          if (suppressDirectPlayPanFallback(action, message)) return;
+          openPanForDirectPlay(item, message, { actionId: action.token });
+          return;
+        }
+        const connectionFailureNeedsFresh = action.detailPrimary && !prepareOnly
+          && currentDirectFailureType === "CONNECTION_FAILED";
         const currentCounts = panDirectPlayResultCounts(state.pan.results);
         const currentIsDetailDirect = !action.detailPrimary || lifecycle.origin === "direct";
-        let hasCurrentQuarkOrBaidu = currentIsDetailDirect && lifecycle.sameSession
+        let hasCurrentQuarkOrBaidu = !connectionFailureNeedsFresh && currentIsDetailDirect && lifecycle.sameSession
           && (currentCounts.quarkCount > 0 || currentCounts.baiduCount > 0);
         if (hasCurrentQuarkOrBaidu) {
           action.sessionReuseDecision = "USE_EXISTING_QB";
@@ -29499,6 +29557,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             && action.playRequested && currentIsDetailDirect;
           const shouldStartSearch = action.forceFreshDirect
             || explicitPlayNeedsFreshDirect
+            || connectionFailureNeedsFresh
             || !lifecycle.sameSession
             || !currentIsDetailDirect
             || lifecycle.expired
@@ -29537,6 +29596,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           }
           recordDirectPlaySessionDiag(action, action.sessionReuseDecision, waited.lifecycle || getPanSearchLifecycleFor(item));
           if (waited.result === "DIRECT_TRANSPORT_EXHAUSTED") {
+            setDetailDirectFailureType(item, "CONNECTION_FAILED", waited.lifecycle || getPanSearchLifecycleFor(item));
             recordPanDirectPlayDiag("DIRECT_TRANSPORT_EXHAUSTED", item, waited.lifecycle || getPanSearchLifecycleFor(item), action.startedAt, null, action);
             if (suppressDirectPlayPanFallback(action, "连接失败，请手动重试")) return;
             openPanForDirectPlay(item, "盘搜连接异常，正在重新搜索", {
@@ -29547,9 +29607,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             return;
           }
           if (waited.result === "WAIT_BUDGET_EXPIRED") {
+            const failureType = detailDirectFailureTypeAfterPrepare();
+            setDetailDirectFailureType(item, failureType, waited.lifecycle || getPanSearchLifecycleFor(item));
+            const failureMessage = detailDirectFailureMessage(failureType);
             recordPanDirectPlayDiag("OPEN_PAN", item, waited.lifecycle || getPanSearchLifecycleFor(item), action.startedAt, null, action);
-            if (suppressDirectPlayPanFallback(action, "暂无可播放资源，可使用聚搜或盘搜")) return;
-            openPanForDirectPlay(item, "暂未找到可直接播放资源，已打开盘搜", { actionId: action.token });
+            if (suppressDirectPlayPanFallback(action, failureMessage)) return;
+            openPanForDirectPlay(item, failureMessage, { actionId: action.token });
             return;
           }
           if (waited.result !== "FOUND_QB" && waited.result !== "TERMINAL_NO_QB") return;
@@ -29558,11 +29621,14 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           const foundAfterWait = lifecycle.sameSession && (waitedCounts.quarkCount > 0 || waitedCounts.baiduCount > 0);
           hasCurrentQuarkOrBaidu = foundAfterWait;
           if (!foundAfterWait) {
+            const failureType = detailDirectFailureTypeAfterPrepare();
+            setDetailDirectFailureType(item, failureType, lifecycle);
+            const failureMessage = detailDirectFailureMessage(failureType);
             action.waitResult = "TERMINAL_NO_QB";
             recordPanDirectPlayDiag("TERMINAL_NO_QB", item, lifecycle, action.startedAt, null, action);
             recordPanDirectPlayDiag("OPEN_PAN", item, lifecycle, action.startedAt, null, action);
-            if (suppressDirectPlayPanFallback(action, "暂无可播放资源，可使用聚搜或盘搜")) return;
-            openPanForDirectPlay(item, "暂无夸克/百度资源，打开盘搜", { actionId: action.token });
+            if (suppressDirectPlayPanFallback(action, failureMessage)) return;
+            openPanForDirectPlay(item, failureMessage, { actionId: action.token });
             return;
           }
         }
@@ -29590,14 +29656,18 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         const after = panDirectPlayCandidateSummary(item);
         recordPanDirectPlayDiag("CANDIDATE_AFTER", item, getPanSearchLifecycleFor(item), action.startedAt, Object.assign(after, { selectedCandidate: panDirectPlayCandidateLabel(pick) }), action);
         if (!pick) {
+          const failureType = detailDirectFailureTypeAfterPrepare();
+          setDetailDirectFailureType(item, failureType, getPanSearchLifecycleFor(item));
+          const failureMessage = detailDirectFailureMessage(failureType);
           state.pan.directReady = null;
           recordPanDirectPlayDiag("OPEN_PAN", item, getPanSearchLifecycleFor(item), action.startedAt, null, action);
-          if (suppressDirectPlayPanFallback(action, "暂无可播放资源，可使用聚搜或盘搜")) return;
-          openPanForDirectPlay(item, "播放资源不可用，打开盘搜", { actionId: action.token });
+          if (suppressDirectPlayPanFallback(action, failureMessage)) return;
+          openPanForDirectPlay(item, failureMessage, { actionId: action.token });
           return;
         }
         const readyLifecycle = getPanSearchLifecycleFor(item);
         const readyCandidateKey = detailDirectPlayCandidateKey(pick);
+        state.pan.directFailure = null;
         if (readyLifecycle.sameSession && readyLifecycle.origin === "direct" && readyCandidateKey) {
           state.pan.directReady = {
             itemKey: panSearchItemKey(item),
