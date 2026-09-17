@@ -16717,7 +16717,7 @@ utils.encode = function encode(arr, enc) {
       activeList: "all",
       catalog: {},
       catalogPage: {},
-      recent: { items: [], loading: false, loaded: false, error: "", refreshedAt: 0, diag: null, nativeItems: [], nativeLoaded: false, nativeLoading: false, nativeRefreshedAt: 0 },
+      recent: { items: [], loading: false, loaded: false, error: "", refreshedAt: 0, diag: null, nativeItems: [], nativeLoaded: false, nativeLoading: false, nativeRefreshedAt: 0, nativeKeyFlow: {} },
       homeLatest: { items: [], loading: false, loaded: false, error: "", loadedAt: 0, requestSeq: 0, diag: null, promise: null },
       gridRender: {},
       gridColumnCache: {},
@@ -19889,8 +19889,12 @@ utils.encode = function encode(arr, enc) {
       return {
         id: "history:" + stableKey.replace(/[\r\n]+/g, " "),
         source: "history",
-        historyKey: parts.key || stableKey,
+        nativeHistoryRaw: history,
         nativeHistoryKey: parts.key,
+        nativeCid: parts.cid,
+        nativeSiteKey: parts.siteKey,
+        nativeVodId: parts.vodId,
+        historyKey: parts.key || stableKey,
         historyStableKey: stableKey,
         siteKey: parts.siteKey,
         vodId: parts.vodId,
@@ -20731,6 +20735,7 @@ utils.encode = function encode(arr, enc) {
     function openRecentWatchingDetail(card) {
       const source = card && card.__mediaItem;
       if (!source) return false;
+      recordRecentNativeKeyFlow("RECENT_NATIVE_KEY_AT_DETAIL", source);
       if (source.continueContext && source.historyContextEntry) {
         if (openContinueWatchingContext(source, { returnTarget: card, autoResume: false })) return true;
       }
@@ -20749,6 +20754,11 @@ utils.encode = function encode(arr, enc) {
         source: "tmdb",
         mediaType,
         tmdbId,
+        nativeHistoryRaw: source.nativeHistoryRaw,
+        nativeHistoryKey: source.nativeHistoryKey,
+        nativeCid: source.nativeCid,
+        nativeSiteKey: source.nativeSiteKey,
+        nativeVodId: source.nativeVodId,
         recentWatching: false
       });
       delete item.continueContext;
@@ -24740,6 +24750,7 @@ utils.encode = function encode(arr, enc) {
         button.dataset.searchQuery = searchQuery;
       }
       button.__mediaItem = item;
+      if (recentWatching) recordRecentNativeKeyFlow("RECENT_NATIVE_KEY_AT_CARD", item);
       button.classList.toggle("blocked", isBlocked(item));
       const rating = item.voteAverage ? Number(item.voteAverage).toFixed(1) : "";
       const poster = displayImage(landscape ? item.landscape || item.image || item.pic : item.pic, { size: landscape ? "w780" : "w342" });
@@ -24864,11 +24875,18 @@ utils.encode = function encode(arr, enc) {
     }
 
     function openPanHistoryItem(history, options) {
-      const media = resolveHistoryMedia(history);
-      if (!media) {
+      const resolved = resolveHistoryMedia(history);
+      if (!resolved) {
         toast("暂时无法恢复播放");
         return false;
       }
+      const media = Object.assign({}, resolved, {
+        nativeHistoryRaw: history && history.nativeHistoryRaw,
+        nativeHistoryKey: history && history.nativeHistoryKey,
+        nativeCid: history && history.nativeCid,
+        nativeSiteKey: history && history.nativeSiteKey,
+        nativeVodId: history && history.nativeVodId
+      });
       const context = normalizePlaybackTarget(media, historyPlaybackContext(history));
       const opts = options || {};
       if (context) setDetailPlaybackTarget(media, context);
@@ -25476,7 +25494,10 @@ utils.encode = function encode(arr, enc) {
       try {
         const api = sdk();
         const raw = api && typeof api.history === "function" ? await api.history() : [];
-        recent.nativeItems = normalizeHistoryList(extractNativeHistoryList(raw)).map((item) => Object.assign({}, item, { recentWatching: true }));
+        const nativeList = extractNativeHistoryList(raw);
+        const normalized = normalizeHistoryList(nativeList);
+        normalized.forEach((item) => recordRecentNativeKeyFlow("RECENT_NATIVE_KEY_AT_LOAD", item));
+        recent.nativeItems = normalized.map((item) => Object.assign({}, item, { recentWatching: true }));
         recent.nativeLoaded = true;
         recent.nativeRefreshedAt = Date.now();
       } catch (e) {
@@ -25782,6 +25803,124 @@ utils.encode = function encode(arr, enc) {
         .map((entry) => entry.item);
     }
 
+    function recentNativeHistoryKey(item) {
+      return String(item && item.nativeHistoryKey || "").trim();
+    }
+
+    function recordRecentNativeKeyFlow(stage, item) {
+      if (!item || !item.nativeHistoryRaw) return null;
+      const key = recentNativeHistoryKey(item);
+      const flowKey = key || String(item.historyStableKey || item.id || recentWatchingMediaKey(item) || "").trim();
+      if (!flowKey || !state.recent) return null;
+      if (!state.recent.nativeKeyFlow || typeof state.recent.nativeKeyFlow !== "object") state.recent.nativeKeyFlow = {};
+      const flow = state.recent.nativeKeyFlow[flowKey] || {
+        mediaKey: recentWatchingMediaKey(item),
+        nativeHistoryKey: key
+      };
+      flow.mediaKey = recentWatchingMediaKey(item) || flow.mediaKey || "";
+      flow.nativeHistoryKey = key;
+      flow[stage] = key;
+      state.recent.nativeKeyFlow[flowKey] = flow;
+      if (state.tvDiag) state.tvDiag.recentNativeKeyFlow = state.recent.nativeKeyFlow;
+      if (isTvDiagnosticEnabled()) {
+        try {
+          console.debug("[Nostr TV][" + stage + "]", {
+            [stage]: key,
+            mediaKey: flow.mediaKey
+          });
+        } catch (e) {}
+      }
+      return flow;
+    }
+
+    function recentWatchingContextEntries() {
+      const entries = [];
+      const seen = new Set();
+      [state.continueIndex, state.historyContexts].forEach((store) => {
+        const list = store && Array.isArray(store.entries) ? store.entries : [];
+        list.forEach((entry) => {
+          if (!entry || typeof entry !== "object") return;
+          const key = historyContextEntryKey(entry);
+          if (seen.has(key)) return;
+          seen.add(key);
+          entries.push(entry);
+        });
+      });
+      return entries;
+    }
+
+    function recentWatchingContextCandidates() {
+      return recentWatchingContextEntries().map((entry, index) => normalizeRecentWatchingContext(entry, index)).filter(Boolean);
+    }
+
+    function recentWatchingTmdbMediaKey(item) {
+      if (!item) return "";
+      const mediaType = normalizeHistoryMediaType(item.mediaType);
+      const tmdbId = String(item.tmdbId || "").trim();
+      return mediaType && tmdbId ? `${mediaType}:${tmdbId}` : "";
+    }
+
+    function recentWatchingContextForNative(nativeItem, candidates) {
+      const list = Array.isArray(candidates) ? candidates : [];
+      const nativeMediaKey = recentWatchingTmdbMediaKey(nativeItem);
+      let matches = nativeMediaKey
+        ? list.filter((candidate) => recentWatchingTmdbMediaKey(candidate) === nativeMediaKey)
+        : [];
+      if (!matches.length) {
+        const titleKey = normalizeTitle(nativeItem && (nativeItem.title || nativeItem.vodName) || "");
+        if (!titleKey) return null;
+        matches = list.filter((candidate) => normalizeTitle(candidate && candidate.title || "") === titleKey);
+        const mediaKeys = Array.from(new Set(matches.map(recentWatchingTmdbMediaKey).filter(Boolean)));
+        if (mediaKeys.length > 1) return null;
+      }
+      return matches.slice().sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))[0] || null;
+    }
+
+    function recentValuePresent(value) {
+      if (value == null) return false;
+      if (typeof value === "number") return Number.isFinite(value) && value > 0;
+      return String(value).trim() !== "";
+    }
+
+    function mergeRecentNativeContext(nativeItem, contextItem) {
+      const native = nativeItem && typeof nativeItem === "object" ? nativeItem : {};
+      const context = contextItem && typeof contextItem === "object" ? contextItem : {};
+      const merged = Object.assign({}, context, native);
+      [
+        "tmdbId", "mediaType", "title", "pic", "vodPic", "image", "landscape", "backdrop",
+        "remark", "badge", "vodRemarks", "desc", "releaseDate", "genreIds", "originCountries",
+        "originalLanguage", "seasonNumber", "episodeNumber", "episodeTitle", "sourceType",
+        "panProvider", "panPassword", "panTitle", "panFileName", "panFileId", "resourceId",
+        "panSearchKeyword", "lastPlayUrl", "position", "duration"
+      ].forEach((field) => {
+        if (!recentValuePresent(merged[field]) && recentValuePresent(context[field])) merged[field] = context[field];
+      });
+      const nativeTime = Number(native.updatedAt || native.createTime || 0) || 0;
+      const contextTime = Number(context.updatedAt || context.createTime || 0) || 0;
+      if (contextTime > nativeTime) {
+        merged.updatedAt = contextTime;
+        merged.popularity = contextTime;
+      }
+      merged.source = "history";
+      merged.recentWatching = true;
+      if (!recentWatchingTmdbMediaKey(native) && recentWatchingTmdbMediaKey(context)) {
+        merged.recentMediaKey = recentWatchingTmdbMediaKey(context);
+      }
+      [
+        "nativeHistoryRaw", "nativeHistoryKey", "nativeCid", "nativeSiteKey", "nativeVodId",
+        "historyKey", "historyStableKey", "siteKey", "vodId", "cid", "historySiteKind",
+        "historyReplayKind", "historyRestorable", "historyReplayable", "nativeHistoryType",
+        "nativeHistorySource", "episodeUrl", "url"
+      ].forEach((field) => {
+        if (Object.prototype.hasOwnProperty.call(native, field)) merged[field] = native[field];
+      });
+      delete merged.continueContext;
+      delete merged.continueIndexEntry;
+      delete merged.historyContextEntry;
+      delete merged.historyContextTarget;
+      return merged;
+    }
+
     function recentWatchingPrimaryEntries() {
       if (state.continueIndex && state.continueIndex.loaded && Array.isArray(state.continueIndex.entries)) {
         return state.continueIndex.entries;
@@ -25790,30 +25929,31 @@ utils.encode = function encode(arr, enc) {
     }
 
     function recentWatchingItems() {
-      const entries = recentWatchingPrimaryEntries();
-      const primary = [];
-      entries.forEach((entry, index) => {
-        const item = normalizeRecentWatchingContext(entry, index);
-        if (!item) return;
-        primary.push(item);
+      const contextEntries = recentWatchingContextEntries();
+      const contextCandidates = recentWatchingContextCandidates();
+      const nativeSource = state.recent && Array.isArray(state.recent.nativeItems) ? state.recent.nativeItems : [];
+      const native = nativeSource.map((nativeItem) => {
+        const merged = mergeRecentNativeContext(nativeItem, recentWatchingContextForNative(nativeItem, contextCandidates));
+        recordRecentNativeKeyFlow("RECENT_NATIVE_KEY_AFTER_MERGE", merged);
+        return merged;
       });
-      const primaryKeys = new Set(primary.map((item) => recentWatchingMediaKey(item)).filter(Boolean));
-      const native = (state.recent && Array.isArray(state.recent.nativeItems) ? state.recent.nativeItems : [])
-        .map((item) => Object.assign({}, item, { recentWatching: true }))
-        .filter((item) => {
-          const key = recentWatchingMediaKey(item);
-          return !key || !primaryKeys.has(key);
-        });
-      const items = uniqueRecentWatchingMedia(primary.concat(native));
+      const nativeMediaKeys = new Set(native.map(recentWatchingTmdbMediaKey).filter(Boolean));
+      const supplements = contextCandidates.filter((candidate) => {
+        const mediaKey = recentWatchingTmdbMediaKey(candidate);
+        return !mediaKey || !nativeMediaKeys.has(mediaKey);
+      });
+      const items = uniqueRecentWatchingMedia(native.concat(supplements));
       const diag = {
-        rawContextCount: entries.length,
-        continueIndexCount: primary.length,
+        rawContextCount: contextEntries.length,
+        continueIndexCount: contextCandidates.length,
         nativeHistoryCount: native.length,
+        htmlOnlySupplementCount: supplements.length,
         uniqueMediaCount: items.length,
         first10: items.slice(0, 10).map((item) => ({
           mediaType: item.mediaType || "",
           tmdbId: String(item.tmdbId || ""),
-          updatedAt: Number(item.updatedAt || 0)
+          updatedAt: Number(item.updatedAt || 0),
+          nativeHistoryKey: recentNativeHistoryKey(item)
         }))
       };
       if (state.recent) state.recent.diag = diag;
