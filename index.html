@@ -950,20 +950,33 @@
       display: none;
     }
 
-    .card-episode-status {
-      margin-top: 3px;
-      width: 100%;
-      color: var(--muted);
+    .card-air-status {
+      position: absolute;
+      left: 50%;
+      bottom: 7px;
+      z-index: 4;
+      display: block;
+      width: max-content;
+      max-width: calc(100% - 16px);
+      box-sizing: border-box;
+      padding: 2px 7px;
+      border: 0;
+      border-radius: 999px;
+      background: rgba(5, 8, 12, .68);
+      color: rgba(245, 248, 252, .88);
       font-size: 10px;
+      font-weight: 600;
       line-height: 1.2;
+      text-align: center;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      text-align: center;
-      text-shadow: 0 1px 2px rgba(0, 0, 0, .32);
+      pointer-events: none;
+      transform: translateX(-50%);
+      text-shadow: 0 1px 2px rgba(0, 0, 0, .55);
     }
 
-    .card-episode-status[hidden] {
+    .card-air-status[hidden] {
       display: none !important;
     }
 
@@ -1053,10 +1066,16 @@
       filter: grayscale(.3) brightness(.7);
     }
 
-    .card.recent-card > .poster {
+    .card.recent-card > .poster-wrap {
       width: calc(100% + 2px);
       max-width: calc(100% + 2px);
-      margin: -1px;
+      margin: -1px -1px 0;
+    }
+
+    .card.recent-card > .poster-wrap .poster {
+      width: 100%;
+      max-width: 100%;
+      margin: 0;
     }
 
     .recent-card .card-body {
@@ -4108,7 +4127,21 @@
       height: 128px;
     }
 
-    html.no-aspect-ratio .card.recent-card > .poster {
+    html.no-aspect-ratio .card.recent-card > .poster-wrap {
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      max-width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+
+    html.no-aspect-ratio .card.recent-card > .poster-wrap .poster {
       position: absolute;
       top: 0;
       right: 0;
@@ -6954,38 +6987,6 @@
       padding: 0;
       gap: 4px;
       line-height: 1.2;
-    }
-
-    #home.home-root #recommendRail > .home-weekly-card.has-weekly-update .card-body {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: calc(clamp(17.5px, 1.15vw, 22.5px) + 15px);
-      min-height: 0;
-      padding: 0;
-    }
-
-    #home.home-root #recommendRail > .home-weekly-card.has-weekly-update .card-title,
-    #home.home-root #recommendRail > .home-weekly-card.has-weekly-update .home-weekly-update {
-      width: 100%;
-      margin: 0;
-      text-align: center;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    #home.home-root #recommendRail > .home-weekly-card.has-weekly-update .card-title {
-      min-height: 0;
-      flex: 0 0 auto;
-    }
-
-    #home.home-root #recommendRail > .home-weekly-card.has-weekly-update .home-weekly-update {
-      flex: 0 0 auto;
-      color: rgba(226, 234, 242, .64);
-      font-size: clamp(10px, .68vw, 13px);
-      line-height: 1.1;
     }
 
     /* The Hero detail copy is a non-focusable, lightweight hint. */
@@ -23436,7 +23437,7 @@ utils.encode = function encode(arr, enc) {
         && String(item.mediaType || "").toLowerCase() === "tv"
         && tvDetailCacheId(item)
         && card.querySelector
-        && card.querySelector(".card-episode-status"));
+        && card.querySelector(".card-air-status"));
     }
 
     function updateTvEpisodeStatusCards(itemOrId, detail) {
@@ -23446,10 +23447,10 @@ utils.encode = function encode(arr, enc) {
         if (!isTvEpisodeStatusCard(card)) return;
         const cardItem = card.__mediaItem;
         if (tvDetailCacheId(cardItem) !== id) return;
-        const status = card.querySelector(".card-episode-status");
+        const status = card.querySelector(".card-air-status");
         if (!status) return;
-        const weeklyText = card.__weeklyHome ? String(cardItem.weeklyUpdateText || "").trim() : "";
-        const label = weeklyText ? "" : tvEpisodeStatusLabel(detail);
+        const weeklyText = String(cardItem.weeklyUpdateText || "").trim();
+        const label = weeklyText || tvEpisodeStatusLabel(detail);
         status.textContent = label;
         status.hidden = !label;
       });
@@ -25300,17 +25301,19 @@ utils.encode = function encode(arr, enc) {
       const landscape = !!opts.landscape;
       const home = !!opts.home;
       const weekly = !!opts.weekly;
-      const weeklyHome = home && opts.weeklyHome === true;
-      const weeklyUpdate = weeklyHome ? String(item.weeklyUpdateText || "").trim() : "";
+      const weeklyUpdate = ((home && opts.weeklyHome === true) || weekly)
+        ? String(item.weeklyUpdateText || "").trim()
+        : "";
       const tvEpisodeCard = !people && String(item && item.mediaType || "").toLowerCase() === "tv" && !!tvDetailCacheId(item);
       const initialTvDetail = tvEpisodeCard ? tvDetailCacheValue(item) || item.tvDetail || item.weeklyDetail || item.heroDetail || null : null;
-      const initialTvEpisodeStatus = tvEpisodeCard && !(weeklyHome && weeklyUpdate) ? tvEpisodeStatusLabel(initialTvDetail) : "";
-      const tvEpisodeStatusHtml = tvEpisodeCard
-        ? `<div class="card-episode-status"${initialTvEpisodeStatus ? "" : " hidden"}>${escapeHtml(initialTvEpisodeStatus)}</div>`
+      const initialTvEpisodeStatus = tvEpisodeCard ? tvEpisodeStatusLabel(initialTvDetail) : "";
+      const airStatusText = weeklyUpdate || initialTvEpisodeStatus;
+      const airStatusHtml = (weeklyUpdate || tvEpisodeCard)
+        ? `<div class="card-air-status"${airStatusText ? "" : " hidden"}>${escapeHtml(airStatusText)}</div>`
         : "";
       const searchResult = opts.searchResult === true;
       const searchQuery = String(opts.searchQuery || "").trim();
-      button.className = "card focusable" + (people > 0 ? " has-people" : "") + (recent ? " recent-card" : "") + (recentWatching ? " recent-watching-card" : "") + (landscape ? " landscape-card" : "") + (home ? " home-card" : "") + (weeklyHome ? " home-weekly-card" : "") + (weeklyUpdate ? " has-weekly-update" : "") + (weekly ? " weekly-card" : "");
+      button.className = "card focusable" + (people > 0 ? " has-people" : "") + (recent ? " recent-card" : "") + (recentWatching ? " recent-watching-card" : "") + (landscape ? " landscape-card" : "") + (home ? " home-card" : "") + (weekly ? " weekly-card" : "");
       button.type = "button";
       button.dataset.cardIndex = String(index || 0);
       if (key) button.dataset.mediaKey = key;
@@ -25325,7 +25328,6 @@ utils.encode = function encode(arr, enc) {
         button.dataset.searchQuery = searchQuery;
       }
       button.__mediaItem = item;
-      button.__weeklyHome = weeklyHome;
       if (recentWatching) recordRecentNativeKeyFlow("RECENT_NATIVE_KEY_AT_CARD", item);
       button.classList.toggle("blocked", isBlocked(item));
       const rating = item.voteAverage ? Number(item.voteAverage).toFixed(1) : "";
@@ -25338,11 +25340,13 @@ utils.encode = function encode(arr, enc) {
       };
       const progress = Math.min(100, Math.max(0, Number(item.progress || 0)));
       button.innerHTML = recent ? `
-        <img class="poster" alt="" ${imageAttrs(posterSrc, imageOpt)}>
+        <div class="poster-wrap recent-poster-wrap">
+          <img class="poster" alt="" ${imageAttrs(posterSrc, imageOpt)}>
+          ${airStatusHtml}
+        </div>
         ${item.badge ? `<span class="recent-badge">${escapeHtml(item.badge)}</span>` : ""}
         <div class="card-body">
           <div class="card-title">${escapeHtml(item.title)}</div>
-          ${tvEpisodeStatusHtml}
           <div class="card-meta">${escapeHtml(item.remark)}</div>
         </div>
         ${progress > 0 ? `<div class="recent-progress" aria-hidden="true"><span style="--recent-progress:${escapeAttr(progress + "%")}"></span></div>` : ""}
@@ -25352,12 +25356,11 @@ utils.encode = function encode(arr, enc) {
           ${people > 0 ? `<span class="card-people">${escapeHtml(people)}人</span>` : ""}
           ${recentWatching ? `<span class="recent-delete-indicator" aria-hidden="true">🗑</span>` : ""}
           ${home && rating ? `<span class="rating-badge">${escapeHtml(rating)}</span>` : ""}
+          ${airStatusHtml}
         </div>
         ${!home && rating ? `<span class="rating-badge">${escapeHtml(rating)}</span>` : ""}
         <div class="card-body">
           <div class="card-title">${escapeHtml(item.title)}</div>
-          ${weeklyUpdate ? `<div class="home-weekly-update">${escapeHtml(weeklyUpdate)}</div>` : ""}
-          ${tvEpisodeStatusHtml}
           <div class="card-meta">${escapeHtml(item.remark)}</div>
         </div>
       `;
@@ -27725,21 +27728,16 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         : 0;
       const seasonCount = Math.max(Number(detail.number_of_seasons || 0), seasons);
       const last = detail.last_episode_to_air && typeof detail.last_episode_to_air === "object" ? detail.last_episode_to_air : null;
-      const next = detail.next_episode_to_air && typeof detail.next_episode_to_air === "object" ? detail.next_episode_to_air : null;
       const lastSeason = Number(last && last.season_number || 0);
       const lastEpisode = Number(last && last.episode_number || 0);
-      const nextSeason = Number(next && next.season_number || 0);
-      const nextEpisode = Number(next && next.episode_number || 0);
       const status = String(detail.status || "").trim();
       const ended = status === "Ended" || detailStatus(status) === "已完结";
       if (ended && total > 0) return `全 ${total} 集`;
       if (seasonCount > 1) {
         if (lastSeason > 0 && lastEpisode > 0) return `更新至 S${String(lastSeason).padStart(2, "0")}E${String(lastEpisode).padStart(2, "0")}`;
-        if (nextSeason > 0 && nextEpisode > 0) return `下集 S${String(nextSeason).padStart(2, "0")}E${String(nextEpisode).padStart(2, "0")}`;
         return "";
       }
       if (lastEpisode > 0) return `更新至 ${lastEpisode} 集`;
-      if (nextEpisode > 0) return `下集 ${nextEpisode} 集`;
       return "";
     }
 
