@@ -16717,7 +16717,7 @@ utils.encode = function encode(arr, enc) {
       activeList: "all",
       catalog: {},
       catalogPage: {},
-      recent: { items: [], loading: false, loaded: false, error: "", refreshedAt: 0, diag: null, nativeItems: [], nativeLoaded: false, nativeLoading: false, nativeRefreshedAt: 0, nativeError: "", nativeDiag: null, nativeDeleteAttempts: [] },
+      recent: { items: [], loading: false, loaded: false, error: "", refreshedAt: 0, diag: null, nativeItems: [], nativeRawHistory: [], nativeLoaded: false, nativeLoading: false, nativeRefreshedAt: 0, nativeError: "", nativeDiag: null, nativeDeleteAttempts: [], nativeDeleteTarget: null },
       homeLatest: { items: [], loading: false, loaded: false, error: "", loadedAt: 0, requestSeq: 0, diag: null, promise: null },
       gridRender: {},
       gridColumnCache: {},
@@ -20858,45 +20858,75 @@ utils.encode = function encode(arr, enc) {
       };
     }
 
-    function nativeHistoryDeleteCandidateKey(history) {
-      const identity = nativeHistoryDeleteIdentity(history);
-      return identity.historyKey || [identity.siteKey, identity.vodId, identity.cid].join("@@@");
-    }
-
-    function nativeHistoryDeleteCandidates(item, mediaKey) {
-      const nativeItems = state.recent && Array.isArray(state.recent.nativeItems) ? state.recent.nativeItems : [];
-      const candidates = [];
-      const seen = new Set();
-      const add = (nativeItem) => {
-        if (!nativeItem || !nativeHistoryDeleteIdentity(nativeItem).valid) return;
-        const candidateKey = nativeHistoryDeleteCandidateKey(nativeItem);
-        if (seen.has(candidateKey)) return;
-        seen.add(candidateKey);
-        candidates.push(nativeItem);
-      };
-      const rawKey = String(item && (item.nativeHistoryKey || item.historyKey || item.key) || "").trim();
-      if (rawKey) {
-        nativeItems
-          .filter((nativeItem) => String(nativeItem && (nativeItem.nativeHistoryKey || nativeItem.historyKey || nativeItem.key) || "").trim() === rawKey)
-          .forEach(add);
-      } else {
-        nativeItems
-          .filter((nativeItem) => recentWatchingMediaKey(nativeItem) === mediaKey)
-          .forEach(add);
+    function nativeHistoryFreshMatch(item, rawList, mediaKey) {
+      const list = (Array.isArray(rawList) ? rawList : []).filter((history) => history && typeof history === "object");
+      const targetKey = String(item && (item.nativeHistoryKey || item.historyKey || item.key) || "").trim();
+      if (targetKey) {
+        const exact = list.find((history) => historyKeyParts(history).key === targetKey);
+        if (exact) return exact;
       }
-      add(item);
-      return candidates;
+      const targetIdentity = nativeHistoryDeleteIdentity(item);
+      const targetSiteKey = String(item && item.siteKey || targetIdentity.siteKey || "").trim();
+      const targetVodId = String(item && item.vodId || targetIdentity.vodId || "").trim();
+      if (targetSiteKey && targetVodId) {
+        const siteVodMatches = list.filter((history) => {
+          const parts = historyKeyParts(history);
+          return parts.siteKey === targetSiteKey && parts.vodId === targetVodId;
+        });
+        if (siteVodMatches.length === 1) return siteVodMatches[0];
+        if (siteVodMatches.length > 1) {
+          const targetCid = String(item && item.cid != null ? item.cid : targetIdentity.cid || "").trim();
+          const cidMatches = targetCid
+            ? siteVodMatches.filter((history) => historyKeyParts(history).cid === targetCid)
+            : [];
+          if (cidMatches.length === 1) return cidMatches[0];
+          return { ambiguous: true };
+        }
+      }
+      if (mediaKey) {
+        const mediaMatches = list.map((history, index) => ({ history, index, item: normalizeHistoryItem(history, index) }))
+          .filter((entry) => recentWatchingMediaKey(entry.item) === mediaKey)
+          .map((entry) => entry.history);
+        if (mediaMatches.length === 1) return mediaMatches[0];
+        if (mediaMatches.length > 1) return { ambiguous: true };
+      }
+      return null;
     }
 
     function nativeHistoryDeleteStillPresent(history) {
       const target = nativeHistoryDeleteIdentity(history);
       if (!target.valid) return false;
+      const rawHistory = state.recent && Array.isArray(state.recent.nativeRawHistory)
+        ? state.recent.nativeRawHistory : null;
+      if (rawHistory) {
+        return rawHistory.some((rawItem) => {
+          const current = nativeHistoryDeleteIdentity(rawItem);
+          if (!current.valid) return false;
+          return current.historyKey === target.historyKey && current.cid === target.cid;
+        });
+      }
       const nativeItems = state.recent && Array.isArray(state.recent.nativeItems) ? state.recent.nativeItems : [];
       return nativeItems.some((nativeItem) => {
         const current = nativeHistoryDeleteIdentity(nativeItem);
         if (!current.valid) return false;
         return current.historyKey === target.historyKey && current.cid === target.cid;
       });
+    }
+
+    function recordNativeHistoryDeleteTarget(target) {
+      const value = {
+        DELETE_TARGET_CARD_KEY: String(target && target.cardKey || "").trim(),
+        DELETE_FRESH_HISTORY_KEY: String(target && target.historyKey || "").trim(),
+        DELETE_FRESH_CID: String(target && target.cid != null ? target.cid : "").trim(),
+        DELETE_FRESH_SITE_KEY: String(target && target.siteKey || "").trim(),
+        DELETE_FRESH_VOD_ID: String(target && target.vodId || "").trim(),
+        matched: target && target.matched === true,
+        ambiguous: target && target.ambiguous === true
+      };
+      if (state.recent) state.recent.nativeDeleteTarget = value;
+      if (state.tvDiag) state.tvDiag.nativeHistoryDeleteTarget = value;
+      try { console.debug("[Nostr TV][NATIVE_HISTORY_DELETE_TARGET]", value); } catch (e) {}
+      return value;
     }
 
     function nativeHistoryDeleteBaseUrl(device) {
@@ -21015,11 +21045,16 @@ utils.encode = function encode(arr, enc) {
       const siteKey = identity.siteKey;
       const vodId = identity.vodId;
       const cid = identity.cid;
+      const rawHistory = history && history.nativeRawHistory && typeof history.nativeRawHistory === "object"
+        ? history.nativeRawHistory : history;
+      const rawCid = rawHistory && rawHistory.cid != null
+        ? rawHistory.cid
+        : historyNestedValue(rawHistory, ["cid"]);
       const payload = {};
       if (opts.includeHistoryKey !== false && historyKey) payload.historyKey = historyKey;
       if (siteKey) payload.siteKey = siteKey;
       if (vodId) payload.vodId = vodId;
-      if (opts.includeCid !== false && cid) payload.cid = /^\d+$/.test(cid) ? Number(cid) : cid;
+      if (opts.includeCid !== false && cid) payload.cid = rawCid != null && String(rawCid).trim() ? rawCid : cid;
       payload.action = "delete";
       payload.deleted = true;
       payload.deletedAt = Date.now();
@@ -21028,14 +21063,23 @@ utils.encode = function encode(arr, enc) {
       }
       const endpoint = baseUrl + "/api/playback/progress/delete";
       const finish = (result) => {
+        const firstResult = Array.isArray(result.results) && result.results.length ? result.results[0] : {};
         recordNativeHistoryDeleteAttempt({
           attempt: Number(opts.attempt || 1),
           status: Number(result.status || 0),
           requestPayload: result.payload || payload,
+          DELETE_TARGET_CARD_KEY: String(opts.targetCardKey || "").trim(),
+          DELETE_FRESH_HISTORY_KEY: String(opts.freshHistoryKey || identity.historyKey || "").trim(),
+          DELETE_FRESH_CID: String(opts.freshCid != null ? opts.freshCid : identity.cid || "").trim(),
+          DELETE_FRESH_SITE_KEY: String(opts.freshSiteKey || identity.siteKey || "").trim(),
+          DELETE_FRESH_VOD_ID: String(opts.freshVodId || identity.vodId || "").trim(),
           deleted: Number(result.deleted || 0),
           applied: Number(result.applied || 0),
           skipped: Number(result.skipped || 0),
           failed: Number(result.failed || 0),
+          DELETE_API_ACTION: String(firstResult.action || "").trim(),
+          DELETE_API_MESSAGE: String(firstResult.message || result.message || "").trim(),
+          DELETE_API_HISTORY_KEY: String(firstResult.historyKey || result.historyKey || "").trim(),
           resultAction: Array.isArray(result.results) ? result.results.map((entry) => entry.action).filter(Boolean) : [],
           resultMessage: Array.isArray(result.results) ? result.results.map((entry) => entry.message).filter(Boolean) : [],
           resultHistoryKey: Array.isArray(result.results) ? result.results.map((entry) => entry.historyKey).filter(Boolean) : [],
@@ -21092,7 +21136,7 @@ utils.encode = function encode(arr, enc) {
       return finish(result);
     }
 
-    async function deleteNativeHistoryWithFallback(history) {
+    async function deleteNativeHistoryWithFallback(history, context) {
       const attempts = [
         { attempt: 1, includeHistoryKey: true, includeCid: true },
         { attempt: 2, includeHistoryKey: false, includeCid: false },
@@ -21101,7 +21145,7 @@ utils.encode = function encode(arr, enc) {
       const results = [];
       let last = null;
       for (const options of attempts) {
-        const result = await deleteNativeHistoryViaLocalApi(history, options);
+        const result = await deleteNativeHistoryViaLocalApi(history, Object.assign({}, context || {}, options));
         results.push(result);
         last = result;
         if (result.ok || result.allowIdentityFallback === false) break;
@@ -21113,6 +21157,10 @@ utils.encode = function encode(arr, enc) {
         message: "原生历史删除所需字段不完整"
       });
       finalResult.ok = finalResult.ok === true;
+      if (!finalResult.message) {
+        const messageResult = results.slice().reverse().find((result) => result && result.message);
+        if (messageResult) finalResult.message = messageResult.message;
+      }
       finalResult.attempts = results;
       return finalResult;
     }
@@ -21136,31 +21184,73 @@ utils.encode = function encode(arr, enc) {
       const beforeCards = grid ? Array.from(grid.querySelectorAll(".recent-watching-card")) : [];
       const focusIndex = Math.max(0, beforeCards.indexOf(card));
       cancelRecentDeleteArm();
-      const nativeCandidates = nativeHistoryDeleteCandidates(item, key);
+      const targetCardKey = String(item && (item.nativeHistoryKey || item.historyKey || item.key) || "").trim();
+      const nativeHistoryCard = !!(item && item.source === "history" && !item.continueContext
+        && (targetCardKey || item.siteKey && item.vodId));
       let nativeDeleted = false;
-      if (nativeCandidates.length) {
-        const nativeResults = [];
-        for (const nativeItem of nativeCandidates) {
-          const result = await deleteNativeHistoryWithFallback(nativeItem);
+      if (nativeHistoryCard) {
+        let freshRawList;
+        try {
+          freshRawList = await readNativeHistoryFresh();
+        } catch (e) {
+          const message = String(e && e.message || e || "");
+          recordNativeHistoryDeleteTarget({ cardKey: targetCardKey });
+          toast(nativeHistoryDeleteFailureText({ reason: "HISTORY_REFRESH_FAILED", message }));
+          return false;
+        }
+        const freshMatch = nativeHistoryFreshMatch(item, freshRawList, key);
+        const freshIdentity = freshMatch && !freshMatch.ambiguous ? nativeHistoryDeleteIdentity(freshMatch) : null;
+        recordNativeHistoryDeleteTarget({
+          cardKey: targetCardKey,
+          historyKey: freshIdentity && freshIdentity.historyKey,
+          cid: freshIdentity && freshIdentity.cid,
+          siteKey: freshIdentity && freshIdentity.siteKey,
+          vodId: freshIdentity && freshIdentity.vodId,
+          matched: !!(freshIdentity && freshIdentity.valid),
+          ambiguous: !!(freshMatch && freshMatch.ambiguous)
+        });
+        if (freshMatch && freshMatch.ambiguous) {
+          toast("无法唯一匹配原生历史记录");
+          return false;
+        }
+        if (!freshMatch) {
+          // The forced fresh read is authoritative.  If the record has already
+          // disappeared, do not send a stale identity back to the App.
+          applyNativeHistoryRaw(freshRawList);
+          nativeDeleted = true;
+        } else {
+          if (!freshIdentity || !freshIdentity.valid) {
+            toast(nativeHistoryDeleteFailureText({ reason: "NATIVE_HISTORY_FIELDS_UNAVAILABLE" }));
+            return false;
+          }
+          const result = await deleteNativeHistoryWithFallback(freshMatch, {
+            targetCardKey,
+            freshHistoryKey: freshIdentity.historyKey,
+            freshCid: freshIdentity.cid,
+            freshSiteKey: freshIdentity.siteKey,
+            freshVodId: freshIdentity.vodId
+          });
           if (!result.ok) {
             toast(nativeHistoryDeleteFailureText(result));
             return false;
           }
-          nativeResults.push(result);
+          let verifyRawList;
+          try {
+            verifyRawList = await readNativeHistoryFresh();
+            applyNativeHistoryRaw(verifyRawList);
+          } catch (e) {
+            const message = String(e && e.message || e || "");
+            toast(nativeHistoryDeleteFailureText({ reason: "HISTORY_REFRESH_FAILED", message }));
+            return false;
+          }
+          if (nativeHistoryDeleteStillPresent(freshMatch)) {
+            result.reason = "DELETE_REAPPEARED";
+            result.message = result.message || "删除后刷新仍能读到该历史记录";
+            toast(nativeHistoryDeleteFailureText(result));
+            return false;
+          }
+          nativeDeleted = true;
         }
-        await loadNativeRecentHistory({ refresh: true });
-        if (state.recent && state.recent.nativeError) {
-          toast(nativeHistoryDeleteFailureText({ reason: "HISTORY_REFRESH_FAILED", message: state.recent.nativeError }));
-          return false;
-        }
-        if (nativeCandidates.some(nativeHistoryDeleteStillPresent)) {
-          const result = nativeResults[nativeResults.length - 1] || {};
-          result.reason = "DELETE_REAPPEARED";
-          result.message = result.message || "删除后刷新仍能读到该历史记录";
-          toast(nativeHistoryDeleteFailureText(result));
-          return false;
-        }
-        nativeDeleted = true;
       }
 
       let contextReady = !!(state.historyContexts && state.historyContexts.loaded
@@ -25668,6 +25758,39 @@ utils.encode = function encode(arr, enc) {
       return [];
     }
 
+    async function readNativeHistoryFresh() {
+      const api = sdk();
+      const raw = api && typeof api.history === "function" ? await api.history() : [];
+      return extractNativeHistoryList(raw);
+    }
+
+    function applyNativeHistoryRaw(rawList) {
+      const recent = state.recent;
+      if (!recent) return [];
+      const list = Array.isArray(rawList) ? rawList : [];
+      const normalizedList = normalizeHistoryList(list);
+      const rawByStableKey = new Map();
+      list.forEach((history, index) => {
+        const parts = historyKeyParts(history);
+        rawByStableKey.set(historyStableKey(history, parts, index), history);
+      });
+      recent.nativeRawHistory = list.slice();
+      recent.nativeItems = normalizedList.map((item) => {
+        const normalized = Object.assign({}, item, { recentWatching: true });
+        const rawHistory = rawByStableKey.get(item.historyStableKey || item.historyKey);
+        if (rawHistory && typeof Object.defineProperty === "function") {
+          try {
+            Object.defineProperty(normalized, "nativeRawHistory", { value: rawHistory, enumerable: false, configurable: true });
+          } catch (e) {}
+        }
+        return normalized;
+      });
+      recent.nativeError = "";
+      recent.nativeLoaded = true;
+      recent.nativeRefreshedAt = Date.now();
+      return normalizedList;
+    }
+
     async function loadNativeRecentHistory(options) {
       const opts = options || {};
       const recent = state.recent;
@@ -25679,23 +25802,7 @@ utils.encode = function encode(arr, enc) {
         const api = sdk();
         const raw = api && typeof api.history === "function" ? await api.history() : [];
         const rawList = extractNativeHistoryList(raw);
-        const normalizedList = normalizeHistoryList(rawList);
-        const rawByStableKey = new Map();
-        rawList.forEach((history, index) => {
-          const parts = historyKeyParts(history);
-          rawByStableKey.set(historyStableKey(history, parts, index), history);
-        });
-        recent.nativeItems = normalizedList.map((item) => {
-          const normalized = Object.assign({}, item, { recentWatching: true });
-          const rawHistory = rawByStableKey.get(item.historyStableKey || item.historyKey);
-          if (rawHistory && typeof Object.defineProperty === "function") {
-            try {
-              Object.defineProperty(normalized, "nativeRawHistory", { value: rawHistory, enumerable: false, configurable: true });
-            } catch (e) {}
-          }
-          return normalized;
-        });
-        recent.nativeError = "";
+        const normalizedList = applyNativeHistoryRaw(rawList);
         const rawSummary = rawList.slice(0, 24).map((history, index) => {
           const parts = historyKeyParts(history);
           const restorable = isRestorableHistory(history);
