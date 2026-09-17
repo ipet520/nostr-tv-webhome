@@ -16717,7 +16717,7 @@ utils.encode = function encode(arr, enc) {
       activeList: "all",
       catalog: {},
       catalogPage: {},
-      recent: { items: [], loading: false, loaded: false, error: "", refreshedAt: 0, diag: null, nativeItems: [], nativeLoaded: false, nativeLoading: false, nativeRefreshedAt: 0, nativeError: "", nativeDiag: null },
+      recent: { items: [], loading: false, loaded: false, error: "", refreshedAt: 0, diag: null, nativeItems: [], nativeLoaded: false, nativeLoading: false, nativeRefreshedAt: 0, nativeError: "", nativeDiag: null, nativeDeleteAttempts: [] },
       homeLatest: { items: [], loading: false, loaded: false, error: "", loadedAt: 0, requestSeq: 0, diag: null, promise: null },
       gridRender: {},
       gridColumnCache: {},
@@ -20835,14 +20835,20 @@ utils.encode = function encode(arr, enc) {
     }
 
     function nativeHistoryDeleteIdentity(history) {
-      const parts = historyKeyParts(history);
-      const explicitCid = history && history.cid != null
-        ? history.cid
-        : historyNestedValue(history, ["cid"]);
-      const historyKey = String(history && (history.nativeHistoryKey || history.historyKey || history.key) || parts.key || "").trim();
-      const siteKey = String(history && (history.siteKey || history.site) || parts.siteKey || historyNestedValue(history, ["siteKey", "site"]) || "").trim();
-      const vodId = String(history && (history.vodId || history.videoId) || parts.vodId || historyNestedValue(history, ["vodId", "videoId"]) || "").trim();
-      const cid = String(explicitCid != null && String(explicitCid).trim() ? explicitCid : parts.cid || "").trim();
+      const raw = history && history.nativeRawHistory && typeof history.nativeRawHistory === "object"
+        ? history.nativeRawHistory
+        : history;
+      const parts = historyKeyParts(raw);
+      const normalizedParts = raw === history ? parts : historyKeyParts(history);
+      const explicitCid = raw && raw.cid != null
+        ? raw.cid
+        : history && history.cid != null
+          ? history.cid
+          : historyNestedValue(raw, ["cid"]);
+      const historyKey = String(raw && (raw.key || raw.historyKey) || history && (history.nativeHistoryKey || history.historyKey || history.key) || parts.key || normalizedParts.key || "").trim();
+      const siteKey = String(raw && (raw.siteKey || raw.site) || history && (history.siteKey || history.site) || parts.siteKey || normalizedParts.siteKey || historyNestedValue(raw, ["siteKey", "site"]) || "").trim();
+      const vodId = String(raw && (raw.vodId || raw.videoId) || history && (history.vodId || history.videoId) || parts.vodId || normalizedParts.vodId || historyNestedValue(raw, ["vodId", "videoId"]) || "").trim();
+      const cid = String(explicitCid != null && String(explicitCid).trim() ? explicitCid : parts.cid || normalizedParts.cid || "").trim();
       return {
         historyKey,
         siteKey,
@@ -20868,7 +20874,6 @@ utils.encode = function encode(arr, enc) {
         seen.add(candidateKey);
         candidates.push(nativeItem);
       };
-      add(item);
       const rawKey = String(item && (item.nativeHistoryKey || item.historyKey || item.key) || "").trim();
       if (rawKey) {
         nativeItems
@@ -20879,6 +20884,7 @@ utils.encode = function encode(arr, enc) {
           .filter((nativeItem) => recentWatchingMediaKey(nativeItem) === mediaKey)
           .forEach(add);
       }
+      add(item);
       return candidates;
     }
 
@@ -20907,12 +20913,86 @@ utils.encode = function encode(arr, enc) {
 
     function nativeHistoryDeleteBody(response) {
       const body = response && response.body != null ? response.body : response && response.data;
+      if (Array.isArray(body)) return { results: body };
       if (body && typeof body === "object") return body;
       if (typeof body === "string") return safeJson(body, {});
       return {};
     }
 
-    async function deleteNativeHistoryViaLocalApi(history) {
+    function nativeHistoryDeleteCount(value) {
+      if (Array.isArray(value)) return value.length;
+      if (value === true) return 1;
+      const count = Number(value);
+      return Number.isFinite(count) && count > 0 ? count : 0;
+    }
+
+    function nativeHistoryDeleteResponseInfo(response) {
+      const body = nativeHistoryDeleteBody(response);
+      const nested = body && body.data && typeof body.data === "object" && !Array.isArray(body.data) ? body.data : null;
+      const sources = nested ? [body, nested] : [body];
+      const firstField = (fields) => {
+        for (const source of sources) {
+          if (!source || typeof source !== "object") continue;
+          for (const field of fields) {
+            if (source[field] != null) return source[field];
+          }
+        }
+        return null;
+      };
+      const resultItems = [];
+      const collectResults = (value) => {
+        if (Array.isArray(value)) {
+          value.forEach(collectResults);
+          return;
+        }
+        if (value && typeof value === "object") resultItems.push(value);
+      };
+      sources.forEach((source) => {
+        if (!source || typeof source !== "object") return;
+        collectResults(source.results);
+        collectResults(source.items);
+      });
+      const results = resultItems.map((result) => ({
+        action: String(result.action || result.status || "").trim().toLowerCase(),
+        message: String(result.message || result.error || result.reason || "").trim(),
+        historyKey: String(result.historyKey || result.key || "").trim()
+      }));
+      const resultDeletedCount = results.filter((result) => result.action === "deleted").length;
+      const resultAppliedCount = results.filter((result) => result.action === "applied").length;
+      const resultSkippedCount = results.filter((result) => result.action === "skipped").length;
+      const resultFailedCount = results.filter((result) => result.action === "failed").length;
+      const resultMessages = results.map((result) => result.message).filter(Boolean);
+      const resultHistoryKeys = results.map((result) => result.historyKey).filter(Boolean);
+      const topDeleted = nativeHistoryDeleteCount(firstField(["deleted"]));
+      const topApplied = nativeHistoryDeleteCount(firstField(["applied"]));
+      const topSkipped = nativeHistoryDeleteCount(firstField(["skipped"]));
+      const topFailed = nativeHistoryDeleteCount(firstField(["failed"]));
+      return {
+        body,
+        status: Number(response && (response.status || response.code) || 0),
+        deleted: topDeleted,
+        applied: Math.max(topApplied, resultAppliedCount),
+        skipped: Math.max(topSkipped, resultSkippedCount),
+        failed: Math.max(topFailed, resultFailedCount),
+        results,
+        resultDeletedCount,
+        message: String(firstField(["message", "error", "reason"]) || resultMessages[0] || "").trim(),
+        historyKey: String(firstField(["historyKey", "key"]) || resultHistoryKeys[0] || "").trim()
+      };
+    }
+
+    function recordNativeHistoryDeleteAttempt(attempt) {
+      const recent = state.recent;
+      if (recent) {
+        if (!Array.isArray(recent.nativeDeleteAttempts)) recent.nativeDeleteAttempts = [];
+        recent.nativeDeleteAttempts.push(attempt);
+        if (recent.nativeDeleteAttempts.length > 32) recent.nativeDeleteAttempts.shift();
+      }
+      try { console.debug("[Nostr TV][NATIVE_HISTORY_DELETE]", attempt); } catch (e) {}
+    }
+
+    async function deleteNativeHistoryViaLocalApi(history, options) {
+      const opts = options || {};
       const api = sdk();
       const request = api && typeof api.req === "function"
         ? (url, options) => api.req(url, options)
@@ -20936,14 +21016,35 @@ utils.encode = function encode(arr, enc) {
       const vodId = identity.vodId;
       const cid = identity.cid;
       const payload = {};
-      if (historyKey) payload.historyKey = historyKey;
+      if (opts.includeHistoryKey !== false && historyKey) payload.historyKey = historyKey;
       if (siteKey) payload.siteKey = siteKey;
       if (vodId) payload.vodId = vodId;
-      if (cid) payload.cid = /^\d+$/.test(cid) ? Number(cid) : cid;
+      if (opts.includeCid !== false && cid) payload.cid = /^\d+$/.test(cid) ? Number(cid) : cid;
+      payload.action = "delete";
+      payload.deleted = true;
+      payload.deletedAt = Date.now();
       if (!identity.valid) {
-        return { ok: false, status: 0, reason: "NATIVE_HISTORY_FIELDS_UNAVAILABLE", payload };
+        return { ok: false, status: 0, reason: "NATIVE_HISTORY_FIELDS_UNAVAILABLE", payload, allowIdentityFallback: false };
       }
       const endpoint = baseUrl + "/api/playback/progress/delete";
+      const finish = (result) => {
+        recordNativeHistoryDeleteAttempt({
+          attempt: Number(opts.attempt || 1),
+          status: Number(result.status || 0),
+          requestPayload: result.payload || payload,
+          deleted: Number(result.deleted || 0),
+          applied: Number(result.applied || 0),
+          skipped: Number(result.skipped || 0),
+          failed: Number(result.failed || 0),
+          resultAction: Array.isArray(result.results) ? result.results.map((entry) => entry.action).filter(Boolean) : [],
+          resultMessage: Array.isArray(result.results) ? result.results.map((entry) => entry.message).filter(Boolean) : [],
+          resultHistoryKey: Array.isArray(result.results) ? result.results.map((entry) => entry.historyKey).filter(Boolean) : [],
+          message: result.message || "",
+          reason: result.reason || "",
+          ok: result.ok === true
+        });
+        return result;
+      };
       let response;
       try {
         response = await request(endpoint, {
@@ -20954,36 +21055,66 @@ utils.encode = function encode(arr, enc) {
           body: JSON.stringify(payload)
         });
       } catch (e) {
-        return { ok: false, status: 0, reason: "REQUEST_FAILED", endpoint, payload, message: String(e && e.message || e || "") };
+        return finish({ ok: false, status: 0, reason: "REQUEST_FAILED", endpoint, payload, message: String(e && e.message || e || ""), allowIdentityFallback: false });
       }
-      const data = nativeHistoryDeleteBody(response);
-      const status = Number(response && (response.status || response.code) || 0);
+      const parsed = nativeHistoryDeleteResponseInfo(response);
+      const data = parsed.body;
+      const status = Number(parsed.status || 0);
       const apiCode = Number(data && data.code);
       const effectiveStatus = status || (apiCode >= 100 ? apiCode : 0);
-      const result = { ok: false, status: effectiveStatus, endpoint, payload, data };
+      const result = Object.assign({}, parsed, { ok: false, status: effectiveStatus, endpoint, payload, data });
       if (effectiveStatus === 404 || apiCode === 404) {
         result.reason = "ENDPOINT_NOT_FOUND";
-        return result;
+        result.allowIdentityFallback = false;
+        return finish(result);
       }
       if (effectiveStatus === 403 || apiCode === 403) {
         result.reason = "FORBIDDEN";
-        result.message = String(data && (data.message || data.error) || "本机 API 修改未开启");
-        return result;
+        result.message = result.message || String(data && (data.message || data.error) || "本机 API 修改未开启");
+        result.allowIdentityFallback = false;
+        return finish(result);
       }
       if (response && response.error) {
         result.reason = "REQUEST_ERROR";
         result.message = String(response.error);
-        return result;
+        result.allowIdentityFallback = false;
+        return finish(result);
       }
       if (response && response.ok === false || effectiveStatus >= 400) {
         result.reason = "HTTP_ERROR";
-        result.message = String(data && (data.message || data.error) || "HTTP " + effectiveStatus);
-        return result;
+        result.message = result.message || String(data && (data.message || data.error) || "HTTP " + effectiveStatus);
+        result.allowIdentityFallback = effectiveStatus > 0 && effectiveStatus < 500 && effectiveStatus !== 403 && effectiveStatus !== 404;
+        return finish(result);
       }
-      result.ok = true;
-      result.reason = "DELETE_REQUEST_ACCEPTED";
-      result.message = String(data && (data.message || data.error) || "");
-      return result;
+      result.ok = result.deleted > 0 || result.resultDeletedCount > 0;
+      result.reason = result.ok ? "DELETED" : "DELETE_NOT_APPLIED";
+      result.allowIdentityFallback = !result.ok;
+      return finish(result);
+    }
+
+    async function deleteNativeHistoryWithFallback(history) {
+      const attempts = [
+        { attempt: 1, includeHistoryKey: true, includeCid: true },
+        { attempt: 2, includeHistoryKey: false, includeCid: false },
+        { attempt: 3, includeHistoryKey: true, includeCid: false }
+      ];
+      const results = [];
+      let last = null;
+      for (const options of attempts) {
+        const result = await deleteNativeHistoryViaLocalApi(history, options);
+        results.push(result);
+        last = result;
+        if (result.ok || result.allowIdentityFallback === false) break;
+      }
+      const finalResult = Object.assign({}, last || {
+        ok: false,
+        status: 0,
+        reason: "NATIVE_HISTORY_FIELDS_UNAVAILABLE",
+        message: "原生历史删除所需字段不完整"
+      });
+      finalResult.ok = finalResult.ok === true;
+      finalResult.attempts = results;
+      return finalResult;
     }
 
     function nativeHistoryDeleteFailureText(result) {
@@ -20993,7 +21124,8 @@ utils.encode = function encode(arr, enc) {
       if (item.reason === "LOCAL_API_ADDRESS_UNAVAILABLE" || item.reason === "REQUEST_UNAVAILABLE") return "当前 App 未暴露可用的原生历史删除接口";
       if (item.reason === "NATIVE_HISTORY_FIELDS_UNAVAILABLE") return "原生历史删除所需字段不完整";
       if (item.reason === "HISTORY_REFRESH_FAILED") return "原生历史刷新失败" + (item.message ? "：" + item.message : "");
-      if (item.reason === "DELETE_NOT_APPLIED") return "原生历史删除未生效" + (item.message ? "：" + item.message : "");
+      if (item.reason === "DELETE_REAPPEARED") return "原生历史删除后记录重新出现" + (item.message ? "：" + item.message : "");
+      if (item.reason === "DELETE_NOT_APPLIED") return item.message || "原生历史删除未生效";
       return "最近观看删除失败" + (item.message ? "：" + item.message : "");
     }
 
@@ -21009,7 +21141,7 @@ utils.encode = function encode(arr, enc) {
       if (nativeCandidates.length) {
         const nativeResults = [];
         for (const nativeItem of nativeCandidates) {
-          const result = await deleteNativeHistoryViaLocalApi(nativeItem);
+          const result = await deleteNativeHistoryWithFallback(nativeItem);
           if (!result.ok) {
             toast(nativeHistoryDeleteFailureText(result));
             return false;
@@ -21023,8 +21155,8 @@ utils.encode = function encode(arr, enc) {
         }
         if (nativeCandidates.some(nativeHistoryDeleteStillPresent)) {
           const result = nativeResults[nativeResults.length - 1] || {};
-          result.reason = "DELETE_NOT_APPLIED";
-          result.message = result.message || "本机 API 未删除该历史记录";
+          result.reason = "DELETE_REAPPEARED";
+          result.message = result.message || "删除后刷新仍能读到该历史记录";
           toast(nativeHistoryDeleteFailureText(result));
           return false;
         }
@@ -25548,7 +25680,21 @@ utils.encode = function encode(arr, enc) {
         const raw = api && typeof api.history === "function" ? await api.history() : [];
         const rawList = extractNativeHistoryList(raw);
         const normalizedList = normalizeHistoryList(rawList);
-        recent.nativeItems = normalizedList.map((item) => Object.assign({}, item, { recentWatching: true }));
+        const rawByStableKey = new Map();
+        rawList.forEach((history, index) => {
+          const parts = historyKeyParts(history);
+          rawByStableKey.set(historyStableKey(history, parts, index), history);
+        });
+        recent.nativeItems = normalizedList.map((item) => {
+          const normalized = Object.assign({}, item, { recentWatching: true });
+          const rawHistory = rawByStableKey.get(item.historyStableKey || item.historyKey);
+          if (rawHistory && typeof Object.defineProperty === "function") {
+            try {
+              Object.defineProperty(normalized, "nativeRawHistory", { value: rawHistory, enumerable: false, configurable: true });
+            } catch (e) {}
+          }
+          return normalized;
+        });
         recent.nativeError = "";
         const rawSummary = rawList.slice(0, 24).map((history, index) => {
           const parts = historyKeyParts(history);
