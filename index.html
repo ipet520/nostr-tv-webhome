@@ -20872,17 +20872,34 @@ utils.encode = function encode(arr, enc) {
     }
 
     function nativeHistoryDeleteBody(response) {
+      const hasNestedBody = !!(response && (response.body != null || response.data != null));
       const body = response && response.body != null ? response.body : response && response.data;
       if (body && typeof body === "object") return body;
       if (typeof body === "string") return safeJson(body, {});
+      if (!hasNestedBody && response && typeof response === "object") {
+        const resultKeys = ["total", "deleted", "skipped", "failed", "items", "success", "action", "affected", "message"];
+        if (resultKeys.some((key) => Object.prototype.hasOwnProperty.call(response, key))) return response;
+      }
       return {};
     }
 
-    function recordNativeHistoryDeleteDiag(payload, status, data) {
-      if (!isTvDiagnosticEnabled()) return null;
+    function nativeHistoryDeleteRawResponse(response) {
+      if (response && response.body != null) return response.body;
+      if (response && response.data != null) return response.data;
+      return response;
+    }
+
+    function nativeHistoryDeleteDiagnosticText(value) {
+      if (value == null) return "";
+      if (typeof value === "string") return value.slice(0, 500);
+      try { return JSON.stringify(value).slice(0, 500); } catch (e) { return String(value).slice(0, 500); }
+    }
+
+    function recordNativeHistoryDeleteDiag(payload, status, data, rawResponse) {
       const body = data && typeof data === "object" ? data : {};
       const items = Array.isArray(body.items) ? body.items : [];
       const item = items[0] && typeof items[0] === "object" ? items[0] : {};
+      const rawText = nativeHistoryDeleteDiagnosticText(rawResponse);
       const diag = {
         NATIVE_DELETE_REQUEST: {
           historyKey: String(payload && payload.historyKey || ""),
@@ -20903,11 +20920,15 @@ utils.encode = function encode(arr, enc) {
         NATIVE_DELETE_ITEM_HISTORY_KEY: String(item.historyKey || ""),
         NATIVE_DELETE_ITEM_SITE_KEY: String(item.siteKey || ""),
         NATIVE_DELETE_ITEM_VOD_ID: String(item.vodId || ""),
+        NATIVE_DELETE_RAW_RESPONSE: rawText,
+        NATIVE_DELETE_PARSED_BODY: body,
         NATIVE_DELETE_RESPONSE: body
       };
       state.tvDiag.nativeHistoryDelete = diag;
+      try { console.debug("NATIVE_DELETE_RAW_RESPONSE =", rawResponse); } catch (e) {}
+      try { console.debug("NATIVE_DELETE_PARSED_BODY =", body); } catch (e) {}
       try { console.debug("[Nostr TV][NATIVE_DELETE_DIAG]", JSON.stringify(diag)); } catch (e) {}
-      updateTvDiagnostic();
+      if (isTvDiagnosticEnabled()) updateTvDiagnostic();
       return diag;
     }
 
@@ -20948,21 +20969,23 @@ utils.encode = function encode(arr, enc) {
       try {
         response = await request(endpoint, {
           method: "POST",
-          responseType: "text",
+          responseType: "json",
           timeout: 24,
           headers: { "Content-Type": "application/json; charset=utf-8" },
           body: JSON.stringify(payload)
         });
       } catch (e) {
-        recordNativeHistoryDeleteDiag(payload, 0, { message: String(e && e.message || e || "") });
+        const message = String(e && e.message || e || "");
+        recordNativeHistoryDeleteDiag(payload, 0, { message }, { message });
         return { ok: false, status: 0, reason: "REQUEST_FAILED", endpoint, payload, message: String(e && e.message || e || "") };
       }
+      const rawResponse = nativeHistoryDeleteRawResponse(response);
       const data = nativeHistoryDeleteBody(response);
       const status = Number(response && (response.status || response.code) || 0);
       const apiCode = Number(data && data.code);
       const effectiveStatus = status || (apiCode >= 100 ? apiCode : 0);
       const result = { ok: false, status: effectiveStatus, endpoint, payload, data };
-      recordNativeHistoryDeleteDiag(payload, effectiveStatus, data);
+      recordNativeHistoryDeleteDiag(payload, effectiveStatus, data, rawResponse);
       if (effectiveStatus === 404 || apiCode === 404) {
         result.reason = "ENDPOINT_NOT_FOUND";
         return result;
@@ -20986,16 +21009,21 @@ utils.encode = function encode(arr, enc) {
       const deleted = Number(data && data.deleted || 0);
       const skipped = Number(data && data.skipped || 0);
       const failed = Number(data && data.failed || 0);
+      const singleAction = String(data && data.action || "").toLowerCase();
+      const singleAffected = Number(data && data.affected || 0);
+      const singleSuccess = data && data.success === true && singleAction === "deleted" && singleAffected > 0;
+      const singleFailure = data && data.success === false || singleAction === "skipped" || singleAction === "failed";
       const hasFailedItem = items.some((item) => String(item && item.action || "").toLowerCase() === "failed");
       const hasSkippedItem = items.some((item) => String(item && item.action || "").toLowerCase() === "skipped");
       const hasDeletedItem = items.some((item) => String(item && item.action || "").toLowerCase() === "deleted" && Number(item && item.affected || 0) > 0);
-      const confirmed = !hasFailedItem && failed <= 0
-        && !hasSkippedItem && !(skipped > 0 && deleted <= 0)
-        && (deleted > 0 || hasDeletedItem);
+      const confirmed = !singleFailure && !hasFailedItem && failed <= 0
+        && !hasSkippedItem && skipped <= 0
+        && (deleted > 0 || hasDeletedItem || singleSuccess);
       if (!confirmed) {
-        result.reason = hasFailedItem || failed > 0 ? "DELETE_FAILED" : hasSkippedItem || skipped > 0 ? "DELETE_SKIPPED" : "DELETE_NOT_CONFIRMED";
+        result.reason = singleFailure || hasFailedItem || failed > 0 ? "DELETE_FAILED" : hasSkippedItem || skipped > 0 ? "DELETE_SKIPPED" : "DELETE_NOT_CONFIRMED";
         const firstItem = items[0] && typeof items[0] === "object" ? items[0] : {};
-        result.message = String(firstItem.message || data && (data.message || data.error) || "原生历史删除未确认");
+        const message = String(firstItem.message || data && (data.message || data.error) || "");
+        result.message = message || ("原生历史删除未确认｜HTTP:" + effectiveStatus + "｜BODY:" + nativeHistoryDeleteDiagnosticText(rawResponse));
         return result;
       }
       result.ok = true;
@@ -21008,6 +21036,7 @@ utils.encode = function encode(arr, enc) {
       if (item.reason === "FORBIDDEN") return "原生历史删除受 App 设置限制：" + (item.message || "本机 API 修改未开启");
       if (item.reason === "ENDPOINT_NOT_FOUND") return "当前 App 未提供原生历史删除接口";
       if (item.reason === "LOCAL_API_ADDRESS_UNAVAILABLE" || item.reason === "REQUEST_UNAVAILABLE") return "当前 App 未暴露可用的原生历史删除接口";
+      if (["DELETE_FAILED", "DELETE_SKIPPED", "DELETE_NOT_CONFIRMED"].includes(item.reason) && item.message) return item.message;
       return "最近观看删除失败" + (item.message ? "：" + item.message : "");
     }
 
