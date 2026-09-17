@@ -16831,7 +16831,7 @@ utils.encode = function encode(arr, enc) {
       tmdb: { config: null, configDirty: false },
       uiPrefs: { loaded: false, homeFullscreenEnabled: true, homeHotSource: "tmdb" },
       blocked: { loaded: false, items: {}, selecting: false, holdTimer: 0, holdTarget: null, longPressFired: false, pointer: null, suppressClickUntil: 0 },
-      pan: { config: null, configDirty: false, loading: false, keyword: "", activeType: "", results: [], health: {}, pending: {}, queued: new Map(), inFlight: new Set(), observer: null, flushTimer: 0, pollTimers: [], pollRound: 0, pollRoundStarted: {}, requestSeq: 0, actualRequestAttempts: 0, lifecycleSeq: 0, sessionId: 0, sessionOrigin: "", sessionItemKey: "", sessionStartedAt: 0, sessionTerminal: false, sessionTerminalReason: "", sessionEndRecorded: false, sessionStartCount: 0, sessionEndCount: 0, sessionTimer: 0, initialAttempts: 0, pollRoundsStarted: 0, pollRoundsCompleted: 0, foregroundRecoveryCount: 0, preloadKey: "", viewToken: "", searchMode: "", initialSucceeded: false, initialResultState: "", lastFailureKind: "", retryRemaining: 0, finalFailure: false, directTransportExhausted: false, renderKeys: "", tabKeys: "", checkEnabled: false, focusKey: "", focusMode: "", playbackReturn: null, progress: { active: false, phase: "", round: 0, totalRounds: 0 }, preflight: null, sessionDiag: null, isPlaying: false },
+      pan: { config: null, configDirty: false, loading: false, keyword: "", activeType: "", results: [], health: {}, pending: {}, queued: new Map(), inFlight: new Set(), observer: null, flushTimer: 0, pollTimers: [], pollRound: 0, pollRoundStarted: {}, requestSeq: 0, actualRequestAttempts: 0, lifecycleSeq: 0, sessionId: 0, sessionOrigin: "", sessionItemKey: "", sessionStartedAt: 0, sessionTerminal: false, sessionTerminalReason: "", sessionEndRecorded: false, sessionStartCount: 0, sessionEndCount: 0, sessionTimer: 0, initialAttempts: 0, pollRoundsStarted: 0, pollRoundsCompleted: 0, foregroundRecoveryCount: 0, preloadKey: "", viewToken: "", searchMode: "", initialSucceeded: false, initialResultState: "", lastFailureKind: "", retryRemaining: 0, finalFailure: false, directTransportExhausted: false, renderKeys: "", tabKeys: "", checkEnabled: false, focusKey: "", focusMode: "", playbackReturn: null, progress: { active: false, phase: "", round: 0, totalRounds: 0 }, preflight: null, directReady: null, sessionDiag: null, isPlaying: false },
       directPlayStatus: { active: false, actionId: 0, phase: "", text: "", startedAt: 0, clearTimer: 0 },
       watch: { item: null, timer: 0, bestMs: 0, durationMs: 0, lastAt: 0, published: false, intentAction: "", playbackTarget: null },
       historyContexts: { loaded: false, loading: false, promise: null, entries: [], diag: null },
@@ -19338,6 +19338,7 @@ utils.encode = function encode(arr, enc) {
       pan.sessionTerminalReason = "";
       pan.sessionEndRecorded = false;
       pan.sessionStartCount = Math.max(0, Number(pan.sessionStartCount || 0) + 1);
+      pan.directReady = null;
       clearPanSessionTimer();
       clearPanPollTimers();
       // requestSeq is scoped to the current execution lifecycle. Session guards
@@ -19385,6 +19386,7 @@ utils.encode = function encode(arr, enc) {
       if (emptyComplete) phase = "complete-empty";
       else if (hardTimeout && !total) phase = "session-timeout";
       else if (String(reason || "") === "initial_failure") phase = "initial-failed";
+      if (phase !== "complete") pan.directReady = null;
       pan.loading = false;
       clearPanPollTimers();
       pan.pollRound = Math.max(0, Number(pan.pollRound || 0));
@@ -20114,10 +20116,30 @@ utils.encode = function encode(arr, enc) {
       return !!(key && state.detailPreload && state.detailPreload.key === key && state.detailPreload.pending);
     }
 
+    function detailDirectPlayCandidateKey(candidate) {
+      if (!candidate) return "";
+      const url = String(candidate.url || "").trim();
+      return url ? panHealthKey(candidate) : String(candidate.key || candidate.title || "").trim();
+    }
+
     function detailDirectPlayReadyFor(item) {
       if (!item) return false;
+      const pan = state.pan || {};
       const lifecycle = getPanSearchLifecycleFor(item);
-      return !!(lifecycle.sameSession && lifecycle.origin === "direct" && lifecycle.qbCount > 0);
+      const phase = String(lifecycle.phase || "");
+      const terminalReason = String(lifecycle.terminalReason || "").toUpperCase();
+      const failedTerminal = ["complete-empty", "initial-failed", "session-timeout", "error"].includes(phase)
+        || ["TERMINAL_NO_QB", "WAIT_BUDGET_EXPIRED"].includes(terminalReason)
+        || lifecycle.transportExhausted
+        || !!pan.finalFailure
+        || !!pan.directTransportExhausted;
+      if (!lifecycle.sameSession || lifecycle.origin !== "direct" || String(pan.searchMode || "") !== "direct" || failedTerminal) return false;
+      const ready = pan.directReady;
+      if (!ready || ready.itemKey !== panSearchItemKey(item)
+        || Number(ready.sessionId || 0) !== Number(lifecycle.sessionId || 0)
+        || !ready.candidateKey) return false;
+      return (pan.results || []).some((candidate) => isQuarkOrBaidu(candidate)
+        && detailDirectPlayCandidateKey(candidate) === ready.candidateKey);
     }
 
     function handleDetailPrimaryAction() {
@@ -28347,6 +28369,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       state.pan.retryRemaining = 0;
       state.pan.finalFailure = false;
       state.pan.directTransportExhausted = false;
+      state.pan.directReady = null;
       state.pan.renderKeys = "";
       state.pan.tabKeys = "";
       if (!preserveFocus) {
@@ -29567,10 +29590,22 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         const after = panDirectPlayCandidateSummary(item);
         recordPanDirectPlayDiag("CANDIDATE_AFTER", item, getPanSearchLifecycleFor(item), action.startedAt, Object.assign(after, { selectedCandidate: panDirectPlayCandidateLabel(pick) }), action);
         if (!pick) {
+          state.pan.directReady = null;
           recordPanDirectPlayDiag("OPEN_PAN", item, getPanSearchLifecycleFor(item), action.startedAt, null, action);
           if (suppressDirectPlayPanFallback(action, "暂无可播放资源，可使用聚搜或盘搜")) return;
           openPanForDirectPlay(item, "播放资源不可用，打开盘搜", { actionId: action.token });
           return;
+        }
+        const readyLifecycle = getPanSearchLifecycleFor(item);
+        const readyCandidateKey = detailDirectPlayCandidateKey(pick);
+        if (readyLifecycle.sameSession && readyLifecycle.origin === "direct" && readyCandidateKey) {
+          state.pan.directReady = {
+            itemKey: panSearchItemKey(item),
+            sessionId: Number(readyLifecycle.sessionId || 0),
+            candidateKey: readyCandidateKey
+          };
+        } else {
+          state.pan.directReady = null;
         }
         if (action.prepareOnly && !action.playRequested) {
           // 自动准备只把同一 lifecycle 留在 Ready 状态，绝不自动交给原生播放器。
