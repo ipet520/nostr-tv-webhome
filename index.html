@@ -16878,6 +16878,7 @@ utils.encode = function encode(arr, enc) {
          detailTopAnchor: null,
          historyCompat: null,
          historyItem: null,
+         nativeHistoryDelete: null,
          recentWatching: null,
          homeLatest: null,
          searchIme: null,
@@ -20877,6 +20878,39 @@ utils.encode = function encode(arr, enc) {
       return {};
     }
 
+    function recordNativeHistoryDeleteDiag(payload, status, data) {
+      if (!isTvDiagnosticEnabled()) return null;
+      const body = data && typeof data === "object" ? data : {};
+      const items = Array.isArray(body.items) ? body.items : [];
+      const item = items[0] && typeof items[0] === "object" ? items[0] : {};
+      const diag = {
+        NATIVE_DELETE_REQUEST: {
+          historyKey: String(payload && payload.historyKey || ""),
+          siteKey: String(payload && payload.siteKey || ""),
+          vodId: String(payload && payload.vodId || ""),
+          cid: payload && payload.cid != null ? payload.cid : ""
+        },
+        NATIVE_DELETE_HTTP_STATUS: Number(status || 0),
+        NATIVE_DELETE_BATCH_TOTAL: Number(body.total || 0),
+        NATIVE_DELETE_BATCH_APPLIED: Number(body.applied || 0),
+        NATIVE_DELETE_BATCH_CREATED: Number(body.created || 0),
+        NATIVE_DELETE_BATCH_UPDATED: Number(body.updated || 0),
+        NATIVE_DELETE_BATCH_DELETED: Number(body.deleted || 0),
+        NATIVE_DELETE_BATCH_SKIPPED: Number(body.skipped || 0),
+        NATIVE_DELETE_BATCH_FAILED: Number(body.failed || 0),
+        NATIVE_DELETE_ITEM_ACTION: String(item.action || ""),
+        NATIVE_DELETE_ITEM_MESSAGE: String(item.message || ""),
+        NATIVE_DELETE_ITEM_HISTORY_KEY: String(item.historyKey || ""),
+        NATIVE_DELETE_ITEM_SITE_KEY: String(item.siteKey || ""),
+        NATIVE_DELETE_ITEM_VOD_ID: String(item.vodId || ""),
+        NATIVE_DELETE_RESPONSE: body
+      };
+      state.tvDiag.nativeHistoryDelete = diag;
+      try { console.debug("[Nostr TV][NATIVE_DELETE_DIAG]", JSON.stringify(diag)); } catch (e) {}
+      updateTvDiagnostic();
+      return diag;
+    }
+
     async function deleteNativeHistoryViaLocalApi(history) {
       const api = sdk();
       const request = api && typeof api.req === "function"
@@ -20920,6 +20954,7 @@ utils.encode = function encode(arr, enc) {
           body: JSON.stringify(payload)
         });
       } catch (e) {
+        recordNativeHistoryDeleteDiag(payload, 0, { message: String(e && e.message || e || "") });
         return { ok: false, status: 0, reason: "REQUEST_FAILED", endpoint, payload, message: String(e && e.message || e || "") };
       }
       const data = nativeHistoryDeleteBody(response);
@@ -20927,6 +20962,7 @@ utils.encode = function encode(arr, enc) {
       const apiCode = Number(data && data.code);
       const effectiveStatus = status || (apiCode >= 100 ? apiCode : 0);
       const result = { ok: false, status: effectiveStatus, endpoint, payload, data };
+      recordNativeHistoryDeleteDiag(payload, effectiveStatus, data);
       if (effectiveStatus === 404 || apiCode === 404) {
         result.reason = "ENDPOINT_NOT_FOUND";
         return result;
@@ -20946,17 +20982,20 @@ utils.encode = function encode(arr, enc) {
         result.message = String(data && (data.message || data.error) || "HTTP " + effectiveStatus);
         return result;
       }
-      const action = String(data && data.action || "").toLowerCase();
-      const affected = Number(data && data.affected || 0);
-      const confirmed = data && data.success === true
-        || action === "delete"
-        || action === "deleted"
-        || action === "removed"
-        || affected > 0
-        || (data && data.success == null && (apiCode === 0 || apiCode === 200) && !data.error);
+      const items = Array.isArray(data && data.items) ? data.items : [];
+      const deleted = Number(data && data.deleted || 0);
+      const skipped = Number(data && data.skipped || 0);
+      const failed = Number(data && data.failed || 0);
+      const hasFailedItem = items.some((item) => String(item && item.action || "").toLowerCase() === "failed");
+      const hasSkippedItem = items.some((item) => String(item && item.action || "").toLowerCase() === "skipped");
+      const hasDeletedItem = items.some((item) => String(item && item.action || "").toLowerCase() === "deleted" && Number(item && item.affected || 0) > 0);
+      const confirmed = !hasFailedItem && failed <= 0
+        && !hasSkippedItem && !(skipped > 0 && deleted <= 0)
+        && (deleted > 0 || hasDeletedItem);
       if (!confirmed) {
-        result.reason = "DELETE_NOT_CONFIRMED";
-        result.message = String(data && (data.message || data.error) || "原生历史删除未确认");
+        result.reason = hasFailedItem || failed > 0 ? "DELETE_FAILED" : hasSkippedItem || skipped > 0 ? "DELETE_SKIPPED" : "DELETE_NOT_CONFIRMED";
+        const firstItem = items[0] && typeof items[0] === "object" ? items[0] : {};
+        result.message = String(firstItem.message || data && (data.message || data.error) || "原生历史删除未确认");
         return result;
       }
       result.ok = true;
@@ -33925,6 +33964,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const topAnchorDiag = state.tvDiag.detailTopAnchor;
       const historyCompatDiag = state.tvDiag.historyCompat;
       const historyItemDiag = state.tvDiag.historyItem;
+      const nativeDeleteDiag = state.tvDiag.nativeHistoryDelete;
       const searchImeDiag = state.tvDiag.searchIme;
       const homeV14Diag = state.tvDiag.homeV14;
       const backDiag = state.tvDiag.back;
@@ -34048,6 +34088,14 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           historyItemDiag.visible ? "visible" : "hidden",
           historyItemDiag.restorable ? "restorable" : "non-restorable",
           historyItemDiag.hiddenReason || ""
+        ].filter(Boolean).join(" ") : "none"),
+        "native delete: " + (nativeDeleteDiag ? [
+          "status=" + Number(nativeDeleteDiag.NATIVE_DELETE_HTTP_STATUS || 0),
+          "deleted=" + Number(nativeDeleteDiag.NATIVE_DELETE_BATCH_DELETED || 0),
+          "skipped=" + Number(nativeDeleteDiag.NATIVE_DELETE_BATCH_SKIPPED || 0),
+          "failed=" + Number(nativeDeleteDiag.NATIVE_DELETE_BATCH_FAILED || 0),
+          nativeDeleteDiag.NATIVE_DELETE_ITEM_ACTION || "",
+          nativeDeleteDiag.NATIVE_DELETE_ITEM_MESSAGE || ""
         ].filter(Boolean).join(" ") : "none"),
         "home v14: " + (homeV14Diag ? [
           "sections=" + Number(homeV14Diag.sectionCount || 0),
