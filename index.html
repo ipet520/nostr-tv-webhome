@@ -950,6 +950,23 @@
       display: none;
     }
 
+    .card-episode-status {
+      margin-top: 3px;
+      width: 100%;
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      text-align: center;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, .32);
+    }
+
+    .card-episode-status[hidden] {
+      display: none !important;
+    }
+
     .card.recent-card {
       background: rgba(var(--panel-rgb), .26);
     }
@@ -16724,6 +16741,7 @@ utils.encode = function encode(arr, enc) {
       catalog: {},
       catalogPage: {},
       recent: { items: [], loading: false, loadingPromise: null, loaded: false, error: "", refreshedAt: 0, diag: null, nativeItems: [], nativeLoaded: false, nativeLoading: false, nativeRefreshedAt: 0, nativeKeyFlow: {} },
+      tvDetail: { cache: {}, cardTasks: {}, cardQueue: [], cardActive: 0, observer: null, scrollBound: false, scanTimer: 0, generation: 0 },
       homeLatest: { items: [], loading: false, loaded: false, error: "", loadedAt: 0, requestSeq: 0, diag: null, promise: null },
       gridRender: {},
       gridColumnCache: {},
@@ -17233,6 +17251,9 @@ utils.encode = function encode(arr, enc) {
     const HOME_WEEKLY_TOTAL_LIMIT = 28;
     const HOME_WEEKLY_DETAIL_CONCURRENCY = 5;
     const HOME_WEEKLY_TIMEZONE = "Asia/Shanghai";
+    const TV_DETAIL_CACHE_TTL_MS = 45 * 60 * 1000;
+    const TV_CARD_DETAIL_CONCURRENCY = 3;
+    const TV_CARD_DETAIL_ROOT_MARGIN = "560px 0px";
 
     function latestDateOnly(value) {
       const match = String(value == null ? "" : value).trim().match(/^(\d{4}-\d{2}-\d{2})/);
@@ -17561,13 +17582,7 @@ utils.encode = function encode(arr, enc) {
       });
       const tvCandidates = Array.from(tvCandidatesById.values()).sort((a, b) => Number(b.popularity || 0) - Number(a.popularity || 0)).slice(0, HOME_WEEKLY_TV_CANDIDATE_LIMIT);
       counts.tvDiscoverCandidateCount = tvCandidates.length;
-      const tvDetails = await weeklyMapLimit(tvCandidates, HOME_WEEKLY_DETAIL_CONCURRENCY, (candidate) => requestJson(tmdbUrl({
-        id: "weekly-tv-detail",
-        title: "本周更新",
-        endpoint: `tv/${encodeURIComponent(String(candidate.id))}`,
-        mediaType: "tv",
-        params: { language: "zh-CN" }
-      }), 18));
+      const tvDetails = await weeklyMapLimit(tvCandidates, HOME_WEEKLY_DETAIL_CONCURRENCY, (candidate) => requestTvDetailShared(candidate));
       const tvItems = [];
       tvDetails.forEach((result, index) => {
         if (!result || !result.ok || !result.value) {
@@ -17724,6 +17739,17 @@ utils.encode = function encode(arr, enc) {
     }
 
     function resetTmdbRuntimeAfterConfigChange() {
+      const tvDetail = state.tvDetail;
+      if (tvDetail) {
+        tvDetail.generation = Number(tvDetail.generation || 0) + 1;
+        tvDetail.cache = {};
+        tvDetail.cardTasks = {};
+        tvDetail.cardQueue = [];
+        if (tvDetail.observer) tvDetail.observer.disconnect();
+        tvDetail.observer = null;
+        if (tvDetail.scanTimer) clearTimeout(tvDetail.scanTimer);
+        tvDetail.scanTimer = 0;
+      }
       state.catalog = {};
       state.catalogPage = {};
       state.fallback = [];
@@ -19592,6 +19618,63 @@ utils.encode = function encode(arr, enc) {
       url.searchParams.set("append_to_response", item.mediaType === "tv" ? "credits,images,season/1" : "credits,images");
       url.searchParams.set("include_image_language", "zh,null,en");
       return url.toString();
+    }
+
+    function tvDetailCacheId(itemOrId) {
+      const raw = itemOrId && typeof itemOrId === "object"
+        ? itemOrId.tmdbId != null ? itemOrId.tmdbId : itemOrId.id
+        : itemOrId;
+      const value = String(raw == null ? "" : raw).trim();
+      return /^\d+$/.test(value) && Number(value) > 0 ? value : "";
+    }
+
+    function tvDetailCacheKey(itemOrId) {
+      const id = tvDetailCacheId(itemOrId);
+      return id ? `tv:${id}` : "";
+    }
+
+    function tvDetailCacheValue(itemOrId) {
+      const runtime = state.tvDetail;
+      const key = tvDetailCacheKey(itemOrId);
+      const entry = runtime && key ? runtime.cache[key] : null;
+      if (!entry || !entry.detail || !entry.fetchedAt) return null;
+      if (Date.now() - Number(entry.fetchedAt) >= TV_DETAIL_CACHE_TTL_MS) return null;
+      return entry.detail;
+    }
+
+    function storeTvDetailCache(itemOrId, detail, generation) {
+      const runtime = state.tvDetail;
+      const key = tvDetailCacheKey(itemOrId);
+      if (!runtime || !key || !detail || typeof detail !== "object") return detail || null;
+      if (generation != null && Number(generation) !== Number(runtime.generation || 0)) return detail;
+      const entry = runtime.cache[key] || (runtime.cache[key] = { detail: null, fetchedAt: 0, promise: null });
+      entry.detail = detail;
+      entry.fetchedAt = Date.now();
+      entry.promise = null;
+      return detail;
+    }
+
+    function requestTvDetailShared(itemOrId) {
+      const runtime = state.tvDetail;
+      const id = tvDetailCacheId(itemOrId);
+      const key = id ? `tv:${id}` : "";
+      if (!runtime || !key) return Promise.resolve(null);
+      const cached = tvDetailCacheValue(itemOrId);
+      if (cached) return Promise.resolve(cached);
+      const entry = runtime.cache[key] || (runtime.cache[key] = { detail: null, fetchedAt: 0, promise: null });
+      if (entry.promise) return entry.promise;
+      const generation = runtime.generation || 0;
+      const requestItem = { mediaType: "tv", tmdbId: id };
+      const promise = requestJson(tmdbDetailUrl(requestItem), 18).then((body) => {
+        const detail = body && typeof body === "object" ? body : {};
+        storeTvDetailCache(requestItem, detail, generation);
+        return detail;
+      }).catch((error) => {
+        if (runtime.cache[key] === entry) entry.promise = null;
+        throw error;
+      });
+      entry.promise = promise;
+      return promise;
     }
 
     function tmdbRecommendationsUrl(item) {
@@ -22564,13 +22647,15 @@ utils.encode = function encode(arr, enc) {
       const mediaType = String(candidate && candidate.mediaType || "").toLowerCase();
       const tmdbId = String(candidate && candidate.tmdbId || "").trim();
       if (!candidate || !tmdbId || (mediaType !== "movie" && mediaType !== "tv")) return candidate;
-      const detail = await requestJson(tmdbUrl({
-        id: "home-hero-detail",
-        title: "首页 Hero",
-        endpoint: `${mediaType}/${encodeURIComponent(tmdbId)}`,
-        mediaType,
-        params: { language: "zh-CN", append_to_response: "images" }
-      }), 18);
+      const detail = mediaType === "tv"
+        ? await requestTvDetailShared({ mediaType: "tv", tmdbId })
+        : await requestJson(tmdbUrl({
+          id: "home-hero-detail",
+          title: "首页 Hero",
+          endpoint: `${mediaType}/${encodeURIComponent(tmdbId)}`,
+          mediaType,
+          params: { language: "zh-CN", append_to_response: "images" }
+        }), 18);
       const raw = Object.assign({}, candidate.heroRaw || {}, detail || {}, { id: detail && detail.id || tmdbId, media_type: mediaType });
       const normalized = normalizeTmdb(raw, { id: "home-hero-detail", title: "首页 Hero", mediaType }, 0);
       const enriched = Object.assign({}, candidate, normalized);
@@ -23341,7 +23426,110 @@ utils.encode = function encode(arr, enc) {
         image.removeAttribute("data-home-deferred");
         image.src = source;
       });
+      observeTvCardEnrichment(root);
       recordHomeV14Diag();
+    }
+
+    function isTvEpisodeStatusCard(card) {
+      const item = card && card.__mediaItem;
+      return !!(card && item && !Number(item.people || 0)
+        && String(item.mediaType || "").toLowerCase() === "tv"
+        && tvDetailCacheId(item)
+        && card.querySelector
+        && card.querySelector(".card-episode-status"));
+    }
+
+    function updateTvEpisodeStatusCards(itemOrId, detail) {
+      const id = tvDetailCacheId(itemOrId);
+      if (!id || !detail) return;
+      document.querySelectorAll(".card").forEach((card) => {
+        if (!isTvEpisodeStatusCard(card)) return;
+        const cardItem = card.__mediaItem;
+        if (tvDetailCacheId(cardItem) !== id) return;
+        const status = card.querySelector(".card-episode-status");
+        if (!status) return;
+        const weeklyText = card.__weeklyHome ? String(cardItem.weeklyUpdateText || "").trim() : "";
+        const label = weeklyText ? "" : tvEpisodeStatusLabel(detail);
+        status.textContent = label;
+        status.hidden = !label;
+      });
+    }
+
+    function tvCardNearViewport(card) {
+      if (!card || !card.getBoundingClientRect) return false;
+      const rect = card.getBoundingClientRect();
+      const height = window.innerHeight || document.documentElement.clientHeight || 0;
+      const margin = Math.max(420, height * .75);
+      return rect.bottom >= -margin && rect.top <= height + margin;
+    }
+
+    function flushTvCardDetailQueue() {
+      const runtime = state.tvDetail;
+      if (!runtime) return;
+      while (runtime.cardActive < TV_CARD_DETAIL_CONCURRENCY && runtime.cardQueue.length) {
+        const job = runtime.cardQueue.shift();
+        if (!job || runtime.cardTasks[job.key] !== job) continue;
+        runtime.cardActive += 1;
+        requestTvDetailShared(job.item).then((detail) => {
+          if (job.generation === runtime.generation && detail) updateTvEpisodeStatusCards(job.item, detail);
+        }).catch(() => {}).finally(() => {
+          runtime.cardActive = Math.max(0, runtime.cardActive - 1);
+          if (runtime.cardTasks[job.key] === job) delete runtime.cardTasks[job.key];
+          flushTvCardDetailQueue();
+        });
+      }
+    }
+
+    function queueTvCardEpisodeEnrichment(card) {
+      if (!isTvEpisodeStatusCard(card)) return;
+      const item = card.__mediaItem;
+      const cached = tvDetailCacheValue(item);
+      if (cached) {
+        updateTvEpisodeStatusCards(item, cached);
+        return;
+      }
+      const runtime = state.tvDetail;
+      const key = tvDetailCacheKey(item);
+      if (!runtime || !key || runtime.cardTasks[key]) return;
+      const job = { key, item, generation: runtime.generation };
+      runtime.cardTasks[key] = job;
+      runtime.cardQueue.push(job);
+      flushTvCardDetailQueue();
+    }
+
+    function ensureTvCardDetailObserver() {
+      const runtime = state.tvDetail;
+      if (!runtime) return null;
+      if (!("IntersectionObserver" in window)) {
+        if (!runtime.scrollBound) {
+          runtime.scrollBound = true;
+          window.addEventListener("scroll", () => {
+            if (runtime.scanTimer) return;
+            runtime.scanTimer = setTimeout(() => {
+              runtime.scanTimer = 0;
+              observeTvCardEnrichment(document);
+            }, 100);
+          }, { passive: true });
+        }
+        return null;
+      }
+      if (runtime.observer) return runtime.observer;
+      runtime.observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          runtime.observer.unobserve(entry.target);
+          queueTvCardEpisodeEnrichment(entry.target);
+        });
+      }, { root: null, rootMargin: TV_CARD_DETAIL_ROOT_MARGIN, threshold: 0.01 });
+      return runtime.observer;
+    }
+
+    function observeTvCardEnrichment(root) {
+      if (!root || !root.querySelectorAll) return;
+      const cards = Array.from(root.querySelectorAll(".card")).filter(isTvEpisodeStatusCard);
+      const observer = ensureTvCardDetailObserver();
+      if (observer) cards.forEach((card) => observer.observe(card));
+      else cards.filter(tvCardNearViewport).forEach(queueTvCardEpisodeEnrichment);
     }
 
     function updateHomeRails() {
@@ -24744,6 +24932,7 @@ utils.encode = function encode(arr, enc) {
         if (more) children.push(more);
       }
       rail.replaceChildren(...children);
+      observeTvCardEnrichment(rail);
       if (opts.weekly) children.forEach((card) => {
         if (!card || !card.classList || !card.classList.contains("weekly-card")) return;
         card.addEventListener("focus", () => updateWeeklySecondaryHero(card.__mediaItem || null));
@@ -24771,6 +24960,7 @@ utils.encode = function encode(arr, enc) {
       if (cached && cached.source === rawItems && cached.sourceLength === rawItems.length && Number(cached.rendered || 0) > 0 && grid.children.length >= Number(cached.rendered || 0)) {
         const need = Math.min(Number(cached.total || 0), initialGridBatchSize(grid));
         if (Number(cached.rendered || 0) >= need) {
+          observeTvCardEnrichment(grid);
           ensureRemoteInitialFocus();
           return;
         }
@@ -24805,6 +24995,7 @@ utils.encode = function encode(arr, enc) {
       let target = Math.min(items.length, Math.max(Number(info.rendered || 0), initialGridBatchSize(grid)));
       if (sameRendered && items.length > oldTotal && oldRendered >= oldTotal) target = Math.min(items.length, oldRendered + appendGridBatchSize(grid));
       appendGridItems(grid, items, target);
+      observeTvCardEnrichment(grid);
       ensureRemoteInitialFocus();
     }
 
@@ -24859,6 +25050,7 @@ utils.encode = function encode(arr, enc) {
       info.rendered = end;
       grid.dataset.renderKeys = items.slice(0, end).map(mediaRenderKey).join("\n");
       updateBlockSelectUi();
+      observeTvCardEnrichment(grid);
     }
 
     function appendGridBatch(grid) {
@@ -25110,6 +25302,12 @@ utils.encode = function encode(arr, enc) {
       const weekly = !!opts.weekly;
       const weeklyHome = home && opts.weeklyHome === true;
       const weeklyUpdate = weeklyHome ? String(item.weeklyUpdateText || "").trim() : "";
+      const tvEpisodeCard = !people && String(item && item.mediaType || "").toLowerCase() === "tv" && !!tvDetailCacheId(item);
+      const initialTvDetail = tvEpisodeCard ? tvDetailCacheValue(item) || item.tvDetail || item.weeklyDetail || item.heroDetail || null : null;
+      const initialTvEpisodeStatus = tvEpisodeCard && !(weeklyHome && weeklyUpdate) ? tvEpisodeStatusLabel(initialTvDetail) : "";
+      const tvEpisodeStatusHtml = tvEpisodeCard
+        ? `<div class="card-episode-status"${initialTvEpisodeStatus ? "" : " hidden"}>${escapeHtml(initialTvEpisodeStatus)}</div>`
+        : "";
       const searchResult = opts.searchResult === true;
       const searchQuery = String(opts.searchQuery || "").trim();
       button.className = "card focusable" + (people > 0 ? " has-people" : "") + (recent ? " recent-card" : "") + (recentWatching ? " recent-watching-card" : "") + (landscape ? " landscape-card" : "") + (home ? " home-card" : "") + (weeklyHome ? " home-weekly-card" : "") + (weeklyUpdate ? " has-weekly-update" : "") + (weekly ? " weekly-card" : "");
@@ -25127,6 +25325,7 @@ utils.encode = function encode(arr, enc) {
         button.dataset.searchQuery = searchQuery;
       }
       button.__mediaItem = item;
+      button.__weeklyHome = weeklyHome;
       if (recentWatching) recordRecentNativeKeyFlow("RECENT_NATIVE_KEY_AT_CARD", item);
       button.classList.toggle("blocked", isBlocked(item));
       const rating = item.voteAverage ? Number(item.voteAverage).toFixed(1) : "";
@@ -25143,6 +25342,7 @@ utils.encode = function encode(arr, enc) {
         ${item.badge ? `<span class="recent-badge">${escapeHtml(item.badge)}</span>` : ""}
         <div class="card-body">
           <div class="card-title">${escapeHtml(item.title)}</div>
+          ${tvEpisodeStatusHtml}
           <div class="card-meta">${escapeHtml(item.remark)}</div>
         </div>
         ${progress > 0 ? `<div class="recent-progress" aria-hidden="true"><span style="--recent-progress:${escapeAttr(progress + "%")}"></span></div>` : ""}
@@ -25157,6 +25357,7 @@ utils.encode = function encode(arr, enc) {
         <div class="card-body">
           <div class="card-title">${escapeHtml(item.title)}</div>
           ${weeklyUpdate ? `<div class="home-weekly-update">${escapeHtml(weeklyUpdate)}</div>` : ""}
+          ${tvEpisodeStatusHtml}
           <div class="card-meta">${escapeHtml(item.remark)}</div>
         </div>
       `;
@@ -27516,6 +27717,32 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return map[status] || status || "";
     }
 
+    function tvEpisodeStatusLabel(detail) {
+      if (!detail || typeof detail !== "object") return "";
+      const total = Number(detail.number_of_episodes || 0);
+      const seasons = Array.isArray(detail.seasons)
+        ? detail.seasons.filter((season) => Number(season && season.season_number || 0) > 0 && Number(season && season.episode_count || 0) > 0).length
+        : 0;
+      const seasonCount = Math.max(Number(detail.number_of_seasons || 0), seasons);
+      const last = detail.last_episode_to_air && typeof detail.last_episode_to_air === "object" ? detail.last_episode_to_air : null;
+      const next = detail.next_episode_to_air && typeof detail.next_episode_to_air === "object" ? detail.next_episode_to_air : null;
+      const lastSeason = Number(last && last.season_number || 0);
+      const lastEpisode = Number(last && last.episode_number || 0);
+      const nextSeason = Number(next && next.season_number || 0);
+      const nextEpisode = Number(next && next.episode_number || 0);
+      const status = String(detail.status || "").trim();
+      const ended = status === "Ended" || detailStatus(status) === "已完结";
+      if (ended && total > 0) return `全 ${total} 集`;
+      if (seasonCount > 1) {
+        if (lastSeason > 0 && lastEpisode > 0) return `更新至 S${String(lastSeason).padStart(2, "0")}E${String(lastEpisode).padStart(2, "0")}`;
+        if (nextSeason > 0 && nextEpisode > 0) return `下集 S${String(nextSeason).padStart(2, "0")}E${String(nextEpisode).padStart(2, "0")}`;
+        return "";
+      }
+      if (lastEpisode > 0) return `更新至 ${lastEpisode} 集`;
+      if (nextEpisode > 0) return `下集 ${nextEpisode} 集`;
+      return "";
+    }
+
     function detailDateLabel(item, date) {
       if (!date) return "";
       return `${item.mediaType === "tv" ? "首播" : "上映"} ${formatDateCn(date)}`;
@@ -27551,7 +27778,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
     async function loadDetail(item) {
       try {
-        const body = await requestJson(tmdbDetailUrl(item), 18);
+        const body = String(item && item.mediaType || "").toLowerCase() === "tv"
+          ? await requestTvDetailShared(item)
+          : await requestJson(tmdbDetailUrl(item), 18);
         if (!body || state.selected !== item) return;
         state.detail = body;
         renderDetailExtras(item, body);
