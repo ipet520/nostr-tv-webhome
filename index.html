@@ -6735,6 +6735,12 @@
       color: #55e58a !important;
     }
 
+    /* Continue is a stable business mode; its white triangle must not imply
+       that Direct preparation is already Ready. */
+    #detailContinueBtn[data-mode="CONTINUE"] > .icon {
+      color: currentColor !important;
+    }
+
     html.tv-mode .secondary-page button:focus:not(.card):not(.episode-card):not(.person-card),
     html.tv-preview .secondary-page button:focus:not(.card):not(.episode-card):not(.person-card) {
       background: rgba(255, 255, 255, .18);
@@ -16847,6 +16853,9 @@ utils.encode = function encode(arr, enc) {
       detailPreload: null,
       detailEpisodeTarget: null,
       historyResume: null,
+      detailMode: "FIRST_PLAY",
+      detailModeItemKey: "",
+      detailHistory: null,
       homeReturn: null,
       focusReturnEl: null,
       remoteInitialFocused: false,
@@ -20080,10 +20089,29 @@ utils.encode = function encode(arr, enc) {
       });
     }
 
+    function detailContinueHistoryIsValid(history) {
+      return !!(history && (history.continueContext === true || historyCanContinuePlayback(history)));
+    }
+
     function findDetailContinueHistory(item) {
       const contextMatch = findContinueWatchingContext(item);
-      if (contextMatch) return contextMatch;
+      if (detailContinueHistoryIsValid(contextMatch)) return contextMatch;
       return (state.recent.items || []).find((history) => detailHistoryMatches(item, history)) || null;
+    }
+
+    function syncDetailMode(item, historyOverride) {
+      const candidate = historyOverride === undefined ? findDetailContinueHistory(item) : historyOverride;
+      const history = detailContinueHistoryIsValid(candidate) ? candidate : null;
+      state.detailMode = history ? "CONTINUE" : "FIRST_PLAY";
+      state.detailModeItemKey = item ? panSearchItemKey(item) : "";
+      state.detailHistory = history;
+      const pending = typeof _directPlayPending !== "undefined" ? _directPlayPending : null;
+      if (pending && pending.item === item) {
+        pending.history = history;
+        pending.episodeTarget = history ? detailContinuePlaybackTargetFor(item, history) : null;
+        if (pending.episodeTarget) setDetailPlaybackTarget(item, pending.episodeTarget);
+      }
+      return state.detailMode;
     }
 
     function detailPreloadKeyFor(item) {
@@ -20231,7 +20259,11 @@ utils.encode = function encode(arr, enc) {
       const item = state.selected;
       if (!item) return;
       const button = $("detailContinueBtn");
-      const history = button && button.__historyItem || findDetailContinueHistory(item);
+      if (state.detailModeItemKey !== panSearchItemKey(item)) syncDetailMode(item);
+      const mode = state.detailMode === "CONTINUE" ? "CONTINUE" : "FIRST_PLAY";
+      const history = mode === "CONTINUE" ? state.detailHistory : null;
+      const directOptions = { detailPrimary: true, suppressAutoPan: true };
+      if (history) directOptions.history = history;
       const readyCandidate = detailDirectPlayCandidateFor(item);
       if (readyCandidate) {
         playDetailDirectReadyCandidate(item, readyCandidate, history, button).catch(() => {});
@@ -20241,23 +20273,19 @@ utils.encode = function encode(arr, enc) {
       // 让原 action 接收一次用户播放意图；不得因为历史按钮形态绕开它。
       const pending = typeof _directPlayPending !== "undefined" ? _directPlayPending : null;
       if (pending && pending.item === item && pending.prepareOnly) {
-        playBestQuark(item, { detailPrimary: true, suppressAutoPan: true });
+        playBestQuark(item, directOptions);
         return;
       }
       // Direct preparation 的失败终态也必须由同一个 playBestQuark action
       // 处理：NO_RESOURCE 只提示，CONNECTION_FAILED 才允许人工 fresh retry。
       const directFailureType = detailDirectFailureTypeFor(item);
       if (directFailureType) {
-        playBestQuark(item, { detailPrimary: true, suppressAutoPan: true });
-        return;
-      }
-      if (history) {
-        openDetailContinueHistory();
+        playBestQuark(item, directOptions);
         return;
       }
       // 播放/准备统一由同一个 playBestQuark action 处理；若当前是
       // prepareOnly action，由 playBestQuark 内部记录 playRequested 并继续等待。
-      playBestQuark(item, { detailPrimary: true, suppressAutoPan: true });
+      playBestQuark(item, directOptions);
     }
 
     function updateDetailContinueButton() {
@@ -20265,16 +20293,21 @@ utils.encode = function encode(arr, enc) {
       const continueText = $("detailContinueText");
       const searchText = $("detailSearchText");
       if (!button) return;
-      const match = findDetailContinueHistory(state.selected);
+      if (state.selected && state.detailModeItemKey !== panSearchItemKey(state.selected)) syncDetailMode(state.selected);
+      const mode = state.detailMode === "CONTINUE" ? "CONTINUE" : "FIRST_PLAY";
+      const match = mode === "CONTINUE" ? state.detailHistory : null;
       const actions = button.closest(".actions");
       button.__historyItem = match || null;
       button.style.display = "";
       button.setAttribute("aria-hidden", "false");
       if (continueText) continueText.textContent = match ? "续播" : "播放";
       if (actions) actions.classList.toggle("has-continue", !!match);
-      const ready = !!match || detailDirectPlayReadyFor(state.selected);
+      const directReady = detailDirectPlayReadyFor(state.selected);
+      const ready = mode === "FIRST_PLAY" && directReady;
       button.classList.toggle("is-ready", ready);
       button.dataset.ready = ready ? "true" : "false";
+      button.dataset.mode = mode;
+      button.dataset.directReady = directReady ? "true" : "false";
       if (searchText) searchText.textContent = "聚搜";
     }
 
@@ -20310,7 +20343,10 @@ utils.encode = function encode(arr, enc) {
         state.recent.loading = false;
         if (state.activeList === "recent") renderActiveGrid();
         if (state.activeList === "all") renderHome();
-        if ($("detailSheet") && $("detailSheet").classList.contains("active")) updateDetailContinueButton();
+        if ($("detailSheet") && $("detailSheet").classList.contains("active")) {
+          syncDetailMode(state.selected);
+          updateDetailContinueButton();
+        }
       }
     }
 
@@ -25315,51 +25351,25 @@ utils.encode = function encode(arr, enc) {
 
     async function openDetailContinueHistory() {
       const button = $("detailContinueBtn");
-      const history = button && button.__historyItem || findDetailContinueHistory(state.selected);
-      const readyCandidate = detailDirectPlayCandidateFor(state.selected);
+      const item = state.selected;
+      const history = state.detailMode === "CONTINUE" ? state.detailHistory : null;
+      const readyCandidate = detailDirectPlayCandidateFor(item);
       if (readyCandidate && history) {
-        await playDetailDirectReadyCandidate(state.selected, readyCandidate, history, button);
-        return;
+        await playDetailDirectReadyCandidate(item, readyCandidate, history, button);
+        return true;
       }
-      if (!state.selected || !history || !historyCanContinuePlayback(history)) {
+      if (!item || !history || !detailContinueHistoryIsValid(history)) {
         toast("没有可继续观看的记录");
         updateDetailContinueButton();
-        return;
+        return false;
       }
-      if (history.continueContext) {
-        rememberDetailReturn(button);
-        if (!openContinueWatchingContext(history, { returnTarget: button, autoResume: true })) toast("暂时无法恢复播放");
-        return;
-      }
-      if (!historyCanUseVodReplay(history)) {
-        rememberDetailReturn(button);
-        openPanHistoryItem(history, { returnTarget: button });
-        return;
-      }
-      try {
-        rememberDetailReturn(button);
-        const historyContext = historyPlaybackContext(history);
-        const nativeIdentity = {
-          siteKey: history.siteKey,
-          vodId: history.vodId,
-          episodeUrl: history.vodId,
-          episodeName: historyContext.episodeTitle || historyContext.panTitle || historyContext.title || state.selected.title,
-          flag: historyContext.flag || history.flag || ""
-        };
-        rememberWatchIntent(state.selected, "view", historyContext, nativeIdentity);
-        startWatchTracking(state.selected, historyContext, nativeIdentity);
-        // 用 localStorage 持久化标记，WebView 被挂起后 JS 内存会丢失
-        // visibilitychange/pageshow/fmresume 恢复时读到此标记，保持详情页打开不重置
-        localStorage.setItem("fm_pan_playing", "1");
-        await sdk().vod(history.siteKey, history.vodId, history.title || state.selected.title, history.pic || state.selected.pic);
-        await saveHistoryPlaybackContext(state.selected, historyPlaybackContext(history));
-      } catch (e) {
-        localStorage.removeItem("fm_pan_playing");
-        stopWatchTracking(false);
-        toast("继续观看失败：" + (e.message || "unknown"));
-      }
+      await playBestQuark(item, {
+        detailPrimary: true,
+        suppressAutoPan: true,
+        history
+      });
+      return true;
     }
-
     function mediaDomKey(item) {
       if (!item) return "";
       return item.id || (item.tmdbId && item.mediaType ? `tmdb:${item.mediaType}:${item.tmdbId}` : item.title || "");
@@ -27062,6 +27072,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const opts = options || {};
       const detailWasActive = $("detailSheet") && $("detailSheet").classList.contains("active");
       const sameSelected = state.selected === item;
+      const explicitDetailHistory = opts.historyResume && state.historyResume && state.historyResume.history
+        ? state.historyResume.history
+        : undefined;
       if (state.selected && state.selected !== item) {
         clearDirectPlayStatus(0, "selected_change");
         cancelPendingDirectPlay("selected_change");
@@ -27075,14 +27088,17 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (!opts.restore && !detailWasActive) rememberHomeReturn(item, opts.returnTarget);
       state.selected = item;
       state.detail = null;
+      syncDetailMode(item, explicitDetailHistory);
       if (!opts.keepPan) resetPanSearch();
       // 详情生命周期建立后立即启动唯一的 Direct 准备任务；详情请求与
       // Direct 资源搜索并行。该任务只准备结果，不执行播放或打开盘搜页。
-      playBestQuark(item, {
+      const prepareOptions = {
         detailPrimary: true,
         suppressAutoPan: true,
         prepareOnly: true
-      }).catch(() => {});
+      };
+      if (state.detailHistory) prepareOptions.history = state.detailHistory;
+      playBestQuark(item, prepareOptions).catch(() => {});
       ensureSheetViewport($("detailSheet"));
       syncDetailLayout();
       document.body.classList.add("detail-active");
@@ -27519,10 +27535,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (item.mediaType === "tv") {
         renderSeasons(item, detail);
       }
-      if (state.historyResume && state.historyResume.mediaKey === mediaDomKey(item)
-        && state.historyResume.autoResume !== false) {
-        resumePanHistoryPlayback(item, state.historyResume).catch(() => {});
-      }
+      // 详情入口统一由 Direct prepare 提供资源；History 只在用户明确
+      // 点击主按钮时提供季/集和进度上下文，不在详情渲染阶段自动续播。
       loadRecommendations(item);
       normalizeRails();
       updateDetailContinueButton();
@@ -29506,10 +29520,17 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     async function playBestQuark(item, options) {
       if (!item) return;
       const opts = options || {};
+      const continueHistory = opts.history && typeof opts.history === "object" ? opts.history : null;
+      const continueTarget = continueHistory ? detailContinuePlaybackTargetFor(item, continueHistory) : null;
+      if (continueTarget) setDetailPlaybackTarget(item, continueTarget);
       if (_directPlayPending) {
         if (_directPlayPending.item === item) {
           // 详情进入时的 prepareOnly 与用户点击必须共享同一个 action。
           // 这里只改变当前 action 的意图，不创建新的搜索/session。
+          if (continueHistory) {
+            _directPlayPending.history = continueHistory;
+            _directPlayPending.episodeTarget = continueTarget;
+          }
           if (_directPlayPending.prepareOnly && !_directPlayPending.playRequested && !opts.prepareOnly) {
             _directPlayPending.playRequested = true;
             isRepeatClickWithinWindow(`qb:${item.tmdbId || item.title}`);
@@ -29538,6 +29559,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         detailPrimary: !!opts.detailPrimary,
         suppressAutoPan: !!opts.suppressAutoPan,
         prepareOnly,
+        history: continueHistory,
+        episodeTarget: continueTarget,
         playRequested: !prepareOnly,
         forceFreshDirect: !!opts.forceFreshDirect,
         startedAt: Date.now(),
@@ -29715,7 +29738,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         if (isRepeat) toast(`已换源 · ${panDiskName(pick.diskType)}`);
         // 播放开始前消费一次性请求，避免后续状态刷新重复触发播放。
         action.playRequested = false;
-        await playPanResult(pick, { prechecked: true, handoffAction: action });
+        await playPanResult(pick, {
+          prechecked: true,
+          handoffAction: action,
+          episodeTarget: action.episodeTarget || currentPlaybackTargetForItem(item),
+          historyResume: !!action.history
+        });
       })();
       try {
         return await action.promise;
@@ -31016,6 +31044,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         document.body.classList.remove("detail-active");
         document.body.classList.remove("episode-active");
         state.detailReturn = null;
+        state.detailMode = "FIRST_PLAY";
+        state.detailModeItemKey = "";
+        state.detailHistory = null;
         clearInlineEpisodePreview({ restoreDetail: false });
         if (heroBgEl) {
           heroBgEl.classList.remove("active", "closing");
