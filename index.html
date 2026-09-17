@@ -980,6 +980,21 @@
       display: none !important;
     }
 
+    .card-air-status.weekly-air-status {
+      right: 6px;
+      bottom: 6px;
+      left: 6px;
+      width: auto;
+      max-width: none;
+      padding: 2px 6px;
+      border-radius: 6px;
+      transform: none;
+      white-space: normal;
+      overflow: visible;
+      text-overflow: clip;
+      line-height: 1.2;
+    }
+
     .card.recent-card {
       background: rgba(var(--panel-rgb), .26);
     }
@@ -25301,19 +25316,21 @@ utils.encode = function encode(arr, enc) {
       const landscape = !!opts.landscape;
       const home = !!opts.home;
       const weekly = !!opts.weekly;
-      const weeklyUpdate = ((home && opts.weeklyHome === true) || weekly)
+      const weeklyHome = home && opts.weeklyHome === true;
+      const weeklyUpdate = (weeklyHome || weekly)
         ? String(item.weeklyUpdateText || "").trim()
         : "";
       const tvEpisodeCard = !people && String(item && item.mediaType || "").toLowerCase() === "tv" && !!tvDetailCacheId(item);
       const initialTvDetail = tvEpisodeCard ? tvDetailCacheValue(item) || item.tvDetail || item.weeklyDetail || item.heroDetail || null : null;
       const initialTvEpisodeStatus = tvEpisodeCard ? tvEpisodeStatusLabel(initialTvDetail) : "";
       const airStatusText = weeklyUpdate || initialTvEpisodeStatus;
+      const airStatusClass = weeklyUpdate ? "card-air-status weekly-air-status" : "card-air-status";
       const airStatusHtml = (weeklyUpdate || tvEpisodeCard)
-        ? `<div class="card-air-status"${airStatusText ? "" : " hidden"}>${escapeHtml(airStatusText)}</div>`
+        ? `<div class="${airStatusClass}"${airStatusText ? "" : " hidden"}>${escapeHtml(airStatusText)}</div>`
         : "";
       const searchResult = opts.searchResult === true;
       const searchQuery = String(opts.searchQuery || "").trim();
-      button.className = "card focusable" + (people > 0 ? " has-people" : "") + (recent ? " recent-card" : "") + (recentWatching ? " recent-watching-card" : "") + (landscape ? " landscape-card" : "") + (home ? " home-card" : "") + (weekly ? " weekly-card" : "");
+      button.className = "card focusable" + (people > 0 ? " has-people" : "") + (recent ? " recent-card" : "") + (recentWatching ? " recent-watching-card" : "") + (landscape ? " landscape-card" : "") + (home ? " home-card" : "") + (weeklyHome ? " home-weekly-card" : "") + (weeklyUpdate ? " has-weekly-update" : "") + (weekly ? " weekly-card" : "");
       button.type = "button";
       button.dataset.cardIndex = String(index || 0);
       if (key) button.dataset.mediaKey = key;
@@ -25328,6 +25345,7 @@ utils.encode = function encode(arr, enc) {
         button.dataset.searchQuery = searchQuery;
       }
       button.__mediaItem = item;
+      button.__weeklyHome = weeklyHome;
       if (recentWatching) recordRecentNativeKeyFlow("RECENT_NATIVE_KEY_AT_CARD", item);
       button.classList.toggle("blocked", isBlocked(item));
       const rating = item.voteAverage ? Number(item.voteAverage).toFixed(1) : "";
