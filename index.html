@@ -21111,14 +21111,11 @@ utils.encode = function encode(arr, enc) {
       return consumeRecentWatchingPress(card);
     }
 
-    function nativeHistoryDeleteCandidates(item, mediaKey) {
-      const nativeItems = state.recent && Array.isArray(state.recent.items) ? state.recent.items : [];
-      if (!nativeItems.length) return [];
-      const rawKey = String(item && (item.nativeHistoryKey || item.historyKey || item.key) || "").trim();
-      if (rawKey) {
-        const exact = nativeItems.filter((nativeItem) => String(nativeItem && (nativeItem.nativeHistoryKey || nativeItem.historyKey || nativeItem.key) || "").trim() === rawKey);
-        if (exact.length) return exact;
-      }
+    function nativeHistoryDeleteCandidates(item, mediaKey, sourceItems) {
+      const nativeItems = Array.isArray(sourceItems)
+        ? sourceItems
+        : state.recent && Array.isArray(state.recent.items) ? state.recent.items : [];
+      if (!nativeItems.length || !mediaKey) return [];
       return nativeItems.filter((nativeItem) => recentWatchingMediaKey(nativeItem) === mediaKey);
     }
 
@@ -21395,32 +21392,103 @@ utils.encode = function encode(arr, enc) {
       return "最近观看删除失败" + (item.message ? "：" + item.message : "");
     }
 
-    async function verifyNativeHistoryDeletion(historyKeys) {
-      const keys = Array.from(new Set((Array.isArray(historyKeys) ? historyKeys : [historyKeys])
-        .map((key) => String(key || "").trim()).filter(Boolean)));
-      if (!keys.length) return { ok: true, attempts: 0 };
-      const maxAttempts = 3;
+    async function readFreshNativeHistoryItemsForDeletion() {
+      const list = await sdk().history();
+      const rawItems = (Array.isArray(list) ? list : [])
+        .map((history, index) => ({ history, index }))
+        .filter((entry) => entry.history && typeof entry.history === "object");
+      return rawItems.map((entry) => normalizeHistoryItem(entry.history, entry.index));
+    }
+
+    function nativeHistoryDeleteIdentityKey(item) {
+      const raw = item && item.nativeHistoryRaw && typeof item.nativeHistoryRaw === "object"
+        ? item.nativeHistoryRaw
+        : item || {};
+      const parts = historyKeyParts(raw);
+      const historyKey = String(raw.key || raw.historyKey || item && (item.nativeHistoryKey || item.historyKey) || parts.key || "").trim();
+      if (historyKey) return "key:" + historyKey;
+      const siteKey = String(raw.siteKey || item && (item.nativeSiteKey || item.siteKey) || parts.siteKey || "").trim();
+      const vodId = String(raw.vodId || item && (item.nativeVodId || item.vodId) || parts.vodId || "").trim();
+      const cid = String(raw.cid != null ? raw.cid : item && item.nativeCid != null ? item.nativeCid : parts.cid || "").trim();
+      return "identity:" + siteKey + "\u001f" + vodId + "\u001f" + cid;
+    }
+
+    function uniqueNativeHistoryDeleteCandidates(items) {
+      const seen = new Set();
+      return (Array.isArray(items) ? items : []).filter((item) => {
+        const identity = nativeHistoryDeleteIdentityKey(item);
+        if (!identity || seen.has(identity)) return false;
+        seen.add(identity);
+        return true;
+      });
+    }
+
+    async function deleteNativeHistoryMediaGroupVerified(item, mediaKey) {
+      const maxRounds = 3;
       const retryDelay = 220;
-      let refreshError = "";
-      for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        // Invalidate the in-memory Recent result before every read so this is
-        // a fresh native-history verification, not a cache check.
-        state.recent.loaded = false;
-        state.recent.refreshedAt = 0;
+      let memberCountBefore = 0;
+      let lastMessage = "";
+      for (let round = 0; round < maxRounds; round++) {
+        let snapshot;
         try {
-          await loadRecentList({ refresh: true, silent: true });
+          snapshot = await readFreshNativeHistoryItemsForDeletion();
         } catch (e) {
-          refreshError = String(e && e.message || e || "");
+          return {
+            ok: false,
+            reason: "HISTORY_READ_FAILED",
+            message: String(e && e.message || e || "最近观看刷新失败"),
+            rounds: round + 1,
+            memberCountBefore
+          };
         }
-        if (!state.recent.error) {
-          const remaining = (state.recent.items || []).some((nativeItem) => keys.includes(recentNativeHistoryKey(nativeItem)));
-          if (!remaining) return { ok: true, attempts: attempt + 1 };
-        } else {
-          refreshError = String(state.recent.error || refreshError || "最近观看刷新失败");
+        const candidates = uniqueNativeHistoryDeleteCandidates(nativeHistoryDeleteCandidates(item, mediaKey, snapshot));
+        if (round === 0) memberCountBefore = candidates.length;
+        if (!candidates.length) {
+          return { ok: true, rounds: round + 1, memberCountBefore, remaining: 0 };
         }
-        if (attempt < maxAttempts - 1) await new Promise((resolve) => setTimeout(resolve, retryDelay));
+        for (const nativeItem of candidates) {
+          const result = await deleteNativeHistoryViaLocalApi(nativeItem);
+          if (!result.ok) {
+            return {
+              ok: false,
+              reason: result.reason || "DELETE_FAILED",
+              message: result.message || "",
+              rounds: round + 1,
+              memberCountBefore,
+              remaining: candidates.length
+            };
+          }
+          lastMessage = String(result.message || lastMessage || "");
+        }
+        await new Promise((resolve) => setTimeout(resolve, retryDelay));
+        let verification;
+        try {
+          verification = await readFreshNativeHistoryItemsForDeletion();
+        } catch (e) {
+          return {
+            ok: false,
+            reason: "HISTORY_READ_FAILED",
+            message: String(e && e.message || e || "最近观看刷新失败"),
+            rounds: round + 1,
+            memberCountBefore
+          };
+        }
+        const remaining = uniqueNativeHistoryDeleteCandidates(nativeHistoryDeleteCandidates(item, mediaKey, verification));
+        if (!remaining.length) {
+          return { ok: true, rounds: round + 1, memberCountBefore, remaining: 0 };
+        }
+        if (round === maxRounds - 1) {
+          return {
+            ok: false,
+            reason: "DELETE_NOT_CONFIRMED",
+            message: lastMessage || "原生历史删除未确认",
+            rounds: maxRounds,
+            memberCountBefore,
+            remaining: remaining.length
+          };
+        }
       }
-      return { ok: false, attempts: maxAttempts, message: refreshError };
+      return { ok: false, reason: "DELETE_NOT_CONFIRMED", message: "原生历史删除未确认", memberCountBefore };
     }
 
     async function deleteRecentWatchingMedia(item, card) {
@@ -21449,24 +21517,9 @@ utils.encode = function encode(arr, enc) {
       const nativeHistoryKey = String(item && item.nativeHistoryKey || "").trim();
       const hasNativeHistory = !!nativeHistoryKey;
       if (hasNativeHistory) {
-        const nativeCandidates = nativeHistoryDeleteCandidates(item, key);
-        if (!nativeCandidates.length) {
-          toast("最近观看删除失败");
-          return false;
-        }
-        for (const nativeItem of nativeCandidates) {
-          const result = await deleteNativeHistoryViaLocalApi(nativeItem);
-          if (!result.ok) {
-            toast(nativeHistoryDeleteFailureText(result));
-            return false;
-          }
-        }
-        const nativeVerification = await verifyNativeHistoryDeletion(nativeCandidates.map((nativeItem) => recentNativeHistoryKey(nativeItem)));
+        const nativeVerification = await deleteNativeHistoryMediaGroupVerified(item, key);
         if (!nativeVerification.ok) {
-          toast(nativeHistoryDeleteFailureText({
-            reason: "DELETE_NOT_CONFIRMED",
-            message: nativeVerification.message || "原生历史删除未确认"
-          }));
+          toast(nativeHistoryDeleteFailureText(nativeVerification));
           return false;
         }
       } else {
@@ -21480,6 +21533,22 @@ utils.encode = function encode(arr, enc) {
       if (continueIndexReady && indexEntries.length !== previousIndex.length) await persistContinueIndexEntries(indexEntries);
       if (historyContextReady && state.historyContexts) state.historyContexts.entries = entries;
       if (continueIndexReady && state.continueIndex) state.continueIndex.entries = indexEntries;
+      if (hasNativeHistory) {
+        try {
+          await loadRecentList({ refresh: true, silent: true });
+        } catch (e) {
+          toast("最近观看刷新失败");
+          return false;
+        }
+        const nativeResidual = (state.recent.items || []).some((nativeItem) => recentWatchingMediaKey(nativeItem) === key);
+        if (nativeResidual) {
+          toast(nativeHistoryDeleteFailureText({
+            reason: "DELETE_NOT_CONFIRMED",
+            message: "原生历史删除未确认"
+          }));
+          return false;
+        }
+      }
       if (isHomeRouteActive()) renderHomeRecent();
       if (state.activeList === "recent") renderRecentList();
       if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === "recent") {
@@ -31686,6 +31755,85 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return context && typeof context.request === "function" ? context : null;
     }
 
+    function nativeHistoryProgressPosition(history) {
+      const value = historyNestedValue(history, [
+        "positionMs",
+        "position_ms",
+        "position",
+        "playbackPosition",
+        "playback_position"
+      ]);
+      const position = Number(value || 0);
+      return Number.isFinite(position) && position > 0 ? position : 0;
+    }
+
+    async function verifyNativeHistoryProgressVisible(payload, expectedPositionMs) {
+      const expected = Math.max(0, Number(expectedPositionMs || payload && payload.positionMs || 0));
+      const tolerance = Math.max(3000, Math.min(8000, Math.round(expected * 0.01)));
+      const maxAttempts = 3;
+      const retryDelay = 220;
+      let lastPosition = 0;
+      let lastError = "";
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        try {
+          const list = await sdk().history();
+          const histories = Array.isArray(list) ? list : [];
+          const match = histories.find((history) => {
+            const parts = historyKeyParts(history);
+            return String(parts.siteKey || "").trim() === String(payload && payload.siteKey || "").trim()
+              && String(parts.vodId || "").trim() === String(payload && payload.vodId || "").trim();
+          });
+          lastPosition = match ? nativeHistoryProgressPosition(match) : 0;
+          if (match && lastPosition + tolerance >= expected) {
+            try {
+              console.debug("RECENT_PROGRESS_READBACK_OK =", {
+                attempt: attempt + 1,
+                identity: String(payload && payload.siteKey || "") + "\u001f" + String(payload && payload.vodId || ""),
+                expectedPositionMs: expected,
+                actualPositionMs: lastPosition,
+                toleranceMs: tolerance
+              });
+            } catch (e) {}
+            return {
+              ok: true,
+              attempts: attempt + 1,
+              expectedPositionMs: expected,
+              actualPositionMs: lastPosition,
+              toleranceMs: tolerance
+            };
+          }
+        } catch (e) {
+          lastError = String(e && e.message || e || "最近观看回读失败");
+        }
+        try {
+          console.debug("RECENT_PROGRESS_READBACK_ATTEMPT =", {
+            attempt: attempt + 1,
+            expectedPositionMs: expected,
+            actualPositionMs: lastPosition,
+            error: lastError
+          });
+        } catch (e) {}
+        if (attempt < maxAttempts - 1) await new Promise((resolve) => setTimeout(resolve, retryDelay));
+      }
+      try {
+        console.debug("RECENT_PROGRESS_READBACK_TIMEOUT =", {
+          attempts: maxAttempts,
+          expectedPositionMs: expected,
+          actualPositionMs: lastPosition,
+          toleranceMs: tolerance,
+          error: lastError
+        });
+      } catch (e) {}
+      return {
+        ok: false,
+        attempts: maxAttempts,
+        expectedPositionMs: expected,
+        actualPositionMs: lastPosition,
+        toleranceMs: tolerance,
+        error: lastError
+      };
+    }
+
     async function syncNativeHistoryProgress(watch, status, options) {
       const opts = options || {};
       if (!watch || state.watch !== watch) return false;
@@ -31703,7 +31851,15 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       });
       if (write.inFlight) return write.promise || false;
       const minAdvanceMs = Math.max(15000, Math.round(payload.durationMs * 0.01));
-      if (write.key === identityKey && (write.completed || (!payload.completed && payload.positionMs <= write.positionMs + minAdvanceMs))) return false;
+      if (write.key === identityKey && (write.completed || (!payload.completed && payload.positionMs <= write.positionMs + minAdvanceMs))) {
+        if (opts.verifyNativeHistory && write.positionMs > 0) {
+          const readback = await verifyNativeHistoryProgressVisible(payload, write.positionMs);
+          if (state.watch === watch && opts.refreshRecent !== false) await loadRecentList({ refresh: true, silent: true });
+          return readback.ok;
+        }
+        if (state.watch === watch && opts.refreshRecent !== false) await loadRecentList({ refresh: true, silent: true });
+        return false;
+      }
       write.inFlight = true;
       const task = (async () => {
         let requestContext = null;
@@ -31735,6 +31891,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           write.durationMs = payload.durationMs;
           write.completed = !!payload.completed;
           write.lastAt = Date.now();
+          if (opts.verifyNativeHistory) await verifyNativeHistoryProgressVisible(payload, payload.positionMs);
           if (state.watch === watch && opts.refreshRecent !== false) await loadRecentList({ refresh: true, silent: true });
           return true;
         } catch (e) {
@@ -31898,7 +32055,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (watch && watch.item && window.fm) {
         // Complete the current native progress write before reading Recent.
         // The write task is the same one used by the normal sampler.
-        await sampleWatchStatus({ refreshRecent: false });
+        await sampleWatchStatus({ refreshRecent: false, verifyNativeHistory: true });
       }
       await settleWatchFromHistory();
     }
