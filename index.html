@@ -20978,19 +20978,28 @@ utils.encode = function encode(arr, enc) {
       cancelRecentDeleteArm();
       await loadContinueIndex();
       await loadHistoryContextIndex();
-      if (state.historyContexts && state.historyContexts.diag && state.historyContexts.diag.error) {
-        toast("最近观看删除失败");
-        return false;
-      }
-      const previous = Array.isArray(state.historyContexts.entries) ? state.historyContexts.entries : [];
-      const entries = previous.filter((entry) => recentContextMediaKey(entry) !== key);
-      const previousIndex = state.continueIndex && Array.isArray(state.continueIndex.entries) ? state.continueIndex.entries : [];
-      const indexEntries = previousIndex.filter((entry) => String(entry && entry.mediaKey || recentContextMediaKey(entry)) !== key);
-      const nativeCandidates = entries.length === previous.length && indexEntries.length === previousIndex.length
-        ? nativeHistoryDeleteCandidates(item, key)
+      const historyContextReady = !(state.historyContexts && state.historyContexts.diag && state.historyContexts.diag.error);
+      const continueIndexReady = !(state.continueIndex && state.continueIndex.diag && state.continueIndex.diag.error);
+      const previous = historyContextReady && state.historyContexts && Array.isArray(state.historyContexts.entries)
+        ? state.historyContexts.entries
         : [];
-      if (entries.length === previous.length && indexEntries.length === previousIndex.length) {
-        if (!nativeCandidates.length) return false;
+      const entries = historyContextReady
+        ? previous.filter((entry) => recentContextMediaKey(entry) !== key)
+        : previous;
+      const previousIndex = continueIndexReady && state.continueIndex && Array.isArray(state.continueIndex.entries)
+        ? state.continueIndex.entries
+        : [];
+      const indexEntries = continueIndexReady
+        ? previousIndex.filter((entry) => String(entry && entry.mediaKey || recentContextMediaKey(entry)) !== key)
+        : previousIndex;
+      const nativeHistoryKey = String(item && item.nativeHistoryKey || "").trim();
+      const hasNativeHistory = !!nativeHistoryKey;
+      if (hasNativeHistory) {
+        const nativeCandidates = nativeHistoryDeleteCandidates(item, key);
+        if (!nativeCandidates.length) {
+          toast("最近观看删除失败");
+          return false;
+        }
         for (const nativeItem of nativeCandidates) {
           const result = await deleteNativeHistoryViaLocalApi(nativeItem);
           if (!result.ok) {
@@ -20998,15 +21007,29 @@ utils.encode = function encode(arr, enc) {
             return false;
           }
         }
+        const nativeRefreshBefore = Number(state.recent && state.recent.nativeRefreshedAt || 0);
         await loadNativeRecentHistory({ refresh: true });
+        if (!state.recent || Number(state.recent.nativeRefreshedAt || 0) <= nativeRefreshBefore) {
+          toast("最近观看删除失败");
+          return false;
+        }
+        const nativeStillExists = state.recent && Array.isArray(state.recent.nativeItems)
+          && state.recent.nativeItems.some((nativeItem) => recentNativeHistoryKey(nativeItem) === nativeHistoryKey);
+        if (nativeStillExists) {
+          toast(nativeHistoryDeleteFailureText({ reason: "DELETE_NOT_CONFIRMED", message: "原生历史删除未确认" }));
+          return false;
+        }
+      } else {
+        if (!historyContextReady || !continueIndexReady) {
+          toast("最近观看删除失败");
+          return false;
+        }
+        if (entries.length === previous.length && indexEntries.length === previousIndex.length) return false;
       }
-      if (entries.length !== previous.length) await persistHistoryContextEntries(entries);
-      if (indexEntries.length !== previousIndex.length) await persistContinueIndexEntries(indexEntries);
-      state.historyContexts.entries = entries;
-      if (state.continueIndex) state.continueIndex.entries = indexEntries;
-      if (state.recent && Array.isArray(state.recent.nativeItems)) {
-        state.recent.nativeItems = state.recent.nativeItems.filter((nativeItem) => recentWatchingMediaKey(nativeItem) !== key);
-      }
+      if (historyContextReady && entries.length !== previous.length) await persistHistoryContextEntries(entries);
+      if (continueIndexReady && indexEntries.length !== previousIndex.length) await persistContinueIndexEntries(indexEntries);
+      if (historyContextReady && state.historyContexts) state.historyContexts.entries = entries;
+      if (continueIndexReady && state.continueIndex) state.continueIndex.entries = indexEntries;
       state.recent.items = recentWatchingItems();
       state.recent.loaded = true;
       state.recent.refreshedAt = Date.now();
