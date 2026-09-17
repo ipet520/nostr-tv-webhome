@@ -20834,27 +20834,30 @@ utils.encode = function encode(arr, enc) {
       return consumeRecentWatchingPress(card);
     }
 
-    function nativeHistoryDeleteIdentity(history) {
+    function nativeHistoryDeleteIdentity(history, suppliedContext) {
       const raw = history && history.nativeRawHistory && typeof history.nativeRawHistory === "object"
         ? history.nativeRawHistory
         : history;
       const parts = historyKeyParts(raw);
       const normalizedParts = raw === history ? parts : historyKeyParts(history);
+      const context = suppliedContext && typeof suppliedContext === "object"
+        ? suppliedContext
+        : historyPlaybackContext(history) || {};
       const explicitCid = raw && raw.cid != null
         ? raw.cid
         : history && history.cid != null
           ? history.cid
           : historyNestedValue(raw, ["cid"]);
       const historyKey = String(raw && (raw.key || raw.historyKey) || history && (history.nativeHistoryKey || history.historyKey || history.key) || parts.key || normalizedParts.key || "").trim();
-      const siteKey = String(raw && (raw.siteKey || raw.site) || history && (history.siteKey || history.site) || parts.siteKey || normalizedParts.siteKey || historyNestedValue(raw, ["siteKey", "site"]) || "").trim();
-      const vodId = String(raw && (raw.vodId || raw.videoId) || history && (history.vodId || history.videoId) || parts.vodId || normalizedParts.vodId || historyNestedValue(raw, ["vodId", "videoId"]) || "").trim();
-      const cid = String(explicitCid != null && String(explicitCid).trim() ? explicitCid : parts.cid || normalizedParts.cid || "").trim();
+      const siteKey = String(history && (history.siteKey || history.site) || parts.siteKey || normalizedParts.siteKey || raw && (raw.siteKey || raw.site) || historyNestedValue(raw, ["siteKey", "site"]) || context.siteKey || "").trim();
+      const vodId = String(history && (history.vodId || history.videoId) || parts.vodId || normalizedParts.vodId || raw && (raw.vodId || raw.videoId) || historyNestedValue(raw, ["vodId", "videoId"]) || context.vodId || "").trim();
+      const cid = String(explicitCid != null && String(explicitCid).trim() ? explicitCid : parts.cid || normalizedParts.cid || context.cid || "").trim();
       return {
         historyKey,
         siteKey,
         vodId,
         cid,
-        valid: !!(historyKey && cid && siteKey && vodId)
+        valid: !!(historyKey || siteKey && vodId)
       };
     }
 
@@ -20893,8 +20896,8 @@ utils.encode = function encode(arr, enc) {
       return null;
     }
 
-    function nativeHistoryDeleteStillPresent(history) {
-      const target = nativeHistoryDeleteIdentity(history);
+    function nativeHistoryDeleteStillPresent(history, suppliedContext) {
+      const target = nativeHistoryDeleteIdentity(history, suppliedContext);
       if (!target.valid) return false;
       const rawHistory = state.recent && Array.isArray(state.recent.nativeRawHistory)
         ? state.recent.nativeRawHistory : null;
@@ -20902,14 +20905,26 @@ utils.encode = function encode(arr, enc) {
         return rawHistory.some((rawItem) => {
           const current = nativeHistoryDeleteIdentity(rawItem);
           if (!current.valid) return false;
-          return current.historyKey === target.historyKey && current.cid === target.cid;
+          if (target.historyKey && current.historyKey) {
+            return current.historyKey === target.historyKey
+              && (!target.cid || !current.cid || current.cid === target.cid);
+          }
+          return !!(target.siteKey && target.vodId && current.siteKey === target.siteKey
+            && current.vodId === target.vodId
+            && (!target.cid || !current.cid || current.cid === target.cid));
         });
       }
       const nativeItems = state.recent && Array.isArray(state.recent.nativeItems) ? state.recent.nativeItems : [];
       return nativeItems.some((nativeItem) => {
         const current = nativeHistoryDeleteIdentity(nativeItem);
         if (!current.valid) return false;
-        return current.historyKey === target.historyKey && current.cid === target.cid;
+        if (target.historyKey && current.historyKey) {
+          return current.historyKey === target.historyKey
+            && (!target.cid || !current.cid || current.cid === target.cid);
+        }
+        return !!(target.siteKey && target.vodId && current.siteKey === target.siteKey
+          && current.vodId === target.vodId
+          && (!target.cid || !current.cid || current.cid === target.cid));
       });
     }
 
@@ -21040,7 +21055,10 @@ utils.encode = function encode(arr, enc) {
       }
       const baseUrl = nativeHistoryDeleteBaseUrl(device);
       if (!baseUrl) return { ok: false, status: 0, reason: "LOCAL_API_ADDRESS_UNAVAILABLE" };
-      const identity = nativeHistoryDeleteIdentity(history);
+      const context = opts.context && typeof opts.context === "object"
+        ? opts.context
+        : historyPlaybackContext(history) || {};
+      const identity = nativeHistoryDeleteIdentity(history, context);
       const historyKey = identity.historyKey;
       const siteKey = identity.siteKey;
       const vodId = identity.vodId;
@@ -21051,15 +21069,15 @@ utils.encode = function encode(arr, enc) {
         ? rawHistory.cid
         : historyNestedValue(rawHistory, ["cid"]);
       const payload = {};
-      if (opts.includeHistoryKey !== false && historyKey) payload.historyKey = historyKey;
+      if (historyKey) payload.historyKey = historyKey;
       if (siteKey) payload.siteKey = siteKey;
       if (vodId) payload.vodId = vodId;
-      if (opts.includeCid !== false && cid) payload.cid = rawCid != null && String(rawCid).trim() ? rawCid : cid;
+      if (cid) payload.cid = rawCid != null && String(rawCid).trim() ? rawCid : cid;
       payload.action = "delete";
       payload.deleted = true;
       payload.deletedAt = Date.now();
       if (!identity.valid) {
-        return { ok: false, status: 0, reason: "NATIVE_HISTORY_FIELDS_UNAVAILABLE", payload, allowIdentityFallback: false };
+        return { ok: false, status: 0, reason: "NATIVE_HISTORY_FIELDS_UNAVAILABLE", payload };
       }
       const endpoint = baseUrl + "/api/playback/progress/delete";
       const finish = (result) => {
@@ -21099,7 +21117,7 @@ utils.encode = function encode(arr, enc) {
           body: JSON.stringify(payload)
         });
       } catch (e) {
-        return finish({ ok: false, status: 0, reason: "REQUEST_FAILED", endpoint, payload, message: String(e && e.message || e || ""), allowIdentityFallback: false });
+        return finish({ ok: false, status: 0, reason: "REQUEST_FAILED", endpoint, payload, message: String(e && e.message || e || "") });
       }
       const parsed = nativeHistoryDeleteResponseInfo(response);
       const data = parsed.body;
@@ -21109,60 +21127,26 @@ utils.encode = function encode(arr, enc) {
       const result = Object.assign({}, parsed, { ok: false, status: effectiveStatus, endpoint, payload, data });
       if (effectiveStatus === 404 || apiCode === 404) {
         result.reason = "ENDPOINT_NOT_FOUND";
-        result.allowIdentityFallback = false;
         return finish(result);
       }
       if (effectiveStatus === 403 || apiCode === 403) {
         result.reason = "FORBIDDEN";
         result.message = result.message || String(data && (data.message || data.error) || "本机 API 修改未开启");
-        result.allowIdentityFallback = false;
         return finish(result);
       }
       if (response && response.error) {
         result.reason = "REQUEST_ERROR";
         result.message = String(response.error);
-        result.allowIdentityFallback = false;
         return finish(result);
       }
       if (response && response.ok === false || effectiveStatus >= 400) {
         result.reason = "HTTP_ERROR";
         result.message = result.message || String(data && (data.message || data.error) || "HTTP " + effectiveStatus);
-        result.allowIdentityFallback = effectiveStatus > 0 && effectiveStatus < 500 && effectiveStatus !== 403 && effectiveStatus !== 404;
         return finish(result);
       }
       result.ok = result.deleted > 0 || result.resultDeletedCount > 0;
       result.reason = result.ok ? "DELETED" : "DELETE_NOT_APPLIED";
-      result.allowIdentityFallback = !result.ok;
       return finish(result);
-    }
-
-    async function deleteNativeHistoryWithFallback(history, context) {
-      const attempts = [
-        { attempt: 1, includeHistoryKey: true, includeCid: true },
-        { attempt: 2, includeHistoryKey: false, includeCid: false },
-        { attempt: 3, includeHistoryKey: true, includeCid: false }
-      ];
-      const results = [];
-      let last = null;
-      for (const options of attempts) {
-        const result = await deleteNativeHistoryViaLocalApi(history, Object.assign({}, context || {}, options));
-        results.push(result);
-        last = result;
-        if (result.ok || result.allowIdentityFallback === false) break;
-      }
-      const finalResult = Object.assign({}, last || {
-        ok: false,
-        status: 0,
-        reason: "NATIVE_HISTORY_FIELDS_UNAVAILABLE",
-        message: "原生历史删除所需字段不完整"
-      });
-      finalResult.ok = finalResult.ok === true;
-      if (!finalResult.message) {
-        const messageResult = results.slice().reverse().find((result) => result && result.message);
-        if (messageResult) finalResult.message = messageResult.message;
-      }
-      finalResult.attempts = results;
-      return finalResult;
     }
 
     function nativeHistoryDeleteFailureText(result) {
@@ -21199,7 +21183,10 @@ utils.encode = function encode(arr, enc) {
           return false;
         }
         const freshMatch = nativeHistoryFreshMatch(item, freshRawList, key);
-        const freshIdentity = freshMatch && !freshMatch.ambiguous ? nativeHistoryDeleteIdentity(freshMatch) : null;
+        const deleteContext = historyPlaybackContext(item) || {};
+        const freshIdentity = freshMatch && !freshMatch.ambiguous
+          ? nativeHistoryDeleteIdentity(freshMatch, deleteContext)
+          : null;
         recordNativeHistoryDeleteTarget({
           cardKey: targetCardKey,
           historyKey: freshIdentity && freshIdentity.historyKey,
@@ -21223,8 +21210,9 @@ utils.encode = function encode(arr, enc) {
             toast(nativeHistoryDeleteFailureText({ reason: "NATIVE_HISTORY_FIELDS_UNAVAILABLE" }));
             return false;
           }
-          const result = await deleteNativeHistoryWithFallback(freshMatch, {
+          const result = await deleteNativeHistoryViaLocalApi(freshMatch, {
             targetCardKey,
+            context: deleteContext,
             freshHistoryKey: freshIdentity.historyKey,
             freshCid: freshIdentity.cid,
             freshSiteKey: freshIdentity.siteKey,
@@ -21243,7 +21231,7 @@ utils.encode = function encode(arr, enc) {
             toast(nativeHistoryDeleteFailureText({ reason: "HISTORY_REFRESH_FAILED", message }));
             return false;
           }
-          if (nativeHistoryDeleteStillPresent(freshMatch)) {
+          if (nativeHistoryDeleteStillPresent(freshMatch, deleteContext)) {
             result.reason = "DELETE_REAPPEARED";
             result.message = result.message || "删除后刷新仍能读到该历史记录";
             toast(nativeHistoryDeleteFailureText(result));
