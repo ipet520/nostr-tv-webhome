@@ -20908,7 +20908,7 @@ utils.encode = function encode(arr, enc) {
         if (openContinueWatchingContext(source, { returnTarget: card, autoResume: false })) return true;
       }
       if (source.source === "history") {
-        openRecentItem(source);
+        openRecentItem(source, { returnTarget: card });
         return true;
       }
       const mediaType = normalizeHistoryMediaType(source.mediaType || source.media_type);
@@ -25152,7 +25152,7 @@ utils.encode = function encode(arr, enc) {
         if (button.dataset.searchResult === "1" && String(button.dataset.searchQuery || "").trim()) {
           recordSearchHistory(button.dataset.searchQuery);
         }
-        if (item.source === "history") openRecentItem(item);
+        if (item.source === "history") openRecentItem(item, { returnTarget: button });
         else openDetail(item, { returnTarget: button });
       });
       return button;
@@ -25308,7 +25308,9 @@ utils.encode = function encode(arr, enc) {
       return resumePanHistoryFromSearch(item, target, preloadTask);
     }
 
-    async function openRecentItem(item) {
+    async function openRecentItem(item, options) {
+      const opts = options || {};
+      const returnTarget = opts.returnTarget || document.activeElement;
       if (!item) {
         toast("最近观看缺少播放信息");
         return;
@@ -25317,7 +25319,7 @@ utils.encode = function encode(arr, enc) {
       const nativeSiteKey = String(item.siteKey || context.siteKey || "").trim();
       const nativeVodId = String(item.vodId || context.vodId || "").trim();
       if (item.continueContext) {
-        if (!openContinueWatchingContext(item, { returnTarget: document.activeElement, autoResume: false })) toast("暂时无法恢复播放");
+        if (!openContinueWatchingContext(item, { returnTarget, autoResume: false })) toast("暂时无法恢复播放");
         return;
       }
       // Native History owns the original site/vod identity.  When it is
@@ -25325,7 +25327,7 @@ utils.encode = function encode(arr, enc) {
       // WebHome's replay-kind classification; TMDB/Detail is compatibility
       // fallback only for records without a legal native identity.
       if (!nativeSiteKey || !nativeVodId) {
-        openPanHistoryItem(item, { returnTarget: document.activeElement });
+        openPanHistoryItem(item, { returnTarget });
         return;
       }
       try {
@@ -25336,6 +25338,8 @@ utils.encode = function encode(arr, enc) {
           episodeName: context.episodeTitle || context.panTitle || context.title || item.title,
           flag: context.flag || item.flag || ""
         };
+        rememberHomeReturn(item, returnTarget, { origin: "recent_native_player" });
+        saveUiSnapshotNow();
         rememberWatchIntent(item, "view", context, nativeIdentity);
         // 用 localStorage 持久化标记，WebView 被挂起后 JS 内存会丢失
         // visibilitychange/pageshow/fmresume 恢复时读到此标记，保持当前页面不重置
@@ -26924,7 +26928,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       }, {});
     }
 
-    function rememberHomeReturn(item, returnTarget) {
+    function rememberHomeReturn(item, returnTarget, options) {
+      const opts = options || {};
       const target = returnTarget && returnTarget.isConnected ? returnTarget : document.activeElement;
       const secondaryGrid = homeUiRoute() === "secondary" ? $("secondaryCatalogGrid") : null;
       state.homeReturn = {
@@ -26939,6 +26944,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         mediaKey: mediaDomKey(item),
         focus: target && (target.id === "homeHero" || target.id === "homeHeroAction") ? { type: "id", key: "homeHero" } : homeFocusSnapshot(target, item),
         heroIndex: target && (target.id === "homeHero" || target.id === "homeHeroAction") ? Math.max(0, Number(state.homeV14.heroIndex || 0)) : null,
+        origin: String(opts.origin || ""),
         searchHotRailScrollLeft: homeUiRoute() === "search" ? Math.max(0, Number(($('searchHotRail') || {}).scrollLeft || 0)) : 0,
         at: Date.now()
       };
@@ -28178,7 +28184,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         });
         return button;
       }));
-      if ((focusedSeason || savedTarget && savedTarget.seasonNumber) && !singleSeason) requestAnimationFrame(() => focusRemoteTarget(findByDataset($("seasonTabs"), "seasonNumber", String(initialSeason)) || $("seasonTabs").querySelector(".chip.active") || $("seasonTabs").querySelector(".chip")));
+      if (focusedSeason && !singleSeason) requestAnimationFrame(() => focusRemoteTarget(findByDataset($("seasonTabs"), "seasonNumber", String(initialSeason)) || $("seasonTabs").querySelector(".chip.active") || $("seasonTabs").querySelector(".chip")));
       const initial = detail["season/" + initialSeason] || null;
       if (initial && initial.episodes) renderEpisodes(initial.episodes, initialSeason);
       else loadSeason(item, initialSeason);
@@ -28202,7 +28208,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const activeEl = document.activeElement;
       const savedTarget = currentPlaybackTargetForItem(state.selected);
       const targetEpisode = savedTarget && Number(savedTarget.seasonNumber || 0) === renderedSeason ? String(savedTarget.episodeNumber || "") : "";
-      const restoreEpisode = activeEl && $("episodeRail").contains(activeEl) && activeEl.dataset.episodeNumber || targetEpisode;
+      const restoreEpisode = activeEl && $("episodeRail").contains(activeEl) && activeEl.dataset.episodeNumber || "";
       const keepEpisode = $("imageViewer") && $("imageViewer").classList.contains("active") && $("imageViewer").classList.contains("episode-mode")
         && Number(state.episodeViewer.seasonNumber || renderedSeason) === renderedSeason
         ? String(state.episodeViewer.episodeNumber || "")
@@ -28216,7 +28222,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         state.episodeViewer.episodeNumber = index >= 0 ? keepEpisode : "";
       } else {
         const lastEpisode = state.episodePreview && state.episodePreview.lastEpisodeNumber || "";
-        const preferredEpisode = restoreEpisode || lastEpisode;
+        const preferredEpisode = restoreEpisode || targetEpisode || lastEpisode;
         const index = preferredEpisode ? state.episodeViewer.episodes.findIndex((ep) => String(ep && ep.episode_number || "") === preferredEpisode) : -1;
         state.episodeViewer.index = index;
         state.episodeViewer.episodeNumber = index >= 0 ? preferredEpisode : "";
@@ -29501,6 +29507,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       }
       action.playRequested = false;
       return true;
+    }
+
+    function isRecentNativeHomeReturn() {
+      return !!(state.homeReturn && state.homeReturn.origin === "recent_native_player");
     }
 
     // 直接播放盘搜准备好的夸克/百度资源（"搜索播放"短按）：
@@ -35278,13 +35288,17 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             }
             return;
           }
+          if (isRecentNativeHomeReturn()) {
+            handleWebHomeResume({ force: true, restoreRecentNativeHome: true });
+            return;
+          }
           // 情况2：尝试从 snapshot 恢复（WebView 被系统回收后重建）
           try {
             const snapshot = await readUiSnapshot();
+            if (snapshot && snapshot.homeReturn) state.homeReturn = normalizeLegacySavedState(snapshot.homeReturn);
             if (snapshot && snapshot.selected && (snapshot.route === "detail" || snapshot.route === "image")) {
               if (snapshot.detailReturn) state.detailReturn = snapshot.detailReturn;
               state.detailEpisodeTarget = snapshot.detailEpisodeTarget && normalizePlaybackTarget(snapshot.selected, snapshot.detailEpisodeTarget) || null;
-              if (snapshot.homeReturn) state.homeReturn = normalizeLegacySavedState(snapshot.homeReturn);
               if (location.hash !== "#detail") history.replaceState({ sheet: "detail" }, "", "#detail");
               openDetail(snapshot.selected, { restore: true, skipHistory: true });
               if (snapshot.pan) restorePanSnapshot(snapshot.pan);
@@ -35296,6 +35310,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
               return;
             }
           } catch (e) {}
+          if (isRecentNativeHomeReturn()) {
+            handleWebHomeResume({ force: true, restoreRecentNativeHome: true });
+            return;
+          }
           // 兜底：走正常首页恢复
           handleWebHomeResume({ force: true });
         } finally {
@@ -35320,6 +35338,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       state.resume.lastAt = now;
       const nativeHomeReturnTarget = state.focusReturnEl;
       const nativeHomeReturn = nativeHomeReturnTarget === $("connectionToggle") || !!(nativeHomeReturnTarget && nativeHomeReturnTarget.closest && nativeHomeReturnTarget.closest("#homeSidebar"));
+      const restoreRecentNativeHome = opts.restoreRecentNativeHome === true && !($("detailSheet") && $("detailSheet").classList.contains("active")) && isRecentNativeHomeReturn();
       const isPanPlaybackReturn = !!(state.pan.playbackReturn && $("detailSheet") && $("detailSheet").classList.contains("active") && $("panSearchBlock") && $("panSearchBlock").classList.contains("active"));
       lockViewportWidth();
       fitConnectionPanel();
@@ -35331,6 +35350,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         normalizeRails();
       }
       if (!restorePanPlaybackReturn({ skipRender: isPanPlaybackReturn })) restoreDetailReturn();
+      if (restoreRecentNativeHome) restoreHomeReturn();
       updateBackTopButton();
       scheduleHistorySettlement();
       loadRecentList({ refresh: true, silent: true }).catch(() => {});
