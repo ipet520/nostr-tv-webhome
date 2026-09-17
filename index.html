@@ -20872,6 +20872,36 @@ utils.encode = function encode(arr, enc) {
       return "";
     }
 
+    async function nativeHistoryLocalRequestContext(path) {
+      const native = window.fm || null;
+      const api = native || sdk();
+      let request = null;
+      if (native && typeof native.req === "function") {
+        request = (url, options) => native.req.call(native, url, options);
+      } else if (native && native.net && typeof native.net.request === "function") {
+        request = (url, options) => native.net.request.call(native.net, url, options);
+      } else if (api && typeof api.req === "function") {
+        request = (url, options) => api.req.call(api, url, options);
+      } else if (api && api.net && typeof api.net.request === "function") {
+        request = (url, options) => api.net.request.call(api.net, url, options);
+      }
+      if (!request) return { error: "REQUEST_UNAVAILABLE" };
+      let device = null;
+      try {
+        if (native && typeof native.device === "function") device = await native.device.call(native);
+        else if (native && native.device && typeof native.device.info === "function") device = await native.device.info.call(native.device);
+        else if (native && native.device && typeof native.device.info === "object") device = native.device.info;
+        else if (api && typeof api.device === "function") device = await api.device.call(api);
+        else if (api && api.device && typeof api.device.info === "function") device = await api.device.info.call(api.device);
+        else if (api && api.device && typeof api.device.info === "object") device = api.device.info;
+      } catch (e) {
+        return { error: "DEVICE_INFO_FAILED", message: String(e && e.message || e || "") };
+      }
+      const baseUrl = nativeHistoryDeleteBaseUrl(device);
+      if (!baseUrl) return { error: "LOCAL_API_ADDRESS_UNAVAILABLE" };
+      return { request, endpoint: baseUrl + String(path || "") };
+    }
+
     function nativeHistoryDeleteBody(response) {
       const hasNestedBody = !!(response && (response.body != null || response.data != null));
       const body = response && response.body != null ? response.body : response && response.data;
@@ -20896,12 +20926,13 @@ utils.encode = function encode(arr, enc) {
       try { return JSON.stringify(value).slice(0, 500); } catch (e) { return String(value).slice(0, 500); }
     }
 
-    function recordNativeHistoryDeleteDiag(payload, status, data, rawResponse) {
+    function recordNativeHistoryDeleteDiag(payload, status, data, rawResponse, endpoint) {
       const body = data && typeof data === "object" ? data : {};
       const items = Array.isArray(body.items) ? body.items : [];
       const item = items[0] && typeof items[0] === "object" ? items[0] : {};
       const rawText = nativeHistoryDeleteDiagnosticText(rawResponse);
       const diag = {
+        NATIVE_DELETE_ENDPOINT: String(endpoint || ""),
         NATIVE_DELETE_REQUEST: {
           historyKey: String(payload && payload.historyKey || ""),
           siteKey: String(payload && payload.siteKey || ""),
@@ -20934,23 +20965,12 @@ utils.encode = function encode(arr, enc) {
     }
 
     async function deleteNativeHistoryViaLocalApi(history) {
-      const api = sdk();
-      const request = api && typeof api.req === "function"
-        ? (url, options) => api.req(url, options)
-        : api && api.net && typeof api.net.request === "function"
-          ? (url, options) => api.net.request(url, options)
-          : null;
-      if (!request) return { ok: false, status: 0, reason: "REQUEST_UNAVAILABLE" };
-      let device = null;
-      try {
-        if (api && typeof api.device === "function") device = await api.device();
-        else if (api && api.device && typeof api.device.info === "function") device = await api.device.info();
-        else if (api && api.device && typeof api.device.info === "object") device = api.device.info;
-      } catch (e) {
-        return { ok: false, status: 0, reason: "DEVICE_INFO_FAILED", message: String(e && e.message || e || "") };
+      const requestContext = await nativeHistoryLocalRequestContext("/api/playback/progress/delete");
+      if (!requestContext || typeof requestContext.request !== "function") {
+        return { ok: false, status: 0, reason: requestContext && requestContext.error || "REQUEST_UNAVAILABLE", message: requestContext && requestContext.message || "" };
       }
-      const baseUrl = nativeHistoryDeleteBaseUrl(device);
-      if (!baseUrl) return { ok: false, status: 0, reason: "LOCAL_API_ADDRESS_UNAVAILABLE" };
+      const request = requestContext.request;
+      const endpoint = requestContext.endpoint;
       const parts = historyKeyParts(history);
       const context = historyPlaybackContext(history) || {};
       const historyKey = String(history && (history.nativeHistoryKey || history.historyKey || history.key) || parts.key || "").trim();
@@ -20965,7 +20985,6 @@ utils.encode = function encode(arr, enc) {
       if (!payload.historyKey && (!payload.siteKey || !payload.vodId)) {
         return { ok: false, status: 0, reason: "NATIVE_HISTORY_KEY_UNAVAILABLE" };
       }
-      const endpoint = baseUrl + "/api/playback/progress/delete";
       let response;
       try {
         response = await request(endpoint, {
@@ -20977,7 +20996,7 @@ utils.encode = function encode(arr, enc) {
         });
       } catch (e) {
         const message = String(e && e.message || e || "");
-        recordNativeHistoryDeleteDiag(payload, 0, { message }, { message });
+        recordNativeHistoryDeleteDiag(payload, 0, { message }, { message }, endpoint);
         return { ok: false, status: 0, reason: "REQUEST_FAILED", endpoint, payload, message: String(e && e.message || e || "") };
       }
       const rawResponse = nativeHistoryDeleteRawResponse(response);
@@ -20986,7 +21005,7 @@ utils.encode = function encode(arr, enc) {
       const apiCode = Number(data && data.code);
       const effectiveStatus = status || (apiCode >= 100 ? apiCode : 0);
       const result = { ok: false, status: effectiveStatus, endpoint, payload, data };
-      recordNativeHistoryDeleteDiag(payload, effectiveStatus, data, rawResponse);
+      recordNativeHistoryDeleteDiag(payload, effectiveStatus, data, rawResponse, endpoint);
       if (effectiveStatus === 404 || apiCode === 404) {
         result.reason = "ENDPOINT_NOT_FOUND";
         return result;
@@ -31106,23 +31125,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     }
 
     async function nativeHistoryProgressRequestContext() {
-      const api = sdk();
-      const request = api && typeof api.req === "function"
-        ? (url, options) => api.req(url, options)
-        : api && api.net && typeof api.net.request === "function"
-          ? (url, options) => api.net.request(url, options)
-          : null;
-      if (!request) return null;
-      let device = null;
-      try {
-        if (api && typeof api.device === "function") device = await api.device();
-        else if (api && api.device && typeof api.device.info === "function") device = await api.device.info();
-        else if (api && api.device && typeof api.device.info === "object") device = api.device.info;
-      } catch (e) {
-        return null;
-      }
-      const baseUrl = nativeHistoryDeleteBaseUrl(device);
-      return baseUrl ? { request, endpoint: baseUrl + "/api/playback/progress" } : null;
+      const context = await nativeHistoryLocalRequestContext("/api/playback/progress");
+      return context && typeof context.request === "function" ? context : null;
     }
 
     async function syncNativeHistoryProgress(watch, status) {
@@ -34337,6 +34341,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           historyItemDiag.hiddenReason || ""
         ].filter(Boolean).join(" ") : "none"),
         "native delete: " + (nativeDeleteDiag ? [
+          nativeDeleteDiag.NATIVE_DELETE_ENDPOINT || "",
           "status=" + Number(nativeDeleteDiag.NATIVE_DELETE_HTTP_STATUS || 0),
           "deleted=" + Number(nativeDeleteDiag.NATIVE_DELETE_BATCH_DELETED || 0),
           "skipped=" + Number(nativeDeleteDiag.NATIVE_DELETE_BATCH_SKIPPED || 0),
