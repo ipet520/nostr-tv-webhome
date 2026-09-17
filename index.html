@@ -16879,6 +16879,7 @@ utils.encode = function encode(arr, enc) {
          historyCompat: null,
          historyItem: null,
          nativeHistoryDelete: null,
+         nativeHistoryDeleteProbe: null,
          nativeHistoryProgress: null,
          recentWatching: null,
          homeLatest: null,
@@ -20924,6 +20925,58 @@ utils.encode = function encode(arr, enc) {
       if (value == null) return "";
       if (typeof value === "string") return value.slice(0, 500);
       try { return JSON.stringify(value).slice(0, 500); } catch (e) { return String(value).slice(0, 500); }
+    }
+
+    function isNativeHistoryDeleteProbeRequested() {
+      const search = String(window.location && window.location.search || "");
+      try {
+        return new URLSearchParams(search).get("_native_delete_probe") === "1";
+      } catch (e) {
+        return /(?:^|[?&])_native_delete_probe=1(?:&|$)/.test(search);
+      }
+    }
+
+    async function probeNativeHistoryDeleteRoutes() {
+      const paths = [
+        "/api/playback/progress",
+        "/api/playback/progress/delete",
+        "/playback/progress/delete"
+      ];
+      const probes = [];
+      for (const path of paths) {
+        const requestContext = await nativeHistoryLocalRequestContext(path);
+        const probe = {
+          PROBE_URL: String(requestContext && requestContext.endpoint || ""),
+          PROBE_STATUS: 0,
+          PROBE_BODY: "",
+          PROBE_ERROR: "",
+          PROBE_HEADERS: {}
+        };
+        if (!requestContext || typeof requestContext.request !== "function") {
+          probe.PROBE_ERROR = String(requestContext && requestContext.message || requestContext && requestContext.error || "REQUEST_UNAVAILABLE");
+          probes.push(probe);
+          continue;
+        }
+        try {
+          const response = await requestContext.request(requestContext.endpoint, {
+            method: "OPTIONS",
+            responseType: "text",
+            timeout: 24,
+            headers: { Accept: "application/json" }
+          });
+          probe.PROBE_STATUS = Number(response && (response.status || response.code) || 0);
+          probe.PROBE_BODY = nativeHistoryDeleteDiagnosticText(nativeHistoryDeleteRawResponse(response)).slice(0, 300);
+          probe.PROBE_HEADERS = response && response.headers && typeof response.headers === "object" ? response.headers : {};
+        } catch (e) {
+          probe.PROBE_ERROR = String(e && e.message || e || "REQUEST_FAILED");
+        }
+        probes.push(probe);
+      }
+      const diag = { requestedAt: Date.now(), probes };
+      state.tvDiag.nativeHistoryDeleteProbe = diag;
+      try { console.debug("[Nostr TV][NATIVE_DELETE_ROUTE_PROBE]", diag); } catch (e) {}
+      if (isTvDiagnosticEnabled()) updateTvDiagnostic();
+      return probes;
     }
 
     function recordNativeHistoryDeleteDiag(payload, status, data, rawResponse, endpoint) {
@@ -34215,6 +34268,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const historyCompatDiag = state.tvDiag.historyCompat;
       const historyItemDiag = state.tvDiag.historyItem;
       const nativeDeleteDiag = state.tvDiag.nativeHistoryDelete;
+      const nativeDeleteProbeDiag = state.tvDiag.nativeHistoryDeleteProbe;
       const nativeProgressDiag = state.tvDiag.nativeHistoryProgress;
       const searchImeDiag = state.tvDiag.searchIme;
       const homeV14Diag = state.tvDiag.homeV14;
@@ -34349,6 +34403,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           nativeDeleteDiag.NATIVE_DELETE_ITEM_ACTION || "",
           nativeDeleteDiag.NATIVE_DELETE_ITEM_MESSAGE || ""
         ].filter(Boolean).join(" ") : "none"),
+        "native delete probe:\n" + (nativeDeleteProbeDiag ? nativeDeleteProbeDiag.probes.map((probe, index) => [
+          ["WRITE OPTIONS:", "DELETE API OPTIONS:", "DELETE ALIAS OPTIONS:"][index] || "OPTIONS:",
+          "url=" + (probe.PROBE_URL || ""),
+          "status=" + Number(probe.PROBE_STATUS || 0),
+          probe.PROBE_ERROR ? "error=" + String(probe.PROBE_ERROR).slice(0, 300) : "body=" + String(probe.PROBE_BODY || "").slice(0, 300)
+        ].join("\n")).join("\n") : "none"),
         "native progress: " + (nativeProgressDiag ? [
           "status=" + Number(nativeProgressDiag.status || 0),
           nativeProgressDiag.action || "",
@@ -35370,6 +35430,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       armFallbackTimers();
       hotLoadIndex().catch(() => {});
       await loadInfo();
+      if (isNativeHistoryDeleteProbeRequested()) probeNativeHistoryDeleteRoutes().catch((e) => {
+        try { console.debug("[Nostr TV][NATIVE_DELETE_ROUTE_PROBE_FAILED]", e); } catch (e2) {}
+      });
       await loadCatalog();
       runTvAdaptationSelfTests();
       const canRestoreUi = shouldRestoreUiSnapshot();
