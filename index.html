@@ -20861,16 +20861,37 @@ utils.encode = function encode(arr, enc) {
       return nativeItems.filter((nativeItem) => recentWatchingMediaKey(nativeItem) === mediaKey);
     }
 
-    function nativeHistoryDeleteBaseUrl(device) {
-      const source = device && device.info && typeof device.info === "object"
-        ? Object.assign({}, device.info, device)
-        : device || {};
-      const candidates = [source.ip, source.baseUrl, source.baseURL, source.url, source.httpUrl, source.http].map((value) => String(value || "").trim()).filter(Boolean);
-      for (const candidate of candidates) {
-        if (/^https?:\/\//i.test(candidate)) return candidate.replace(/\/+$/, "");
-        if (/^[^\s/]+(?::\d+)?$/.test(candidate)) return "http://" + candidate.replace(/\/+$/, "");
+    function nativeHistoryHttpOrigin(value) {
+      let candidate = String(value || "").trim();
+      if (!candidate) return "";
+      if (!/^https?:\/\//i.test(candidate)) {
+        if (!/^[^\s/]+(?::\d+)?$/.test(candidate)) return "";
+        candidate = "http://" + candidate;
       }
-      return "";
+      try {
+        if (typeof URL === "function") {
+          const parsed = new URL(candidate);
+          if (/^https?:$/i.test(parsed.protocol)) return parsed.origin;
+        }
+      } catch (e) {}
+      const match = candidate.match(/^(https?:\/\/[^/]+)/i);
+      return match ? match[1].replace(/\/+$/, "") : "";
+    }
+
+    function nativeHistoryDeleteBaseUrl(device) {
+      const envelope = device && typeof device === "object" ? device : {};
+      let body = envelope.body;
+      if (typeof body === "string") body = safeJson(body, null);
+      const source = body && typeof body === "object"
+        ? Object.assign({}, envelope, body)
+        : envelope.info && typeof envelope.info === "object"
+          ? Object.assign({}, envelope, envelope.info)
+          : device || {};
+      const candidates = [source.ip, source.baseUrl, source.baseURL, source.httpUrl, source.http]
+        .map((value) => nativeHistoryHttpOrigin(value))
+        .filter(Boolean);
+      if (candidates.length) return candidates[0];
+      return nativeHistoryHttpOrigin(envelope.url);
     }
 
     async function nativeHistoryLocalRequestContext(path) {
