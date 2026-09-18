@@ -32064,10 +32064,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         if (duration > 0) watch.durationMs = duration;
         if (position > watch.bestMs) watch.bestMs = position;
         const completion = watch.durationMs > 0 ? watch.bestMs / watch.durationMs : 0;
-        if (!opts.skipNativeHistorySync && playbackOriginForWatch(watch) !== "native-vod") {
-          await syncNativeHistoryProgress(watch, status, opts);
-          if (state.watch !== watch) return;
-        }
         if (watch.bestMs >= WATCH_HEAT_MS && hasHeatIntent(watch) && !watch.published) {
           if (await hasPublishedHeat(watch.item)) {
             watch.published = true;
@@ -32132,17 +32128,17 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
     async function settlePlayerReturnHistory() {
       const watch = state.watch && state.watch.item ? state.watch : await loadPendingWatch();
-      const nativeAuthoritative = playbackOriginForWatch(watch) === "native-vod";
-      try { console.debug("PLAYER_RETURN_HISTORY_MODE=" + (nativeAuthoritative ? "native-authoritative" : "html-fallback")); } catch (e) {}
+      const playbackOrigin = playbackOriginForWatch(watch);
+      const nativeAuthoritative = playbackOrigin === "native-vod" || playbackOrigin === "pan-push";
+      try {
+        console.debug("PLAYER_RETURN_HISTORY_MODE=" + (nativeAuthoritative ? "native-authoritative" : "unknown"));
+        console.debug("PLAYBACK_ORIGIN=" + playbackOrigin);
+      } catch (e) {}
       if (watch && watch.item && window.fm) {
-        if (nativeAuthoritative) {
-          // Native VOD owns its History row; keep fm.stat() for watch metrics
-          // without writing the sampled position back through WebHome.
-          await sampleWatchStatus({ skipNativeHistorySync: true, refreshRecent: false });
-        } else {
-          // PAN/PUSH keeps the existing HTML progress fallback and readback.
-          await sampleWatchStatus({ refreshRecent: false, verifyNativeHistory: true });
-        }
+        // Both native VOD and PAN/PUSH are owned by the Native Player.
+        // Keep the final fm.stat() sample for watch metrics, but never write
+        // the sampled position back through WebHome or perform read-back.
+        await sampleWatchStatus({ skipNativeHistorySync: true, refreshRecent: false });
       }
       await settleWatchFromHistory();
     }
