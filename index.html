@@ -3444,6 +3444,28 @@
       color: var(--text);
     }
 
+    .source-domains-config {
+      display: grid;
+      gap: 8px;
+    }
+
+    .source-domains-toggle {
+      text-align: left;
+      justify-content: flex-start;
+    }
+
+    .source-domains-body {
+      display: grid;
+      gap: 8px;
+      padding: 8px;
+      border: 1px solid rgba(255, 255, 255, .1);
+      background: rgba(255, 255, 255, .025);
+    }
+
+    .source-domains-body[hidden] {
+      display: none !important;
+    }
+
     .panel-editing {
       background: rgba(24, 36, 46, .88) !important;
       border-color: rgba(184, 226, 255, .9) !important;
@@ -7150,6 +7172,27 @@
                 <input class="field focusable" id="panPassInput" type="password" autocomplete="current-password" placeholder="未启用认证可留空" readonly>
               </label>
               <div class="pan-disk-grid" id="panDiskGrid"></div>
+              <div class="source-domains-config">
+                <button class="btn focusable source-domains-toggle" id="sourceDomainsToggle" type="button" aria-expanded="false" aria-controls="sourceDomainsBody">播放站源域名</button>
+                <div id="sourceDomainsBody" class="source-domains-body" hidden aria-hidden="true">
+                  <label for="sourceDomainsWanou">玩偶
+                    <textarea class="field focusable mono" id="sourceDomainsWanou" rows="2" readonly></textarea>
+                  </label>
+                  <label for="sourceDomainsMuou">木偶
+                    <textarea class="field focusable mono" id="sourceDomainsMuou" rows="2" readonly></textarea>
+                  </label>
+                  <label for="sourceDomainsDuoduo">多多
+                    <textarea class="field focusable mono" id="sourceDomainsDuoduo" rows="2" readonly></textarea>
+                  </label>
+                  <label for="sourceDomainsHuban">虎斑
+                    <textarea class="field focusable mono" id="sourceDomainsHuban" rows="2" readonly></textarea>
+                  </label>
+                  <label for="sourceDomainsShandian">闪电
+                    <textarea class="field focusable mono" id="sourceDomainsShandian" rows="2" readonly></textarea>
+                  </label>
+                  <button class="btn focusable" id="sourceDomainsResetBtn" type="button">恢复默认</button>
+                </div>
+              </div>
               <button class="btn focusable" id="savePanConfigBtn" type="button">保存配置</button>
             </div>
             <div class="relay-mirror-config">
@@ -16701,6 +16744,22 @@ utils.encode = function encode(arr, enc) {
     ];
     const PAN_CHECKABLE_DISK_TYPES = new Set(window.WEBHOME_CONFIG.pan.checkableDiskTypes || ["quark", "aliyun", "baidu", "uc", "tianyi", "xunlei", "123", "115", "mobile"]);
     const PAN_HEALTH_PRIORITY = { ok: 0, locked: 1, pending: 2, idle: 3, unsupported: 4, uncertain: 5, bad: 6 };
+    const CURATED_SOURCE_ORDER = ["wanou", "muou", "duoduo", "huban", "shandian"];
+    const CURATED_SEARCH_URL_TEMPLATES = [
+      "/index.php/vod/search/page/{p}/wd/{kw}.html",
+      "/vodsearch/-------------.html?wd={kw}&page={p}",
+      "/index.php/vod/search/wd/{kw}.html",
+      "/vodsearch/{kw}----------{p}---.html",
+      "/index.php/vod/search.html?wd={kw}",
+      "/search.html?wd={kw}"
+    ];
+    const CURATED_SOURCE_DEFINITIONS = [
+      { id: "wanou", name: "玩偶", domains: ["https://www.wogg.net", "http://woggpan.xxooo.cf", "https://wogg.xxooo.cf"], searchUrl: "/vodsearch/-------------.html?wd={kw}&page={p}" },
+      { id: "muou", name: "木偶", domains: ["https://www.muou.site", "https://www.muou.asia", "https://666.666291.xyz"] },
+      { id: "duoduo", name: "多多", domains: ["https://tv.yydsys.cc", "https://yydsys.de5.net", "https://tv.214521.xyz", "https://tv.yydsys.top"] },
+      { id: "huban", name: "虎斑", domains: ["http://xhban.xyz", "http://38.76.197.172:16969"] },
+      { id: "shandian", name: "闪电", domains: ["http://shandian.blog", "http://sd.sduc.site"] }
+    ];
     // 画质关键词优先级（score 越高排越前）：
     // DV/HDR10+ > HDR10/HLG > 4K/2160P > REMUX > BluRay > 高码率 > 杜比全景声 > 120fps > 60fps > 1080P > 720P > SDR
     const PAN_QUALITY_KEYWORDS = [
@@ -16877,6 +16936,7 @@ utils.encode = function encode(arr, enc) {
       tvFullscreen: false,
       detailReturn: null,
       detailPreload: null,
+      detailPlayback: { seq: 0, token: "", itemKey: "", active: false, promise: null, candidate: null, sourceId: "", provider: "", playRequested: false, history: null, historyVerified: false, directAction: null, error: "" },
       detailEpisodeTarget: null,
       historyResume: null,
       detailMode: "FIRST_PLAY",
@@ -17770,6 +17830,103 @@ utils.encode = function encode(arr, enc) {
       loadCatalog();
     }
 
+    function curatedSourceDefaults() {
+      const result = {};
+      CURATED_SOURCE_DEFINITIONS.forEach((source) => {
+        result[source.id] = (source.domains || []).slice();
+      });
+      return result;
+    }
+
+    function normalizeSourceDomain(value) {
+      const text = String(value || "").trim().replace(/\/+$/, "");
+      if (!/^https?:\/\//i.test(text)) return "";
+      try {
+        const parsed = new URL(text);
+        return parsed.origin + parsed.pathname.replace(/\/+$/, "");
+      } catch (e) {
+        return "";
+      }
+    }
+
+    function sanitizeSourceDomains(value) {
+      const defaults = curatedSourceDefaults();
+      const raw = value && typeof value === "object" ? value : {};
+      const result = {};
+      CURATED_SOURCE_ORDER.forEach((id) => {
+        const list = Array.isArray(raw[id])
+          ? raw[id].map(normalizeSourceDomain).filter(Boolean)
+          : [];
+        result[id] = Array.from(new Set(list.length ? list : (defaults[id] || [])));
+      });
+      return result;
+    }
+
+    function sanitizeSourceTemplateCache(value) {
+      const raw = value && typeof value === "object" ? value : {};
+      const result = {};
+      CURATED_SOURCE_ORDER.forEach((id) => {
+        const template = String(raw[id] || "").trim();
+        if (template && (template.includes("{kw}") || template.includes("{keyword}"))) result[id] = template;
+      });
+      return result;
+    }
+
+    function sourceDomainControls() {
+      return {
+        wanou: $("sourceDomainsWanou"),
+        muou: $("sourceDomainsMuou"),
+        duoduo: $("sourceDomainsDuoduo"),
+        huban: $("sourceDomainsHuban"),
+        shandian: $("sourceDomainsShandian")
+      };
+    }
+
+    function setSourceDomainsOpen(open) {
+      const toggle = $("sourceDomainsToggle");
+      const body = $("sourceDomainsBody");
+      if (!toggle || !body) return false;
+      const expanded = !!open;
+      body.hidden = !expanded;
+      body.setAttribute("aria-hidden", expanded ? "false" : "true");
+      toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+      return expanded;
+    }
+
+    function toggleSourceDomains() {
+      const body = $("sourceDomainsBody");
+      return setSourceDomainsOpen(!body || body.hidden);
+    }
+
+    function renderSourceDomainControls(sourceDomains) {
+      const values = sanitizeSourceDomains(sourceDomains);
+      const controls = sourceDomainControls();
+      CURATED_SOURCE_ORDER.forEach((id) => {
+        const control = controls[id];
+        if (!control) return;
+        control.value = (values[id] || []).join("\n");
+        disablePanelTextEditing(control);
+      });
+    }
+
+    function restoreSourceDomainDefaults() {
+      renderSourceDomainControls(curatedSourceDefaults());
+      markPanConfigDirty();
+      toast("已恢复站源默认域名，请点击保存配置");
+    }
+
+    function readSourceDomainControls() {
+      const controls = sourceDomainControls();
+      const result = {};
+      CURATED_SOURCE_ORDER.forEach((id) => {
+        result[id] = String(controls[id] && controls[id].value || "")
+          .split(/[\r\n,，]+/)
+          .map(normalizeSourceDomain)
+          .filter(Boolean);
+      });
+      return sanitizeSourceDomains(result);
+    }
+
     function defaultPanConfig() {
       return {
         apiBase: window.WEBHOME_CONFIG.pan.apiBase || "https://so.252035.xyz",
@@ -17778,7 +17935,9 @@ utils.encode = function encode(arr, enc) {
         password: "",
         token: "",
         tokenExpiresAt: 0,
-        channels: []
+        channels: [],
+        sourceDomains: curatedSourceDefaults(),
+        sourceTemplates: {}
       };
     }
 
@@ -17827,7 +17986,9 @@ utils.encode = function encode(arr, enc) {
         password: String(raw.password || ""),
         token: String(raw.token || ""),
         tokenExpiresAt: Number(raw.tokenExpiresAt || 0),
-        channels: normalizePanChannels(raw.channels || raw.tgChannels || raw.channel)
+        channels: normalizePanChannels(raw.channels || raw.tgChannels || raw.channel),
+        sourceDomains: sanitizeSourceDomains(raw.sourceDomains),
+        sourceTemplates: sanitizeSourceTemplateCache(raw.sourceTemplates)
       };
     }
 
@@ -17870,7 +18031,9 @@ utils.encode = function encode(arr, enc) {
         token: state.pan.config && state.pan.config.token || "",
         tokenExpiresAt: state.pan.config && state.pan.config.tokenExpiresAt || 0,
         diskTypes: checked,
-        channels: normalizePanChannels($("panChannelsInput") ? $("panChannelsInput").value : "")
+        channels: normalizePanChannels($("panChannelsInput") ? $("panChannelsInput").value : ""),
+        sourceDomains: readSourceDomainControls(),
+        sourceTemplates: state.pan.config && state.pan.config.sourceTemplates || {}
       };
     }
 
@@ -17892,6 +18055,7 @@ utils.encode = function encode(arr, enc) {
         $("panPassInput").value = config.password || "";
         disablePanelTextEditing($("panPassInput"));
       }
+      renderSourceDomainControls(config.sourceDomains);
       const grid = $("panDiskGrid");
       if (!grid) return;
       const selected = new Set(config.diskTypes || []);
@@ -19037,11 +19201,14 @@ utils.encode = function encode(arr, enc) {
     const PAN_SEARCH_SESSION_MAX_MS = 60000;
 
     const DIRECT_PLAY_STATUS_TEXT = {
+      BACKGROUND_PREPARING: "正在准备播放资源…",
+      REQUESTED_PREPARING: "资源准备中，准备完成后自动播放…",
+      READY: "播放资源已准备好",
       SEARCHING: "正在查找可播放资源…",
       RETRYING: "资源搜索响应较慢，正在重新尝试…",
       POLLING: "暂未找到可直播放资源，正在继续查找…",
       FOUND_QB: "已找到可播放资源，正在准备播放…",
-      STARTING_PLAYER: "已找到可播放资源，正在启动播放器…",
+      STARTING_PLAYER: "正在启动播放器…",
       FINAL_ERROR: "暂时无法启动播放"
     };
 
@@ -19051,6 +19218,7 @@ utils.encode = function encode(arr, enc) {
       if (value === "RETRYING" || value === "RETRY") return "RETRYING";
       if (value === "POLLING" || /^POLL(?:_|$)/.test(value)) return "POLLING";
       if (value === "FOUND_QB") return "FOUND_QB";
+      if (value === "BACKGROUND_PREPARING" || value === "REQUESTED_PREPARING" || value === "READY") return value;
       if (["PICK_START", "CANDIDATE_BEFORE", "CANDIDATE_AFTER", "HEALTH_CHECK_START", "HEALTH_CHECK_OK", "HEALTH_CHECK_TIMEOUT", "PICK_DONE", "SNAPSHOT_START", "SNAPSHOT_OK", "SNAPSHOT_TIMEOUT", "PAN_PLAY_CALLED"].includes(value)) return "STARTING_PLAYER";
       if (["TERMINAL_NO_QB", "WAIT_BUDGET_EXPIRED", "DIRECT_TRANSPORT_EXHAUSTED"].includes(value)) return "FINAL_ERROR";
       if (value === "FINAL_ERROR") return "FINAL_ERROR";
@@ -19149,6 +19317,11 @@ utils.encode = function encode(arr, enc) {
       }
       const textKey = directPlayStatusTextKey(value);
       if (!textKey) return;
+      if (action.prepareOnly && value !== "PAN_PLAY_CALLED") {
+        const prepareKey = action.playRequested ? "REQUESTED_PREPARING" : "BACKGROUND_PREPARING";
+        updateDirectPlayStatus(action.token, prepareKey, DIRECT_PLAY_STATUS_TEXT[prepareKey], "prepare_stage");
+        return;
+      }
       updateDirectPlayStatus(action.token, value, DIRECT_PLAY_STATUS_TEXT[textKey], "stage");
       if (value === "PAN_PLAY_CALLED") armDirectPlayStatusUiFallback(action.token);
       if (value === "FINAL_ERROR") {
@@ -20161,6 +20334,26 @@ utils.encode = function encode(arr, enc) {
       return (kind === "PAN_NATIVE" || kind === "URL_NATIVE") && !!historyTitleValue(history);
     }
 
+    function historyPlaybackPositionValue(history) {
+      const values = [
+        history && history.position,
+        history && history.playbackPosition,
+        history && history.playback_position,
+        history && history.positionMs,
+        history && history.position_ms,
+        historyNestedValue(history, ["position", "playbackPosition", "playback_position", "positionMs", "position_ms"]),
+        history && history.nativeHistoryRaw && history.nativeHistoryRaw !== history ? history.nativeHistoryRaw.position : 0,
+        history && history.nativeHistoryRaw && history.nativeHistoryRaw !== history ? history.nativeHistoryRaw.playbackPosition : 0,
+        history && history.nativeHistoryRaw && history.nativeHistoryRaw !== history ? history.nativeHistoryRaw.playback_position : 0,
+        history && history.nativeHistoryRaw && history.nativeHistoryRaw !== history ? history.nativeHistoryRaw.positionMs : 0,
+        history && history.nativeHistoryRaw && history.nativeHistoryRaw !== history ? history.nativeHistoryRaw.position_ms : 0
+      ];
+      return values.reduce((best, value) => {
+        const number = Number(value || 0);
+        return Number.isFinite(number) && number > best ? number : best;
+      }, 0);
+    }
+
     function detailHistoryMatches(item, history) {
       if (!item || !history || !historyCanContinuePlayback(history)) return false;
       const context = historyPlaybackContext(history);
@@ -20185,11 +20378,13 @@ utils.encode = function encode(arr, enc) {
         && history.source === "history"
         && (history.nativeHistoryRaw && typeof history.nativeHistoryRaw === "object"
           || String(history.nativeHistoryKey || "").trim())
-        && historyCanContinuePlayback(history));
+        && historyCanContinuePlayback(history)
+        && historyPlaybackPositionValue(history) > 0);
     }
 
-    function detailAuthoritativeNativeHistoryFor(item, candidate) {
+    function detailAuthoritativeNativeHistoryFor(item, candidate, options) {
       if (!item || !candidate) return null;
+      if (options && options.freshNative && detailHasAuthoritativeNativeHistory(candidate) && detailHistoryMatches(item, candidate)) return candidate;
       const candidateIdentity = nativeHistoryDeleteIdentityKey(candidate);
       return (state.recent.items || []).find((history) => {
         if (!detailHasAuthoritativeNativeHistory(history) || !detailHistoryMatches(item, history)) return false;
@@ -20208,9 +20403,9 @@ utils.encode = function encode(arr, enc) {
       )) || null;
     }
 
-    function syncDetailMode(item, historyOverride) {
+    function syncDetailMode(item, historyOverride, options) {
       const candidate = historyOverride === undefined ? findDetailContinueHistory(item) : historyOverride;
-      const history = detailAuthoritativeNativeHistoryFor(item, candidate);
+      const history = detailAuthoritativeNativeHistoryFor(item, candidate, options);
       state.detailMode = history ? "CONTINUE" : "FIRST_PLAY";
       state.detailModeItemKey = item ? panSearchItemKey(item) : "";
       state.detailHistory = history;
@@ -20221,6 +20416,151 @@ utils.encode = function encode(arr, enc) {
         if (pending.episodeTarget) setDetailPlaybackTarget(item, pending.episodeTarget);
       }
       return state.detailMode;
+    }
+
+    function cancelDetailPlaybackPreparation(reason) {
+      const run = state.detailPlayback;
+      if (!run) return false;
+      run.cancelled = true;
+      run.active = false;
+      run.playRequested = false;
+      run.error = String(reason || "detail_prepare_cancelled");
+      if (run.directAction && typeof _directPlayPending !== "undefined" && _directPlayPending === run.directAction) {
+        cancelPendingDirectPlay(reason || "detail_prepare_cancelled");
+      }
+      return true;
+    }
+
+    async function verifyDetailNativeHistory(item, run) {
+      let history = null;
+      try {
+        const rawList = await sdk().history();
+        const normalized = normalizeHistoryList(rawList);
+        history = normalized.find((candidate) => detailHasAuthoritativeNativeHistory(candidate)
+          && detailHistoryMatches(item, candidate)) || null;
+      } catch (e) {
+        history = null;
+      }
+      if (!detailPlaybackIsCurrent(run)) return null;
+      run.historyVerified = true;
+      run.history = history;
+      syncDetailMode(item, history, { freshNative: true });
+      if (history) {
+        const target = detailContinuePlaybackTargetFor(item, history);
+        if (target) setDetailPlaybackTarget(item, target);
+      }
+      updateDetailContinueButton();
+      return history;
+    }
+
+    function detailPreparedCandidateFor(item) {
+      const run = state.detailPlayback;
+      const candidate = run && detailPlaybackIsCurrent(run) && run.candidate;
+      if (!candidate) return null;
+      // Curated/direct candidates只有在本次详情生命周期内通过自动健康准入后才可 Ready。
+      if (isPanHealthBad(candidate)) {
+        run.candidate = null;
+        run.error = "fresh_bad_candidate";
+        updateDetailContinueButton();
+        return null;
+      }
+      return candidate;
+    }
+
+    async function playPreparedDetailCandidate(item, candidate, button) {
+      const run = state.detailPlayback;
+      if (!run || !detailPlaybackIsCurrent(run) || !candidate) return false;
+      if (!run.history && run.historyPromise) {
+        await run.historyPromise.catch(() => null);
+        if (!detailPlaybackIsCurrent(run)) return false;
+      }
+      const history = run.history || state.detailHistory;
+      const episodeTarget = detailContinuePlaybackTargetFor(item, history);
+      if (episodeTarget) setDetailPlaybackTarget(item, episodeTarget);
+      run.playRequested = false;
+      run.candidate = null;
+      if (button) rememberDetailReturn(button);
+      showDirectPlayStatus(run.token, "STARTING_PLAYER", "正在启动播放器…", "native_handoff");
+      await playPanResult(candidate, {
+        prechecked: true,
+        episodeTarget,
+        historyResume: !!history
+      });
+      armDirectPlayStatusUiFallback(run.token);
+      return true;
+    }
+
+    function prepareDetailPlayback(item, options) {
+      const opts = options || {};
+      cancelDetailPlaybackPreparation("new_detail_prepare");
+      const previous = state.detailPlayback || {};
+      const run = {
+        seq: Number(previous.seq || 0) + 1,
+        // 复用 Direct 状态使用的单调数字 token，保证诊断/状态提示不会被字符串 token 丢弃，
+        // 也避免 curated 准备与后续 playBestQuark action 发生状态 ID 冲突。
+        token: ++_directPlayActionSeq,
+        item,
+        itemKey: panSearchItemKey(item),
+        active: true,
+        promise: null,
+        candidate: null,
+        sourceId: "",
+        provider: "",
+        playRequested: false,
+        history: null,
+        historyVerified: false,
+        directAction: null,
+        error: "",
+        reason: String(opts.reason || "detail_prepare")
+      };
+      state.detailPlayback = run;
+      showDirectPlayStatus(run.token, "BACKGROUND_PREPARING", DIRECT_PLAY_STATUS_TEXT.BACKGROUND_PREPARING, "detail_prepare_start");
+      run.historyPromise = verifyDetailNativeHistory(item, run).catch(() => null);
+      run.promise = (async () => {
+        let curated = null;
+        try {
+          curated = await resolveCuratedPlaybackCandidate(item, run);
+        } catch (e) {
+          run.error = String(e && e.message || e || "curated_failed");
+        }
+        if (!detailPlaybackIsCurrent(run)) return null;
+        if (curated && curated.candidate) {
+          run.provider = "curated";
+          run.sourceId = curated.sourceId;
+          run.candidate = curated.candidate;
+          run.active = false;
+          showDirectPlayStatus(run.token, "READY", DIRECT_PLAY_STATUS_TEXT.READY, "curated_ready");
+          updateDetailContinueButton();
+          if (run.playRequested) await playPreparedDetailCandidate(item, run.candidate, $("detailContinueBtn"));
+          return run.candidate;
+        }
+        if (!detailPlaybackIsCurrent(run)) return null;
+        // 五站都未达到准入标准后，交给原有 Direct 3 次重试/轮询生命周期。
+        run.provider = "pan-direct";
+        const directTask = playBestQuark(item, {
+          detailPrimary: true,
+          suppressAutoPan: true,
+          prepareOnly: true,
+          playRequested: !!run.playRequested
+        });
+        run.directAction = typeof _directPlayPending !== "undefined" && _directPlayPending && _directPlayPending.item === item
+          ? _directPlayPending
+          : null;
+        await directTask;
+        if (!detailPlaybackIsCurrent(run)) return null;
+        run.active = false;
+        run.directAction = null;
+        updateDetailContinueButton();
+        return detailDirectPlayCandidateFor(item);
+      })().catch((error) => {
+        if (detailPlaybackIsCurrent(run)) {
+          run.active = false;
+          run.error = String(error && error.message || error || "detail_prepare_failed");
+          updateDetailContinueButton();
+        }
+        return null;
+      });
+      return run.promise;
     }
 
     function detailPreloadKeyFor(item) {
@@ -20306,6 +20646,7 @@ utils.encode = function encode(arr, enc) {
 
     function detailDirectPlayReadyFor(item) {
       if (!item) return false;
+      if (detailPreparedCandidateFor(item)) return true;
       const pan = state.pan || {};
       const lifecycle = getPanSearchLifecycleFor(item);
       const phase = String(lifecycle.phase || "");
@@ -20320,11 +20661,14 @@ utils.encode = function encode(arr, enc) {
       if (!ready || ready.itemKey !== panSearchItemKey(item)
         || Number(ready.sessionId || 0) !== Number(lifecycle.sessionId || 0)
         || !ready.candidateKey) return false;
-      return (pan.results || []).some((candidate) => isQuarkOrBaidu(candidate)
-        && detailDirectPlayCandidateKey(candidate) === ready.candidateKey);
+      const candidate = (pan.results || []).find((entry) => isQuarkOrBaidu(entry)
+        && detailDirectPlayCandidateKey(entry) === ready.candidateKey);
+      return !!candidate && !isPanHealthBad(candidate);
     }
 
     function detailDirectPlayCandidateFor(item) {
+      const prepared = detailPreparedCandidateFor(item);
+      if (prepared) return prepared;
       if (!detailDirectPlayReadyFor(item)) return null;
       const ready = state.pan && state.pan.directReady;
       return (state.pan && Array.isArray(state.pan.results) ? state.pan.results : [])
@@ -20373,6 +20717,22 @@ utils.encode = function encode(arr, enc) {
       const history = mode === "CONTINUE" ? state.detailHistory : null;
       const directOptions = { detailPrimary: true, suppressAutoPan: true };
       if (history) directOptions.history = history;
+      const prepared = detailPreparedCandidateFor(item);
+      if (prepared) {
+        playPreparedDetailCandidate(item, prepared, button).catch(() => {});
+        return;
+      }
+      const detailPlayback = state.detailPlayback;
+      if (detailPlayback && detailPlaybackIsCurrent(detailPlayback) && detailPlayback.active && !detailPlayback.candidate) {
+        detailPlayback.playRequested = true;
+        if (detailPlayback.directAction && typeof _directPlayPending !== "undefined" && _directPlayPending === detailPlayback.directAction) {
+          playBestQuark(item, directOptions);
+        } else {
+          showDirectPlayStatus(detailPlayback.token, "REQUESTED_PREPARING", DIRECT_PLAY_STATUS_TEXT.REQUESTED_PREPARING, "play_requested_while_curated_preparing");
+          toast("资源正在准备，请稍候");
+        }
+        return;
+      }
       const readyCandidate = detailDirectPlayCandidateFor(item);
       if (readyCandidate) {
         playDetailDirectReadyCandidate(item, readyCandidate, history, button).catch(() => {});
@@ -20412,7 +20772,7 @@ utils.encode = function encode(arr, enc) {
       if (continueText) continueText.textContent = match ? "续播" : "播放";
       if (actions) actions.classList.toggle("has-continue", !!match);
       const directReady = detailDirectPlayReadyFor(state.selected);
-      const ready = mode === "FIRST_PLAY" && directReady;
+      const ready = !!match || directReady;
       button.classList.toggle("is-ready", ready);
       button.dataset.ready = ready ? "true" : "false";
       button.dataset.mode = mode;
@@ -20489,7 +20849,12 @@ utils.encode = function encode(arr, enc) {
               if (state.activeList === "recent") renderActiveGrid();
               if (state.activeList === "all") renderHome();
               if ($("detailSheet") && $("detailSheet").classList.contains("active")) {
-                syncDetailMode(state.selected);
+                const detailPlayback = state.detailPlayback;
+                if (detailPlayback && detailPlayback.itemKey === panSearchItemKey(state.selected) && detailPlayback.historyVerified) {
+                  syncDetailMode(state.selected, detailPlayback.history, { freshNative: true });
+                } else {
+                  syncDetailMode(state.selected, null);
+                }
                 updateDetailContinueButton();
               }
             }
@@ -27564,12 +27929,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const opts = options || {};
       const detailWasActive = $("detailSheet") && $("detailSheet").classList.contains("active");
       const sameSelected = state.selected === item;
-      const explicitDetailHistory = opts.historyResume && state.historyResume && state.historyResume.history
-        ? state.historyResume.history
-        : undefined;
       if (state.selected && state.selected !== item) {
         clearDirectPlayStatus(0, "selected_change");
         cancelPendingDirectPlay("selected_change");
+        cancelDetailPlaybackPreparation("selected_change");
       }
       if (!detailWasActive || !sameSelected || !opts.keepPan) {
         state.detailPreload = null;
@@ -27580,17 +27943,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (!opts.restore && !detailWasActive) rememberHomeReturn(item, opts.returnTarget);
       state.selected = item;
       state.detail = null;
-      syncDetailMode(item, explicitDetailHistory);
+      // 详情按钮的续播授权不再读取 Recent 的 TTL 缓存；进入详情先按首次播放，
+      // 由 prepareDetailPlayback 并行执行一次新的 Native History 校验。
+      syncDetailMode(item, null);
       if (!opts.keepPan) resetPanSearch();
-      // 详情生命周期建立后立即启动唯一的 Direct 准备任务；详情请求与
-      // Direct 资源搜索并行。该任务只准备结果，不执行播放或打开盘搜页。
-      const prepareOptions = {
-        detailPrimary: true,
-        suppressAutoPan: true,
-        prepareOnly: true
-      };
-      if (state.detailHistory) prepareOptions.history = state.detailHistory;
-      playBestQuark(item, prepareOptions).catch(() => {});
+      // 资源准备与 fresh Native History 校验并行；站源失败后才进入原有 Direct。
+      prepareDetailPlayback(item, { reason: "detail_open" }).catch(() => {});
       ensureSheetViewport($("detailSheet"));
       syncDetailLayout();
       document.body.classList.add("detail-active");
@@ -29266,7 +29624,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       } else if (handoffAction) {
         recordPanDirectHandoffStage("HEALTH_CHECK_OK", item, handoffAction, { healthCheckSkipped: true, healthCheckAvailable: false });
       }
-      const decision = panPreflightCandidates(top5, freshHealth, previousHealth);
+      const decision = panPreflightCandidates(top5, freshHealth, previousHealth, { rejectAllBad: true });
       const finalPool = decision.candidates;
       const pick = finalPool.length ? (randomize ? finalPool[Math.floor(Math.random() * finalPool.length)] : finalPool[0]) : null;
       recordPanPreflightResult(top5, freshHealth, panPreflightCheckErrorCount(checkable, freshHealth), pick, decision.allBadBatch);
@@ -30053,6 +30411,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           if (_directPlayPending.prepareOnly && !_directPlayPending.playRequested && !opts.prepareOnly) {
             _directPlayPending.playRequested = true;
             isRepeatClickWithinWindow(`qb:${item.tmdbId || item.title}`);
+            showDirectPlayStatus(_directPlayPending.token, "REQUESTED_PREPARING", DIRECT_PLAY_STATUS_TEXT.REQUESTED_PREPARING, "play_requested_while_preparing");
             toast("资源正在准备，请稍候");
           }
           return _directPlayPending.promise;
@@ -30080,7 +30439,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         prepareOnly,
         history: continueHistory,
         episodeTarget: continueTarget,
-        playRequested: !prepareOnly,
+        playRequested: prepareOnly ? !!opts.playRequested : true,
         forceFreshDirect: !!opts.forceFreshDirect,
         startedAt: Date.now(),
         waitStartedAt: Date.now(),
@@ -30088,7 +30447,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         promise: null
       };
       _directPlayPending = action;
-      showDirectPlayStatus(action.token, "SEARCHING", DIRECT_PLAY_STATUS_TEXT.SEARCHING, prepareOnly ? "detail_prepare" : "play_click");
+      const initialStatusPhase = prepareOnly
+        ? (action.playRequested ? "REQUESTED_PREPARING" : "BACKGROUND_PREPARING")
+        : "SEARCHING";
+      showDirectPlayStatus(action.token, initialStatusPhase, DIRECT_PLAY_STATUS_TEXT[initialStatusPhase], prepareOnly ? "detail_prepare" : "play_click");
       action.promise = (async () => {
         const keyword = action.keyword;
         if (!keyword || !panDirectPlayActionIsCurrent(action)) {
@@ -30250,13 +30612,28 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         }
         if (action.prepareOnly && !action.playRequested) {
           // 自动准备只把同一 lifecycle 留在 Ready 状态，绝不自动交给原生播放器。
-          clearDirectPlayStatus(action.token, "prepare_only_ready");
+          showDirectPlayStatus(action.token, "READY", DIRECT_PLAY_STATUS_TEXT.READY, "prepare_only_ready");
           updateDetailContinueButton();
           return;
         }
         if (isRepeat) toast(`已换源 · ${panDiskName(pick.diskType)}`);
         // 播放开始前消费一次性请求，避免后续状态刷新重复触发播放。
+        if (action.detailPrimary && action.prepareOnly && action.playRequested) {
+          const detailRun = state.detailPlayback;
+          if (detailRun && detailPlaybackIsCurrent(detailRun) && detailRun.historyPromise) {
+            await detailRun.historyPromise.catch(() => null);
+            if (!panDirectPlayActionIsCurrent(action)) {
+              action.playRequested = false;
+              return;
+            }
+            action.history = detailRun.history || state.detailHistory || null;
+            action.episodeTarget = action.history
+              ? detailContinuePlaybackTargetFor(item, action.history)
+              : action.episodeTarget || currentPlaybackTargetForItem(item);
+          }
+        }
         action.playRequested = false;
+        updateDirectPlayStatus(action.token, "STARTING_PLAYER", "正在启动播放器…", "native_handoff");
         await playPanResult(pick, {
           prechecked: true,
           handoffAction: action,
@@ -30562,6 +30939,288 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return items;
     }
 
+    function curatedSourceDefinitions() {
+      const config = state.pan.config || defaultPanConfig();
+      const domains = sanitizeSourceDomains(config.sourceDomains);
+      return CURATED_SOURCE_DEFINITIONS.map((source) => Object.assign({}, source, {
+        domains: (domains[source.id] || source.domains || []).slice()
+      }));
+    }
+
+    function detailPlaybackIsCurrent(run) {
+      return !!(run && state.detailPlayback === run && state.selected === run.item
+        && String(run.itemKey || "") === panSearchItemKey(state.selected));
+    }
+
+    function curatedAbsoluteUrl(value, base) {
+      const text = String(value || "").trim();
+      if (!text || /^(?:javascript|data|mailto):/i.test(text)) return "";
+      try {
+        const parsed = new URL(text, base || location.href);
+        return /^https?:$/i.test(parsed.protocol) ? parsed.href : "";
+      } catch (e) {
+        return "";
+      }
+    }
+
+    async function requestCuratedHtml(url, timeout) {
+      const response = await sdk().req(url, { responseType: "text", timeout: timeout || 6 });
+      if (response && response.error) throw new Error(String(response.error));
+      if (response && response.ok === false) throw new Error("HTTP " + Number(response.status || 0));
+      if (response && Number(response.status || 0) >= 400) throw new Error("HTTP " + Number(response.status));
+      const raw = response && response.body != null ? response.body : response && response.data != null ? response.data : response;
+      const html = typeof raw === "string" ? raw : raw && (raw.html || raw.content || raw.text) || "";
+      if (!String(html || "").trim()) throw new Error("站源返回空页面");
+      return { html: String(html), base: String(response && response.url || url) };
+    }
+
+    function curatedCleanTitle(value) {
+      return normalizeTitle(String(value || "")
+        .replace(/第\s*[一二三四五六七八九十百\d]+\s*季|Season\s*\d+/ig, "")
+        .replace(/导演剪辑版|未删减版|加长版|蓝光原盘|原盘|remastered|blu[- ]?ray|remux|2160p|1080p|720p|4k|hdr10\+?|hdr|dolby\s*vision|dovi|国语|粤语|国粤双语|双语|中字|高码|高码率|杜比全景声/ig, ""));
+    }
+
+    function curatedYear(value) {
+      const match = String(value || "").match(/(?:19|20)\d{2}/);
+      return match ? match[0] : "";
+    }
+
+    function curatedItemYear(item) {
+      return curatedYear(item && (item.releaseDate || item.firstAirDate || item.release_date || item.first_air_date || ""));
+    }
+
+    function curatedTitleMatches(item, value) {
+      if (!item) return false;
+      const actualText = String(value || "").replace(/\s+/g, " ").trim();
+      const actual = curatedCleanTitle(actualText);
+      if (!actual) return false;
+      const expected = [item.title, item.originalTitle, item.original_title, item.originalName, item.original_name]
+        .map(curatedCleanTitle).filter(Boolean);
+      if (!expected.length) return false;
+      const wantedYear = curatedItemYear(item);
+      const foundYear = curatedYear(actualText);
+      if (wantedYear && foundYear && wantedYear !== foundYear) return false;
+      return expected.some((title) => title === actual
+        || (title.length >= 4 && actual.length >= 4 && (actual.includes(title) || title.includes(actual))
+          && Math.abs(actual.length - title.length) <= 8));
+    }
+
+    function curatedSearchEntries(html, source, base) {
+      const entries = [];
+      let documentRoot = null;
+      try { documentRoot = new DOMParser().parseFromString(String(html || ""), "text/html"); } catch (e) { documentRoot = null; }
+      if (documentRoot) {
+        let nodes = Array.from(documentRoot.querySelectorAll(source.searchListSelector || ".module-search-item"));
+        if (!nodes.length) nodes = Array.from(documentRoot.querySelectorAll(".module-search-item"));
+        nodes.forEach((node) => {
+          const anchor = node.matches && node.matches("a[href]") ? node : node.querySelector("a[href]") || node.closest && node.closest("a[href]");
+          if (!anchor) return;
+          const href = curatedAbsoluteUrl(anchor.getAttribute("href"), base);
+          const titleNode = node.querySelector(".module-item-title,.module-search-item-title,.video-title,.title,h1,h2,h3");
+          const title = String(anchor.getAttribute("title") || titleNode && titleNode.textContent || anchor.textContent || node.textContent || "").replace(/\s+/g, " ").trim();
+          if (href && title) entries.push({ href, title });
+        });
+        if (!entries.length) {
+          Array.from(documentRoot.querySelectorAll("a[href]")).forEach((anchor) => {
+            const title = String(anchor.getAttribute("title") || anchor.textContent || "").replace(/\s+/g, " ").trim();
+            const href = curatedAbsoluteUrl(anchor.getAttribute("href"), base);
+            if (href && title.length >= 2 && title.length <= 120) entries.push({ href, title });
+          });
+        }
+      }
+      if (!entries.length) {
+        const anchorRe = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/ig;
+        let match;
+        while ((match = anchorRe.exec(String(html || "")))) {
+          const title = String(match[2] || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+          const href = curatedAbsoluteUrl(match[1], base);
+          if (href && title.length >= 2 && title.length <= 120) entries.push({ href, title });
+        }
+      }
+      const seen = new Set();
+      return entries.filter((entry) => {
+        const key = entry.href + "\u001f" + curatedCleanTitle(entry.title);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+
+    function curatedDiskTypeForUrl(url) {
+      const value = String(url || "").toLowerCase();
+      if (/pan\.quark\.cn|quark/.test(value)) return "quark";
+      if (/pan\.baidu\.com|baidu/.test(value)) return "baidu";
+      if (/drive\.uc\.cn|uc\.cn|uc123/.test(value)) return "uc";
+      if (/aliyundrive|alipan|aliyunpan/.test(value)) return "aliyun";
+      if (/pan\.xunlei|xunlei/.test(value)) return "xunlei";
+      if (/115\.com|115cdn|anxia/.test(value)) return "115";
+      if (/123(?:\d{2,4})?\.(?:com|cn|net)|123pan/.test(value)) return "123";
+      if (/cloud\.189|189\.cn/.test(value)) return "tianyi";
+      if (/caiyun\.139|139\.cn/.test(value)) return "mobile";
+      if (/pikpak/.test(value)) return "pikpak";
+      if (/guangya|gy[a-z0-9.-]*\./.test(value)) return "guangya";
+      if (/^magnet:/i.test(value)) return "magnet";
+      if (/^ed2k:/i.test(value)) return "ed2k";
+      return "";
+    }
+
+    function curatedExtractUrls(value) {
+      const text = String(value || "").replace(/\\\//g, "/").replace(/&amp;/g, "&");
+      const matches = text.match(/(?:https?:\/\/|magnet:|ed2k:\/\/)[^\s"'<>，。、）)]+/ig) || [];
+      return matches.map((url) => String(url).replace(/[，。、；;）)\]}]+$/, "")).filter(Boolean);
+    }
+
+    function curatedPasswordFromText(value) {
+      const match = String(value || "").match(/(?:提取码|访问码|密码|pwd|password|passcode|code)\s*[:：=]?\s*([a-z0-9]{2,16})/i);
+      return match ? match[1] : "";
+    }
+
+    function curatedDetailCandidates(html, source, base, item, entry) {
+      const candidates = [];
+      const seen = new Set();
+      const add = (value, contextText) => {
+        const url = curatedAbsoluteUrl(value, base) || String(value || "").trim();
+        if (!url) return;
+        const diskType = normalizePanDiskType(curatedDiskTypeForUrl(url));
+        if (!diskType || !PAN_DISK_TYPES.some((disk) => disk.id === diskType)) return;
+        const normalized = normalizePanUrl(url);
+        const key = `${diskType}|${normalized}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        const title = String(item && item.title || entry && entry.title || "盘搜资源").trim();
+        candidates.push({
+          key,
+          diskType,
+          url,
+          normalizedUrl: url,
+          password: curatedPasswordFromText(contextText),
+          title,
+          source: source.id,
+          provider: source.id,
+          curatedSourceId: source.id,
+          fileName: title,
+          index: candidates.length
+        });
+      };
+      let documentRoot = null;
+      try { documentRoot = new DOMParser().parseFromString(String(html || ""), "text/html"); } catch (e) { documentRoot = null; }
+      if (documentRoot) {
+        Array.from(documentRoot.querySelectorAll(source.detailPanSelector || ".module-row-info p")).forEach((node) => {
+          const text = node.textContent || "";
+          curatedExtractUrls(text).forEach((url) => add(url, text));
+        });
+        Array.from(documentRoot.querySelectorAll("a[href]" )).forEach((anchor) => {
+          const text = `${anchor.textContent || ""} ${anchor.getAttribute("title") || ""}`;
+          add(anchor.getAttribute("href"), text);
+        });
+      }
+      curatedExtractUrls(html).forEach((url) => add(url, html));
+      return candidates;
+    }
+
+    function curatedSourceTemplates(source) {
+      const config = state.pan.config || defaultPanConfig();
+      const cached = config.sourceTemplates && config.sourceTemplates[source.id];
+      const explicit = source.searchUrl ? [source.searchUrl] : [];
+      const available = explicit.length ? explicit : CURATED_SEARCH_URL_TEMPLATES;
+      return Array.from(new Set([cached].concat(available).filter(Boolean)));
+    }
+
+    function rememberCuratedTemplate(sourceId, template) {
+      if (!state.pan.config) state.pan.config = defaultPanConfig();
+      if (!state.pan.config.sourceTemplates) state.pan.config.sourceTemplates = {};
+      if (state.pan.config.sourceTemplates[sourceId] === template) return;
+      state.pan.config.sourceTemplates[sourceId] = template;
+      persistPanConfigQuietly().catch(() => {});
+    }
+
+    function curatedSearchPath(template, keyword, page) {
+      const encoded = encodeURIComponent(String(keyword || "").trim());
+      return String(template || "")
+        .replace(/\{kw\}|\{keyword\}/g, encoded)
+        .replace(/\{p\}|\{page\}/g, String(page || 1));
+    }
+
+    async function searchCuratedSource(source, item, run) {
+      let sawSearchResponse = false;
+      let sawMatchingEntry = false;
+      const keyword = panKeyword(item) || item && item.title || "";
+      for (const domain of source.domains || []) {
+        if (!detailPlaybackIsCurrent(run)) return { kind: "STALE" };
+        let domainCompleted = false;
+        for (const template of curatedSourceTemplates(source)) {
+          if (!detailPlaybackIsCurrent(run)) return { kind: "STALE" };
+          const url = curatedAbsoluteUrl(curatedSearchPath(template, keyword, 1), domain);
+          if (!url) continue;
+          let response;
+          try {
+            response = await requestCuratedHtml(url, 6);
+            domainCompleted = true;
+            sawSearchResponse = true;
+          } catch (e) {
+            continue;
+          }
+          const entries = curatedSearchEntries(response.html, source, response.base || url);
+          if (!entries.length) continue;
+          rememberCuratedTemplate(source.id, template);
+          const matches = entries.filter((entry) => curatedTitleMatches(item, entry.title)).slice(0, 5);
+          if (!matches.length) continue;
+          sawMatchingEntry = true;
+          for (const entry of matches) {
+            if (!detailPlaybackIsCurrent(run)) return { kind: "STALE" };
+            try {
+              const detail = await requestCuratedHtml(entry.href, 6);
+              const candidates = curatedDetailCandidates(detail.html, source, detail.base || entry.href, item, entry);
+              if (candidates.length) return { kind: "CANDIDATES", candidates };
+            } catch (e) {
+              // 当前域名的详情失败，继续尝试该站下一个域名。
+            }
+          }
+        }
+        if (domainCompleted && sawMatchingEntry) continue;
+      }
+      if (sawMatchingEntry) return { kind: "NO_RESOURCE" };
+      return { kind: sawSearchResponse ? "NO_MATCH" : "TRANSPORT_FAILURE" };
+    }
+
+    function curatedCandidateOrder(items) {
+      return (items || []).slice().sort((a, b) => {
+        const disk = panDiskOrder(a) - panDiskOrder(b);
+        if (disk) return disk;
+        const quality = panQualityInfo(b).score - panQualityInfo(a).score;
+        if (quality) return quality;
+        return panPackScore(b) - panPackScore(a);
+      });
+    }
+
+    async function curatedHealthyCandidate(items, item, run) {
+      const candidates = curatedCandidateOrder((items || []).filter((candidate) => buildPanPlayPayload(candidate)));
+      if (!candidates.length) return null;
+      const checkable = candidates.filter((candidate) => isPanCheckSupported(candidate));
+      let freshHealth = {};
+      if (checkable.length && panCheckAvailable()) {
+        const context = { token: state.pan.viewToken, item };
+        const checked = await playbackPanHealthPreflight(checkable.slice(0, 12), context);
+        if (!detailPlaybackIsCurrent(run) || !panContextIsCurrent(context)) return null;
+        freshHealth = checked.states || {};
+      }
+      const decision = panPreflightCandidates(candidates, freshHealth, {}, { rejectAllBad: true });
+      recordPanPreflightResult(candidates, freshHealth, panPreflightCheckErrorCount(checkable, freshHealth), decision.candidates[0] || null, decision.allBadBatch);
+      return curatedCandidateOrder(decision.candidates)[0] || null;
+    }
+
+    async function resolveCuratedPlaybackCandidate(item, run) {
+      for (const source of curatedSourceDefinitions()) {
+        if (!detailPlaybackIsCurrent(run)) return null;
+        const result = await searchCuratedSource(source, item, run);
+        if (!detailPlaybackIsCurrent(run)) return null;
+        if (result.kind !== "CANDIDATES") continue;
+        const candidate = await curatedHealthyCandidate(result.candidates, item, run);
+        if (candidate) return { sourceId: source.id, sourceName: source.name, candidate };
+      }
+      return null;
+    }
+
     function normalizePanUrl(url) {
       try {
         const parsed = new URL(url);
@@ -30630,9 +31289,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       }).length;
     }
 
-    // pan.check 是辅助信号：混合结果时跳过明确 bad；批量全 bad 时保留原候选，
-    // 除非全部候选都有可信的历史 bad，避免一次探活异常把正常播放全部封死。
-    function panPreflightCandidates(items, freshHealth, previousHealth) {
+    // 自动播放的 fresh bad 是硬拒绝；timeout/error/uncertain/unsupported 不会进入 bad 集合，
+    // 因而仍可继续排序。手动盘搜不经过此自动候选选择器，保留用户明确强制播放行为。
+    function panPreflightCandidates(items, freshHealth, previousHealth, options) {
+      const opts = options || {};
       const list = (items || []).filter(Boolean);
       const bad = list.filter((item) => {
         const key = panHealthKey(item);
@@ -30644,6 +31304,13 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         return prior && prior.state === "bad" && prior.checkedAt;
       });
       if (!bad.length) return { candidates: list, allBadBatch: false, confirmedBadCount: 0 };
+      if (allBadBatch && opts.rejectAllBad) {
+        return {
+          candidates: [],
+          allBadBatch: true,
+          confirmedBadCount: confirmedBad.length
+        };
+      }
       if (allBadBatch) {
         return {
           candidates: confirmedBad.length === list.length ? [] : list.filter((item) => !confirmedBad.includes(item)),
@@ -31514,6 +32181,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (!sheet) return;
       clearDirectPlayStatus(0, "route_leave");
       cancelPendingDirectPlay("detail_closed");
+      cancelDetailPlaybackPreparation("detail_closed");
       // 防止动画期间重复触发
       if (sheet.classList.contains("sheet-closing")) return;
 
@@ -33295,6 +33963,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       $("savePanConfigBtn").addEventListener("click", () => {
         savePanConfig().catch((e) => toast(e.message || "保存失败"));
       });
+      if ($("sourceDomainsToggle")) $("sourceDomainsToggle").addEventListener("click", toggleSourceDomains);
+      if ($("sourceDomainsResetBtn")) $("sourceDomainsResetBtn").addEventListener("click", restoreSourceDomainDefaults);
       document.querySelectorAll("[data-home-fullscreen]").forEach((button) => {
         button.addEventListener("click", () => {
           setHomeFullscreenEnabled(button.dataset.homeFullscreen !== "off").catch(() => {});
