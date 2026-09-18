@@ -17617,7 +17617,7 @@ utils.encode = function encode(arr, enc) {
       latest.cacheHydratedAt = 0;
       let saved = null;
       try { saved = safeJson(await sdk().cache.get(cacheKey("homeWeekly")), null); } catch (e) { saved = null; }
-      const valid = !!(saved && Number(saved.version) === 1
+      const valid = !!(saved && Number(saved.version) === 2
         && String(saved.weekStart || "") === String(range.start || "")
         && Array.isArray(saved.items) && saved.items.length);
       if (!valid) return false;
@@ -17651,7 +17651,7 @@ utils.encode = function encode(arr, enc) {
     async function persistHomeLatestCache(latest, range) {
       if (!latest || !range || !homeLatestHasItems(latest)) return false;
       const snapshot = {
-        version: 1,
+        version: 2,
         weekStart: range.start,
         savedAt: Date.now(),
         items: latest.items.map((item) => Object.assign({}, item))
@@ -20107,9 +20107,15 @@ utils.encode = function encode(arr, enc) {
     }
 
     function normalizeTmdb(item, list, index) {
-      const title = item.title || item.name || item.original_title || item.original_name || "未命名";
       const date = item.release_date || item.first_air_date || "";
       const mediaType = list.mediaType || item.media_type || "movie";
+      const isTv = String(mediaType).toLowerCase() === "tv";
+      const title = isTv
+        ? item.name || item.original_name || item.title || item.original_title || "未命名"
+        : item.title || item.original_title || item.name || item.original_name || "未命名";
+      const originalTitle = isTv
+        ? item.original_name || item.original_title || ""
+        : item.original_title || item.original_name || "";
       const genreIds = Array.isArray(item.genre_ids) ? item.genre_ids.map((value) => String(value)).filter(Boolean) : [];
       const originCountries = Array.isArray(item.origin_country)
         ? item.origin_country.map((value) => String(value)).filter(Boolean)
@@ -20122,6 +20128,7 @@ utils.encode = function encode(arr, enc) {
         listId: list.id || "search",
         listTitle: list.title || "搜索",
         title,
+        originalTitle,
         pic: imageUrl(item.poster_path, false),
         landscape: imageUrl(item.backdrop_path, true),
         image: imageUrl(item.backdrop_path, true) || imageUrl(item.poster_path, false),
@@ -27554,6 +27561,7 @@ utils.encode = function encode(arr, enc) {
         listId: item.listId || "",
         listTitle: item.listTitle || "",
         title: item.title || "",
+        originalTitle: item.originalTitle || "",
         pic: item.pic || "",
         landscape: item.landscape || "",
         image: item.image || item.pic || "",
@@ -28685,12 +28693,30 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       }
     }
 
+    function detailCanonicalTitle(item, detail) {
+      const isTv = String(item && item.mediaType || "").toLowerCase() === "tv";
+      const value = isTv
+        ? detail && (detail.name || detail.original_name)
+        : detail && (detail.title || detail.original_title);
+      return String(value || item && item.title || "").trim();
+    }
+
+    function detailTitleHasChinese(value) {
+      return /[\u3400-\u9fff]/.test(String(value || ""));
+    }
+
     function renderDetailExtras(item, detail) {
       const overview = detail.overview || item.desc || item.remark;
       if (overview) setDetailTextContent(overview);
+      const canonicalTitle = detailCanonicalTitle(item, detail);
+      const titleNode = $("detailTitle");
+      if (titleNode && canonicalTitle) {
+        titleNode.textContent = canonicalTitle;
+        titleNode.style.display = "";
+      }
       renderDetailMeta(item, detail);
       renderDetailTitleMeta(item, detail);
-      renderDetailTitleLogo(item, detail);
+      renderDetailTitleLogo(item, detail, canonicalTitle);
       scheduleDetailTextClamp();
       renderDetailCoverFromDetail(item, detail);
       renderCast(detail.credits && detail.credits.cast || []);
@@ -28717,12 +28743,22 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return ranked[0] || null;
     }
 
-    function renderDetailTitleLogo(item, detail) {
+    function renderDetailTitleLogo(item, detail, canonicalTitle) {
       // emby 风格：使用 detailLogoWrap / detailLogoImg
       const wrap = $("detailLogoWrap");
       const img = $("detailLogoImg");
       const title = $("detailTitle");
       if (!wrap || !img) return;
+      const displayTitle = String(canonicalTitle || detailCanonicalTitle(item, detail) || item && item.title || "").trim();
+      if (title && displayTitle) title.textContent = displayTitle;
+      if (detailTitleHasChinese(displayTitle)) {
+        wrap.style.display = "none";
+        wrap.classList.remove("logo-ready");
+        img.removeAttribute("src");
+        img.classList.remove("loaded");
+        if (title) title.style.display = "";
+        return;
+      }
       const logo = bestDetailLogo(detail);
       if (!logo || !logo.file_path) {
         wrap.style.display = "none";
@@ -28736,7 +28772,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (img.getAttribute("src") === logoUrl && img.classList.contains("loaded")) return;
       img.classList.remove("loaded");
       wrap.style.display = "flex";
-      img.alt = item.title || "";
+      img.alt = displayTitle || item.title || "";
       img.onload = () => {
         img.classList.add("loaded");
         if (title) title.style.display = "none";
