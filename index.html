@@ -20108,14 +20108,20 @@ utils.encode = function encode(arr, enc) {
 
     function normalizeTmdb(item, list, index) {
       const date = item.release_date || item.first_air_date || "";
-      const mediaType = list.mediaType || item.media_type || "movie";
-      const isTv = String(mediaType).toLowerCase() === "tv";
+      const listMediaType = String(list && list.mediaType || "").toLowerCase();
+      const itemMediaType = String(item && item.media_type || "").toLowerCase();
+      const mediaType = listMediaType === "tv" || listMediaType === "movie"
+        ? listMediaType
+        : itemMediaType === "tv" || itemMediaType === "movie"
+          ? itemMediaType
+          : "movie";
+      const isTv = mediaType === "tv";
       const title = isTv
         ? item.name || item.original_name || item.title || item.original_title || "未命名"
         : item.title || item.original_title || item.name || item.original_name || "未命名";
       const originalTitle = isTv
-        ? item.original_name || item.original_title || ""
-        : item.original_title || item.original_name || "";
+        ? item.original_name || ""
+        : item.original_title || "";
       const genreIds = Array.isArray(item.genre_ids) ? item.genre_ids.map((value) => String(value)).filter(Boolean) : [];
       const originCountries = Array.isArray(item.origin_country)
         ? item.origin_country.map((value) => String(value)).filter(Boolean)
