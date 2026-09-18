@@ -7190,9 +7190,6 @@
                   <label for="sourceDomainsShandian">闪电
                     <textarea class="field focusable mono" id="sourceDomainsShandian" rows="2" readonly></textarea>
                   </label>
-                  <label for="sourceDomainsAipan">爱盼
-                    <textarea class="field focusable mono" id="sourceDomainsAipan" rows="2" readonly></textarea>
-                  </label>
                   <button class="btn focusable" id="sourceDomainsResetBtn" type="button">恢复默认</button>
                 </div>
               </div>
@@ -16747,7 +16744,7 @@ utils.encode = function encode(arr, enc) {
     ];
     const PAN_CHECKABLE_DISK_TYPES = new Set(window.WEBHOME_CONFIG.pan.checkableDiskTypes || ["quark", "aliyun", "baidu", "uc", "tianyi", "xunlei", "123", "115", "mobile"]);
     const PAN_HEALTH_PRIORITY = { ok: 0, locked: 1, pending: 2, idle: 3, unsupported: 4, uncertain: 5, bad: 6 };
-    const CURATED_SOURCE_ORDER = ["wanou", "muou", "duoduo", "huban", "shandian", "aipan"];
+    const CURATED_SOURCE_ORDER = ["wanou", "muou", "duoduo", "huban", "shandian"];
     const CURATED_SEARCH_URL_TEMPLATES = [
       "/index.php/vod/search/page/{p}/wd/{kw}.html",
       "/vodsearch/-------------.html?wd={kw}&page={p}",
@@ -16761,8 +16758,7 @@ utils.encode = function encode(arr, enc) {
       { id: "muou", name: "木偶", domains: ["https://www.muou.site", "https://www.muou.asia", "https://666.666291.xyz"] },
       { id: "duoduo", name: "多多", domains: ["https://tv.yydsys.cc", "https://yydsys.de5.net", "https://tv.214521.xyz", "https://tv.yydsys.top"] },
       { id: "huban", name: "虎斑", domains: ["http://xhban.xyz", "http://38.76.197.172:16969"] },
-      { id: "shandian", name: "闪电", domains: ["http://shandian.blog", "http://sd.sduc.site"] },
-      { id: "aipan", name: "爱盼", domains: ["https://www.aipan.me"] }
+      { id: "shandian", name: "闪电", domains: ["http://shandian.blog", "http://sd.sduc.site"] }
     ];
     const CURATED_SOURCE_BUDGET_MS = 10000;
     const CURATED_REQUEST_TIMEOUT_SEC = 6;
@@ -17885,8 +17881,7 @@ utils.encode = function encode(arr, enc) {
         muou: $("sourceDomainsMuou"),
         duoduo: $("sourceDomainsDuoduo"),
         huban: $("sourceDomainsHuban"),
-        shandian: $("sourceDomainsShandian"),
-        aipan: $("sourceDomainsAipan")
+        shandian: $("sourceDomainsShandian")
       };
     }
 
@@ -20557,7 +20552,7 @@ utils.encode = function encode(arr, enc) {
           return run.candidate;
         }
         if (!detailPlaybackIsCurrent(run)) return null;
-        // 六站都未达到准入标准后，交给原有 Direct 3 次重试/轮询生命周期。
+        // 五站都未达到准入标准后，交给原有 Direct 3 次重试/轮询生命周期。
         run.provider = "pan-direct";
         const directTask = playBestQuark(item, {
           detailPrimary: true,
@@ -31226,73 +31221,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return candidates;
     }
 
-    async function searchAipanSource(source, item, run) {
-      const deadline = Date.now() + CURATED_SOURCE_BUDGET_MS;
-      const keyword = panKeyword(item) || item && item.title || "";
-      const domains = source && Array.isArray(source.domains) ? source.domains : [];
-      let sawValidResponse = false;
-      for (const domain of domains) {
-        if (!detailPlaybackIsCurrent(run)) return { kind: "STALE" };
-        const remainingMs = deadline - Date.now();
-        if (remainingMs <= 0) break;
-        const endpoint = String(domain || "").replace(/\/+$/, "") + "/api/sources/local";
-        let response;
-        try {
-          response = await sdk().req(endpoint, {
-            method: "POST",
-            responseType: "json",
-            timeout: Math.max(1, Math.min(CURATED_REQUEST_TIMEOUT_SEC, remainingMs / 1000)),
-            headers: { "Content-Type": "application/json", Accept: "application/json" },
-            body: JSON.stringify({ name: keyword })
-          });
-        } catch (e) {
-          continue;
-        }
-        if (!detailPlaybackIsCurrent(run)) return { kind: "STALE" };
-        if (response && (response.error || response.ok === false || Number(response.status || 0) >= 400)) continue;
-        const raw = response && response.body != null ? response.body : response && response.data != null ? response.data : response;
-        const data = typeof raw === "string" ? safeJson(raw, null) : raw;
-        if (!data || Number(data.code) !== 200 || !Array.isArray(data.list)) continue;
-        sawValidResponse = true;
-        const candidates = [];
-        const byKey = new Map();
-        data.list.forEach((result) => {
-          if (!result || !curatedTitleMatches(item, result.name, result)) return;
-          const resultName = String(result.name || item && item.title || "盘搜资源").replace(/\s+/g, " ").trim();
-          const links = Array.isArray(result.links) ? result.links : [];
-          links.forEach((link) => {
-            if (!link || !link.link) return;
-            const diskType = normalizePanDiskType(link.service);
-            if (!diskType || !PAN_DISK_TYPES.some((disk) => disk.id === diskType)) return;
-            const url = curatedAbsoluteUrl(link.link, domain) || String(link.link || "").trim();
-            if (!url) return;
-            const key = `${diskType}|${normalizePanUrl(url)}`;
-            if (byKey.has(key)) return;
-            const password = String(link.pwd || "").trim();
-            const candidate = {
-              key,
-              diskType,
-              url,
-              normalizedUrl: url,
-              password,
-              title: resultName,
-              mediaTitle: String(item && item.title || "").trim(),
-              resourceTitle: resultName,
-              source: "aipan",
-              provider: "aipan",
-              curatedSourceId: "aipan",
-              fileName: resultName,
-              index: candidates.length
-            };
-            candidates.push(candidate);
-            byKey.set(key, candidate);
-          });
-        });
-        if (candidates.length) return { kind: "CANDIDATES", candidates };
-      }
-      return { kind: sawValidResponse ? "NO_MATCH" : "AIPAN_UNAVAILABLE" };
-    }
-
     function curatedSourceTemplates(source) {
       const config = state.pan.config || defaultPanConfig();
       const cached = config.sourceTemplates && config.sourceTemplates[source.id];
@@ -31389,9 +31317,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     async function resolveCuratedPlaybackCandidate(item, run) {
       for (const source of curatedSourceDefinitions()) {
         if (!detailPlaybackIsCurrent(run)) return null;
-        const result = source.id === "aipan"
-          ? await searchAipanSource(source, item, run)
-          : await searchCuratedSource(source, item, run);
+        const result = await searchCuratedSource(source, item, run);
         if (!detailPlaybackIsCurrent(run)) return null;
         if (result.kind !== "CANDIDATES") continue;
         const candidate = await curatedHealthyCandidate(result.candidates, item, run);
