@@ -21471,11 +21471,48 @@ utils.encode = function encode(arr, enc) {
       });
     }
 
+    function freezeNativeHistoryDeleteIdentity(item) {
+      const raw = item && item.nativeHistoryRaw && typeof item.nativeHistoryRaw === "object"
+        ? item.nativeHistoryRaw
+        : item || {};
+      const parts = historyKeyParts(raw);
+      const historyKey = String(raw.key || raw.historyKey || item && (item.nativeHistoryKey || item.historyKey) || parts.key || "").trim();
+      const siteKey = String(raw.siteKey || raw.site || item && (item.nativeSiteKey || item.siteKey) || parts.siteKey || "").trim();
+      const vodId = String(raw.vodId || raw.videoId || item && (item.nativeVodId || item.vodId) || parts.vodId || "").trim();
+      const cid = String(raw.cid != null
+        ? raw.cid
+        : item && item.nativeCid != null
+          ? item.nativeCid
+          : parts.cid || "").trim();
+      return Object.freeze({
+        identityKey: nativeHistoryDeleteIdentityKey(item),
+        nativeHistoryRaw: Object.assign({}, raw),
+        key: historyKey,
+        historyKey,
+        nativeHistoryKey: historyKey,
+        cid,
+        nativeCid: cid,
+        siteKey,
+        nativeSiteKey: siteKey,
+        vodId,
+        nativeVodId: vodId
+      });
+    }
+
+    function nativeHistoryDeleteFrozenPresent(snapshot, frozenIdentities) {
+      const frozen = Array.isArray(frozenIdentities) ? frozenIdentities : [];
+      const present = new Set((Array.isArray(snapshot) ? snapshot : [])
+        .map((item) => nativeHistoryDeleteIdentityKey(item))
+        .filter(Boolean));
+      return frozen.filter((identity) => identity && present.has(identity.identityKey));
+    }
+
     async function deleteNativeHistoryMediaGroupVerified(item, mediaKey) {
       const maxRounds = 3;
       const retryDelay = 220;
       let memberCountBefore = 0;
       let lastMessage = "";
+      let frozenNativeIdentities = null;
       for (let round = 0; round < maxRounds; round++) {
         let snapshot;
         try {
@@ -21486,16 +21523,21 @@ utils.encode = function encode(arr, enc) {
             reason: "HISTORY_READ_FAILED",
             message: String(e && e.message || e || "最近观看刷新失败"),
             rounds: round + 1,
-            memberCountBefore
+            memberCountBefore,
+            frozenNativeIdentities: frozenNativeIdentities || []
           };
         }
-        const candidates = uniqueNativeHistoryDeleteCandidates(nativeHistoryDeleteCandidates(item, mediaKey, snapshot));
-        if (round === 0) memberCountBefore = candidates.length;
-        if (!candidates.length) {
-          return { ok: true, rounds: round + 1, memberCountBefore, remaining: 0 };
+        if (!frozenNativeIdentities) {
+          const groupedCandidates = uniqueNativeHistoryDeleteCandidates(nativeHistoryDeleteCandidates(item, mediaKey, snapshot));
+          frozenNativeIdentities = groupedCandidates.map(freezeNativeHistoryDeleteIdentity);
+          memberCountBefore = frozenNativeIdentities.length;
         }
-        for (const nativeItem of candidates) {
-          const result = await deleteNativeHistoryViaLocalApi(nativeItem);
+        const candidates = nativeHistoryDeleteFrozenPresent(snapshot, frozenNativeIdentities);
+        if (!frozenNativeIdentities.length || !candidates.length) {
+          return { ok: true, rounds: round + 1, memberCountBefore, remaining: 0, frozenNativeIdentities };
+        }
+        for (const nativeIdentity of candidates) {
+          const result = await deleteNativeHistoryViaLocalApi(nativeIdentity);
           if (!result.ok) {
             return {
               ok: false,
@@ -21503,7 +21545,8 @@ utils.encode = function encode(arr, enc) {
               message: result.message || "",
               rounds: round + 1,
               memberCountBefore,
-              remaining: candidates.length
+              remaining: candidates.length,
+              frozenNativeIdentities
             };
           }
           lastMessage = String(result.message || lastMessage || "");
@@ -21518,12 +21561,13 @@ utils.encode = function encode(arr, enc) {
             reason: "HISTORY_READ_FAILED",
             message: String(e && e.message || e || "最近观看刷新失败"),
             rounds: round + 1,
-            memberCountBefore
+            memberCountBefore,
+            frozenNativeIdentities
           };
         }
-        const remaining = uniqueNativeHistoryDeleteCandidates(nativeHistoryDeleteCandidates(item, mediaKey, verification));
+        const remaining = nativeHistoryDeleteFrozenPresent(verification, frozenNativeIdentities);
         if (!remaining.length) {
-          return { ok: true, rounds: round + 1, memberCountBefore, remaining: 0 };
+          return { ok: true, rounds: round + 1, memberCountBefore, remaining: 0, frozenNativeIdentities };
         }
         if (round === maxRounds - 1) {
           return {
@@ -21532,11 +21576,18 @@ utils.encode = function encode(arr, enc) {
             message: lastMessage || "原生历史删除未确认",
             rounds: maxRounds,
             memberCountBefore,
-            remaining: remaining.length
+            remaining: remaining.length,
+            frozenNativeIdentities
           };
         }
       }
-      return { ok: false, reason: "DELETE_NOT_CONFIRMED", message: "原生历史删除未确认", memberCountBefore };
+      return {
+        ok: false,
+        reason: "DELETE_NOT_CONFIRMED",
+        message: "原生历史删除未确认",
+        memberCountBefore,
+        frozenNativeIdentities: frozenNativeIdentities || []
+      };
     }
 
     async function deleteRecentWatchingMedia(item, card) {
@@ -21564,8 +21615,9 @@ utils.encode = function encode(arr, enc) {
         : previousIndex;
       const nativeHistoryKey = String(item && item.nativeHistoryKey || "").trim();
       const hasNativeHistory = !!nativeHistoryKey;
+      let nativeVerification = null;
       if (hasNativeHistory) {
-        const nativeVerification = await deleteNativeHistoryMediaGroupVerified(item, key);
+        nativeVerification = await deleteNativeHistoryMediaGroupVerified(item, key);
         if (!nativeVerification.ok) {
           toast(nativeHistoryDeleteFailureText(nativeVerification));
           return false;
@@ -21588,7 +21640,10 @@ utils.encode = function encode(arr, enc) {
           toast("最近观看刷新失败");
           return false;
         }
-        const nativeResidual = (state.recent.items || []).some((nativeItem) => recentWatchingMediaKey(nativeItem) === key);
+        const nativeResidual = nativeHistoryDeleteFrozenPresent(
+          state.recent.items || [],
+          nativeVerification && nativeVerification.frozenNativeIdentities
+        ).length > 0;
         if (nativeResidual) {
           toast(nativeHistoryDeleteFailureText({
             reason: "DELETE_NOT_CONFIRMED",
@@ -26270,7 +26325,8 @@ utils.encode = function encode(arr, enc) {
       }).catch(() => {});
     }
 
-    async function upsertContinueIndex(item, playbackTarget, panItem) {
+    async function upsertContinueIndex(item, playbackTarget, panItem, options) {
+      const opts = options || {};
       const entry = buildContinueIndexEntry(item, playbackTarget, panItem, Date.now());
       if (!entry) return false;
       try {
@@ -26282,7 +26338,7 @@ utils.encode = function encode(arr, enc) {
         state.continueIndex.entries = pruned.entries;
         state.continueIndex.diag = pruned;
         await persistContinueIndexEntries(pruned.entries);
-        refreshRecentWatchingViews(entry.playedAt);
+        if (opts.refreshRecent !== false) refreshRecentWatchingViews(entry.playedAt);
         return true;
       } catch (e) {
         return false;
@@ -26302,7 +26358,8 @@ utils.encode = function encode(arr, enc) {
       ].map((value) => String(value)).join("\u001f");
     }
 
-    async function saveHistoryPlaybackContext(item, playbackTarget, panItem) {
+    async function saveHistoryPlaybackContext(item, playbackTarget, panItem, options) {
+      const opts = options || {};
       if (!item) return;
       const now = Date.now();
       const target = normalizePlaybackTarget(item, playbackTarget || currentPlaybackTargetForItem(item));
@@ -26332,7 +26389,7 @@ utils.encode = function encode(arr, enc) {
         state.historyContexts.entries = pruned.entries;
         state.historyContexts.diag = pruned;
         await persistHistoryContextEntries(pruned.entries);
-        refreshRecentWatchingViews(now);
+        if (opts.refreshRecent !== false) refreshRecentWatchingViews(now);
         scheduleUiSnapshotSave();
       } catch (e) {}
     }
@@ -31389,9 +31446,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         startWatchTracking(selectedItem, episodeTarget, nativeIdentity);
         // Native History 由 pan.play 生成；Recent 直接消费同一份现有
         // playback-context cache，稳定 TMDB/季集上下文不再依赖 Native History。
-        saveHistoryPlaybackContext(selectedItem, episodeTarget, item);
+        saveHistoryPlaybackContext(selectedItem, episodeTarget, item, { refreshRecent: false });
         // Continue Index 是 Home 最近观看的主身份索引；写入失败不得阻塞原生 handoff。
-        upsertContinueIndex(selectedItem, episodeTarget, item);
+        upsertContinueIndex(selectedItem, episodeTarget, item, { refreshRecent: false });
       }
       try {
         const pan = sdk().pan || {};
@@ -35860,6 +35917,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             // 盘搜播放返回：panSearchBlock 已 active，直接走盘搜恢复，不重渲染整个 detail
             if (state.pan.playbackReturn && $("panSearchBlock") && $("panSearchBlock").classList.contains("active")) {
               restorePanPlaybackReturn({});
+              await settlePlayerReturnHistory();
+              await loadRecentList({ refresh: true, silent: true });
             } else {
               await handleWebHomeResume({ force: true, playerReturn: true });
             }
