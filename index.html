@@ -16762,6 +16762,7 @@ utils.encode = function encode(arr, enc) {
     ];
     const CURATED_SOURCE_BUDGET_MS = 3000;
     const CURATED_CHAIN_BUDGET_MS = 15000;
+    const CURATED_PREFLIGHT_BUDGET_MS = 700;
     const DETAIL_CONTINUE_GATE_MAX_MS = 300;
     const DETAIL_NATIVE_HISTORY_GATE_MAX_MS = 800;
     const CURATED_REQUEST_TIMEOUT_SEC = 6;
@@ -32408,21 +32409,27 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (!candidates.length) return { candidate: null, sourceTimeout: false, stale: false };
       const checkable = candidates.filter((candidate) => isPanCheckSupported(candidate));
       let freshHealth = {};
-      if (checkable.length && panCheckAvailable()) {
-        const stateBeforeCheck = curatedAttemptState(sourceContext, run);
-        if (stateBeforeCheck === "STALE") return { candidate: null, sourceTimeout: false, stale: true };
-        if (stateBeforeCheck === "SOURCE_TIMEOUT") return { candidate: null, sourceTimeout: true, stale: false };
-        const context = { token: state.pan.viewToken, item, curatedAttempt: sourceContext };
-        const preflightAllowedMs = Math.min(PLAYBACK_PREFLIGHT_TIMEOUT_MS, curatedRemainingMs(sourceContext));
-        if (preflightAllowedMs <= 0) return { candidate: null, sourceTimeout: true, stale: false };
-        const checked = await playbackPanHealthPreflight(checkable.slice(0, 12), context, preflightAllowedMs);
-        if (!detailPlaybackIsCurrent(run) || !panContextIsCurrent(context)) return { candidate: null, sourceTimeout: false, stale: true };
-        if (curatedRemainingMs(sourceContext) <= 0) return { candidate: null, sourceTimeout: true, stale: false };
-        freshHealth = checked.states || {};
+      if (!detailPlaybackIsCurrent(run) || !sourceContext || !sourceContext.active) {
+        return { candidate: null, sourceTimeout: false, stale: true };
       }
-      const stateBeforeDecision = curatedAttemptState(sourceContext, run);
-      if (stateBeforeDecision === "STALE") return { candidate: null, sourceTimeout: false, stale: true };
-      if (stateBeforeDecision === "SOURCE_TIMEOUT") return { candidate: null, sourceTimeout: true, stale: false };
+      if (checkable.length && panCheckAvailable()) {
+        const context = { token: state.pan.viewToken, item };
+        const chainDeadline = Number(sourceContext.chainDeadline);
+        const chainRemainingMs = Number.isFinite(chainDeadline)
+          ? Math.max(0, chainDeadline - Date.now())
+          : Infinity;
+        if (chainRemainingMs > 0) {
+          const preflightAllowedMs = Math.min(CURATED_PREFLIGHT_BUDGET_MS, chainRemainingMs);
+          const checked = await playbackPanHealthPreflight(checkable.slice(0, 12), context, preflightAllowedMs);
+          if (!detailPlaybackIsCurrent(run) || !sourceContext.active || !panContextIsCurrent(context)) {
+            return { candidate: null, sourceTimeout: false, stale: true };
+          }
+          freshHealth = checked.states || {};
+        }
+      }
+      if (!detailPlaybackIsCurrent(run) || !sourceContext.active) {
+        return { candidate: null, sourceTimeout: false, stale: true };
+      }
       const decision = panPreflightCandidates(candidates, freshHealth, {}, { rejectAllBad: true });
       // 只有本次新鲜预检确认可用的候选才能进入 Ready；混合结果中已确认
       // fresh-bad 的条目也必须剔除，否则会阻断后续站源 / Pan Direct fallback。
@@ -32468,10 +32475,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           if (curatedRemainingMs(chainContext) <= 0) return null;
           continue;
         }
-        if (curatedRemainingMs(chainContext) <= 0) return null;
         if (healthResult && healthResult.candidate) {
           return { sourceId: source.id, sourceName: source.name, candidate: healthResult.candidate };
         }
+        if (curatedRemainingMs(chainContext) <= 0) return null;
       }
       return null;
     }
