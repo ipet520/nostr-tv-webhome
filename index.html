@@ -31856,8 +31856,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     }
 
     async function searchCuratedSource(source, item, run) {
-      let sawSearchResponse = false;
-      let sawMatchingEntry = false;
       const keyword = resourceSearchKeyword(item);
       const deadline = Date.now() + CURATED_SOURCE_BUDGET_MS;
       const templates = curatedSourceTemplates(source);
@@ -31871,16 +31869,14 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           let response;
           try {
             response = await requestCuratedHtml(url, Math.min(CURATED_REQUEST_TIMEOUT_SEC, Math.max(1, remainingSearchMs / 1000)), { referer: String(domain).replace(/\/+$/, "") + "/" });
-            sawSearchResponse = true;
           } catch (e) {
             continue;
           }
           const entries = curatedSearchEntries(response.html, source, response.base || url);
-          if (!entries.length) continue;
+          if (!entries.length) return { kind: "NO_MATCH" };
           rememberCuratedTemplate(source.id, template);
           const matches = entries.filter((entry) => curatedTitleMatches(item, entry.title, entry)).slice(0, 5);
-          if (!matches.length) continue;
-          sawMatchingEntry = true;
+          if (!matches.length) return { kind: "NO_MATCH" };
           for (const entry of matches) {
             if (!detailPlaybackIsCurrent(run)) return { kind: "STALE" };
             const remainingDetailMs = deadline - Date.now();
@@ -31890,13 +31886,13 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
               const candidates = curatedDetailCandidates(detail.html, source, detail.base || entry.href, item, entry);
               if (candidates.length) return { kind: "CANDIDATES", candidates };
             } catch (e) {
-              // 当前域名的详情失败，继续尝试该站下一个域名。
+              // 当前匹配条目的详情请求失败，继续检查本次搜索返回的其它匹配条目。
             }
           }
+          return { kind: "NO_RESOURCE" };
         }
       }
-      if (sawMatchingEntry) return { kind: "NO_RESOURCE" };
-      return { kind: sawSearchResponse ? "NO_MATCH" : "TRANSPORT_FAILURE" };
+      return { kind: "TRANSPORT_FAILURE" };
     }
 
     function curatedCandidateOrder(items) {
