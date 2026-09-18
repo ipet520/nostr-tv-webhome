@@ -30468,10 +30468,14 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     function suppressDirectPlayPanFallback(action, message) {
       if (!action || !action.suppressAutoPan) return false;
       clearDirectPlayStatus(action.token, "detail_primary_no_source");
-      // 纯 prepareOnly 失败保持静默；只有用户明确按过播放，
-      // 才向用户报告失败，且不打开第二套盘搜流程。
-      if (!action.prepareOnly || action.playRequested) {
-        if (message) toast(message);
+      // 纯 prepareOnly 失败保持静默；只有明确用户播放请求在 NO_RESOURCE
+      // 终态下才打开现有 Pan fallback。CONNECTION_FAILED 仍只提示重试。
+      const userRequested = !action.prepareOnly || !!action.playRequested;
+      const failureType = detailDirectFailureTypeFor(action.item);
+      if (userRequested && failureType === "NO_RESOURCE") {
+        openPanForDirectPlay(action.item, "暂无可播放资源，已打开盘搜", { actionId: action.token });
+      } else if (userRequested && message) {
+        toast(message);
       }
       action.playRequested = false;
       return true;
@@ -30739,7 +30743,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           state.pan.directReady = null;
           setDetailDirectFailureType(item, "NO_RESOURCE", getPanSearchLifecycleFor(item));
           updateDetailContinueButton();
-          action.playRequested = false;
           suppressDirectPlayPanFallback(action, "暂无可播放资源，可使用聚搜或盘搜");
           return;
         }
