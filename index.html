@@ -23588,7 +23588,29 @@ utils.encode = function encode(arr, enc) {
           mediaType,
           params: { language: "zh-CN", append_to_response: "images" }
         }), 18);
-      const raw = mergeTmdbLocalizedEnrichment(candidate.heroRaw || candidate, detail || {}, mediaType);
+      const heroRaw = candidate.heroRaw && typeof candidate.heroRaw === "object"
+        ? candidate.heroRaw
+        : {};
+      const localizedBase = Object.assign({}, heroRaw);
+      if (mediaType === "tv") {
+        localizedBase.name = candidate.resourceSearchTitle
+          || candidate.title
+          || localizedBase.name
+          || "";
+      } else {
+        localizedBase.title = candidate.resourceSearchTitle
+          || candidate.title
+          || localizedBase.title
+          || "";
+      }
+      localizedBase.aliases = mergeTitleAliases(
+        localizedBase.aliases,
+        candidate.aliases,
+        candidate.resourceSearchTitle,
+        candidate.title,
+        candidate.originalTitle
+      );
+      const raw = mergeTmdbLocalizedEnrichment(localizedBase, detail || {}, mediaType);
       raw.id = detail && detail.id || tmdbId;
       raw.media_type = mediaType;
       const normalized = normalizeTmdb(raw, { id: "home-hero-detail", title: "首页 Hero", mediaType }, 0);
