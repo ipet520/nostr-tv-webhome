@@ -16812,7 +16812,7 @@ utils.encode = function encode(arr, enc) {
       catalogPage: {},
       recent: { items: [], loading: false, loadingPromise: null, loaded: false, error: "", refreshedAt: 0, diag: null, nativeItems: [], nativeLoaded: false, nativeLoading: false, nativeRefreshedAt: 0, nativeKeyFlow: {}, runSeq: 0, activeRun: null, pendingRefresh: false, pendingRefreshSilent: true },
       tvDetail: { cache: {}, cardTasks: {}, cardQueue: [], cardActive: 0, observer: null, scrollBound: false, scanTimer: 0, generation: 0 },
-      homeLatest: { items: [], loading: false, loaded: false, error: "", loadedAt: 0, requestSeq: 0, diag: null, promise: null },
+      homeLatest: { items: [], loading: false, loaded: false, error: "", loadedAt: 0, lastRefreshAt: 0, requestSeq: 0, diag: null, promise: null, cacheChecked: false, cacheHydrated: false, cacheWeekStart: "", cacheSavedAt: 0, cacheItemCount: 0, cacheHydratedAt: 0, networkRefreshReason: "", networkRefreshSucceeded: false },
       gridRender: {},
       gridColumnCache: {},
       fallback: [],
@@ -17244,6 +17244,7 @@ utils.encode = function encode(arr, enc) {
       if (type === "tmdb") return "fish2018_home_v1_tmdb_config";
       if (type === "historyContext") return "fish2018_home_v1_history_context";
       if (type === "continueIndex") return "fish2018_home_v1_continue_index";
+      if (type === "homeWeekly") return "fish2018_home_v1_home_weekly";
       return type;
     }
 
@@ -17320,7 +17321,8 @@ utils.encode = function encode(arr, enc) {
     const HOME_WEEKLY_TV_LIMIT = 22;
     const HOME_WEEKLY_MOVIE_LIMIT = 6;
     const HOME_WEEKLY_TOTAL_LIMIT = 28;
-    const HOME_WEEKLY_DETAIL_CONCURRENCY = 5;
+    const HOME_WEEKLY_DETAIL_CONCURRENCY = 8;
+    const HOME_WEEKLY_REFRESH_TTL_MS = 30 * 60 * 1000;
     const HOME_WEEKLY_TIMEZONE = "Asia/Shanghai";
     const TV_DETAIL_CACHE_TTL_MS = 45 * 60 * 1000;
     const TV_CARD_DETAIL_CONCURRENCY = 3;
@@ -17595,12 +17597,112 @@ utils.encode = function encode(arr, enc) {
       return value;
     }
 
+    function homeLatestHasItems(latest) {
+      return !!(latest && Array.isArray(latest.items) && latest.items.length);
+    }
+
+    function homeLatestCacheAge(latest) {
+      const savedAt = Number(latest && latest.cacheSavedAt || 0);
+      return savedAt > 0 ? Math.max(0, Date.now() - savedAt) : 0;
+    }
+
+    async function hydrateHomeLatestCache(latest, range) {
+      if (!latest || !range) return false;
+      if (latest.cacheChecked && latest.cacheWeekStart === range.start) return !!latest.cacheHydrated;
+      latest.cacheChecked = true;
+      latest.cacheWeekStart = range.start;
+      latest.cacheHydrated = false;
+      latest.cacheSavedAt = 0;
+      latest.cacheItemCount = 0;
+      latest.cacheHydratedAt = 0;
+      let saved = null;
+      try { saved = safeJson(await sdk().cache.get(cacheKey("homeWeekly")), null); } catch (e) { saved = null; }
+      const valid = !!(saved && Number(saved.version) === 1
+        && String(saved.weekStart || "") === String(range.start || "")
+        && Array.isArray(saved.items) && saved.items.length);
+      if (!valid) return false;
+      const items = saved.items
+        .map((item) => item && typeof item === "object" ? Object.assign({}, item) : null)
+        .filter(Boolean);
+      if (!items.length) return false;
+      latest.items = items;
+      latest.range = range;
+      latest.loaded = false;
+      latest.error = "";
+      latest.cacheHydrated = true;
+      latest.cacheSavedAt = Number(saved.savedAt || 0) > 0 ? Number(saved.savedAt) : 0;
+      latest.cacheItemCount = items.length;
+      latest.cacheHydratedAt = Date.now();
+      recordHomeLatestDiag({
+        cacheHit: true,
+        cacheAgeMs: homeLatestCacheAge(latest),
+        cacheItemCount: items.length,
+        cacheHydratedAt: latest.cacheHydratedAt,
+        networkRefresh: false,
+        networkRefreshSucceeded: false,
+        networkRefreshReason: "cold-start"
+      });
+      if (isHomeRouteActive()) {
+        renderHomeHot();
+      }
+      return true;
+    }
+
+    async function persistHomeLatestCache(latest, range) {
+      if (!latest || !range || !homeLatestHasItems(latest)) return false;
+      const snapshot = {
+        version: 1,
+        weekStart: range.start,
+        savedAt: Date.now(),
+        items: latest.items.map((item) => Object.assign({}, item))
+      };
+      try {
+        await sdk().cache.set(cacheKey("homeWeekly"), JSON.stringify(snapshot));
+        latest.cacheSavedAt = snapshot.savedAt;
+        latest.cacheWeekStart = range.start;
+        latest.cacheItemCount = snapshot.items.length;
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function homeLatestRefreshReason(latest) {
+      if (latest && Number(latest.loadedAt || 0) > 0) return "ttl-expired";
+      if (latest && latest.cacheHydrated) return "cold-start";
+      if (latest && Number(latest.lastRefreshAt || 0) > 0) return "retry";
+      return "no-cache";
+    }
+
     async function loadHomeLatest() {
       const latest = state.homeLatest;
       if (!latest) return latest;
       if (latest.loading) return latest.promise || latest;
-      if (latest.loaded) return latest;
-      const promise = Promise.resolve().then(() => loadHomeLatestInternal(latest));
+      const ageFromNetwork = latest.loadedAt > 0 ? Math.max(0, Date.now() - latest.loadedAt) : Infinity;
+      const ageFromAttempt = latest.lastRefreshAt > 0 ? Math.max(0, Date.now() - latest.lastRefreshAt) : Infinity;
+      if (latest.loadedAt > 0 && ageFromNetwork < HOME_WEEKLY_REFRESH_TTL_MS) return latest;
+      if (!latest.loadedAt && latest.loaded && latest.lastRefreshAt > 0 && ageFromAttempt < HOME_WEEKLY_REFRESH_TTL_MS) return latest;
+      if (!latest.networkRefreshSucceeded && latest.loaded && latest.lastRefreshAt > 0 && ageFromAttempt < HOME_WEEKLY_REFRESH_TTL_MS) return latest;
+      const promise = Promise.resolve().then(() => loadHomeLatestInternal(latest)).catch((error) => {
+        const hasItems = homeLatestHasItems(latest);
+        latest.loading = false;
+        latest.loaded = true;
+        latest.error = hasItems ? "" : "加载失败";
+        latest.networkRefreshSucceeded = false;
+        recordHomeLatestDiag({
+          cacheHit: !!latest.cacheHydrated,
+          cacheAgeMs: homeLatestCacheAge(latest),
+          cacheItemCount: latest.cacheItemCount || 0,
+          cacheHydratedAt: latest.cacheHydratedAt || 0,
+          networkRefresh: true,
+          networkRefreshSucceeded: false,
+          networkRefreshDurationMs: latest.lastRefreshAt ? Math.max(0, Date.now() - latest.lastRefreshAt) : 0,
+          networkRefreshReason: latest.networkRefreshReason || "no-cache",
+          refreshFailure: true,
+          error: String(error && error.message || "加载失败")
+        });
+        throw error;
+      });
       latest.promise = promise;
       promise.then(() => {
         if (latest.promise === promise) latest.promise = null;
@@ -17615,8 +17717,29 @@ utils.encode = function encode(arr, enc) {
       latest.error = "";
       const requestSeq = ++latest.requestSeq;
       const range = weeklyDateRange();
+      if (latest.range && latest.range.start && latest.range.start !== range.start) {
+        latest.items = [];
+        latest.loaded = false;
+        latest.loadedAt = 0;
+        latest.lastRefreshAt = 0;
+        latest.cacheChecked = false;
+        latest.cacheHydrated = false;
+        latest.cacheWeekStart = "";
+        latest.cacheSavedAt = 0;
+        latest.cacheItemCount = 0;
+        latest.cacheHydratedAt = 0;
+        latest.networkRefreshReason = "";
+        latest.networkRefreshSucceeded = false;
+      }
       latest.range = range;
+      const refreshReason = homeLatestRefreshReason(latest);
+      latest.lastRefreshAt = Date.now();
+      await hydrateHomeLatestCache(latest, range);
+      if (latest.requestSeq !== requestSeq) return latest;
+      latest.networkRefreshReason = latest.cacheHydrated ? "cold-start" : refreshReason;
       if (isHomeRouteActive()) renderHomeHot();
+      const networkStartedAt = Date.now();
+      latest.lastRefreshAt = networkStartedAt;
       const sources = homeLatestSources();
       const responses = await Promise.all(sources.map((source) => Promise.resolve()
         .then(() => requestJson(tmdbUrl(source, source.page || 1), 18))
@@ -17700,11 +17823,16 @@ utils.encode = function encode(arr, enc) {
       const sortedTv = sortWeeklyItems(tvItems).slice(0, HOME_WEEKLY_TV_LIMIT);
       const remainingMovieSlots = Math.max(0, HOME_WEEKLY_TOTAL_LIMIT - sortedTv.length);
       const sortedMovies = sortWeeklyItems(Array.from(movieItemsById.values())).slice(0, Math.min(HOME_WEEKLY_MOVIE_LIMIT, remainingMovieSlots));
-      latest.items = sortedTv.concat(sortedMovies);
+      const nextItems = sortedTv.concat(sortedMovies);
+      const hadExistingItems = homeLatestHasItems(latest);
+      if (nextItems.length || !hadExistingItems) latest.items = nextItems;
+      const networkSucceeded = goodCount > 0;
+      const networkRefreshSucceeded = networkSucceeded && nextItems.length > 0;
       latest.loading = false;
       latest.loaded = true;
-      latest.loadedAt = Date.now();
-      latest.error = goodCount ? "" : "加载失败";
+      if (networkSucceeded) latest.loadedAt = Date.now();
+      latest.networkRefreshSucceeded = networkRefreshSucceeded;
+      latest.error = networkSucceeded || homeLatestHasItems(latest) ? "" : "加载失败";
       recordHomeLatestDiag(Object.assign({}, counts, {
         weekStart: range.start,
         weekEnd: range.end,
@@ -17714,24 +17842,52 @@ utils.encode = function encode(arr, enc) {
         movieRenderedCount: sortedMovies.length,
         renderedCount: latest.items.length,
         firstItemTitle: latest.items[0] && latest.items[0].title || "",
-        firstItems: latest.items.slice(0, 10).map((item) => ({ title: item.title || "", mediaType: item.mediaType || "", update: item.weeklyUpdateText || "" }))
+        firstItems: latest.items.slice(0, 10).map((item) => ({ title: item.title || "", mediaType: item.mediaType || "", update: item.weeklyUpdateText || "" })),
+        cacheHit: !!latest.cacheHydrated,
+        cacheAgeMs: homeLatestCacheAge(latest),
+        cacheItemCount: latest.cacheItemCount || 0,
+        cacheHydratedAt: latest.cacheHydratedAt || 0,
+        networkRefresh: true,
+        networkRefreshSucceeded,
+        networkRefreshDurationMs: Math.max(0, Date.now() - networkStartedAt),
+        networkRefreshReason: latest.networkRefreshReason
       }));
       if (isHomeRouteActive()) {
         renderHomeHot();
         mergeHomeLatestIntoHeroFeed({ render: true });
       }
+      if (networkRefreshSucceeded && latest.requestSeq === requestSeq) await persistHomeLatestCache(latest, range);
       return latest;
     }
 
     function ensureHomeLatestData() {
       if (!isHomeRouteActive()) return false;
       const latest = state.homeLatest;
-      if (latest && (latest.loading || latest.loaded)) return false;
+      if (!latest) return false;
+      if (latest.loading) return false;
+      const networkAge = latest.loadedAt > 0 ? Math.max(0, Date.now() - latest.loadedAt) : Infinity;
+      const attemptAge = latest.lastRefreshAt > 0 ? Math.max(0, Date.now() - latest.lastRefreshAt) : Infinity;
+      if (latest.loadedAt > 0 && networkAge < HOME_WEEKLY_REFRESH_TTL_MS) return false;
+      if (!latest.loadedAt && latest.loaded && latest.lastRefreshAt > 0 && attemptAge < HOME_WEEKLY_REFRESH_TTL_MS) return false;
+      if (!latest.networkRefreshSucceeded && latest.loaded && latest.lastRefreshAt > 0 && attemptAge < HOME_WEEKLY_REFRESH_TTL_MS) return false;
       Promise.resolve(loadHomeLatest()).catch(() => {
         if (state.homeLatest) {
+          const hasItems = homeLatestHasItems(state.homeLatest);
           state.homeLatest.loading = false;
           state.homeLatest.loaded = true;
-          state.homeLatest.error = "加载失败";
+          state.homeLatest.error = hasItems ? "" : "加载失败";
+          state.homeLatest.networkRefreshSucceeded = false;
+          recordHomeLatestDiag({
+            cacheHit: !!state.homeLatest.cacheHydrated,
+            cacheAgeMs: homeLatestCacheAge(state.homeLatest),
+            cacheItemCount: state.homeLatest.cacheItemCount || 0,
+            cacheHydratedAt: state.homeLatest.cacheHydratedAt || 0,
+            networkRefresh: true,
+            networkRefreshSucceeded: false,
+            networkRefreshDurationMs: state.homeLatest.lastRefreshAt ? Math.max(0, Date.now() - state.homeLatest.lastRefreshAt) : 0,
+            networkRefreshReason: state.homeLatest.networkRefreshReason || "no-cache",
+            refreshFailure: true
+          });
         }
         if (isHomeRouteActive()) renderHomeHot();
       });
@@ -25441,7 +25597,7 @@ utils.encode = function encode(arr, enc) {
         showHomeRailStatus(rail, "本周更新加载中...", { variant: "portrait" });
         return;
       }
-      if (page && page.error) {
+      if (page && page.error && !resolved.items.length) {
         showHomeRailStatus(rail, "本周更新加载失败", { variant: "portrait" });
         return;
       }
