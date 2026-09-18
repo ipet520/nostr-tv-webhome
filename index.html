@@ -16942,6 +16942,7 @@ utils.encode = function encode(arr, enc) {
       tvFullscreen: false,
       detailReturn: null,
       detailPreload: null,
+      detailHistoryHandoff: null,
       detailPlayback: { seq: 0, token: "", itemKey: "", active: false, promise: null, candidate: null, sourceId: "", provider: "", playRequested: false, handoffStarted: false, history: null, historyVerified: false, episodeTarget: null, explicitEpisodeTarget: false, directAction: null, error: "" },
       detailEpisodeTarget: null,
       historyResume: null,
@@ -21058,6 +21059,122 @@ utils.encode = function encode(arr, enc) {
       return true;
     }
 
+    function detailHistoryDirectResourceFor(item, history) {
+      if (!item || !detailContinueHistoryIsValid(history)) return null;
+      const target = detailContinuePlaybackTargetFor(item, history);
+      const candidate = buildDirectPanHistoryItem(target);
+      if (!target || !candidate || !candidate.url || !candidate.diskType) return null;
+      const supported = PAN_DISK_TYPES.some((disk) => disk.id === normalizePanDiskType(candidate.diskType));
+      const payload = buildPanPlayPayload(candidate);
+      if (!supported || !payload || !payload.type || !payload.url) return null;
+      return { target, candidate };
+    }
+
+    function detailHistoryHandoffCurrent(item, handoff) {
+      return !!(handoff && state.detailHistoryHandoff === handoff && state.selected === item
+        && $("detailSheet") && $("detailSheet").classList.contains("active"));
+    }
+
+    function startDetailContinueFallback(item, target, reason) {
+      if (!item || state.selected !== item || !$("detailSheet") || !$("detailSheet").classList.contains("active")) {
+        return Promise.resolve(false);
+      }
+      const existing = state.detailHistoryHandoff;
+      if (existing && existing.item === item && existing.status === "fallback" && existing.promise) return existing.promise;
+      const pending = typeof _directPlayPending !== "undefined" ? _directPlayPending : null;
+      cancelDetailPlaybackPreparation(reason || "continue_history_fallback");
+      cancelPendingDirectPlay(reason || "continue_history_fallback");
+      resetPanSearchState(false, { reason: reason || "continue_history_fallback", preserveHealth: true });
+      if (target) setDetailPlaybackTarget(item, target);
+      const handoff = { item, target: target || null, status: "fallback", promise: null };
+      state.detailHistoryHandoff = handoff;
+      handoff.promise = (async () => {
+        if (pending && pending.promise && typeof pending.promise.then === "function") {
+          await pending.promise.catch(() => {});
+        }
+        if (state.selected !== item || !$("detailSheet") || !$("detailSheet").classList.contains("active")) return false;
+        if (target) setDetailPlaybackTarget(item, target);
+        prepareDetailPlayback(item, {
+          reason: reason || "continue_history_fallback",
+          playRequested: true
+        }).catch(() => {});
+        return true;
+      })();
+      return handoff.promise;
+    }
+
+    async function playDetailContinueHistoryFirst(item, history, button) {
+      const existing = state.detailHistoryHandoff;
+      if (existing && existing.item === item) {
+        if (existing.status === "fallback") return false;
+        if (existing.status === "playing" && state.pan && state.pan.isPlaying) return true;
+        if (existing.status === "preparing" && existing.promise) {
+          await existing.promise.catch(() => {});
+          return true;
+        }
+        if (existing.status === "playing" && !(state.pan && state.pan.isPlaying)) state.detailHistoryHandoff = null;
+      }
+      const target = detailContinuePlaybackTargetFor(item, history);
+      const resource = detailHistoryDirectResourceFor(item, history);
+      if (!resource) {
+        await startDetailContinueFallback(item, target, "continue_history_resource_unavailable");
+        return true;
+      }
+      const pending = typeof _directPlayPending !== "undefined" ? _directPlayPending : null;
+      cancelDetailPlaybackPreparation("continue_history_resource");
+      cancelPendingDirectPlay("continue_history_resource");
+      resetPanSearchState(false, { reason: "continue_history_resource", preserveHealth: true });
+      const handoff = {
+        item,
+        target: resource.target,
+        candidate: resource.candidate,
+        status: "preparing",
+        promise: null
+      };
+      state.detailHistoryHandoff = handoff;
+      handoff.promise = (async () => {
+        if (!detailHistoryHandoffCurrent(item, handoff)) return false;
+        if (isPanHealthBad(resource.candidate)) {
+          await startDetailContinueFallback(item, resource.target, "continue_history_health_bad");
+          return true;
+        }
+        const preflight = await freshPanPreflight(resource.candidate, {
+          token: state.pan.viewToken,
+          item
+        }, { playback: true });
+        if (preflight && preflight.cancelled) return false;
+        if (!detailHistoryHandoffCurrent(item, handoff)) return false;
+        if (isPanHealthBad(resource.candidate)) {
+          await startDetailContinueFallback(item, resource.target, "continue_history_health_bad");
+          return true;
+        }
+        setDetailPlaybackTarget(item, resource.target);
+        if (button) rememberDetailReturn(button);
+        state.historyResume = null;
+        let fallbackPromise = null;
+        const onPlayFailure = (error) => {
+          if (fallbackPromise || !detailHistoryHandoffCurrent(item, handoff)) return;
+          handlePanPlayFailure(item, error, 0);
+          fallbackPromise = startDetailContinueFallback(item, resource.target, "continue_history_handoff_failed");
+        };
+        await playPanResult(resource.candidate, {
+          prechecked: true,
+          episodeTarget: resource.target,
+          historyResume: true,
+          onPlayFailure
+        });
+        if (fallbackPromise) await fallbackPromise;
+        return true;
+      })().catch(async () => {
+        if (!detailHistoryHandoffCurrent(item, handoff)) return false;
+        await startDetailContinueFallback(item, resource.target, "continue_history_handoff_failed");
+        return true;
+      });
+      const result = await handoff.promise.catch(() => false);
+      if (state.detailHistoryHandoff === handoff) handoff.status = state.pan && state.pan.isPlaying ? "playing" : "done";
+      return result !== false;
+    }
+
     async function requestDetailPlayback(item, options) {
       const opts = options || {};
       if (!item) return;
@@ -21080,6 +21197,9 @@ utils.encode = function encode(arr, enc) {
         directOptions.origin = "episode_select";
       } else if (history) {
         directOptions.history = history;
+      }
+      if (!explicitTarget && mode === "CONTINUE" && history && detailContinueHistoryIsValid(history)) {
+        if (await playDetailContinueHistoryFirst(item, history, button)) return;
       }
       const prepared = detailPreparedCandidateFor(item);
       if (prepared) {
@@ -26603,28 +26723,9 @@ utils.encode = function encode(arr, enc) {
     }
 
     async function openDetailContinueHistory() {
-      const button = $("detailContinueBtn");
       const item = state.selected;
-      if (canonicalResourceKey(item)) {
-        try { await resolveCanonicalResourceTitle(item); } catch (e) {}
-        if (state.selected !== item) return false;
-      }
-      const history = state.detailMode === "CONTINUE" ? state.detailHistory : null;
-      const readyCandidate = detailDirectPlayCandidateFor(item);
-      if (readyCandidate && history) {
-        await playDetailDirectReadyCandidate(item, readyCandidate, history, button);
-        return true;
-      }
-      if (!item || !history || !detailContinueHistoryIsValid(history)) {
-        toast("没有可继续观看的记录");
-        updateDetailContinueButton();
-        return false;
-      }
-      await playBestQuark(item, {
-        detailPrimary: true,
-        suppressAutoPan: true,
-        history
-      });
+      if (!item) return false;
+      await requestDetailPlayback(item);
       return true;
     }
     function mediaDomKey(item) {
@@ -28493,6 +28594,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         clearDirectPlayStatus(0, "selected_change");
         cancelPendingDirectPlay("selected_change");
         cancelDetailPlaybackPreparation("selected_change");
+        state.detailHistoryHandoff = null;
       }
       if (!detailWasActive || !sameSelected || !opts.keepPan) {
         state.detailPreload = null;
@@ -33043,6 +33145,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       clearDirectPlayStatus(0, "route_leave");
       cancelPendingDirectPlay("detail_closed");
       cancelDetailPlaybackPreparation("detail_closed");
+      state.detailHistoryHandoff = null;
       // 防止动画期间重复触发
       if (sheet.classList.contains("sheet-closing")) return;
 
