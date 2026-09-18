@@ -20180,19 +20180,37 @@ utils.encode = function encode(arr, enc) {
       });
     }
 
+    function detailHasAuthoritativeNativeHistory(history) {
+      return !!(history
+        && history.source === "history"
+        && (history.nativeHistoryRaw && typeof history.nativeHistoryRaw === "object"
+          || String(history.nativeHistoryKey || "").trim())
+        && historyCanContinuePlayback(history));
+    }
+
+    function detailAuthoritativeNativeHistoryFor(item, candidate) {
+      if (!item || !candidate) return null;
+      const candidateIdentity = nativeHistoryDeleteIdentityKey(candidate);
+      return (state.recent.items || []).find((history) => {
+        if (!detailHasAuthoritativeNativeHistory(history) || !detailHistoryMatches(item, history)) return false;
+        if (history === candidate) return true;
+        return !!candidateIdentity && nativeHistoryDeleteIdentityKey(history) === candidateIdentity;
+      }) || null;
+    }
+
     function detailContinueHistoryIsValid(history) {
-      return !!(history && (history.continueContext === true || historyCanContinuePlayback(history)));
+      return detailHasAuthoritativeNativeHistory(history);
     }
 
     function findDetailContinueHistory(item) {
-      const contextMatch = findContinueWatchingContext(item);
-      if (detailContinueHistoryIsValid(contextMatch)) return contextMatch;
-      return (state.recent.items || []).find((history) => detailHistoryMatches(item, history)) || null;
+      return (state.recent.items || []).find((history) => (
+        detailHasAuthoritativeNativeHistory(history) && detailHistoryMatches(item, history)
+      )) || null;
     }
 
     function syncDetailMode(item, historyOverride) {
       const candidate = historyOverride === undefined ? findDetailContinueHistory(item) : historyOverride;
-      const history = detailContinueHistoryIsValid(candidate) ? candidate : null;
+      const history = detailAuthoritativeNativeHistoryFor(item, candidate);
       state.detailMode = history ? "CONTINUE" : "FIRST_PLAY";
       state.detailModeItemKey = item ? panSearchItemKey(item) : "";
       state.detailHistory = history;
