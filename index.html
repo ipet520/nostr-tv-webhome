@@ -16801,6 +16801,8 @@ utils.encode = function encode(arr, enc) {
     const RECENT_DOUBLE_PRESS_WINDOW_MS = 350;
     const DETAIL_TEXT_CLAMP_LIMIT = 150;
     const DETAIL_TEXT_CLAMP_LIMIT_LARGE = 210;
+    const canonicalResourceTitleCache = new Map();
+    const canonicalResourceTitlePromises = new Map();
     const state = {
       site: null,
       config: null,
@@ -17617,7 +17619,7 @@ utils.encode = function encode(arr, enc) {
       latest.cacheHydratedAt = 0;
       let saved = null;
       try { saved = safeJson(await sdk().cache.get(cacheKey("homeWeekly")), null); } catch (e) { saved = null; }
-      const valid = !!(saved && Number(saved.version) === 3
+      const valid = !!(saved && Number(saved.version) === 4
         && String(saved.weekStart || "") === String(range.start || "")
         && Array.isArray(saved.items) && saved.items.length);
       if (!valid) return false;
@@ -17651,7 +17653,7 @@ utils.encode = function encode(arr, enc) {
     async function persistHomeLatestCache(latest, range) {
       if (!latest || !range || !homeLatestHasItems(latest)) return false;
       const snapshot = {
-        version: 3,
+        version: 4,
         weekStart: range.start,
         savedAt: Date.now(),
         items: latest.items.map((item) => Object.assign({}, item))
@@ -17788,11 +17790,9 @@ utils.encode = function encode(arr, enc) {
         counts.tvDetailSuccessCount += 1;
         const candidate = tvCandidates[index];
         const detail = result.value;
-        const candidateName = String(candidate && candidate.name || "").trim();
         const classification = weeklyClassifyTv(Object.assign({}, candidate, detail), range);
         if (!classification.keep) return;
         const merged = Object.assign({}, candidate, detail, { id: detail.id || candidate.id, media_type: "tv" });
-        if (titleHasChinese(candidateName) && !titleHasChinese(merged.name)) merged.name = candidateName;
         if (!merged.poster_path) merged.poster_path = candidate.poster_path || "";
         if (!merged.backdrop_path) merged.backdrop_path = candidate.backdrop_path || "";
         if (!merged.name) merged.name = candidate.name || candidate.original_name || "未命名";
@@ -20108,6 +20108,24 @@ utils.encode = function encode(arr, enc) {
       return `src="${escapeAttr(actualSrc)}"${deferred} loading="${escapeAttr(loading)}" decoding="async"${fetchPriority}`;
     }
 
+    function mergeTitleAliases() {
+      const values = Array.prototype.slice.call(arguments);
+      const result = [];
+      const seen = new Set();
+      const add = (value) => {
+        if (Array.isArray(value)) {
+          value.forEach(add);
+          return;
+        }
+        const text = String(value == null ? "" : value).trim();
+        if (!text || seen.has(text)) return;
+        seen.add(text);
+        result.push(text);
+      };
+      values.forEach(add);
+      return result;
+    }
+
     function normalizeTmdb(item, list, index) {
       const date = item.release_date || item.first_air_date || "";
       const listMediaType = String(list && list.mediaType || "").toLowerCase();
@@ -20137,6 +20155,8 @@ utils.encode = function encode(arr, enc) {
         listTitle: list.title || "搜索",
         title,
         originalTitle,
+        aliases: mergeTitleAliases(title, originalTitle, item.name, item.title, item.original_name, item.original_title, item.aliases),
+        resourceSearchTitle: title,
         pic: imageUrl(item.poster_path, false),
         landscape: imageUrl(item.backdrop_path, true),
         image: imageUrl(item.backdrop_path, true) || imageUrl(item.poster_path, false),
@@ -20358,6 +20378,9 @@ utils.encode = function encode(arr, enc) {
         tmdbId: context.tmdbId,
         mediaType: context.mediaType,
         title,
+        originalTitle: context.originalTitle || "",
+        resourceSearchTitle: context.resourceSearchTitle || "",
+        aliases: mergeTitleAliases(context.aliases, title, context.originalTitle),
         vodName: title,
         pic,
         vodPic: pic,
@@ -26763,11 +26786,22 @@ utils.encode = function encode(arr, enc) {
       const panPassword = String(historyNestedValue(history, ["panPassword", "pan_password", "password", "pwd", "passcode"]) || hint && (hint.panPassword || hint.password) || "").trim();
       const panTitle = String(historyNestedValue(history, ["panTitle", "pan_title", "playTitle", "play_title", "resourceTitle"]) || hint && hint.panTitle || "").trim();
       const lastPlayUrl = String(historyNestedValue(history, ["lastPlayUrl", "last_play_url", "playUrl", "play_url", "episodeUrl", "episode_url", "url"]) || hint && hint.lastPlayUrl || "").trim();
+      const originalTitle = String(historyNestedValue(history, ["originalTitle", "original_title", "originalName", "original_name"]) || hint && hint.originalTitle || "").trim();
+      const resourceSearchTitle = String(historyNestedValue(history, ["resourceSearchTitle", "resource_search_title"]) || hint && hint.resourceSearchTitle || "").trim();
+      const aliases = mergeTitleAliases(
+        historyNestedValue(history, ["aliases", "alias", "alternativeTitles"]),
+        hint && hint.aliases,
+        title,
+        originalTitle
+      );
       return {
         siteKey: parts.siteKey,
         vodId: parts.vodId,
         cid: parts.cid,
         title,
+        originalTitle,
+        resourceSearchTitle,
+        aliases,
         poster: String(historyNestedValue(history, ["vodPic", "pic", "poster"]) || hint && hint.poster || "").trim(),
         backdrop: String(historyNestedValue(history, ["backdrop", "landscape", "backdropUrl", "backdrop_url"]) || hint && hint.backdrop || "").trim(),
         mediaType,
@@ -26835,6 +26869,9 @@ utils.encode = function encode(arr, enc) {
       const tmdbId = String(target.tmdbId || "").trim();
       const mediaType = normalizeHistoryMediaType(target.mediaType);
       const title = continueIndexFirstValue([target.title, item && item.title, source.title, "最近观看"]);
+      const originalTitle = continueIndexFirstValue([target.originalTitle, item && item.originalTitle, source.originalTitle]);
+      const resourceSearchTitle = continueIndexFirstValue([target.resourceSearchTitle, item && item.resourceSearchTitle, source.resourceSearchTitle]);
+      const aliases = mergeTitleAliases(target.aliases, item && item.aliases, source.aliases, title, originalTitle);
       const poster = continueIndexFirstValue([target.poster, item && item.poster, item && item.pic, item && item.image, source.poster]);
       const backdrop = continueIndexFirstValue([target.backdrop, item && item.backdrop, item && item.landscape, source.backdrop, source.landscape]);
       const playedAtValue = Number(playedAt || source.playedAt || source.updatedAt || target.updatedAt || Date.now()) || Date.now();
@@ -26856,6 +26893,9 @@ utils.encode = function encode(arr, enc) {
         tmdbId,
         mediaType,
         title,
+        originalTitle,
+        resourceSearchTitle,
+        aliases,
         poster,
         backdrop,
         panProvider,
@@ -26873,6 +26913,9 @@ utils.encode = function encode(arr, enc) {
         tmdbId,
         mediaType,
         title,
+        originalTitle,
+        resourceSearchTitle,
+        aliases,
         pic: poster || item && item.pic || "",
         image: poster || item && (item.image || item.pic) || "",
         landscape: backdrop || item && item.landscape || ""
@@ -26883,6 +26926,9 @@ utils.encode = function encode(arr, enc) {
         tmdbId,
         mediaType,
         title,
+        originalTitle,
+        resourceSearchTitle,
+        aliases,
         poster,
         backdrop,
         seasonNumber: Math.max(0, Number(normalizedTarget.seasonNumber || 0) || 0),
@@ -27056,6 +27102,9 @@ utils.encode = function encode(arr, enc) {
         updatedAt: now,
         key: String(panItem && panItem.key || ""),
         title: String(item.title || "").trim(),
+        originalTitle: String(item.originalTitle || "").trim(),
+        resourceSearchTitle: String(item.resourceSearchTitle || "").trim(),
+        aliases: mergeTitleAliases(item.aliases, item.title, item.originalTitle),
         poster: String(item.pic || item.image || "").trim(),
         backdrop: String(item.backdrop || item.landscape || "").trim(),
         panProvider: String(panItem && (panItem.provider || panItem.diskType) || "").trim(),
@@ -27092,6 +27141,9 @@ utils.encode = function encode(arr, enc) {
       const mediaType = normalizeHistoryMediaType(target && target.mediaType);
       if (!tmdbId || !mediaType) return null;
       const title = String(target.title || entry.title || rawItem.title || rawItem.name || "继续观看").trim();
+      const originalTitle = String(target.originalTitle || entry.originalTitle || rawItem.originalTitle || "").trim();
+      const resourceSearchTitle = String(target.resourceSearchTitle || entry.resourceSearchTitle || rawItem.resourceSearchTitle || "").trim();
+      const aliases = mergeTitleAliases(target.aliases, entry.aliases, rawItem.aliases, title, originalTitle);
       const poster = String(target.poster || rawItem.pic || rawItem.image || rawItem.poster || "").trim();
       const backdrop = String(target.backdrop || entry.backdrop || rawItem.landscape || rawItem.backdrop || "").trim();
       const position = Math.max(0, Number(target.playbackPosition || entry.position || rawItem.position || 0) || 0);
@@ -27112,6 +27164,9 @@ utils.encode = function encode(arr, enc) {
         tmdbId,
         mediaType,
         title,
+        originalTitle,
+        resourceSearchTitle,
+        aliases,
         pic: poster,
         image: poster,
         landscape: backdrop
@@ -27130,6 +27185,9 @@ utils.encode = function encode(arr, enc) {
         tmdbId,
         mediaType,
         title,
+        originalTitle,
+        resourceSearchTitle,
+        aliases,
         backdrop,
         vodName: title,
         pic: poster,
@@ -27355,7 +27413,7 @@ utils.encode = function encode(arr, enc) {
       const context = contextItem && typeof contextItem === "object" ? contextItem : {};
       const merged = Object.assign({}, context, native);
       [
-        "tmdbId", "mediaType", "title", "pic", "vodPic", "image", "landscape", "backdrop",
+        "tmdbId", "mediaType", "title", "originalTitle", "resourceSearchTitle", "aliases", "pic", "vodPic", "image", "landscape", "backdrop",
         "remark", "badge", "vodRemarks", "desc", "releaseDate", "genreIds", "originCountries",
         "originalLanguage", "seasonNumber", "episodeNumber", "episodeTitle", "sourceType",
         "panProvider", "panPassword", "panTitle", "panFileName", "panFileId", "resourceId",
@@ -27473,6 +27531,9 @@ utils.encode = function encode(arr, enc) {
           tmdbId,
           mediaType,
           title: item.title || target.title || "继续观看",
+          originalTitle: item.originalTitle || target.originalTitle || "",
+          resourceSearchTitle: item.resourceSearchTitle || target.resourceSearchTitle || "",
+          aliases: mergeTitleAliases(item.aliases, target.aliases, item.title, target.title, item.originalTitle, target.originalTitle),
           pic: item.pic || target.poster || "",
           image: item.image || item.pic || target.poster || "",
           landscape: item.landscape || item.backdrop || target.backdrop || "",
@@ -27509,6 +27570,9 @@ utils.encode = function encode(arr, enc) {
       const tmdbId = String(value(["tmdbId", "tmdb_id"], "") || "").trim();
       const mediaType = normalizeHistoryMediaType(value(["mediaType", "media_type"], "")) || String(value(["mediaType"], "") || "").trim();
       const title = String(value(["title", "vodName", "name"], "") || "").trim();
+      const originalTitle = String(value(["originalTitle", "original_title"], "") || "").trim();
+      const resourceSearchTitle = String(value(["resourceSearchTitle", "resource_search_title"], "") || "").trim();
+      const aliases = mergeTitleAliases(source.aliases, item && item.aliases, title, originalTitle);
       const seasonNumber = Math.max(0, Number(value(["seasonNumber", "season_number", "season"], 0)) || 0);
       const episodeNumber = Math.max(0, Number(value(["episodeNumber", "episode_number", "episode"], 0)) || 0);
       if (!tmdbId && !title && !mediaType) return null;
@@ -27516,6 +27580,9 @@ utils.encode = function encode(arr, enc) {
         mediaType,
         tmdbId,
         title,
+        originalTitle,
+        resourceSearchTitle,
+        aliases,
         poster: String(value(["poster", "pic", "vodPic"], "") || "").trim(),
         backdrop: String(value(["backdrop", "landscape", "backdropUrl", "backdrop_url"], "") || "").trim(),
         seasonNumber,
@@ -27570,6 +27637,8 @@ utils.encode = function encode(arr, enc) {
         listTitle: item.listTitle || "",
         title: item.title || "",
         originalTitle: item.originalTitle || "",
+        resourceSearchTitle: String(item.resourceSearchTitle || "").trim(),
+        aliases: Array.isArray(item.aliases) ? mergeTitleAliases(item.aliases) : [],
         pic: item.pic || "",
         landscape: item.landscape || "",
         image: item.image || item.pic || "",
@@ -27582,6 +27651,107 @@ utils.encode = function encode(arr, enc) {
         episodeNumber: Number(item.episodeNumber || item.episode_number || 0) || 0,
         episodeTitle: item.episodeTitle || item.episode_title || ""
       };
+    }
+
+    function canonicalResourceKey(item) {
+      const mediaType = normalizeHistoryMediaType(item && (item.mediaType || item.media_type));
+      const tmdbId = String(item && (item.tmdbId || item.tmdb_id) || "").trim();
+      return mediaType && tmdbId ? `${mediaType}:${tmdbId}` : "";
+    }
+
+    function canonicalFreshTmdbPool() {
+      const home = state.homeLatest && Array.isArray(state.homeLatest.items) ? state.homeLatest.items : [];
+      const hero = state.homeV14 || {};
+      const heroItems = Array.isArray(hero.heroItems) ? hero.heroItems : [];
+      const heroFeed = hero.heroFeed && Array.isArray(hero.heroFeed.items) ? hero.heroFeed.items : [];
+      const legacyHero = state.homeHero && Array.isArray(state.homeHero.items) ? state.homeHero.items : [];
+      return allItems().concat(state.searchItems || [], home, heroItems, heroFeed, legacyHero)
+        .filter((candidate) => candidate
+          && (candidate.source === "tmdb" || /^tmdb:(?:movie|tv):/i.test(String(candidate.id || ""))));
+    }
+
+    function applyCanonicalResourceIdentity(item, identity) {
+      if (!item || !identity) return item;
+      const resourceSearchTitle = String(identity.resourceSearchTitle || identity.title || "").trim();
+      if (resourceSearchTitle) item.resourceSearchTitle = resourceSearchTitle;
+      item.aliases = mergeTitleAliases(
+        item.aliases,
+        identity.aliases,
+        item.title,
+        item.originalTitle,
+        identity.title,
+        identity.originalTitle
+      );
+      return item;
+    }
+
+    async function resolveCanonicalResourceTitle(item) {
+      if (!item || typeof item !== "object") return item;
+      const existing = String(item.resourceSearchTitle || "").trim();
+      if (existing) {
+        item.aliases = mergeTitleAliases(item.aliases, item.title, item.originalTitle, existing);
+        return item;
+      }
+      const key = canonicalResourceKey(item);
+      if (!key) {
+        applyCanonicalResourceIdentity(item, {
+          resourceSearchTitle: item.title || item.originalTitle || "",
+          title: item.title,
+          originalTitle: item.originalTitle,
+          aliases: item.aliases
+        });
+        return item;
+      }
+      const cached = canonicalResourceTitleCache.get(key);
+      if (cached) return applyCanonicalResourceIdentity(item, cached);
+      const pending = canonicalResourceTitlePromises.get(key);
+      if (pending) return applyCanonicalResourceIdentity(item, await pending);
+
+      const task = (async () => {
+        const mediaType = String(item.mediaType || item.media_type || "").toLowerCase();
+        const tmdbId = String(item.tmdbId || item.tmdb_id || "").trim();
+        const fresh = canonicalFreshTmdbPool().find((candidate) => canonicalResourceKey(candidate) === key);
+        if (fresh) {
+          return {
+            title: fresh.title,
+            originalTitle: fresh.originalTitle,
+            resourceSearchTitle: fresh.resourceSearchTitle || fresh.title || "",
+            aliases: mergeTitleAliases(fresh.aliases, fresh.title, fresh.originalTitle)
+          };
+        }
+        const query = String(item.originalTitle || item.title || "").trim();
+        if (query && (mediaType === "tv" || mediaType === "movie") && tmdbId) {
+          try {
+            const body = await requestJson(tmdbSearchUrl(query), 18);
+            const results = Array.isArray(body && body.results) ? body.results : [];
+            const matched = results.find((result) => String(result && result.id || "") === tmdbId
+              && String(result && result.media_type || "").toLowerCase() === mediaType);
+            if (matched) {
+              const canonical = normalizeTmdb(matched, { id: "canonical", title: "canonical", mediaType }, 0);
+              return {
+                title: canonical.title,
+                originalTitle: canonical.originalTitle,
+                resourceSearchTitle: canonical.resourceSearchTitle || canonical.title || "",
+                aliases: canonical.aliases
+              };
+            }
+          } catch (e) {}
+        }
+        return {
+          title: item.title,
+          originalTitle: item.originalTitle,
+          resourceSearchTitle: item.title || item.originalTitle || "",
+          aliases: mergeTitleAliases(item.aliases, item.title, item.originalTitle)
+        };
+      })();
+      canonicalResourceTitlePromises.set(key, task);
+      try {
+        const identity = await task;
+        canonicalResourceTitleCache.set(key, identity);
+        return applyCanonicalResourceIdentity(item, identity);
+      } finally {
+        if (canonicalResourceTitlePromises.get(key) === task) canonicalResourceTitlePromises.delete(key);
+      }
     }
 
     function normalizeTitle(title) {
@@ -27615,6 +27785,9 @@ utils.encode = function encode(arr, enc) {
             tmdbId: context.tmdbId,
             mediaType: context.mediaType,
             title: context.title || "最近观看",
+            originalTitle: context.originalTitle || "",
+            resourceSearchTitle: context.resourceSearchTitle || "",
+            aliases: mergeTitleAliases(context.aliases, context.title, context.originalTitle),
             pic: context.poster || "",
             image: context.poster || "",
             landscape: "",
@@ -28230,6 +28403,23 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return true;
     }
 
+    function detailNeedsCanonicalResourceTitle(item) {
+      return !!(item && (
+        item.source === "history"
+        || item.continueContext
+        || item.recentWatching
+        || !String(item.resourceSearchTitle || "").trim()
+      ));
+    }
+
+    async function prepareDetailPlaybackForDetail(item, options) {
+      if (detailNeedsCanonicalResourceTitle(item)) {
+        try { await resolveCanonicalResourceTitle(item); } catch (e) {}
+      }
+      if (state.selected !== item) return null;
+      return prepareDetailPlayback(item, options);
+    }
+
     function openDetail(item, options) {
       const opts = options || {};
       const detailWasActive = $("detailSheet") && $("detailSheet").classList.contains("active");
@@ -28253,7 +28443,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       syncDetailMode(item, null);
       if (!opts.keepPan) resetPanSearch();
       // 资源准备与 fresh Native History 校验并行；站源失败后才进入原有 Direct。
-      prepareDetailPlayback(item, { reason: "detail_open" }).catch(() => {});
+      prepareDetailPlaybackForDetail(item, { reason: "detail_open" }).catch(() => {});
       ensureSheetViewport($("detailSheet"));
       syncDetailLayout();
       document.body.classList.add("detail-active");
@@ -30210,8 +30400,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       fallbackHighlightEpisode(item, season, epNo);
     }
 
+    function resourceSearchKeyword(item) {
+      return String(item && (item.resourceSearchTitle || item.title || item.originalTitle) || "").trim();
+    }
+
     function panKeyword(item) {
-      return String(item && item.title || "").trim();
+      return resourceSearchKeyword(item);
     }
 
     // 进入剧集（tv）详情页即后台静默预搜盘搜资源，缩短点击分集后的等待时间。
@@ -31394,7 +31588,15 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const remark = String(meta.remark || "").replace(/\s+/g, " ").trim();
       const actual = curatedCleanTitle(actualText).replace(/(?:19|20)\d{2}$/, "");
       if (!actual) return false;
-      const expected = [item.title, item.originalTitle, item.original_title, item.originalName, item.original_name]
+      const expected = mergeTitleAliases(
+        item.resourceSearchTitle,
+        item.title,
+        item.originalTitle,
+        item.original_title,
+        item.originalName,
+        item.original_name,
+        item.aliases
+      )
         .map((title) => curatedCleanTitle(title).replace(/(?:19|20)\d{2}$/, "")).filter(Boolean);
       if (!expected.length) return false;
       const wantedYear = curatedItemYear(item);
@@ -31586,7 +31788,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     async function searchCuratedSource(source, item, run) {
       let sawSearchResponse = false;
       let sawMatchingEntry = false;
-      const keyword = panKeyword(item) || item && item.title || "";
+      const keyword = resourceSearchKeyword(item);
       const deadline = Date.now() + CURATED_SOURCE_BUDGET_MS;
       const templates = curatedSourceTemplates(source);
       outer: for (const template of templates) {
@@ -34586,9 +34788,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if ($("closeDetailBtn")) $("closeDetailBtn").addEventListener("click", () => closeDetail(false));
       // mobileDetailBackBtn 已移除
       $("detailContinueBtn").addEventListener("click", handleDetailPrimaryAction);
-      $("detailSearchBtn").addEventListener("click", () => {
+      $("detailSearchBtn").addEventListener("click", async () => {
         if (!state.selected) return;
-        nativeSearch(state.selected.title).catch(() => {});
+        try { await resolveCanonicalResourceTitle(state.selected); } catch (e) {}
+        nativeSearch(resourceSearchKeyword(state.selected)).catch(() => {});
       });
       $("panSearchBtn").addEventListener("click", () => {
         if (!state.selected) return;
