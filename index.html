@@ -17617,7 +17617,7 @@ utils.encode = function encode(arr, enc) {
       latest.cacheHydratedAt = 0;
       let saved = null;
       try { saved = safeJson(await sdk().cache.get(cacheKey("homeWeekly")), null); } catch (e) { saved = null; }
-      const valid = !!(saved && Number(saved.version) === 2
+      const valid = !!(saved && Number(saved.version) === 3
         && String(saved.weekStart || "") === String(range.start || "")
         && Array.isArray(saved.items) && saved.items.length);
       if (!valid) return false;
@@ -17651,7 +17651,7 @@ utils.encode = function encode(arr, enc) {
     async function persistHomeLatestCache(latest, range) {
       if (!latest || !range || !homeLatestHasItems(latest)) return false;
       const snapshot = {
-        version: 2,
+        version: 3,
         weekStart: range.start,
         savedAt: Date.now(),
         items: latest.items.map((item) => Object.assign({}, item))
@@ -17788,9 +17788,11 @@ utils.encode = function encode(arr, enc) {
         counts.tvDetailSuccessCount += 1;
         const candidate = tvCandidates[index];
         const detail = result.value;
+        const candidateName = String(candidate && candidate.name || "").trim();
         const classification = weeklyClassifyTv(Object.assign({}, candidate, detail), range);
         if (!classification.keep) return;
         const merged = Object.assign({}, candidate, detail, { id: detail.id || candidate.id, media_type: "tv" });
+        if (titleHasChinese(candidateName) && !titleHasChinese(merged.name)) merged.name = candidateName;
         if (!merged.poster_path) merged.poster_path = candidate.poster_path || "";
         if (!merged.backdrop_path) merged.backdrop_path = candidate.backdrop_path || "";
         if (!merged.name) merged.name = candidate.name || candidate.original_name || "未命名";
@@ -20117,8 +20119,8 @@ utils.encode = function encode(arr, enc) {
           : "movie";
       const isTv = mediaType === "tv";
       const title = isTv
-        ? item.name || item.original_name || item.title || item.original_title || "未命名"
-        : item.title || item.original_title || item.name || item.original_name || "未命名";
+        ? item.name || item.title || item.original_name || item.original_title || "未命名"
+        : item.title || item.name || item.original_title || item.original_name || "未命名";
       const originalTitle = isTv
         ? item.original_name || ""
         : item.original_title || "";
@@ -28700,14 +28702,16 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     }
 
     function detailCanonicalTitle(item, detail) {
+      const itemTitle = String(item && item.title || "").trim();
+      if (itemTitle) return itemTitle;
       const isTv = String(item && item.mediaType || "").toLowerCase() === "tv";
       const value = isTv
         ? detail && (detail.name || detail.original_name)
         : detail && (detail.title || detail.original_title);
-      return String(value || item && item.title || "").trim();
+      return String(value || "").trim();
     }
 
-    function detailTitleHasChinese(value) {
+    function titleHasChinese(value) {
       return /[\u3400-\u9fff]/.test(String(value || ""));
     }
 
@@ -28757,7 +28761,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (!wrap || !img) return;
       const displayTitle = String(canonicalTitle || detailCanonicalTitle(item, detail) || item && item.title || "").trim();
       if (title && displayTitle) title.textContent = displayTitle;
-      if (detailTitleHasChinese(displayTitle)) {
+      if (titleHasChinese(displayTitle)) {
         wrap.style.display = "none";
         wrap.classList.remove("logo-ready");
         img.removeAttribute("src");
