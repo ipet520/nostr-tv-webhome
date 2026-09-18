@@ -37060,6 +37060,26 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       state.resume.timer = setTimeout(() => handleWebHomeResume(opts), opts.delay == null ? 80 : opts.delay);
     }
 
+    function rearmDetailPlaybackAfterPlayerReturn(options) {
+      const opts = options || {};
+      if (opts.playerReturn !== true || opts.manualPanPlaybackReturn === true) return false;
+      const detail = $("detailSheet");
+      if (!detail || !detail.classList.contains("active") || !state.selected) return false;
+      const current = state.detailPlayback;
+      // A restored snapshot may already have a fresh preparation run from openDetail().
+      // Do not duplicate an active run; an inactive run is the consumed lifecycle that
+      // must be replaced after native playback returns (Curated and Direct alike).
+      if (current && detailPlaybackIsCurrent(current) && current.active) return false;
+      // The previous explicit episode target belongs to the consumed handoff.  Let the
+      // fresh Native History verification repopulate it for the new detail lifecycle.
+      state.detailEpisodeTarget = null;
+      state.historyResume = null;
+      syncDetailMode(state.selected, null);
+      updateDetailContinueButton();
+      prepareDetailPlayback(state.selected, { reason: "player_return_rearm" }).catch(() => {});
+      return true;
+    }
+
     async function handleWebHomeResume(options) {
       const opts = options || {};
       const now = Date.now();
@@ -37074,6 +37094,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       fitConnectionPanel();
       renderConnection();
       if (isPlayerReturn) await settlePlayerReturnHistory();
+      if (isPlayerReturn && !isPanPlaybackReturn) {
+        rearmDetailPlaybackAfterPlayerReturn({ playerReturn: true });
+      }
       if (restoreRecentNativeHome) await loadRecentList({ refresh: true, silent: true });
       if (!isPanPlaybackReturn) {
         if ($("detailSheet") && $("detailSheet").classList.contains("active") && state.selected) refreshActiveDetailView();
