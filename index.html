@@ -20429,16 +20429,57 @@ utils.encode = function encode(arr, enc) {
       return state.detailMode;
     }
 
+    function recordDetailPlaybackLifecycle(run, event, detail) {
+      const session = Number(run && run.token || 0);
+      if (!session) return;
+      const suffix = detail ? ` ${String(detail)}` : "";
+      try { console.info(`[AutoPlayback] session=${session} ${String(event || "")}${suffix}`); } catch (e) {}
+    }
+
+    function detailPlaybackCurrentOrRecord(run) {
+      if (detailPlaybackIsCurrent(run)) return true;
+      if (run && !run.staleLogged) {
+        run.staleLogged = true;
+        recordDetailPlaybackLifecycle(run, "stale result ignored");
+      }
+      return false;
+    }
+
+    function settleDetailPlayback(run, result, reason) {
+      if (!detailPlaybackCurrentOrRecord(run)) return false;
+      const finalResult = String(result || "NO_RESOURCE");
+      run.active = false;
+      run.phase = finalResult;
+      run.settledResult = finalResult;
+      recordDetailPlaybackLifecycle(run, "settled", `result=${finalResult}`);
+      if (finalResult !== "READY") {
+        const status = state.directPlayStatus || {};
+        const statusId = Number(status.actionId || (run.directAction && run.directAction.token) || run.token || 0);
+        clearDirectPlayStatus(statusId, reason || "detail_prepare_settled");
+      }
+      return true;
+    }
+
     function cancelDetailPlaybackPreparation(reason) {
       const run = state.detailPlayback;
       if (!run) return false;
+      const cancelReason = String(reason || "detail_prepare_cancelled");
+      const diagnosticReason = cancelReason === "detail_closed" ? "detail-close" : cancelReason;
+      if (!run.cancelled) recordDetailPlaybackLifecycle(run, "CANCELLED", diagnosticReason);
       run.cancelled = true;
       run.active = false;
       run.playRequested = false;
-      run.error = String(reason || "detail_prepare_cancelled");
+      run.phase = "CANCELLED";
+      run.settledResult = "CANCELLED";
+      run.cancelReason = cancelReason;
+      run.error = cancelReason;
       if (run.directAction && typeof _directPlayPending !== "undefined" && _directPlayPending === run.directAction) {
-        cancelPendingDirectPlay(reason || "detail_prepare_cancelled");
+        cancelPendingDirectPlay(cancelReason);
       }
+      run.directAction = null;
+      // 把关闭/切换后的 run 从当前详情上下文摘除；旧异步任务只能落入 stale guard，
+      // 不能再把结果写回重新打开的详情页。
+      if (state.detailPlayback === run) state.detailPlayback = null;
       return true;
     }
 
@@ -20516,8 +20557,8 @@ utils.encode = function encode(arr, enc) {
 
     function prepareDetailPlayback(item, options) {
       const opts = options || {};
-      cancelDetailPlaybackPreparation("new_detail_prepare");
       const previous = state.detailPlayback || {};
+      cancelDetailPlaybackPreparation("new_detail_prepare");
       const run = {
         seq: Number(previous.seq || 0) + 1,
         // 复用 Direct 状态使用的单调数字 token，保证诊断/状态提示不会被字符串 token 丢弃，
@@ -20536,9 +20577,15 @@ utils.encode = function encode(arr, enc) {
         historyVerified: false,
         directAction: null,
         error: "",
-        reason: String(opts.reason || "detail_prepare")
+        reason: String(opts.reason || "detail_prepare"),
+        phase: "PREPARING",
+        settledResult: "",
+        cancelled: false,
+        cancelReason: "",
+        staleLogged: false
       };
       state.detailPlayback = run;
+      recordDetailPlaybackLifecycle(run, "START");
       showDirectPlayStatus(run.token, "BACKGROUND_PREPARING", DIRECT_PLAY_STATUS_TEXT.BACKGROUND_PREPARING, "detail_prepare_start");
       run.historyPromise = verifyDetailNativeHistory(item, run).catch(() => null);
       run.promise = (async () => {
@@ -20548,20 +20595,22 @@ utils.encode = function encode(arr, enc) {
         } catch (e) {
           run.error = String(e && e.message || e || "curated_failed");
         }
-        if (!detailPlaybackIsCurrent(run)) return null;
+        if (!detailPlaybackCurrentOrRecord(run)) return null;
         if (curated && curated.candidate) {
           run.provider = "curated";
           run.sourceId = curated.sourceId;
           run.candidate = curated.candidate;
-          run.active = false;
+          settleDetailPlayback(run, "READY", "curated_ready");
           showDirectPlayStatus(run.token, "READY", DIRECT_PLAY_STATUS_TEXT.READY, "curated_ready");
           updateDetailContinueButton();
           if (run.playRequested) await playPreparedDetailCandidate(item, run.candidate, $("detailContinueBtn"));
           return run.candidate;
         }
-        if (!detailPlaybackIsCurrent(run)) return null;
+        if (!detailPlaybackCurrentOrRecord(run)) return null;
         // 六站都未达到准入标准后，交给原有 Direct 3 次重试/轮询生命周期。
         run.provider = "pan-direct";
+        run.phase = "PAN_DIRECT";
+        recordDetailPlaybackLifecycle(run, "entering PAN_DIRECT");
         const directTask = playBestQuark(item, {
           detailPrimary: true,
           suppressAutoPan: true,
@@ -20572,15 +20621,17 @@ utils.encode = function encode(arr, enc) {
           ? _directPlayPending
           : null;
         await directTask;
-        if (!detailPlaybackIsCurrent(run)) return null;
-        run.active = false;
+        if (!detailPlaybackCurrentOrRecord(run)) return null;
+        const directCandidate = detailDirectPlayCandidateFor(item);
+        const directFailure = directCandidate ? "READY" : (detailDirectFailureTypeFor(item) || "NO_RESOURCE");
         run.directAction = null;
+        settleDetailPlayback(run, directFailure, "direct_prepare_settled");
         updateDetailContinueButton();
-        return detailDirectPlayCandidateFor(item);
+        return directCandidate;
       })().catch((error) => {
-        if (detailPlaybackIsCurrent(run)) {
-          run.active = false;
+        if (detailPlaybackCurrentOrRecord(run)) {
           run.error = String(error && error.message || error || "detail_prepare_failed");
+          settleDetailPlayback(run, "CONNECTION_FAILED", "detail_prepare_failed");
           updateDetailContinueButton();
         }
         return null;
@@ -20671,6 +20722,9 @@ utils.encode = function encode(arr, enc) {
 
     function detailDirectPlayReadyFor(item) {
       if (!item) return false;
+      const detailRun = state.detailPlayback;
+      if (detailRun && detailPlaybackIsCurrent(detailRun)
+        && ["NO_RESOURCE", "CONNECTION_FAILED", "CANCELLED"].includes(String(detailRun.phase || ""))) return false;
       if (detailPreparedCandidateFor(item)) return true;
       const pan = state.pan || {};
       const lifecycle = getPanSearchLifecycleFor(item);
@@ -31518,8 +31572,14 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         freshHealth = checked.states || {};
       }
       const decision = panPreflightCandidates(candidates, freshHealth, {}, { rejectAllBad: true });
-      recordPanPreflightResult(candidates, freshHealth, panPreflightCheckErrorCount(checkable, freshHealth), decision.candidates[0] || null, decision.allBadBatch);
-      return curatedCandidateOrder(decision.candidates)[0] || null;
+      // 只有本次新鲜预检确认可用的候选才能进入 Ready；混合结果中已确认
+      // fresh-bad 的条目也必须剔除，否则会阻断后续站源 / Pan Direct fallback。
+      const healthyCandidates = (decision.candidates || []).filter((candidate) => {
+        const freshState = freshHealth && freshHealth[panHealthKey(candidate)];
+        return String(freshState || "").toLowerCase() !== "bad" && !isPanHealthBad(candidate);
+      });
+      recordPanPreflightResult(candidates, freshHealth, panPreflightCheckErrorCount(checkable, freshHealth), healthyCandidates[0] || null, decision.allBadBatch);
+      return curatedCandidateOrder(healthyCandidates)[0] || null;
     }
 
     async function resolveCuratedPlaybackCandidate(item, run) {
