@@ -16760,7 +16760,8 @@ utils.encode = function encode(arr, enc) {
       { id: "huban", name: "虎斑", domains: ["http://xhban.xyz", "http://38.76.197.172:16969"] },
       { id: "shandian", name: "闪电", domains: ["http://shandian.blog", "http://sd.sduc.site"] }
     ];
-    const CURATED_SOURCE_BUDGET_MS = 10000;
+    const CURATED_SOURCE_BUDGET_MS = 3000;
+    const CURATED_CHAIN_BUDGET_MS = 15000;
     const CURATED_REQUEST_TIMEOUT_SEC = 6;
     const CURATED_REQUEST_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/149.0.0.0 Safari/537.36";
     // 画质关键词优先级（score 越高排越前）：
@@ -30119,7 +30120,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     // 对少量候选做一次有效性校验，返回 key->state 并写回 state.pan.health
     async function probePanHealth(items, options) {
       const context = options && options.context;
-      const isCurrent = () => !context || (state.pan.viewToken === context.token && state.selected === context.item);
+      const curatedAttempt = context && context.curatedAttempt;
+      const isCurrent = () => !context || (state.pan.viewToken === context.token && state.selected === context.item
+        && (!curatedAttempt || (curatedAttempt.active && curatedRemainingMs(curatedAttempt) > 0)));
       const list = (items || []).filter((it) => it && isPanCheckSupported(it));
       if (!list.length || !panCheckAvailable() || !isCurrent()) return {};
       try {
@@ -30142,14 +30145,17 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
     // 用户触发播放时，健康检查只能作为有界的辅助信号；背景预热仍直接使用 probePanHealth。
     // 超时后不等待原 Promise，也不把没有结果误记为 bad。原检查若稍后完成，最多更新缓存。
-    function playbackPanHealthPreflight(items, context) {
+    function playbackPanHealthPreflight(items, context, timeoutMs) {
+      const preflightTimeout = timeoutMs == null
+        ? PLAYBACK_PREFLIGHT_TIMEOUT_MS
+        : Math.max(1, Number(timeoutMs) || 1);
       let timer = 0;
       const checkTask = Promise.resolve()
         .then(() => probePanHealth(items, { context, throwOnError: true }))
         .then((states) => ({ states: states || {}, timedOut: false, checkError: false }))
         .catch((error) => ({ states: {}, timedOut: false, checkError: true, error: String(error && error.message || error || "") }));
       const timeoutTask = new Promise((resolve) => {
-        timer = setTimeout(() => resolve({ states: {}, timedOut: true, checkError: false }), PLAYBACK_PREFLIGHT_TIMEOUT_MS);
+        timer = setTimeout(() => resolve({ states: {}, timedOut: true, checkError: false }), preflightTimeout);
       });
       return Promise.race([checkTask, timeoutTask]).then((result) => {
         clearTimeout(timer);
@@ -31636,6 +31642,50 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return { html: String(html), base: String(response && response.url || url) };
     }
 
+    function curatedDeadlineError(kind) {
+      const error = new Error(String(kind || "SOURCE_TIMEOUT"));
+      error.curatedDeadline = true;
+      error.curatedDeadlineKind = String(kind || "SOURCE_TIMEOUT");
+      return error;
+    }
+
+    function curatedRemainingMs(context) {
+      const sourceDeadline = context && Number(context.sourceDeadline);
+      const chainDeadline = context && Number(context.chainDeadline);
+      const sourceRemaining = Number.isFinite(sourceDeadline) ? sourceDeadline - Date.now() : Infinity;
+      const chainRemaining = Number.isFinite(chainDeadline) ? chainDeadline - Date.now() : Infinity;
+      return Math.max(0, Math.min(sourceRemaining, chainRemaining));
+    }
+
+    function curatedAttemptState(context, run) {
+      if (!detailPlaybackIsCurrent(run)) return "STALE";
+      if (!context || !context.active || curatedRemainingMs(context) <= 0) return "SOURCE_TIMEOUT";
+      return "";
+    }
+
+    // Native 请求本身无法可靠取消；将迟到的 resolve/reject 都包进已消费的 Promise，
+    // 这样超时后既不阻塞后续站源，也不会把迟到结果写回当前 source/run。
+    function curatedRequestWithDeadline(task, context, kind) {
+      const allowedMs = curatedRemainingMs(context);
+      if (allowedMs <= 0) return Promise.reject(curatedDeadlineError(kind || "SOURCE_TIMEOUT"));
+      const requestTask = Promise.resolve()
+        .then(task)
+        .then(
+          (value) => ({ type: "value", value }),
+          (error) => ({ type: "error", error })
+        );
+      let timer = 0;
+      const timeoutTask = new Promise((resolve) => {
+        timer = setTimeout(() => resolve({ type: "timeout" }), Math.max(1, allowedMs));
+      });
+      return Promise.race([requestTask, timeoutTask]).then((result) => {
+        clearTimeout(timer);
+        if (result && result.type === "timeout") throw curatedDeadlineError(kind || "SOURCE_TIMEOUT");
+        if (result && result.type === "error") throw result.error;
+        return result && result.value;
+      });
+    }
+
     function curatedCleanTitle(value) {
       return normalizeTitle(String(value || "")
         .replace(/第\s*[一二三四五六七八九十百\d]+\s*季|Season\s*\d+|S\d{1,3}/ig, "")
@@ -31855,37 +31905,54 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         .replace(/\{p\}|\{page\}/g, String(page || 1));
     }
 
-    async function searchCuratedSource(source, item, run) {
+    async function searchCuratedSource(source, item, run, context) {
       const keyword = resourceSearchKeyword(item);
-      const deadline = Date.now() + CURATED_SOURCE_BUDGET_MS;
       const templates = curatedSourceTemplates(source);
       outer: for (const template of templates) {
         for (const domain of source.domains || []) {
-          if (!detailPlaybackIsCurrent(run)) return { kind: "STALE" };
-          const remainingSearchMs = deadline - Date.now();
-          if (remainingSearchMs <= 0) break outer;
+          const beforeRequest = curatedAttemptState(context, run);
+          if (beforeRequest) return { kind: beforeRequest };
+          const remainingSearchMs = curatedRemainingMs(context);
           const url = curatedAbsoluteUrl(curatedSearchPath(template, keyword, 1), domain);
           if (!url) continue;
           let response;
           try {
-            response = await requestCuratedHtml(url, Math.min(CURATED_REQUEST_TIMEOUT_SEC, Math.max(1, remainingSearchMs / 1000)), { referer: String(domain).replace(/\/+$/, "") + "/" });
+            response = await curatedRequestWithDeadline(
+              () => requestCuratedHtml(url, Math.min(CURATED_REQUEST_TIMEOUT_SEC, Math.max(1, remainingSearchMs / 1000)), { referer: String(domain).replace(/\/+$/, "") + "/" }),
+              context,
+              "SOURCE_TIMEOUT"
+            );
           } catch (e) {
+            if (e && e.curatedDeadline) return { kind: "SOURCE_TIMEOUT" };
+            const afterFailure = curatedAttemptState(context, run);
+            if (afterFailure) return { kind: afterFailure };
             continue;
           }
+          const afterSearch = curatedAttemptState(context, run);
+          if (afterSearch) return { kind: afterSearch };
           const entries = curatedSearchEntries(response.html, source, response.base || url);
           if (!entries.length) return { kind: "NO_MATCH" };
           rememberCuratedTemplate(source.id, template);
           const matches = entries.filter((entry) => curatedTitleMatches(item, entry.title, entry)).slice(0, 5);
           if (!matches.length) return { kind: "NO_MATCH" };
           for (const entry of matches) {
-            if (!detailPlaybackIsCurrent(run)) return { kind: "STALE" };
-            const remainingDetailMs = deadline - Date.now();
-            if (remainingDetailMs <= 0) break outer;
+            const beforeDetail = curatedAttemptState(context, run);
+            if (beforeDetail) return { kind: beforeDetail };
+            const remainingDetailMs = curatedRemainingMs(context);
             try {
-              const detail = await requestCuratedHtml(entry.href, Math.min(CURATED_REQUEST_TIMEOUT_SEC, Math.max(1, remainingDetailMs / 1000)), { referer: url });
+              const detail = await curatedRequestWithDeadline(
+                () => requestCuratedHtml(entry.href, Math.min(CURATED_REQUEST_TIMEOUT_SEC, Math.max(1, remainingDetailMs / 1000)), { referer: url }),
+                context,
+                "SOURCE_TIMEOUT"
+              );
+              const afterDetail = curatedAttemptState(context, run);
+              if (afterDetail) return { kind: afterDetail };
               const candidates = curatedDetailCandidates(detail.html, source, detail.base || entry.href, item, entry);
               if (candidates.length) return { kind: "CANDIDATES", candidates };
             } catch (e) {
+              if (e && e.curatedDeadline) return { kind: "SOURCE_TIMEOUT" };
+              const afterFailure = curatedAttemptState(context, run);
+              if (afterFailure) return { kind: afterFailure };
               // 当前匹配条目的详情请求失败，继续检查本次搜索返回的其它匹配条目。
             }
           }
@@ -31905,17 +31972,26 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       });
     }
 
-    async function curatedHealthyCandidate(items, item, run) {
+    async function curatedHealthyCandidate(items, item, run, sourceContext) {
       const candidates = curatedCandidateOrder((items || []).filter((candidate) => buildPanPlayPayload(candidate)));
-      if (!candidates.length) return null;
+      if (!candidates.length) return { candidate: null, sourceTimeout: false, stale: false };
       const checkable = candidates.filter((candidate) => isPanCheckSupported(candidate));
       let freshHealth = {};
       if (checkable.length && panCheckAvailable()) {
-        const context = { token: state.pan.viewToken, item };
-        const checked = await playbackPanHealthPreflight(checkable.slice(0, 12), context);
-        if (!detailPlaybackIsCurrent(run) || !panContextIsCurrent(context)) return null;
+        const stateBeforeCheck = curatedAttemptState(sourceContext, run);
+        if (stateBeforeCheck === "STALE") return { candidate: null, sourceTimeout: false, stale: true };
+        if (stateBeforeCheck === "SOURCE_TIMEOUT") return { candidate: null, sourceTimeout: true, stale: false };
+        const context = { token: state.pan.viewToken, item, curatedAttempt: sourceContext };
+        const preflightAllowedMs = Math.min(PLAYBACK_PREFLIGHT_TIMEOUT_MS, curatedRemainingMs(sourceContext));
+        if (preflightAllowedMs <= 0) return { candidate: null, sourceTimeout: true, stale: false };
+        const checked = await playbackPanHealthPreflight(checkable.slice(0, 12), context, preflightAllowedMs);
+        if (!detailPlaybackIsCurrent(run) || !panContextIsCurrent(context)) return { candidate: null, sourceTimeout: false, stale: true };
+        if (curatedRemainingMs(sourceContext) <= 0) return { candidate: null, sourceTimeout: true, stale: false };
         freshHealth = checked.states || {};
       }
+      const stateBeforeDecision = curatedAttemptState(sourceContext, run);
+      if (stateBeforeDecision === "STALE") return { candidate: null, sourceTimeout: false, stale: true };
+      if (stateBeforeDecision === "SOURCE_TIMEOUT") return { candidate: null, sourceTimeout: true, stale: false };
       const decision = panPreflightCandidates(candidates, freshHealth, {}, { rejectAllBad: true });
       // 只有本次新鲜预检确认可用的候选才能进入 Ready；混合结果中已确认
       // fresh-bad 的条目也必须剔除，否则会阻断后续站源 / Pan Direct fallback。
@@ -31924,17 +32000,47 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         return String(freshState || "").toLowerCase() !== "bad" && !isPanHealthBad(candidate);
       });
       recordPanPreflightResult(candidates, freshHealth, panPreflightCheckErrorCount(checkable, freshHealth), healthyCandidates[0] || null, decision.allBadBatch);
-      return curatedCandidateOrder(healthyCandidates)[0] || null;
+      return { candidate: curatedCandidateOrder(healthyCandidates)[0] || null, sourceTimeout: false, stale: false };
     }
 
     async function resolveCuratedPlaybackCandidate(item, run) {
+      const chainContext = {
+        chainDeadline: Date.now() + CURATED_CHAIN_BUDGET_MS,
+        active: true,
+        sourceAttemptId: 0
+      };
       for (const source of curatedSourceDefinitions()) {
         if (!detailPlaybackIsCurrent(run)) return null;
-        const result = await searchCuratedSource(source, item, run);
+        if (curatedRemainingMs(chainContext) <= 0) return null;
+        const sourceContext = {
+          chainDeadline: chainContext.chainDeadline,
+          sourceDeadline: Math.min(Date.now() + CURATED_SOURCE_BUDGET_MS, chainContext.chainDeadline),
+          sourceId: source.id,
+          sourceAttemptId: ++chainContext.sourceAttemptId,
+          active: true
+        };
+        const result = await searchCuratedSource(source, item, run, sourceContext);
+        if (!detailPlaybackIsCurrent(run)) {
+          sourceContext.active = false;
+          return null;
+        }
+        if (result.kind !== "CANDIDATES") {
+          sourceContext.active = false;
+          if (curatedRemainingMs(chainContext) <= 0) return null;
+          continue;
+        }
+        const healthResult = await curatedHealthyCandidate(result.candidates, item, run, sourceContext);
+        sourceContext.active = false;
         if (!detailPlaybackIsCurrent(run)) return null;
-        if (result.kind !== "CANDIDATES") continue;
-        const candidate = await curatedHealthyCandidate(result.candidates, item, run);
-        if (candidate) return { sourceId: source.id, sourceName: source.name, candidate };
+        if (healthResult && healthResult.stale) return null;
+        if (healthResult && healthResult.sourceTimeout) {
+          if (curatedRemainingMs(chainContext) <= 0) return null;
+          continue;
+        }
+        if (curatedRemainingMs(chainContext) <= 0) return null;
+        if (healthResult && healthResult.candidate) {
+          return { sourceId: source.id, sourceName: source.name, candidate: healthResult.candidate };
+        }
       }
       return null;
     }
