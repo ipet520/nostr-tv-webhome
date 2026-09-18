@@ -20717,6 +20717,14 @@ utils.encode = function encode(arr, enc) {
         rememberDetailReturn(button);
         state.historyResume = null;
       }
+      // 自动选择的 Direct 候选在最终交接前仍需同步复核缓存健康状态；
+      // 手动盘搜入口继续由 playPanResult() 保留“警告后强制播放”语义。
+      if (isPanHealthBad(candidate)) {
+        state.pan.directReady = null;
+        updateDetailContinueButton();
+        toast("暂无可播放资源，可使用聚搜或盘搜");
+        return false;
+      }
       await playPanResult(candidate, {
         prechecked: true,
         episodeTarget,
@@ -29646,7 +29654,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         recordPanDirectHandoffStage("HEALTH_CHECK_OK", item, handoffAction, { healthCheckSkipped: true, healthCheckAvailable: false });
       }
       const decision = panPreflightCandidates(top5, freshHealth, previousHealth, { rejectAllBad: true });
-      const finalPool = decision.candidates;
+      const finalPool = decision.candidates.filter((candidate) => !isPanHealthBad(candidate));
       const pick = finalPool.length ? (randomize ? finalPool[Math.floor(Math.random() * finalPool.length)] : finalPool[0]) : null;
       recordPanPreflightResult(top5, freshHealth, panPreflightCheckErrorCount(checkable, freshHealth), pick, decision.allBadBatch);
       if (handoffAction) recordPanDirectHandoffStage("PICK_DONE", item, handoffAction, {
@@ -29694,7 +29702,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         recordPanDirectHandoffStage("HEALTH_CHECK_OK", item, handoffAction, { healthCheckSkipped: true, healthCheckAvailable: false });
       }
       const decision = panPreflightCandidates(top5, freshHealth, previousHealth, { rejectAllBad: true });
-      const finalPool = decision.candidates;
+      const finalPool = decision.candidates.filter((candidate) => !isPanHealthBad(candidate));
       const pick = finalPool.length ? (randomize ? finalPool[Math.floor(Math.random() * finalPool.length)] : finalPool[0]) : null;
       recordPanPreflightResult(top5, freshHealth, panPreflightCheckErrorCount(checkable, freshHealth), pick, decision.allBadBatch);
       if (handoffAction) recordPanDirectHandoffStage("PICK_DONE", item, handoffAction, {
@@ -29839,6 +29847,11 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         const switched = await pickQuarkBaiduEpisodeTop5(season, epNo, true, statusAction);
         if (!alive()) return;
         if (switched) {
+          if (isPanHealthBad(switched.item)) {
+            updateDirectPlayStatus(statusAction.token, "FINAL_ERROR", DIRECT_PLAY_STATUS_TEXT.FINAL_ERROR, "episode_bad_candidate");
+            fallbackHighlightEpisode(item, season, epNo);
+            return;
+          }
           if (switched.kind === "single") {
             toast(`已换源播放 第${epNo}集 · ${panDiskName(switched.item.diskType)}`);
           } else {
@@ -29855,6 +29868,11 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const resolved = await resolveEpisodePlayableTimed(season, epNo, item, seq);
       if (!alive()) return;
       if (resolved) {
+        if (isPanHealthBad(resolved.item)) {
+          updateDirectPlayStatus(statusAction.token, "FINAL_ERROR", DIRECT_PLAY_STATUS_TEXT.FINAL_ERROR, "episode_bad_candidate");
+          fallbackHighlightEpisode(item, season, epNo);
+          return;
+        }
         if (resolved.kind === "single") {
           toast(`播放 第${epNo}集 · ${panDiskName(resolved.item.diskType)}`);
         } else {
@@ -30653,6 +30671,16 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
               : action.episodeTarget || currentPlaybackTargetForItem(item);
           }
         }
+        // 最终同步坏源保护：不新增网络检查，只拒绝当前缓存已明确失效的候选。
+        // 手动盘搜仍直接进入 playPanResult()，保留其警告后强制播放行为。
+        if (isPanHealthBad(pick)) {
+          state.pan.directReady = null;
+          setDetailDirectFailureType(item, "NO_RESOURCE", getPanSearchLifecycleFor(item));
+          updateDetailContinueButton();
+          action.playRequested = false;
+          suppressDirectPlayPanFallback(action, "暂无可播放资源，可使用聚搜或盘搜");
+          return;
+        }
         action.playRequested = false;
         updateDirectPlayStatus(action.token, "STARTING_PLAYER", "正在启动播放器…", "native_handoff");
         await playPanResult(pick, {
@@ -31197,8 +31225,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const config = state.pan.config || defaultPanConfig();
       const cached = config.sourceTemplates && config.sourceTemplates[source.id];
       const explicit = source.searchUrl ? [source.searchUrl] : [];
-      const available = explicit.length ? explicit : CURATED_SEARCH_URL_TEMPLATES;
-      return Array.from(new Set([cached].concat(available).filter(Boolean)));
+      const defaults = explicit.length ? explicit : CURATED_SEARCH_URL_TEMPLATES;
+      return Array.from(new Set([].concat(explicit, cached || [], defaults).filter(Boolean)));
     }
 
     function rememberCuratedTemplate(sourceId, template) {
@@ -31222,9 +31250,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const keyword = panKeyword(item) || item && item.title || "";
       const deadline = Date.now() + CURATED_SOURCE_BUDGET_MS;
       const templates = curatedSourceTemplates(source);
-      outer: for (const domain of source.domains || []) {
-        if (!detailPlaybackIsCurrent(run)) return { kind: "STALE" };
-        for (const template of templates) {
+      outer: for (const template of templates) {
+        for (const domain of source.domains || []) {
           if (!detailPlaybackIsCurrent(run)) return { kind: "STALE" };
           const remainingSearchMs = deadline - Date.now();
           if (remainingSearchMs <= 0) break outer;
