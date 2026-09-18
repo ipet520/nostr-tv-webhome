@@ -16763,6 +16763,7 @@ utils.encode = function encode(arr, enc) {
     const CURATED_SOURCE_BUDGET_MS = 3000;
     const CURATED_CHAIN_BUDGET_MS = 15000;
     const DETAIL_CONTINUE_GATE_MAX_MS = 300;
+    const DETAIL_NATIVE_HISTORY_GATE_MAX_MS = 800;
     const CURATED_REQUEST_TIMEOUT_SEC = 6;
     const CURATED_REQUEST_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/149.0.0.0 Safari/537.36";
     // 画质关键词优先级（score 越高排越前）：
@@ -20865,6 +20866,7 @@ utils.encode = function encode(arr, enc) {
         history = null;
       }
       if (!detailPlaybackIsCurrent(run)) return null;
+      if (run && run.continueHistoryGateTimedOut) return null;
       run.historyVerified = true;
       run.history = history;
       syncDetailMode(item, history, { freshNative: true });
@@ -20874,6 +20876,28 @@ utils.encode = function encode(arr, enc) {
       }
       updateDetailContinueButton();
       return history;
+    }
+
+    async function verifyDetailNativeHistoryWithDeadline(item, run) {
+      let timer = 0;
+      let timedOut = false;
+      const verifyTask = Promise.resolve()
+        .then(() => verifyDetailNativeHistory(item, run))
+        .then((history) => ({ timedOut: false, history }), () => ({ timedOut: false, history: null }));
+      const timeoutTask = new Promise((resolve) => {
+        timer = setTimeout(() => {
+          timedOut = true;
+          if (run) run.continueHistoryGateTimedOut = true;
+          resolve({ timedOut: true, history: null });
+        }, DETAIL_NATIVE_HISTORY_GATE_MAX_MS);
+      });
+      try {
+        const result = await Promise.race([verifyTask, timeoutTask]);
+        if (!timedOut && run) run.continueHistoryGateResolved = true;
+        return result || { timedOut: false, history: null };
+      } finally {
+        clearTimeout(timer);
+      }
     }
 
     function detailPreparedCandidateFor(item) {
@@ -20973,7 +20997,9 @@ utils.encode = function encode(arr, enc) {
         staleLogged: false,
         continuePending: opts.continueGate === true && !explicitTarget,
         continueDecisionPromise: null,
-        continueResource: null
+        continueResource: null,
+        continueHistoryGateTimedOut: false,
+        continueHistoryGateResolved: false
       };
       state.detailPlayback = run;
       recordDetailPlaybackLifecycle(run, "START");
@@ -20983,12 +21009,14 @@ utils.encode = function encode(arr, enc) {
           run.continueDecisionPromise = (async () => {
             const localResource = await resolveDetailContinueResource(item, run);
             if (!localResource) return { attempted: false, resource: null, history: null };
-            const history = await verifyDetailNativeHistory(item, run);
+            const historyDecision = await verifyDetailNativeHistoryWithDeadline(item, run);
+            const history = historyDecision && historyDecision.history;
             if (!detailPlaybackCurrentOrRecord(run)) return null;
             return {
               attempted: true,
               resource: detailContinueResourceContextFor(item, history) || localResource,
-              history
+              history,
+              timedOut: !!(historyDecision && historyDecision.timedOut)
             };
           })();
           continueDecision = await run.continueDecisionPromise.catch(() => null);
@@ -20998,7 +21026,8 @@ utils.encode = function encode(arr, enc) {
             run.continueResource = continueDecision.resource;
             run.history = continueDecision.history;
             run.historyVerified = true;
-            if (continueDecision.resource.target) setDetailPlaybackTarget(item, continueDecision.resource.target);
+            const progressTarget = detailContinuePlaybackTargetFor(item, continueDecision.history);
+            if (progressTarget) setDetailPlaybackTarget(item, progressTarget);
             syncDetailMode(item, continueDecision.history, { freshNative: true });
             recordDetailPlaybackDecision("DETAIL_OPEN_PLAYBACK_DECISION", item, {
               continueContextFound: !!continueDecision.resource.contextFound,
@@ -21296,10 +21325,19 @@ utils.encode = function encode(arr, enc) {
         }
         if (existing.status === "playing" && !(state.pan && state.pan.isPlaying)) state.detailHistoryHandoff = null;
       }
-      const target = detailContinuePlaybackTargetFor(item, history);
-      const resource = detailHistoryDirectResourceFor(item, history);
+      const progressTarget = detailContinuePlaybackTargetFor(item, history);
+      const currentRun = state.detailPlayback;
+      const runResource = currentRun
+        && detailPlaybackIsCurrent(currentRun)
+        && currentRun.phase === "CONTINUE_READY"
+        && currentRun.continueResource
+        ? currentRun.continueResource
+        : null;
+      const resource = runResource
+        || detailContinueResourceContextFor(item, history)
+        || detailHistoryDirectResourceFor(item, history);
       if (!resource) {
-        await startDetailContinueFallback(item, target, "continue_history_resource_unavailable");
+        await startDetailContinueFallback(item, progressTarget, "continue_history_resource_unavailable");
         return true;
       }
       const pending = typeof _directPlayPending !== "undefined" ? _directPlayPending : null;
@@ -21308,7 +21346,7 @@ utils.encode = function encode(arr, enc) {
       resetPanSearchState(false, { reason: "continue_history_resource", preserveHealth: true });
       const handoff = {
         item,
-        target: resource.target,
+        target: progressTarget,
         candidate: resource.candidate,
         status: "preparing",
         promise: null
@@ -21317,7 +21355,7 @@ utils.encode = function encode(arr, enc) {
       handoff.promise = (async () => {
         if (!detailHistoryHandoffCurrent(item, handoff)) return false;
         if (isPanHealthBad(resource.candidate)) {
-          await startDetailContinueFallback(item, resource.target, "continue_history_health_bad");
+          await startDetailContinueFallback(item, progressTarget, "continue_history_health_bad");
           return true;
         }
         const preflight = await freshPanPreflight(resource.candidate, {
@@ -21327,21 +21365,21 @@ utils.encode = function encode(arr, enc) {
         if (preflight && preflight.cancelled) return false;
         if (!detailHistoryHandoffCurrent(item, handoff)) return false;
         if (isPanHealthBad(resource.candidate)) {
-          await startDetailContinueFallback(item, resource.target, "continue_history_health_bad");
+          await startDetailContinueFallback(item, progressTarget, "continue_history_health_bad");
           return true;
         }
-        setDetailPlaybackTarget(item, resource.target);
+        if (progressTarget) setDetailPlaybackTarget(item, progressTarget);
         if (button) rememberDetailReturn(button);
         state.historyResume = null;
         let fallbackPromise = null;
         const onPlayFailure = (error) => {
           if (fallbackPromise || !detailHistoryHandoffCurrent(item, handoff)) return;
           handlePanPlayFailure(item, error, 0);
-          fallbackPromise = startDetailContinueFallback(item, resource.target, "continue_history_handoff_failed");
+          fallbackPromise = startDetailContinueFallback(item, progressTarget, "continue_history_handoff_failed");
         };
         await playPanResult(resource.candidate, {
           prechecked: true,
-          episodeTarget: resource.target,
+          episodeTarget: progressTarget,
           historyResume: true,
           onPlayFailure
         });
@@ -21349,7 +21387,7 @@ utils.encode = function encode(arr, enc) {
         return true;
       })().catch(async () => {
         if (!detailHistoryHandoffCurrent(item, handoff)) return false;
-        await startDetailContinueFallback(item, resource.target, "continue_history_handoff_failed");
+        await startDetailContinueFallback(item, progressTarget, "continue_history_handoff_failed");
         return true;
       });
       const result = await handoff.promise.catch(() => false);
