@@ -16748,7 +16748,7 @@ utils.encode = function encode(arr, enc) {
       activeList: "all",
       catalog: {},
       catalogPage: {},
-      recent: { items: [], loading: false, loadingPromise: null, loaded: false, error: "", refreshedAt: 0, diag: null, nativeItems: [], nativeLoaded: false, nativeLoading: false, nativeRefreshedAt: 0, nativeKeyFlow: {} },
+      recent: { items: [], loading: false, loadingPromise: null, loaded: false, error: "", refreshedAt: 0, diag: null, nativeItems: [], nativeLoaded: false, nativeLoading: false, nativeRefreshedAt: 0, nativeKeyFlow: {}, runSeq: 0, activeRun: null, pendingRefresh: false, pendingRefreshSilent: true },
       tvDetail: { cache: {}, cardTasks: {}, cardQueue: [], cardActive: 0, observer: null, scrollBound: false, scanTimer: 0, generation: 0 },
       homeLatest: { items: [], loading: false, loaded: false, error: "", loadedAt: 0, requestSeq: 0, diag: null, promise: null },
       gridRender: {},
@@ -16865,7 +16865,7 @@ utils.encode = function encode(arr, enc) {
       blocked: { loaded: false, items: {}, selecting: false, holdTimer: 0, holdTarget: null, longPressFired: false, pointer: null, suppressClickUntil: 0 },
       pan: { config: null, configDirty: false, loading: false, keyword: "", activeType: "", results: [], health: {}, pending: {}, queued: new Map(), inFlight: new Set(), observer: null, flushTimer: 0, pollTimers: [], pollRound: 0, pollRoundStarted: {}, requestSeq: 0, actualRequestAttempts: 0, lifecycleSeq: 0, sessionId: 0, sessionOrigin: "", sessionItemKey: "", sessionStartedAt: 0, sessionTerminal: false, sessionTerminalReason: "", sessionEndRecorded: false, sessionStartCount: 0, sessionEndCount: 0, sessionTimer: 0, initialAttempts: 0, pollRoundsStarted: 0, pollRoundsCompleted: 0, foregroundRecoveryCount: 0, preloadKey: "", viewToken: "", searchMode: "", initialSucceeded: false, initialResultState: "", lastFailureKind: "", retryRemaining: 0, finalFailure: false, directTransportExhausted: false, renderKeys: "", tabKeys: "", checkEnabled: false, focusKey: "", focusMode: "", playbackReturn: null, progress: { active: false, phase: "", round: 0, totalRounds: 0 }, preflight: null, directReady: null, directFailure: null, sessionDiag: null, isPlaying: false },
       directPlayStatus: { active: false, actionId: 0, phase: "", text: "", startedAt: 0, clearTimer: 0 },
-      watch: { item: null, timer: 0, bestMs: 0, durationMs: 0, lastAt: 0, published: false, intentAction: "", playbackTarget: null },
+      watch: { item: null, timer: 0, bestMs: 0, durationMs: 0, lastAt: 0, published: false, intentAction: "", playbackTarget: null, playbackOrigin: "", nativeHistoryIdentity: null },
       historyContexts: { loaded: false, loading: false, promise: null, entries: [], diag: null },
       continueIndex: { loaded: false, loading: false, promise: null, entries: [], diag: null },
       recentDelete: { armedKey: "", armedCard: null, pendingKey: "", pendingCard: null, pendingTimer: 0, remotePressLocked: false, remotePressCard: null, remotePressKey: "" },
@@ -20408,44 +20408,92 @@ utils.encode = function encode(arr, enc) {
 
     async function loadRecentList(options) {
       const opts = options || {};
-      if (state.recent.loading) return state.recent.loadingPromise || Promise.resolve();
-      if (state.recent.loaded && !opts.refresh) return;
-      state.recent.loading = true;
-      state.recent.error = "";
-      if (!opts.silent) setStatus("tmdb", "读取最近观看");
-      if (state.activeList === "recent") renderActiveGrid();
-      const task = (async () => {
-        try {
-          await loadHistoryContextIndex();
-          if (!state.watch || !state.watch.item) await loadPendingWatch();
-          const list = await sdk().history();
-          const normalized = normalizeHistoryList(list);
-          normalized.forEach((item) => recordRecentNativeKeyFlow("RECENT_NATIVE_KEY_AT_LOAD", item));
-          normalized.forEach((item) => { item.recentWatching = true; });
-          state.recent.items = normalized;
-          state.recent.loaded = true;
-          state.recent.refreshedAt = Date.now();
-          if (!opts.silent) setStatus("tmdb", "最近观看 " + state.recent.items.length + " 条");
-        } catch (e) {
-          state.recent.items = [];
-          state.recent.loaded = true;
-          state.recent.error = e.message || "unknown";
-          if (!opts.silent) setStatus("tmdb", "最近观看读取失败");
-        } finally {
-          state.recent.loading = false;
-          if (state.activeList === "recent") renderActiveGrid();
-          if (state.activeList === "all") renderHome();
-          if ($("detailSheet") && $("detailSheet").classList.contains("active")) {
-            syncDetailMode(state.selected);
-            updateDetailContinueButton();
+      const recent = state.recent;
+      if (recent.loading) {
+        if (opts.refresh) {
+          const activeRun = recent.activeRun;
+          if (activeRun && !activeRun.invalidated) {
+            activeRun.invalidated = true;
+            try { console.debug("RECENT_LOAD_INVALIDATED", activeRun.id); } catch (e) {}
+          }
+          if (!recent.pendingRefresh) {
+            recent.pendingRefresh = true;
+            recent.pendingRefreshSilent = !!opts.silent;
+            try { console.debug("RECENT_REFRESH_QUEUED"); } catch (e) {}
+          } else {
+            recent.pendingRefreshSilent = recent.pendingRefreshSilent && !!opts.silent;
           }
         }
+        return recent.loadingPromise || Promise.resolve();
+      }
+      if (recent.loaded && !opts.refresh) return;
+      recent.loading = true;
+      recent.error = "";
+      if (state.activeList === "recent") renderActiveGrid();
+      const task = (async () => {
+        let runSilent = !!opts.silent;
+        let trailing = false;
+        try {
+          while (true) {
+            const run = { id: ++recent.runSeq, invalidated: false };
+            recent.activeRun = run;
+            if (trailing) {
+              try { console.debug("RECENT_TRAILING_REFRESH_START", run.id); } catch (e) {}
+            }
+            if (!runSilent) setStatus("tmdb", "读取最近观看");
+            try { console.debug("RECENT_LOAD_START", run.id); } catch (e) {}
+            let error = null;
+            let normalized = null;
+            try {
+              await loadHistoryContextIndex();
+              if (!state.watch || !state.watch.item) await loadPendingWatch();
+              const list = await sdk().history();
+              normalized = normalizeHistoryList(list);
+              normalized.forEach((item) => recordRecentNativeKeyFlow("RECENT_NATIVE_KEY_AT_LOAD", item));
+              normalized.forEach((item) => { item.recentWatching = true; });
+            } catch (e) {
+              error = e;
+            }
+            if (!run.invalidated) {
+              if (error) {
+                recent.items = [];
+                recent.loaded = true;
+                recent.error = error.message || "unknown";
+                if (!runSilent) setStatus("tmdb", "最近观看读取失败");
+              } else {
+                recent.items = normalized || [];
+                recent.loaded = true;
+                recent.error = "";
+                recent.refreshedAt = Date.now();
+                if (!runSilent) setStatus("tmdb", "最近观看 " + recent.items.length + " 条");
+              }
+              try { console.debug("RECENT_LOAD_COMMIT", run.id); } catch (e) {}
+              if (state.activeList === "recent") renderActiveGrid();
+              if (state.activeList === "all") renderHome();
+              if ($("detailSheet") && $("detailSheet").classList.contains("active")) {
+                syncDetailMode(state.selected);
+                updateDetailContinueButton();
+              }
+            }
+            if (recent.activeRun === run) recent.activeRun = null;
+            if (!recent.pendingRefresh) break;
+            runSilent = recent.pendingRefreshSilent;
+            recent.pendingRefresh = false;
+            recent.pendingRefreshSilent = true;
+            trailing = true;
+          }
+        } finally {
+          recent.loading = false;
+          recent.activeRun = null;
+          recent.pendingRefresh = false;
+          recent.pendingRefreshSilent = true;
+        }
       })();
-      state.recent.loadingPromise = task;
+      recent.loadingPromise = task;
       try {
         return await task;
       } finally {
-        if (state.recent.loadingPromise === task) state.recent.loadingPromise = null;
+        if (recent.loadingPromise === task) recent.loadingPromise = null;
       }
     }
 
@@ -25698,7 +25746,8 @@ utils.encode = function encode(arr, enc) {
           vodId: nativeVodId,
           episodeUrl: nativeVodId,
           episodeName: context.episodeTitle || context.panTitle || context.title || item.title,
-          flag: context.flag || item.flag || ""
+          flag: context.flag || item.flag || "",
+          playbackOrigin: playbackOriginForNativeIdentity(item, { siteKey: nativeSiteKey, vodId: nativeVodId })
         };
         rememberHomeReturn(item, returnTarget, { origin: "recent_native_player" });
         saveUiSnapshotNow();
@@ -31333,7 +31382,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           vodId: payload.url,
           episodeUrl: payload.url,
           episodeName: item && (item.fileName || item.file_name || item.filename || item.panFileName || item.title) || selectedItem && selectedItem.title || "",
-          flag: item && (item.flag || item.diskType || item.provider) || ""
+          flag: item && (item.flag || item.diskType || item.provider) || "",
+          playbackOrigin: "pan-push"
         };
         rememberWatchIntent(selectedItem, "search", episodeTarget, nativeIdentity);
         startWatchTracking(selectedItem, episodeTarget, nativeIdentity);
@@ -31634,6 +31684,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
     function rememberWatchIntent(item, action, playbackTarget, nativeIdentity) {
       if (!item) return;
+      const normalizedIdentity = nativeIdentity
+        ? normalizeNativeHistoryProgressIdentity(item, playbackTarget, nativeIdentity)
+        : null;
       state.watch = {
         item: normalizeSnapshot(item),
         timer: state.watch.timer,
@@ -31643,12 +31696,32 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         published: false,
         intentAction: action || "view",
         playbackTarget: normalizePlaybackTarget(item, playbackTarget || currentPlaybackTargetForItem(item)),
-        nativeHistoryIdentity: nativeIdentity
-          ? normalizeNativeHistoryProgressIdentity(item, playbackTarget, nativeIdentity)
-          : null,
+        playbackOrigin: normalizedIdentity ? normalizedIdentity.playbackOrigin : "",
+        nativeHistoryIdentity: normalizedIdentity,
         nativeHistoryWrite: null
       };
       savePendingWatch();
+    }
+
+    function playbackOriginForNativeIdentity(item, identity) {
+      const source = identity && typeof identity === "object" ? identity : {};
+      const selected = item && typeof item === "object" ? item : {};
+      const explicit = String(source.playbackOrigin || source.origin || "").trim().toLowerCase();
+      if (explicit === "native-vod" || explicit === "pan-push") return explicit;
+      const siteKey = String(source.siteKey || selected.nativeSiteKey || selected.siteKey || "").trim().toLowerCase();
+      const vodId = String(source.vodId || selected.nativeVodId || selected.vodId || "").trim();
+      const replayKind = String(selected.historyReplayKind || "").trim().toUpperCase();
+      if (siteKey === "push_agent" || replayKind === "PAN_NATIVE" || replayKind === "URL_NATIVE" || /^https?:\/\//i.test(vodId)) {
+        return "pan-push";
+      }
+      return siteKey && vodId ? "native-vod" : "pan-push";
+    }
+
+    function playbackOriginForWatch(watch) {
+      if (!watch) return "pan-push";
+      const explicit = String(watch.playbackOrigin || watch.nativeHistoryIdentity && watch.nativeHistoryIdentity.playbackOrigin || "").trim().toLowerCase();
+      if (explicit === "native-vod" || explicit === "pan-push") return explicit;
+      return playbackOriginForNativeIdentity(watch.item, watch.nativeHistoryIdentity);
     }
 
     function normalizeNativeHistoryProgressIdentity(item, playbackTarget, identity) {
@@ -31660,7 +31733,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         vodId: String(source.vodId || selected.nativeVodId || selected.vodId || "").trim(),
         flag: String(source.flag || selected.flag || selected.sourceType || "").trim(),
         episodeName: String(source.episodeName || target.episodeTitle || selected.episodeTitle || "").trim(),
-        episodeUrl: String(source.episodeUrl || source.vodId || "").trim()
+        episodeUrl: String(source.episodeUrl || source.vodId || "").trim(),
+        playbackOrigin: playbackOriginForNativeIdentity(selected, source)
       };
     }
 
@@ -31908,6 +31982,11 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
     function startWatchTracking(item, playbackTarget, nativeIdentity) {
       if (!item || !window.fm) return;
+      const normalizedIdentity = normalizeNativeHistoryProgressIdentity(
+        item,
+        playbackTarget,
+        nativeIdentity || state.watch.nativeHistoryIdentity
+      );
       state.watch = {
         item: normalizeSnapshot(item),
         timer: state.watch.timer,
@@ -31917,11 +31996,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         published: false,
         intentAction: state.watch.intentAction || "",
         playbackTarget: normalizePlaybackTarget(item, playbackTarget || state.watch.playbackTarget || currentPlaybackTargetForItem(item)),
-        nativeHistoryIdentity: normalizeNativeHistoryProgressIdentity(
-          item,
-          playbackTarget,
-          nativeIdentity || state.watch.nativeHistoryIdentity
-        ),
+        playbackOrigin: normalizedIdentity.playbackOrigin,
+        nativeHistoryIdentity: normalizedIdentity,
         nativeHistoryWrite: null
       };
       savePendingWatch();
@@ -31950,6 +32026,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         const text = await sdk().cache.get(cacheKey("pendingWatch"));
         const data = text ? JSON.parse(text) : null;
         if (!data || !data.item) return null;
+        const pendingIdentity = data.nativeHistoryIdentity
+          ? normalizeNativeHistoryProgressIdentity(data.item, data.playbackTarget, data.nativeHistoryIdentity)
+          : null;
         state.watch = {
           item: normalizeSnapshot(data.item),
           timer: state.watch.timer,
@@ -31959,7 +32038,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           published: !!data.published,
           intentAction: data.intentAction || "search",
           playbackTarget: data.playbackTarget || normalizePlaybackTarget(data.item, data.item),
-          nativeHistoryIdentity: data.nativeHistoryIdentity || null,
+          playbackOrigin: pendingIdentity ? pendingIdentity.playbackOrigin : "",
+          nativeHistoryIdentity: pendingIdentity,
           nativeHistoryWrite: null
         };
         return state.watch;
@@ -31984,7 +32064,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         if (duration > 0) watch.durationMs = duration;
         if (position > watch.bestMs) watch.bestMs = position;
         const completion = watch.durationMs > 0 ? watch.bestMs / watch.durationMs : 0;
-        if (!opts.skipNativeHistorySync) {
+        if (!opts.skipNativeHistorySync && playbackOriginForWatch(watch) !== "native-vod") {
           await syncNativeHistoryProgress(watch, status, opts);
           if (state.watch !== watch) return;
         }
@@ -32052,10 +32132,17 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
     async function settlePlayerReturnHistory() {
       const watch = state.watch && state.watch.item ? state.watch : await loadPendingWatch();
+      const nativeAuthoritative = playbackOriginForWatch(watch) === "native-vod";
+      try { console.debug("PLAYER_RETURN_HISTORY_MODE=" + (nativeAuthoritative ? "native-authoritative" : "html-fallback")); } catch (e) {}
       if (watch && watch.item && window.fm) {
-        // Complete the current native progress write before reading Recent.
-        // The write task is the same one used by the normal sampler.
-        await sampleWatchStatus({ refreshRecent: false, verifyNativeHistory: true });
+        if (nativeAuthoritative) {
+          // Native VOD owns its History row; keep fm.stat() for watch metrics
+          // without writing the sampled position back through WebHome.
+          await sampleWatchStatus({ skipNativeHistorySync: true, refreshRecent: false });
+        } else {
+          // PAN/PUSH keeps the existing HTML progress fallback and readback.
+          await sampleWatchStatus({ refreshRecent: false, verifyNativeHistory: true });
+        }
       }
       await settleWatchFromHistory();
     }
@@ -32117,7 +32204,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         });
       }
       if (watch && watch.timer) clearInterval(watch.timer);
-      state.watch = { item: null, timer: 0, bestMs: 0, durationMs: 0, lastAt: 0, published: false, intentAction: "", playbackTarget: null };
+      state.watch = { item: null, timer: 0, bestMs: 0, durationMs: 0, lastAt: 0, published: false, intentAction: "", playbackTarget: null, playbackOrigin: "", nativeHistoryIdentity: null };
     }
 
     function trackPreference(item, action, extra) {
