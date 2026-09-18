@@ -16762,6 +16762,7 @@ utils.encode = function encode(arr, enc) {
     ];
     const CURATED_SOURCE_BUDGET_MS = 3000;
     const CURATED_CHAIN_BUDGET_MS = 15000;
+    const DETAIL_CONTINUE_GATE_MAX_MS = 300;
     const CURATED_REQUEST_TIMEOUT_SEC = 6;
     const CURATED_REQUEST_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/149.0.0.0 Safari/537.36";
     // 画质关键词优先级（score 越高排越前）：
@@ -20672,6 +20673,112 @@ utils.encode = function encode(arr, enc) {
       )) || null;
     }
 
+    function recordDetailPlaybackDecision(name, item, detail) {
+      const payload = Object.assign({
+        itemKey: item ? panSearchItemKey(item) : "",
+        continueContextFound: false,
+        continueUrlFound: false,
+        playbackReturnFound: false,
+        nativeHistoryKnown: false,
+        nativeHistoryFound: false,
+        lastPlayUrlFound: false,
+        nativeProgress: 0,
+        decision: "",
+        curatedStarted: false
+      }, detail || {});
+      try {
+        console.debug(String(name || "DETAIL_PLAYBACK_DECISION"), payload);
+      } catch (e) {}
+      if (state.tvDiag) state.tvDiag[String(name || "DETAIL_PLAYBACK_DECISION")] = payload;
+      return payload;
+    }
+
+    function detailContinueResourceCandidateFor(item, target) {
+      if (!item || !target || !playbackTargetMatchesItem(target, item)) return null;
+      const normalizedTarget = normalizePlaybackTarget(item, target);
+      const candidate = buildDirectPanHistoryItem(normalizedTarget);
+      if (!normalizedTarget || !candidate || !candidate.url || !candidate.diskType) return null;
+      const payload = buildPanPlayPayload(candidate);
+      if (!payload || !payload.type || !payload.url) return null;
+      return { target: normalizedTarget, candidate };
+    }
+
+    function detailContinueResourceContextFor(item, nativeHistory) {
+      if (!item) return null;
+      const add = (source, target, contextFound, history) => {
+        const resource = detailContinueResourceCandidateFor(item, target);
+        if (!resource) return null;
+        return Object.assign({}, resource, {
+          source,
+          contextFound: !!contextFound,
+          history: history || null
+        });
+      };
+
+      // Continue Index / History Context 是续播线路的第一权威来源。
+      const primaryContext = findContinueWatchingContext(item);
+      const localContexts = [primaryContext]
+        .concat(recentWatchingContextCandidates().filter((candidate) => (
+          candidate && playbackTargetMatchesItem(candidate.historyContextTarget, item)
+        )))
+        .filter(Boolean);
+      for (const context of localContexts) {
+        const contextTarget = detailContinuePlaybackTargetFor(item, context);
+        const found = add("continue-context", contextTarget, true, null);
+        if (found) return found;
+      }
+
+      // 播放器返回快照在 WebView 尚未重新加载 cache 时仍可直接恢复。
+      const playbackReturn = state.pan && state.pan.playbackReturn;
+      if (playbackReturn) {
+        const returnTarget = normalizePlaybackTarget(item, Object.assign(
+          {},
+          playbackReturn.item || {},
+          playbackReturn,
+          playbackReturn.episodeTarget || {}
+        ));
+        const found = add("playback-return", returnTarget, true, null);
+        if (found) return found;
+      }
+
+      // Native History 只负责确认这次观看仍有有效进度；资源字段来自其
+      // 已加载的 playback context / playbackReturn，而不是重新搜源。
+      const history = nativeHistory || findDetailContinueHistory(item);
+      if (detailContinueHistoryIsValid(history)) {
+        const historyTarget = detailContinuePlaybackTargetFor(item, history);
+        const found = add("native-history", historyTarget, false, history);
+        if (found) return found;
+      }
+      return null;
+    }
+
+    async function resolveDetailContinueResource(item, run) {
+      if (!item) return null;
+      let resource = detailContinueResourceContextFor(item);
+      if (resource) return resource;
+      const contextsLoaded = !!(state.historyContexts && state.historyContexts.loaded);
+      const continueLoaded = !!(state.continueIndex && state.continueIndex.loaded);
+      if (contextsLoaded && continueLoaded) return null;
+      let timer = 0;
+      const loadTask = Promise.all([
+        loadHistoryContextIndex(),
+        loadContinueIndex()
+      ]).catch(() => null);
+      try {
+        await Promise.race([
+          loadTask,
+          new Promise((resolve) => {
+            timer = setTimeout(() => resolve(null), DETAIL_CONTINUE_GATE_MAX_MS);
+          })
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+      if (run && !detailPlaybackIsCurrent(run)) return null;
+      resource = detailContinueResourceContextFor(item);
+      return resource;
+    }
+
     function syncDetailMode(item, historyOverride, options) {
       const candidate = historyOverride === undefined ? findDetailContinueHistory(item) : historyOverride;
       const history = detailAuthoritativeNativeHistoryFor(item, candidate, options);
@@ -20863,13 +20970,62 @@ utils.encode = function encode(arr, enc) {
         finalFailureNotified: false,
         cancelled: false,
         cancelReason: "",
-        staleLogged: false
+        staleLogged: false,
+        continuePending: opts.continueGate === true && !explicitTarget,
+        continueDecisionPromise: null,
+        continueResource: null
       };
       state.detailPlayback = run;
       recordDetailPlaybackLifecycle(run, "START");
-      showDirectPlayStatus(run.token, "BACKGROUND_PREPARING", DIRECT_PLAY_STATUS_TEXT.BACKGROUND_PREPARING, "detail_prepare_start");
-      run.historyPromise = verifyDetailNativeHistory(item, run).catch(() => null);
       run.promise = (async () => {
+        let continueDecision = null;
+        if (run.continuePending) {
+          run.continueDecisionPromise = (async () => {
+            const localResource = await resolveDetailContinueResource(item, run);
+            if (!localResource) return { attempted: false, resource: null, history: null };
+            const history = await verifyDetailNativeHistory(item, run);
+            if (!detailPlaybackCurrentOrRecord(run)) return null;
+            return {
+              attempted: true,
+              resource: detailContinueResourceContextFor(item, history) || localResource,
+              history
+            };
+          })();
+          continueDecision = await run.continueDecisionPromise.catch(() => null);
+          run.continuePending = false;
+          if (!detailPlaybackCurrentOrRecord(run)) return null;
+          if (continueDecision && continueDecision.resource && detailContinueHistoryIsValid(continueDecision.history)) {
+            run.continueResource = continueDecision.resource;
+            run.history = continueDecision.history;
+            run.historyVerified = true;
+            if (continueDecision.resource.target) setDetailPlaybackTarget(item, continueDecision.resource.target);
+            syncDetailMode(item, continueDecision.history, { freshNative: true });
+            recordDetailPlaybackDecision("DETAIL_OPEN_PLAYBACK_DECISION", item, {
+              continueContextFound: !!continueDecision.resource.contextFound,
+              continueUrlFound: true,
+              nativeHistoryKnown: true,
+              nativeProgress: historyPlaybackPositionValue(continueDecision.history),
+              decision: "CONTINUE_READY",
+              curatedStarted: false
+            });
+            settleDetailPlayback(run, "CONTINUE_READY", "continue_ready");
+            updateDetailContinueButton();
+            return null;
+          }
+        }
+        recordDetailPlaybackDecision("DETAIL_OPEN_PLAYBACK_DECISION", item, {
+          continueContextFound: !!(continueDecision && continueDecision.attempted),
+          continueUrlFound: false,
+          nativeHistoryKnown: !!(continueDecision && continueDecision.history),
+          nativeProgress: continueDecision && continueDecision.history
+            ? historyPlaybackPositionValue(continueDecision.history) : 0,
+          decision: "FIRST_PLAY_PREPARE",
+          curatedStarted: true
+        });
+        showDirectPlayStatus(run.token, "BACKGROUND_PREPARING", DIRECT_PLAY_STATUS_TEXT.BACKGROUND_PREPARING, "detail_prepare_start");
+        run.historyPromise = continueDecision && continueDecision.attempted
+          ? Promise.resolve(continueDecision.history)
+          : verifyDetailNativeHistory(item, run).catch(() => null);
         let curated = null;
         try {
           curated = await resolveCuratedPlaybackCandidate(item, run);
@@ -21118,7 +21274,7 @@ utils.encode = function encode(arr, enc) {
         if (pending && pending.promise && typeof pending.promise.then === "function") {
           await pending.promise.catch(() => {});
         }
-        if (state.selected !== item || !$("detailSheet") || !$("detailSheet").classList.contains("active")) return false;
+      if (state.selected !== item || !$("detailSheet") || !$("detailSheet").classList.contains("active")) return false;
         if (target) setDetailPlaybackTarget(item, target);
         prepareDetailPlayback(item, {
           reason: reason || "continue_history_fallback",
@@ -21212,6 +21368,27 @@ utils.encode = function encode(arr, enc) {
         ? normalizePlaybackTarget(item, opts.episodeTarget)
         : null;
       if (explicitTarget) setDetailPlaybackTarget(item, explicitTarget);
+      const pendingContinueRun = state.detailPlayback && detailPlaybackIsCurrent(state.detailPlayback)
+        && state.detailPlayback.continuePending ? state.detailPlayback : null;
+      if (pendingContinueRun) {
+        if (explicitTarget) {
+          // 明确选集不是续播同一资源；取消尚未完成的 Continue gate，
+          // 让该集建立自己的正常准备 run。
+          cancelDetailPlaybackPreparation("explicit_episode_target");
+          prepareDetailPlayback(item, {
+            reason: "episode_select",
+            playRequested: true,
+            episodeTarget: explicitTarget,
+            explicitEpisodeTarget: true
+          }).catch(() => {});
+          return;
+        }
+        await (pendingContinueRun.continueDecisionPromise || Promise.resolve(null)).catch(() => null);
+        if (state.selected !== item) return;
+        if (state.detailMode === "CONTINUE" && state.detailHistory) {
+          return requestDetailPlayback(item, opts);
+        }
+      }
       const button = $("detailContinueBtn");
       if (state.detailModeItemKey !== panSearchItemKey(item)) syncDetailMode(item);
       const mode = state.detailMode === "CONTINUE" ? "CONTINUE" : "FIRST_PLAY";
@@ -28663,18 +28840,31 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (!detailWasActive || !sameSelected || !opts.keepPan) {
         state.detailPreload = null;
       }
-      if (!opts.historyResume) state.historyResume = null;
+      const restorePlaybackReturn = opts.playerReturnRestore === true
+        && opts.panSnapshot && opts.panSnapshot.playbackReturn;
+      if (restorePlaybackReturn) state.pan.playbackReturn = opts.panSnapshot.playbackReturn;
+      if (!opts.historyResume && !opts.playerReturnRestore) state.historyResume = null;
       if (opts.episodeTarget || opts.historyContext) setDetailPlaybackTarget(item, opts.episodeTarget || opts.historyContext);
       else if (!sameSelected && !opts.restore) state.detailEpisodeTarget = null;
       if (!opts.restore && !detailWasActive) rememberHomeReturn(item, opts.returnTarget);
       state.selected = item;
       state.detail = null;
-      // 详情按钮的续播授权不再读取 Recent 的 TTL 缓存；进入详情先按首次播放，
-      // 由 prepareDetailPlayback 并行执行一次新的 Native History 校验。
-      syncDetailMode(item, null);
-      if (!opts.keepPan) resetPanSearch();
-      // 资源准备与 fresh Native History 校验并行；站源失败后才进入原有 Direct。
-      prepareDetailPlaybackForDetail(item, { reason: "detail_open" }).catch(() => {});
+      // 先按当前已知 Native History 同步按钮；真正的资源准备由
+      // prepareDetailPlayback 的 Continue gate 决定，避免有效续播先启动 Curated。
+      syncDetailMode(item);
+      if (!opts.keepPan) {
+        resetPanSearchState(true, {
+          reason: "detail_open",
+          preservePlaybackReturn: !!restorePlaybackReturn
+        });
+      }
+      // 资源准备与本地 Continue gate 共用同一个 detailPlayback run；
+      // gate 确认有历史线路时只进入 CONTINUE_READY，不启动任何搜索。
+      prepareDetailPlaybackForDetail(item, {
+        reason: "detail_open",
+        continueGate: true,
+        playerReturnRestore: opts.playerReturnRestore === true
+      }).catch(() => {});
       ensureSheetViewport($("detailSheet"));
       syncDetailLayout();
       document.body.classList.add("detail-active");
@@ -32859,6 +33049,39 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       await saveUiSnapshotNow();
     }
 
+    async function persistPlaybackBeforeNativeHandoff(item, episodeTarget, panItem, handoffAction) {
+      const tasks = [];
+      const enqueue = (taskFactory) => {
+        try {
+          tasks.push(Promise.resolve(taskFactory()));
+        } catch (error) {
+          tasks.push(Promise.reject(error));
+        }
+      };
+      // 三项在同一轮启动；总 barrier 只有一个 800ms 上限，不为每项分别计时。
+      enqueue(() => rememberPanPlaybackReturn(panItem, episodeTarget));
+      if (item) {
+        enqueue(() => saveHistoryPlaybackContext(item, episodeTarget, panItem, { refreshRecent: false }));
+        enqueue(() => upsertContinueIndex(item, episodeTarget, panItem, { refreshRecent: false }));
+      }
+      const allSettled = Promise.allSettled(tasks);
+      let timer = 0;
+      const result = await Promise.race([
+        allSettled.then((values) => ({ status: "settled", values })),
+        new Promise((resolve) => {
+          timer = setTimeout(() => resolve({ status: "timeout" }), PLAYBACK_SNAPSHOT_TIMEOUT_MS);
+        })
+      ]);
+      clearTimeout(timer);
+      if (handoffAction) {
+        recordPanDirectHandoffStage(result && result.status === "settled" ? "SNAPSHOT_OK" : "SNAPSHOT_TIMEOUT", handoffAction.item, handoffAction, {
+          snapshotOutcome: result && result.status || "timeout",
+          snapshotTaskCount: tasks.length
+        });
+      }
+      return result;
+    }
+
     function rememberPanPlaybackReturnBestEffort(item, handoffAction, episodeTarget) {
       let timer = 0;
       let task;
@@ -33151,7 +33374,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         }
       }
       if (opts.handoffAction) recordPanDirectHandoffStage("SNAPSHOT_START", selectedItem, opts.handoffAction);
-      await rememberPanPlaybackReturnBestEffort(item, opts.handoffAction, episodeTarget);
       if (selectedItem) {
         const nativeIdentity = {
           siteKey: "push_agent",
@@ -33163,12 +33385,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         };
         rememberWatchIntent(selectedItem, "search", episodeTarget, nativeIdentity);
         startWatchTracking(selectedItem, episodeTarget, nativeIdentity);
-        // Native History 由 pan.play 生成；Recent 直接消费同一份现有
-        // playback-context cache，稳定 TMDB/季集上下文不再依赖 Native History。
-        saveHistoryPlaybackContext(selectedItem, episodeTarget, item, { refreshRecent: false });
-        // Continue Index 是 Home 最近观看的主身份索引；写入失败不得阻塞原生 handoff。
-        upsertContinueIndex(selectedItem, episodeTarget, item, { refreshRecent: false });
       }
+      // Native handoff 前把播放器返回、History Context、Continue Index 做成
+      // 一个有界 best-effort barrier；任何单项失败都不得阻塞 pan.play。
+      await persistPlaybackBeforeNativeHandoff(selectedItem, episodeTarget, item, opts.handoffAction);
       try {
         const pan = sdk().pan || {};
         if (!pan.play) throw new Error("当前 App 不支持 pan.play");
@@ -37587,7 +37807,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       }
       if ((snapshot.route === "detail" || snapshot.route === "image") && snapshot.selected) {
         if (location.hash !== "#detail" && snapshot.route === "detail") history.replaceState({ sheet: "detail" }, "", "#detail");
-        openDetail(snapshot.selected, { restore: true, skipHistory: true });
+        openDetail(snapshot.selected, {
+          restore: true,
+          skipHistory: true,
+          playerReturnRestore: !!(snapshot.pan && snapshot.pan.playbackReturn),
+          panSnapshot: snapshot.pan || null
+        });
         restorePanSnapshot(snapshot.pan);
         requestAnimationFrame(() => {
           if ($("detailSheet")) $("detailSheet").scrollTop = Number(snapshot.detailScrollTop || 0);
@@ -37665,7 +37890,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
               if (snapshot.detailReturn) state.detailReturn = snapshot.detailReturn;
               state.detailEpisodeTarget = snapshot.detailEpisodeTarget && normalizePlaybackTarget(snapshot.selected, snapshot.detailEpisodeTarget) || null;
               if (location.hash !== "#detail") history.replaceState({ sheet: "detail" }, "", "#detail");
-              openDetail(snapshot.selected, { restore: true, skipHistory: true });
+              openDetail(snapshot.selected, {
+                restore: true,
+                skipHistory: true,
+                playerReturnRestore: !!(snapshot.pan && snapshot.pan.playbackReturn),
+                panSnapshot: snapshot.pan || null
+              });
               if (snapshot.pan) restorePanSnapshot(snapshot.pan);
               requestAnimationFrame(() => {
                 if ($("detailSheet")) $("detailSheet").scrollTop = Number(snapshot.detailScrollTop || 0);
@@ -37697,23 +37927,78 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       state.resume.timer = setTimeout(() => handleWebHomeResume(opts), opts.delay == null ? 80 : opts.delay);
     }
 
-    function rearmDetailPlaybackAfterPlayerReturn(options) {
+    async function rearmDetailPlaybackAfterPlayerReturn(options) {
       const opts = options || {};
       if (opts.playerReturn !== true || opts.manualPanPlaybackReturn === true) return false;
       const detail = $("detailSheet");
       if (!detail || !detail.classList.contains("active") || !state.selected) return false;
-      const current = state.detailPlayback;
-      // A restored snapshot may already have a fresh preparation run from openDetail().
-      // Do not duplicate an active run; an inactive run is the consumed lifecycle that
-      // must be replaced after native playback returns (Curated and Direct alike).
-      if (current && detailPlaybackIsCurrent(current) && current.active) return false;
-      // The previous explicit episode target belongs to the consumed handoff.  Let the
-      // fresh Native History verification repopulate it for the new detail lifecycle.
-      state.detailEpisodeTarget = null;
+      const item = state.selected;
+      const previousHistory = state.detailHistory
+        || state.detailPlayback && state.detailPlayback.history
+        || null;
+      const playbackReturn = state.pan && state.pan.playbackReturn;
+      await loadRecentList({ refresh: true, silent: true }).catch(() => {});
+      await Promise.all([
+        loadHistoryContextIndex(),
+        loadContinueIndex()
+      ]).catch(() => {});
+      if (state.selected !== item || !$("detailSheet") || !$("detailSheet").classList.contains("active")) return false;
+
+      const nativeHistory = findDetailContinueHistory(item);
+      const resource = detailContinueResourceContextFor(item, nativeHistory);
+      const nativeReady = detailContinueHistoryIsValid(nativeHistory);
+      const playbackReturnHistory = !nativeReady && resource && resource.source === "playback-return"
+        && detailContinueHistoryIsValid(previousHistory) ? previousHistory : null;
+      const effectiveHistory = nativeHistory || playbackReturnHistory;
+      const reusableResource = resource && !isPanHealthBad(resource.candidate) ? resource : null;
+
+      // REARM 只恢复动作和上下文；它不再把“播放器返回”解释成“重新搜源”。
+      cancelDetailPlaybackPreparation("player_return_rearm");
+      cancelPendingDirectPlay("player_return_rearm");
+      state.detailHistoryHandoff = null;
       state.historyResume = null;
-      syncDetailMode(state.selected, null);
+      if (reusableResource && effectiveHistory) {
+        if (reusableResource.target) setDetailPlaybackTarget(item, reusableResource.target);
+        if (state.pan) {
+          state.pan.directReady = null;
+          state.pan.directFailure = null;
+        }
+        if (nativeReady) {
+          syncDetailMode(item, nativeHistory, { freshNative: true });
+        } else {
+          state.detailMode = "CONTINUE";
+          state.detailModeItemKey = panSearchItemKey(item);
+          state.detailHistory = effectiveHistory;
+        }
+        recordDetailPlaybackDecision("PLAYER_RETURN_PLAYBACK_DECISION", item, {
+          playbackReturnFound: !!playbackReturn,
+          continueContextFound: reusableResource.source === "continue-context",
+          lastPlayUrlFound: true,
+          nativeHistoryFound: !!nativeHistory,
+          nativeProgress: historyPlaybackPositionValue(effectiveHistory),
+          decision: "REARM_HISTORY_ONLY",
+          curatedStarted: false
+        });
+        updateDetailContinueButton();
+        return true;
+      }
+
+      const target = nativeHistory ? detailContinuePlaybackTargetFor(item, nativeHistory) : null;
+      if (target) setDetailPlaybackTarget(item, target);
+      else state.detailEpisodeTarget = null;
+      resetPanSearchState(false, { reason: "player_return_rearm_fallback", preserveHealth: true });
+      syncDetailMode(item, nativeHistory || null, nativeHistory ? { freshNative: true } : undefined);
+      recordDetailPlaybackDecision("PLAYER_RETURN_PLAYBACK_DECISION", item, {
+        playbackReturnFound: !!playbackReturn,
+        continueContextFound: !!(resource && resource.contextFound),
+        lastPlayUrlFound: !!(resource && resource.target && resource.target.lastPlayUrl),
+        nativeHistoryFound: !!nativeHistory,
+        nativeProgress: nativeHistory ? historyPlaybackPositionValue(nativeHistory) : 0,
+        decision: "REARM_FALLBACK_PREPARE",
+        curatedStarted: true
+      });
       updateDetailContinueButton();
-      prepareDetailPlayback(state.selected, { reason: "player_return_rearm" }).catch(() => {});
+      prepareDetailPlayback(item, { reason: "player_return_rearm_fallback" }).catch(() => {});
       return true;
     }
 
@@ -37731,8 +38016,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       fitConnectionPanel();
       renderConnection();
       if (isPlayerReturn) await settlePlayerReturnHistory();
+      let detailRearmed = false;
       if (isPlayerReturn && !isPanPlaybackReturn) {
-        rearmDetailPlaybackAfterPlayerReturn({ playerReturn: true });
+        detailRearmed = await rearmDetailPlaybackAfterPlayerReturn({ playerReturn: true });
       }
       if (restoreRecentNativeHome) await loadRecentList({ refresh: true, silent: true });
       if (!isPanPlaybackReturn) {
@@ -37749,7 +38035,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         // The awaited refresh above rendered the new Recent list before the
         // saved Home target was restored.  Do not start a competing sampler.
       } else if (isPlayerReturn) {
-        await loadRecentList({ refresh: true, silent: true });
+        if (!detailRearmed) await loadRecentList({ refresh: true, silent: true });
       } else {
         loadRecentList({ refresh: true, silent: true }).catch(() => {});
         sampleWatchStatus();
