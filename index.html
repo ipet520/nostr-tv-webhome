@@ -17678,11 +17678,13 @@ utils.encode = function encode(arr, enc) {
       const latest = state.homeLatest;
       if (!latest) return latest;
       if (latest.loading) return latest.promise || latest;
+      const currentWeekStart = weeklyDateRange().start;
+      const weekChanged = !!(latest.range && latest.range.start && latest.range.start !== currentWeekStart);
       const ageFromNetwork = latest.loadedAt > 0 ? Math.max(0, Date.now() - latest.loadedAt) : Infinity;
       const ageFromAttempt = latest.lastRefreshAt > 0 ? Math.max(0, Date.now() - latest.lastRefreshAt) : Infinity;
-      if (latest.loadedAt > 0 && ageFromNetwork < HOME_WEEKLY_REFRESH_TTL_MS) return latest;
-      if (!latest.loadedAt && latest.loaded && latest.lastRefreshAt > 0 && ageFromAttempt < HOME_WEEKLY_REFRESH_TTL_MS) return latest;
-      if (!latest.networkRefreshSucceeded && latest.loaded && latest.lastRefreshAt > 0 && ageFromAttempt < HOME_WEEKLY_REFRESH_TTL_MS) return latest;
+      if (!weekChanged && latest.loadedAt > 0 && ageFromNetwork < HOME_WEEKLY_REFRESH_TTL_MS) return latest;
+      if (!weekChanged && !latest.loadedAt && latest.loaded && latest.lastRefreshAt > 0 && ageFromAttempt < HOME_WEEKLY_REFRESH_TTL_MS) return latest;
+      if (!weekChanged && !latest.networkRefreshSucceeded && latest.loaded && latest.lastRefreshAt > 0 && ageFromAttempt < HOME_WEEKLY_REFRESH_TTL_MS) return latest;
       const promise = Promise.resolve().then(() => loadHomeLatestInternal(latest)).catch((error) => {
         const hasItems = homeLatestHasItems(latest);
         latest.loading = false;
@@ -17830,7 +17832,7 @@ utils.encode = function encode(arr, enc) {
       const networkRefreshSucceeded = networkSucceeded && nextItems.length > 0;
       latest.loading = false;
       latest.loaded = true;
-      if (networkSucceeded) latest.loadedAt = Date.now();
+      if (networkRefreshSucceeded) latest.loadedAt = Date.now();
       latest.networkRefreshSucceeded = networkRefreshSucceeded;
       latest.error = networkSucceeded || homeLatestHasItems(latest) ? "" : "加载失败";
       recordHomeLatestDiag(Object.assign({}, counts, {
@@ -17865,11 +17867,13 @@ utils.encode = function encode(arr, enc) {
       const latest = state.homeLatest;
       if (!latest) return false;
       if (latest.loading) return false;
+      const currentWeekStart = weeklyDateRange().start;
+      const weekChanged = !!(latest.range && latest.range.start && latest.range.start !== currentWeekStart);
       const networkAge = latest.loadedAt > 0 ? Math.max(0, Date.now() - latest.loadedAt) : Infinity;
       const attemptAge = latest.lastRefreshAt > 0 ? Math.max(0, Date.now() - latest.lastRefreshAt) : Infinity;
-      if (latest.loadedAt > 0 && networkAge < HOME_WEEKLY_REFRESH_TTL_MS) return false;
-      if (!latest.loadedAt && latest.loaded && latest.lastRefreshAt > 0 && attemptAge < HOME_WEEKLY_REFRESH_TTL_MS) return false;
-      if (!latest.networkRefreshSucceeded && latest.loaded && latest.lastRefreshAt > 0 && attemptAge < HOME_WEEKLY_REFRESH_TTL_MS) return false;
+      if (!weekChanged && latest.loadedAt > 0 && networkAge < HOME_WEEKLY_REFRESH_TTL_MS) return false;
+      if (!weekChanged && !latest.loadedAt && latest.loaded && latest.lastRefreshAt > 0 && attemptAge < HOME_WEEKLY_REFRESH_TTL_MS) return false;
+      if (!weekChanged && !latest.networkRefreshSucceeded && latest.loaded && latest.lastRefreshAt > 0 && attemptAge < HOME_WEEKLY_REFRESH_TTL_MS) return false;
       Promise.resolve(loadHomeLatest()).catch(() => {
         if (state.homeLatest) {
           const hasItems = homeLatestHasItems(state.homeLatest);
