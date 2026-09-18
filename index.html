@@ -18129,6 +18129,30 @@ utils.encode = function encode(arr, enc) {
       return value;
     }
 
+    function resolvePanProviderForHistory(itemOrTarget) {
+      const value = itemOrTarget && typeof itemOrTarget === "object" ? itemOrTarget : {};
+      const allowed = new Set(PAN_DISK_TYPES.map((item) => item.id));
+      const firstValid = (values) => {
+        for (const candidate of values) {
+          const normalized = normalizePanDiskType(candidate);
+          if (normalized && allowed.has(normalized)) return normalized;
+        }
+        return "";
+      };
+      return firstValid([
+        value.diskType,
+        value.disk_type,
+        value.panDiskType,
+        value.pan_disk_type
+      ]) || firstValid([
+        value.panProvider,
+        value.pan_provider,
+        value.provider
+      ]) || normalizePanDiskType(curatedDiskTypeForUrl(
+        value.lastPlayUrl || value.last_play_url || value.url || value.normalizedUrl || value.normalized_url
+      ));
+    }
+
     function normalizePanChannels(value) {
       const list = Array.isArray(value) ? value : String(value || "").split(/[\n,，\s]+/);
       return Array.from(new Set(list.map((item) => String(item || "").trim()).filter(Boolean)));
@@ -20724,6 +20748,8 @@ utils.encode = function encode(arr, enc) {
     async function verifyDetailNativeHistory(item, run) {
       let history = null;
       try {
+        await loadHistoryContextIndex();
+        await loadContinueIndex();
         const rawList = await sdk().history();
         const normalized = normalizeHistoryList(rawList);
         history = normalized.find((candidate) => detailHasAuthoritativeNativeHistory(candidate)
@@ -26619,7 +26645,7 @@ utils.encode = function encode(arr, enc) {
     function buildDirectPanHistoryItem(target) {
       if (!target) return null;
       const url = String(target.lastPlayUrl || "").trim();
-      const provider = String(target.panProvider || "").trim();
+      const provider = resolvePanProviderForHistory(target);
       if (!url || !provider) return null;
       return {
         key: "history-direct|" + normalizePanUrl(url),
@@ -26916,6 +26942,13 @@ utils.encode = function encode(arr, enc) {
           if (!storedConsensus || candidate.entry !== storedConsensus.entry) continue;
         }
         if (!urlMatch && !fileMatch && !resourceMatch && !titleMatch) continue;
+        const lastPlayUrl = target.lastPlayUrl || candidate.lastPlayUrl || item.lastPlayUrl || "";
+        const panProvider = resolvePanProviderForHistory({
+          diskType: target.diskType || candidate.diskType || item.diskType,
+          panProvider: target.panProvider || candidate.panProvider || item.panProvider,
+          provider: target.provider || candidate.provider || item.provider,
+          lastPlayUrl
+        });
         return Object.assign({}, item, target, {
           title: target.title || item.title || "",
           poster: target.poster || item.pic || item.image || "",
@@ -26925,14 +26958,14 @@ utils.encode = function encode(arr, enc) {
           episodeNumber: target.episodeNumber || item.episodeNumber || 0,
           episodeTitle: target.episodeTitle || item.episodeTitle || "",
           sourceType: target.sourceType || item.sourceType || "",
-          panProvider: target.panProvider || candidate.panProvider || item.panProvider || item.provider || "",
+          panProvider,
           panPassword: target.panPassword || candidate.panPassword || item.panPassword || item.password || "",
           panTitle: target.panTitle || candidate.panTitle || item.panTitle || item.title || "",
           panFileName: target.panFileName || candidate.panFileName || item.panFileName || item.fileName || "",
           panFileId: target.panFileId || candidate.panFileId || item.panFileId || item.fileId || "",
           resourceId: target.resourceId || candidate.resourceId || item.resourceId || "",
           panSearchKeyword: target.panSearchKeyword || item.panSearchKeyword || "",
-          lastPlayUrl: target.lastPlayUrl || candidate.lastPlayUrl || item.lastPlayUrl || "",
+          lastPlayUrl,
           playbackPosition: target.playbackPosition || item.position || 0,
           duration: target.duration || item.duration || 0,
           updatedAt: target.updatedAt || candidate.at || item.createTime || 0
@@ -26964,6 +26997,12 @@ utils.encode = function encode(arr, enc) {
       const panPassword = String(historyNestedValue(history, ["panPassword", "pan_password", "password", "pwd", "passcode"]) || hint && (hint.panPassword || hint.password) || "").trim();
       const panTitle = String(historyNestedValue(history, ["panTitle", "pan_title", "playTitle", "play_title", "resourceTitle"]) || hint && hint.panTitle || "").trim();
       const lastPlayUrl = String(historyNestedValue(history, ["lastPlayUrl", "last_play_url", "playUrl", "play_url", "episodeUrl", "episode_url", "url"]) || hint && hint.lastPlayUrl || "").trim();
+      const panProvider = resolvePanProviderForHistory({
+        diskType: historyNestedValue(history, ["diskType", "disk_type"]) || hint && hint.diskType,
+        panProvider: historyNestedValue(history, ["panProvider", "pan_provider"]) || hint && hint.panProvider,
+        provider: historyNestedValue(history, ["provider"]) || hint && hint.provider,
+        lastPlayUrl
+      });
       const originalTitle = String(historyNestedValue(history, ["originalTitle", "original_title", "originalName", "original_name"]) || hint && hint.originalTitle || "").trim();
       const resourceSearchTitle = String(historyNestedValue(history, ["resourceSearchTitle", "resource_search_title"]) || hint && hint.resourceSearchTitle || "").trim();
       const aliases = mergeTitleAliases(
@@ -26988,7 +27027,7 @@ utils.encode = function encode(arr, enc) {
         episodeNumber,
         episodeTitle: String(historyNestedValue(history, ["episodeTitle", "episode_title"]) || hint && hint.episodeTitle || "").trim(),
         sourceType: String(historyNestedValue(history, ["sourceType", "source_type", "playType", "play_type", "kind", "type", "source"]) || hint && hint.sourceType || "").trim(),
-        panProvider: String(historyNestedValue(history, ["panProvider", "pan_provider", "provider", "diskType", "disk_type"]) || hint && (hint.panProvider || hint.provider) || "").trim(),
+        panProvider,
         panPassword,
         panTitle,
         panFileName,
@@ -27061,7 +27100,12 @@ utils.encode = function encode(arr, enc) {
         source.lastPlayUrl,
         source.last_play_url
       ]);
-      const panProvider = continueIndexFirstValue([pan.provider, pan.diskType, target.panProvider, source.panProvider, source.provider]);
+      const panProvider = resolvePanProviderForHistory({
+        diskType: continueIndexFirstValue([pan.diskType, pan.disk_type, target.diskType, source.diskType, source.disk_type]),
+        panProvider: continueIndexFirstValue([pan.panProvider, pan.pan_provider, target.panProvider, source.panProvider]),
+        provider: continueIndexFirstValue([pan.provider, target.provider, source.provider]),
+        lastPlayUrl
+      });
       const panPassword = continueIndexFirstValue([pan.password, pan.pwd, pan.passcode, target.panPassword, source.panPassword, source.password, source.pwd]);
       const panFileName = continueIndexFirstValue([pan.fileName, pan.file_name, pan.filename, target.panFileName, source.panFileName, source.fileName]);
       const panTitle = continueIndexFirstValue([pan.title, pan.note, target.panTitle, source.panTitle, source.playTitle, panFileName, title]);
@@ -27275,6 +27319,12 @@ utils.encode = function encode(arr, enc) {
       const now = Date.now();
       const target = normalizePlaybackTarget(item, playbackTarget || currentPlaybackTargetForItem(item));
       const lastPlayUrl = String(panItem && (panItem.normalizedUrl || panItem.normalized_url || panItem.url) || "").trim();
+      const panProvider = resolvePanProviderForHistory({
+        diskType: panItem && (panItem.diskType || panItem.disk_type),
+        panProvider: panItem && (panItem.panProvider || panItem.pan_provider),
+        provider: panItem && panItem.provider,
+        lastPlayUrl
+      });
       const entry = {
         version: 1,
         updatedAt: now,
@@ -27285,7 +27335,7 @@ utils.encode = function encode(arr, enc) {
         aliases: mergeTitleAliases(item.aliases, item.title, item.originalTitle),
         poster: String(item.pic || item.image || "").trim(),
         backdrop: String(item.backdrop || item.landscape || "").trim(),
-        panProvider: String(panItem && (panItem.provider || panItem.diskType) || "").trim(),
+        panProvider,
         panPassword: String(panItem && (panItem.password || panItem.pwd || panItem.passcode) || "").trim(),
         panTitle: String(panItem && (panItem.title || panItem.note) || item.title || "").trim(),
         panFileName: String(panItem && (panItem.fileName || panItem.file_name || panItem.filename) || "").trim(),
@@ -27327,6 +27377,13 @@ utils.encode = function encode(arr, enc) {
       const position = Math.max(0, Number(target.playbackPosition || entry.position || rawItem.position || 0) || 0);
       const duration = Math.max(0, Number(target.duration || entry.duration || rawItem.duration || 0) || 0);
       const updatedAt = Number(entry.updatedAt || entry.at || target.updatedAt || rawItem.updatedAt || 0) || 0;
+      const lastPlayUrl = String(target.lastPlayUrl || entry.lastPlayUrl || rawItem.lastPlayUrl || "").trim();
+      const panProvider = resolvePanProviderForHistory({
+        diskType: target.diskType || entry.diskType || rawItem.diskType,
+        panProvider: target.panProvider || entry.panProvider || rawItem.panProvider,
+        provider: target.provider || entry.provider || rawItem.provider,
+        lastPlayUrl
+      });
       const progress = duration > 0 && position > 0 ? Math.min(100, Math.max(1, Math.round(position / duration * 100))) : 0;
       const progressText = duration > 0 && position > 0
         ? "已看 " + Math.min(99, Math.max(1, Math.round(position / duration * 100))) + "%"
@@ -27385,14 +27442,14 @@ utils.encode = function encode(arr, enc) {
         episodeNumber,
         episodeTitle: target.episodeTitle || "",
         sourceType: target.sourceType || entry.sourceType || "pan",
-        panProvider: target.panProvider || entry.panProvider || "",
+        panProvider,
         panPassword: target.panPassword || entry.panPassword || "",
         panTitle: target.panTitle || entry.panTitle || title,
         panFileName: target.panFileName || entry.panFileName || "",
         panFileId: target.panFileId || entry.panFileId || "",
         resourceId: target.resourceId || entry.resourceId || "",
         panSearchKeyword: target.panSearchKeyword || entry.panSearchKeyword || "",
-        lastPlayUrl: target.lastPlayUrl || entry.lastPlayUrl || "",
+        lastPlayUrl,
         historySiteKind: "push_agent",
         historyReplayKind: "PAN_NATIVE",
         historyRestorable: false,
@@ -27753,6 +27810,13 @@ utils.encode = function encode(arr, enc) {
       const aliases = mergeTitleAliases(source.aliases, item && item.aliases, title, originalTitle);
       const seasonNumber = Math.max(0, Number(value(["seasonNumber", "season_number", "season"], 0)) || 0);
       const episodeNumber = Math.max(0, Number(value(["episodeNumber", "episode_number", "episode"], 0)) || 0);
+      const lastPlayUrl = String(value(["lastPlayUrl", "last_play_url", "playUrl", "play_url"], "") || "").trim();
+      const panProvider = resolvePanProviderForHistory({
+        diskType: value(["diskType", "disk_type"], ""),
+        panProvider: value(["panProvider", "pan_provider"], ""),
+        provider: value(["provider"], ""),
+        lastPlayUrl
+      });
       if (!tmdbId && !title && !mediaType) return null;
       return {
         mediaType,
@@ -27767,14 +27831,14 @@ utils.encode = function encode(arr, enc) {
         episodeNumber,
         episodeTitle: String(value(["episodeTitle", "episode_title"], "") || "").trim(),
         sourceType: String(value(["sourceType", "source_type"], "") || "").trim(),
-        panProvider: String(value(["panProvider", "pan_provider", "provider"], "") || "").trim(),
+        panProvider,
         panPassword: String(value(["panPassword", "pan_password", "password", "pwd", "passcode"], "") || "").trim(),
         panTitle: String(value(["panTitle", "pan_title", "playTitle", "play_title", "resourceTitle"], "") || "").trim(),
         panFileName: String(value(["panFileName", "pan_file_name", "fileName", "file_name"], "") || "").trim(),
         panFileId: String(value(["panFileId", "pan_file_id", "fileId", "file_id"], "") || "").trim(),
         resourceId: String(value(["resourceId", "resource_id"], "") || "").trim(),
         panSearchKeyword: String(value(["panSearchKeyword", "pan_search_keyword"], "") || "").trim(),
-        lastPlayUrl: String(value(["lastPlayUrl", "last_play_url", "playUrl", "play_url"], "") || "").trim(),
+        lastPlayUrl,
         playbackPosition: Number(value(["playbackPosition", "playback_position", "position"], 0)) || 0,
         duration: Number(value(["duration", "durationMs", "duration_ms"], 0)) || 0,
         updatedAt: Number(value(["updatedAt", "updated_at", "createTime", "create_time"], 0)) || 0
@@ -32766,6 +32830,13 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const detail = $("detailSheet");
       const list = $("panResultList");
       const key = item && item.key || state.pan.focusKey || "";
+      const lastPlayUrl = item && (item.normalizedUrl || item.normalized_url || item.url) || "";
+      const panProvider = resolvePanProviderForHistory({
+        diskType: item && (item.diskType || item.disk_type),
+        panProvider: item && (item.panProvider || item.pan_provider),
+        provider: item && item.provider,
+        lastPlayUrl
+      });
       // 先更新内存态，再做 best-effort 的持久化，避免 Native handoff 被 cache 阻塞。
       state.pan.playbackReturn = {
         key,
@@ -32774,13 +32845,13 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         listScrollTop: list ? Math.round(list.scrollTop || 0) : 0,
         episodeTarget: episodeTarget || currentPlaybackTargetForItem(state.selected) || null,
         item: state.selected ? normalizeSnapshot(state.selected) : null,
-        panProvider: item && (item.provider || item.diskType) || "",
+        panProvider,
         panPassword: item && (item.password || item.pwd || item.passcode) || "",
         panTitle: item && (item.title || item.note) || "",
         panFileName: item && (item.fileName || item.file_name || item.filename) || "",
         panFileId: item && (item.fileId || item.file_id) || "",
         resourceId: item && (item.resourceId || item.resource_id) || "",
-        lastPlayUrl: item && (item.normalizedUrl || item.normalized_url || item.url) || "",
+        lastPlayUrl,
         at: Date.now()
       };
       state.pan.focusKey = key;
