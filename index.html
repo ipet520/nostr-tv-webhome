@@ -20716,8 +20716,8 @@ utils.encode = function encode(arr, enc) {
 
     function detailDirectFailureMessage(type) {
       return String(type || "") === "CONNECTION_FAILED"
-        ? "连接失败，请手动重试"
-        : "暂无可播放资源，可使用聚搜或盘搜";
+        ? "连接失败，请手动重试，或尝试聚搜、盘搜"
+        : "暂无可播放资源，可尝试聚搜或盘搜";
     }
 
     function detailDirectPlayReadyFor(item) {
@@ -20784,7 +20784,7 @@ utils.encode = function encode(arr, enc) {
       if (isPanHealthBad(candidate)) {
         state.pan.directReady = null;
         updateDetailContinueButton();
-        toast("暂无可播放资源，可使用聚搜或盘搜");
+        toast(detailDirectFailureMessage("NO_RESOURCE"));
         return false;
       }
       await playPanResult(candidate, {
@@ -30468,15 +30468,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     function suppressDirectPlayPanFallback(action, message) {
       if (!action || !action.suppressAutoPan) return false;
       clearDirectPlayStatus(action.token, "detail_primary_no_source");
-      // 纯 prepareOnly 失败保持静默；只有明确用户播放请求在 NO_RESOURCE
-      // 终态下才打开现有 Pan fallback。CONNECTION_FAILED 仍只提示重试。
+      // 纯 prepareOnly 失败保持静默；只有明确用户播放请求才显示最终提示。
+      // Pan UI 仍只允许用户主动进入，本链路不自动打开。
       const userRequested = !action.prepareOnly || !!action.playRequested;
       const failureType = detailDirectFailureTypeFor(action.item);
-      if (userRequested && failureType === "NO_RESOURCE") {
-        openPanForDirectPlay(action.item, "暂无可播放资源，已打开盘搜", { actionId: action.token });
-      } else if (userRequested && message) {
-        toast(message);
-      }
+      const failureMessage = failureType ? detailDirectFailureMessage(failureType) : message;
+      if (userRequested && failureMessage) toast(failureMessage);
       action.playRequested = false;
       return true;
     }
@@ -30644,7 +30641,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           if (waited.result === "DIRECT_TRANSPORT_EXHAUSTED") {
             setDetailDirectFailureType(item, "CONNECTION_FAILED", waited.lifecycle || getPanSearchLifecycleFor(item));
             recordPanDirectPlayDiag("DIRECT_TRANSPORT_EXHAUSTED", item, waited.lifecycle || getPanSearchLifecycleFor(item), action.startedAt, null, action);
-            suppressDirectPlayPanFallback(action, "连接失败，请手动重试");
+            suppressDirectPlayPanFallback(action, detailDirectFailureMessage("CONNECTION_FAILED"));
             return;
           }
           if (waited.result === "WAIT_BUDGET_EXPIRED") {
@@ -30743,7 +30740,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           state.pan.directReady = null;
           setDetailDirectFailureType(item, "NO_RESOURCE", getPanSearchLifecycleFor(item));
           updateDetailContinueButton();
-          suppressDirectPlayPanFallback(action, "暂无可播放资源，可使用聚搜或盘搜");
+          suppressDirectPlayPanFallback(action, detailDirectFailureMessage("NO_RESOURCE"));
           return;
         }
         action.playRequested = false;
