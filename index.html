@@ -16762,7 +16762,12 @@ utils.encode = function encode(arr, enc) {
     ];
     const CURATED_SOURCE_BUDGET_MS = 3000;
     const CURATED_CHAIN_BUDGET_MS = 15000;
+    const CURATED_DISCOVERY_WINDOW_MS = 3000;
+    const CURATED_QUALITY_GRACE_MS = 700;
+    const CURATED_MIN_REQUEST_START_MS = 1000;
     const CURATED_PREFLIGHT_BUDGET_MS = 700;
+    const CURATED_PREFLIGHT_PER_SOURCE = 2;
+    const CURATED_PREFLIGHT_MAX_ITEMS = 10;
     const DETAIL_CONTINUE_GATE_MAX_MS = 300;
     const DETAIL_NATIVE_HISTORY_GATE_MAX_MS = 800;
     const CURATED_REQUEST_TIMEOUT_SEC = 6;
@@ -32188,6 +32193,31 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return "";
     }
 
+    function curatedRequestStartState(context, run) {
+      const state = curatedAttemptState(context, run);
+      if (state) return state;
+      return curatedRemainingMs(context) < CURATED_MIN_REQUEST_START_MS ? "SOURCE_TIMEOUT" : "";
+    }
+
+    function recordCuratedRaceDiag(event, detail) {
+      const payload = Object.assign({ event: String(event || "") }, detail || {});
+      try {
+        if (state.tvDiag) {
+          const log = Array.isArray(state.tvDiag.curatedRaceLog) ? state.tvDiag.curatedRaceLog : [];
+          log.push(payload);
+          if (log.length > 60) log.splice(0, log.length - 60);
+          state.tvDiag.curatedRaceLog = log;
+          state.tvDiag.curatedRace = payload;
+        }
+      } catch (e) {}
+      try {
+        if (typeof isTvDiagnosticEnabled !== "function" || isTvDiagnosticEnabled()) {
+          console.debug("[Nostr TV] " + String(event || "CURATED"), payload);
+        }
+      } catch (e) {}
+      return payload;
+    }
+
     // Native 请求本身无法可靠取消；将迟到的 resolve/reject 都包进已消费的 Promise，
     // 这样超时后既不阻塞后续站源，也不会把迟到结果写回当前 source/run。
     function curatedRequestWithDeadline(task, context, kind) {
@@ -32435,7 +32465,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const templates = curatedSourceTemplates(source);
       outer: for (const template of templates) {
         for (const domain of source.domains || []) {
-          const beforeRequest = curatedAttemptState(context, run);
+          const beforeRequest = curatedRequestStartState(context, run);
           if (beforeRequest) return { kind: beforeRequest };
           const remainingSearchMs = curatedRemainingMs(context);
           const url = curatedAbsoluteUrl(curatedSearchPath(template, keyword, 1), domain);
@@ -32461,7 +32491,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           const matches = entries.filter((entry) => curatedTitleMatches(item, entry.title, entry)).slice(0, 5);
           if (!matches.length) return { kind: "NO_MATCH" };
           for (const entry of matches) {
-            const beforeDetail = curatedAttemptState(context, run);
+            const beforeDetail = curatedRequestStartState(context, run);
             if (beforeDetail) return { kind: beforeDetail };
             const remainingDetailMs = curatedRemainingMs(context);
             try {
@@ -32534,45 +32564,310 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return { candidate: curatedCandidateOrder(healthyCandidates)[0] || null, sourceTimeout: false, stale: false };
     }
 
+    async function curatedCentralHealthCandidate(sourceStates, item, run, startedAt, discoveryDeadline) {
+      const sourcePools = (sourceStates || [])
+        .filter((state) => state && state.kind === "CANDIDATES" && Array.isArray(state.candidates) && state.candidates.length)
+        .map((state) => ({
+          index: state.index,
+          sourceId: state.source.id,
+          sourceName: state.source.name,
+          candidates: curatedCandidateOrder(state.candidates).slice(0, CURATED_PREFLIGHT_PER_SOURCE)
+        }))
+        .filter((pool) => pool.candidates.length);
+      const preflightItems = [];
+      sourcePools.forEach((pool) => {
+        pool.candidates.forEach((candidate) => {
+          if (preflightItems.length < CURATED_PREFLIGHT_MAX_ITEMS) preflightItems.push(candidate);
+        });
+      });
+      if (!preflightItems.length) {
+        return { candidate: null, sourceId: "", sourceName: "", stale: false, timedOut: false, checkError: false };
+      }
+      if (!detailPlaybackIsCurrent(run)) {
+        return { candidate: null, sourceId: "", sourceName: "", stale: true, timedOut: false, checkError: false };
+      }
+
+      recordCuratedRaceDiag("CURATED_PREFLIGHT_START", {
+        elapsedMs: Math.max(0, Date.now() - startedAt),
+        preflightStartMs: Math.max(0, Date.now() - startedAt),
+        itemCount: preflightItems.length,
+        sourceCount: sourcePools.length
+      });
+
+      let freshHealth = {};
+      let timedOut = false;
+      let checkError = false;
+      const chainRemainingMs = Math.max(0, Number(discoveryDeadline) - Date.now());
+      const checkable = preflightItems.filter((candidate) => isPanCheckSupported(candidate));
+      if (checkable.length && panCheckAvailable() && chainRemainingMs > 0) {
+        const context = { token: state.pan.viewToken, item };
+        const preflightAllowedMs = Math.min(CURATED_PREFLIGHT_BUDGET_MS, chainRemainingMs);
+        const checked = await playbackPanHealthPreflight(preflightItems, context, preflightAllowedMs);
+        if (!detailPlaybackIsCurrent(run) || !panContextIsCurrent(context)) {
+          return { candidate: null, sourceId: "", sourceName: "", stale: true, timedOut: false, checkError: false };
+        }
+        freshHealth = checked && checked.states || {};
+        timedOut = !!(checked && checked.timedOut);
+        checkError = !!(checked && checked.checkError);
+      }
+
+      recordCuratedRaceDiag("CURATED_PREFLIGHT_DONE", {
+        elapsedMs: Math.max(0, Date.now() - startedAt),
+        preflightDoneMs: Math.max(0, Date.now() - startedAt),
+        timedOut,
+        checkError,
+        freshStateCount: Object.keys(freshHealth).length
+      });
+
+      let selected = null;
+      let selectedSource = null;
+      for (const pool of sourcePools.sort((a, b) => a.index - b.index)) {
+        const decision = panPreflightCandidates(pool.candidates, freshHealth, {}, { rejectAllBad: true });
+        const healthyCandidates = (decision.candidates || []).filter((candidate) => {
+          const freshState = freshHealth && freshHealth[panHealthKey(candidate)];
+          return String(freshState || "").toLowerCase() !== "bad" && !isPanHealthBad(candidate);
+        });
+        const candidate = curatedCandidateOrder(healthyCandidates)[0] || null;
+        if (candidate) {
+          selected = candidate;
+          selectedSource = pool;
+          break;
+        }
+      }
+
+      recordPanPreflightResult(
+        preflightItems,
+        freshHealth,
+        panPreflightCheckErrorCount(checkable, freshHealth),
+        selected,
+        !selected && preflightItems.length > 0
+      );
+      return {
+        candidate: selected,
+        sourceId: selectedSource ? selectedSource.sourceId : "",
+        sourceName: selectedSource ? selectedSource.sourceName : "",
+        stale: false,
+        timedOut,
+        checkError
+      };
+    }
+
     async function resolveCuratedPlaybackCandidate(item, run) {
+      if (!detailPlaybackIsCurrent(run)) return null;
+      const sources = curatedSourceDefinitions();
+      const startedAt = Date.now();
+      const discoveryDeadline = startedAt + CURATED_DISCOVERY_WINDOW_MS;
       const chainContext = {
-        chainDeadline: Date.now() + CURATED_CHAIN_BUDGET_MS,
+        chainDeadline: discoveryDeadline,
         active: true,
         sourceAttemptId: 0
       };
-      for (const source of curatedSourceDefinitions()) {
-        if (!detailPlaybackIsCurrent(run)) return null;
-        if (curatedRemainingMs(chainContext) <= 0) return null;
-        const sourceContext = {
-          chainDeadline: chainContext.chainDeadline,
-          sourceDeadline: Math.min(Date.now() + CURATED_SOURCE_BUDGET_MS, chainContext.chainDeadline),
+      recordCuratedRaceDiag("CURATED_RACE_START", {
+        runId: run && (run.id || run.runId || run.itemKey) || "",
+        startedAt,
+        discoveryWindowMs: CURATED_DISCOVERY_WINDOW_MS,
+        qualityGraceMs: CURATED_QUALITY_GRACE_MS,
+        sourceCount: sources.length
+      });
+
+      const sourceStates = sources.map((source, index) => ({
+        source,
+        index,
+        startedAt: Date.now(),
+        context: {
+          chainDeadline: discoveryDeadline,
+          sourceDeadline: discoveryDeadline,
           sourceId: source.id,
           sourceAttemptId: ++chainContext.sourceAttemptId,
           active: true
-        };
-        const result = await searchCuratedSource(source, item, run, sourceContext);
+        },
+        terminal: false,
+        kind: "",
+        candidates: []
+      }));
+
+      sourceStates.forEach((sourceState) => {
+        recordCuratedRaceDiag("CURATED_SOURCE_START", {
+          sourceId: sourceState.source.id,
+          elapsedMs: Math.max(0, Date.now() - startedAt),
+          sourceStartMs: Math.max(0, sourceState.startedAt - startedAt)
+        });
+      });
+
+      let resolveCollection;
+      let collectionDone = false;
+      let firstCandidateAt = 0;
+      let candidateDeadline = 0;
+      let discoveryTimer = 0;
+      let qualityTimer = 0;
+      const collectionPromise = new Promise((resolve) => { resolveCollection = resolve; });
+
+      const finishCollection = (reason) => {
+        if (collectionDone) return;
+        collectionDone = true;
+        clearTimeout(discoveryTimer);
+        clearTimeout(qualityTimer);
+        sourceStates.forEach((sourceState) => { sourceState.context.active = false; });
+        const candidateSources = sourceStates
+          .filter((sourceState) => sourceState.candidates.length)
+          .map((sourceState) => sourceState.source.id);
+        recordCuratedRaceDiag("CURATED_COLLECTION_DONE", {
+          elapsedMs: Math.max(0, Date.now() - startedAt),
+          reason,
+          availableSourceCount: candidateSources.length,
+          availableCandidateSourceIds: candidateSources,
+          candidateSources,
+          sourceIds: candidateSources
+        });
+        resolveCollection({
+          reason,
+          stale: reason === "STALE",
+          sourceStates
+        });
+      };
+
+      const maybeFinishCollection = () => {
+        if (collectionDone) return;
         if (!detailPlaybackIsCurrent(run)) {
-          sourceContext.active = false;
-          return null;
+          finishCollection("STALE");
+          return;
         }
-        if (result.kind !== "CANDIDATES") {
-          sourceContext.active = false;
-          if (curatedRemainingMs(chainContext) <= 0) return null;
-          continue;
+        const available = sourceStates.filter((sourceState) => sourceState.terminal && sourceState.candidates.length);
+        if (!available.length) {
+          if (sourceStates.every((sourceState) => sourceState.terminal)) finishCollection("DISCOVERY_DEADLINE");
+          return;
         }
-        const healthResult = await curatedHealthyCandidate(result.candidates, item, run, sourceContext);
-        sourceContext.active = false;
-        if (!detailPlaybackIsCurrent(run)) return null;
-        if (healthResult && healthResult.stale) return null;
-        if (healthResult && healthResult.sourceTimeout) {
-          if (curatedRemainingMs(chainContext) <= 0) return null;
-          continue;
+        const best = available.reduce((current, next) => next.index < current.index ? next : current);
+        if (best.index === 0) {
+          finishCollection("TOP_PRIORITY_READY");
+          return;
         }
-        if (healthResult && healthResult.candidate) {
-          return { sourceId: source.id, sourceName: source.name, candidate: healthResult.candidate };
+        const higherPriorityTerminal = sourceStates
+          .slice(0, best.index)
+          .every((sourceState) => sourceState.terminal && !sourceState.candidates.length);
+        if (higherPriorityTerminal) {
+          finishCollection("HIGHER_PRIORITY_TERMINAL");
+          return;
         }
-        if (curatedRemainingMs(chainContext) <= 0) return null;
+        if (candidateDeadline && Date.now() >= candidateDeadline) {
+          finishCollection(Date.now() >= discoveryDeadline ? "DISCOVERY_DEADLINE" : "QUALITY_GRACE");
+          return;
+        }
+        if (sourceStates.every((sourceState) => sourceState.terminal)) {
+          finishCollection("HIGHER_PRIORITY_TERMINAL");
+        }
+      };
+
+      const completeSource = (sourceState, result) => {
+        if (collectionDone) return;
+        if (!detailPlaybackIsCurrent(run)) {
+          finishCollection("STALE");
+          return;
+        }
+        const sourceResult = result && typeof result === "object" ? result : { kind: "TRANSPORT_FAILURE" };
+        const kind = String(sourceResult.kind || "TRANSPORT_FAILURE").toUpperCase();
+        sourceState.terminal = true;
+        sourceState.kind = kind;
+        sourceState.context.active = false;
+        sourceState.candidates = kind === "CANDIDATES"
+          ? (Array.isArray(sourceResult.candidates) ? sourceResult.candidates : [])
+            .filter((candidate) => buildPanPlayPayload(candidate))
+          : [];
+        recordCuratedRaceDiag("CURATED_SOURCE_DONE", {
+          sourceId: sourceState.source.id,
+          kind,
+          elapsedMs: Math.max(0, Date.now() - startedAt),
+          sourceDoneMs: Math.max(0, Date.now() - startedAt),
+          candidateCount: sourceState.candidates.length
+        });
+        if (sourceState.candidates.length && !firstCandidateAt) {
+          firstCandidateAt = Date.now();
+          candidateDeadline = Math.min(firstCandidateAt + CURATED_QUALITY_GRACE_MS, discoveryDeadline);
+          recordCuratedRaceDiag("CURATED_FIRST_CANDIDATE", {
+            sourceId: sourceState.source.id,
+            elapsedMs: Math.max(0, firstCandidateAt - startedAt),
+            firstCandidateMs: Math.max(0, firstCandidateAt - startedAt),
+            candidateDeadline
+          });
+          qualityTimer = setTimeout(
+            maybeFinishCollection,
+            Math.max(1, candidateDeadline - Date.now())
+          );
+        }
+        maybeFinishCollection();
+      };
+
+      discoveryTimer = setTimeout(() => finishCollection("DISCOVERY_DEADLINE"), Math.max(1, discoveryDeadline - Date.now()));
+      sourceStates.forEach((sourceState) => {
+        let sourceTask;
+        try {
+          sourceTask = searchCuratedSource(sourceState.source, item, run, sourceState.context);
+        } catch (error) {
+          sourceTask = Promise.reject(error);
+        }
+        Promise.resolve(sourceTask).then(
+          (result) => completeSource(sourceState, result),
+          (error) => completeSource(sourceState, {
+            kind: error && error.curatedDeadline ? "SOURCE_TIMEOUT" : "TRANSPORT_FAILURE"
+          })
+        );
+      });
+
+      const collection = await collectionPromise;
+      if (!detailPlaybackIsCurrent(run) || collection.stale) {
+        recordCuratedRaceDiag("CURATED_NO_SELECTION", {
+          elapsedMs: Math.max(0, Date.now() - startedAt),
+          reason: collection.stale ? "STALE" : collection.reason
+        });
+        return null;
       }
+      const availableSourceCount = collection.sourceStates.filter((sourceState) => sourceState.candidates.length).length;
+      if (!availableSourceCount) {
+        recordCuratedRaceDiag("CURATED_NO_SELECTION", {
+          elapsedMs: Math.max(0, Date.now() - startedAt),
+          reason: collection.reason
+        });
+        return null;
+      }
+
+      const healthResult = await curatedCentralHealthCandidate(
+        collection.sourceStates,
+        item,
+        run,
+        startedAt,
+        discoveryDeadline
+      );
+      if (!detailPlaybackIsCurrent(run) || !healthResult || healthResult.stale) {
+        recordCuratedRaceDiag("CURATED_NO_SELECTION", {
+          elapsedMs: Math.max(0, Date.now() - startedAt),
+          reason: "STALE"
+        });
+        return null;
+      }
+      if (healthResult.candidate) {
+        recordCuratedRaceDiag("CURATED_SELECTED", {
+          elapsedMs: Math.max(0, Date.now() - startedAt),
+          totalCuratedMs: Math.max(0, Date.now() - startedAt),
+          sourceId: healthResult.sourceId,
+          candidateLabel: String(
+            healthResult.candidate.resourceTitle
+            || healthResult.candidate.title
+            || healthResult.candidate.fileName
+            || ""
+          ).slice(0, 160),
+          diskType: String(healthResult.candidate.diskType || ""),
+          selectionReason: "SOURCE_PRIORITY_THEN_CANDIDATE_ORDER"
+        });
+        return {
+          sourceId: healthResult.sourceId,
+          sourceName: healthResult.sourceName,
+          candidate: healthResult.candidate
+        };
+      }
+      recordCuratedRaceDiag("CURATED_NO_SELECTION", {
+        elapsedMs: Math.max(0, Date.now() - startedAt),
+        reason: "FRESH_BAD_OR_NO_ACCEPTABLE_CANDIDATE"
+      });
       return null;
     }
 
