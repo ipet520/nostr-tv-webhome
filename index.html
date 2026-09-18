@@ -17790,9 +17790,11 @@ utils.encode = function encode(arr, enc) {
         counts.tvDetailSuccessCount += 1;
         const candidate = tvCandidates[index];
         const detail = result.value;
-        const classification = weeklyClassifyTv(Object.assign({}, candidate, detail), range);
+        const merged = mergeTmdbLocalizedEnrichment(candidate, detail, "tv");
+        merged.id = detail.id || candidate.id;
+        merged.media_type = "tv";
+        const classification = weeklyClassifyTv(merged, range);
         if (!classification.keep) return;
-        const merged = Object.assign({}, candidate, detail, { id: detail.id || candidate.id, media_type: "tv" });
         if (!merged.poster_path) merged.poster_path = candidate.poster_path || "";
         if (!merged.backdrop_path) merged.backdrop_path = candidate.backdrop_path || "";
         if (!merged.name) merged.name = candidate.name || candidate.original_name || "未命名";
@@ -20124,6 +20126,46 @@ utils.encode = function encode(arr, enc) {
       };
       values.forEach(add);
       return result;
+    }
+
+    function mergeTmdbLocalizedEnrichment(base, detail, mediaType) {
+      const localized = base && typeof base === "object" ? base : {};
+      const enriched = detail && typeof detail === "object" ? detail : {};
+      const type = String(mediaType || localized.media_type || enriched.media_type || "").toLowerCase();
+      const merged = Object.assign({}, localized, enriched);
+      const basePrimary = type === "tv"
+        ? String(localized.name || "").trim()
+        : String(localized.title || "").trim();
+      if (type === "tv") {
+        merged.name = basePrimary
+          || enriched.name
+          || enriched.original_name
+          || localized.original_name
+          || enriched.title
+          || localized.title
+          || "";
+      } else {
+        merged.title = basePrimary
+          || enriched.title
+          || enriched.original_title
+          || localized.original_title
+          || enriched.name
+          || localized.name
+          || "";
+      }
+      merged.aliases = mergeTitleAliases(
+        localized.aliases,
+        enriched.aliases,
+        localized.name,
+        localized.title,
+        localized.original_name,
+        localized.original_title,
+        enriched.name,
+        enriched.title,
+        enriched.original_name,
+        enriched.original_title
+      );
+      return merged;
     }
 
     function normalizeTmdb(item, list, index) {
@@ -23546,7 +23588,9 @@ utils.encode = function encode(arr, enc) {
           mediaType,
           params: { language: "zh-CN", append_to_response: "images" }
         }), 18);
-      const raw = Object.assign({}, candidate.heroRaw || {}, detail || {}, { id: detail && detail.id || tmdbId, media_type: mediaType });
+      const raw = mergeTmdbLocalizedEnrichment(candidate.heroRaw || candidate, detail || {}, mediaType);
+      raw.id = detail && detail.id || tmdbId;
+      raw.media_type = mediaType;
       const normalized = normalizeTmdb(raw, { id: "home-hero-detail", title: "首页 Hero", mediaType }, 0);
       const enriched = Object.assign({}, candidate, normalized);
       enriched.pic = enriched.pic || candidate.pic || "";
