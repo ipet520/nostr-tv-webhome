@@ -24523,7 +24523,7 @@ utils.encode = function encode(arr, enc) {
       if (opts.variant === "landscape") status.classList.add("landscape");
       status.textContent = message || "";
       rail.dataset.homeRenderKeys = "";
-      rail.replaceChildren(status);
+      replaceHomeRailChildren(rail, [status], captureHomeRailFocus(rail));
     }
 
     function homeDomesticPreferred(item, mediaType) {
@@ -24568,7 +24568,7 @@ utils.encode = function encode(arr, enc) {
         empty.textContent = "暂无内容";
         if (variant === "landscape") empty.classList.add("landscape");
         rail.dataset.homeRenderKeys = "";
-        rail.replaceChildren(empty);
+        replaceHomeRailChildren(rail, [empty], captureHomeRailFocus(rail));
         return;
       }
       const expectedChildren = limited.length + (opts.homeMore ? 1 : 0);
@@ -24639,12 +24639,13 @@ utils.encode = function encode(arr, enc) {
         } else {
           const count = Math.min(config.initialLimit, homeRailColumnTarget(config.variant, rail.clientWidth));
           rail.dataset.homeRenderKeys = "";
-          rail.replaceChildren(...Array.from({ length: Math.max(2, count) }, () => {
+          const skeletons = Array.from({ length: Math.max(2, count) }, () => {
             const skeleton = document.createElement("div");
             skeleton.className = "home-rail-skeleton" + (config.variant === "landscape" ? " landscape" : "");
             skeleton.setAttribute("aria-hidden", "true");
             return skeleton;
-          }));
+          });
+          replaceHomeRailChildren(rail, skeletons, captureHomeRailFocus(rail));
         }
       } else {
         fillHomeRail(rail, items, {
@@ -24668,8 +24669,9 @@ utils.encode = function encode(arr, enc) {
       }
       const items = state.recent.loaded && Array.isArray(state.recent.items) ? state.recent.items : [];
       if (!items.length) {
+        const railFocus = captureHomeRailFocus(rail);
         section.hidden = true;
-        rail.replaceChildren();
+        replaceHomeRailChildren(rail, [], railFocus);
         rail.dataset.homeRenderKeys = "";
         return;
       }
@@ -26112,7 +26114,7 @@ utils.encode = function encode(arr, enc) {
       rail.dataset.weeklyDataPath = resolved.path;
       if (previousSource && previousSource !== resolved.source) {
         rail.dataset.homeRenderKeys = "";
-        rail.replaceChildren();
+        replaceHomeRailChildren(rail, [], captureHomeRailFocus(rail));
       }
       rail.dataset.homeVariant = "portrait";
       ensureHomeLatestData();
@@ -26275,13 +26277,15 @@ utils.encode = function encode(arr, enc) {
     function fillRail(rail, items, options) {
       if (!rail) return;
       const opts = options || {};
+      const homeFocus = opts.home === true ? captureHomeRailFocus(rail) : null;
       const sourceItems = Array.isArray(items) ? items : [];
       items = opts.allowNoPoster ? sourceItems : sourceItems.filter(hasPoster);
       if (!items.length) {
         const empty = document.createElement("div");
         empty.className = "empty";
         empty.textContent = "暂无内容";
-        rail.replaceChildren(empty);
+        if (opts.home === true) replaceHomeRailChildren(rail, [empty], homeFocus);
+        else rail.replaceChildren(empty);
         return;
       }
       const key = rail.dataset.railKey || rail.id || "";
@@ -26302,7 +26306,8 @@ utils.encode = function encode(arr, enc) {
         const more = createHomeRailMoreCard(opts.homeMoreListId || rail.dataset.homeListId, landscape);
         if (more) children.push(more);
       }
-      rail.replaceChildren(...children);
+      if (opts.home === true) replaceHomeRailChildren(rail, children, homeFocus);
+      else rail.replaceChildren(...children);
       observeTvCardEnrichment(rail);
       if (opts.weekly) children.forEach((card) => {
         if (!card || !card.classList || !card.classList.contains("weekly-card")) return;
@@ -26506,6 +26511,16 @@ utils.encode = function encode(arr, enc) {
       return isVisibleFocusable(target) ? target : null;
     }
 
+    function cancelColdHomeFocusOnUserNavigation(key) {
+      if (!isTvLikeDevice() || !isHomeRouteActive() || focusScopeRoot() !== document
+        || !["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(key)) return false;
+      const home = state.homeV14;
+      if (!home || !home.coldHomeFocusPending) return false;
+      home.coldHomeFocusPending = false;
+      home.coldHomeFallbackTarget = null;
+      return true;
+    }
+
     function ensureRemoteInitialFocus(options) {
       const opts = options || {};
       const active = document.activeElement;
@@ -26515,6 +26530,21 @@ utils.encode = function encode(arr, enc) {
       // the generic first-content fallback.
       if (homeUiRoute() === "secondary" || homeUiRoute() === "search") return;
       const wantsColdHome = !state.remoteInitialFocused && isHomeRouteActive() && isTvLikeDevice();
+      if (wantsColdHome && !state.homeV14.coldHomeFocusPending) {
+        if (isVisibleFocusable(active)) {
+          state.remoteInitialFocused = true;
+          return;
+        }
+        const target = homeRailFallbackTarget(null, null);
+        if (!target) return;
+        state.remoteInitialFocused = true;
+        state.homeV14.initialHomeFocusPending = true;
+        requestAnimationFrame(() => {
+          try { if (!isVisibleFocusable(document.activeElement)) focusRemoteTarget(target); }
+          finally { state.homeV14.initialHomeFocusPending = false; }
+        });
+        return;
+      }
       const coldTarget = wantsColdHome ? coldHomeInitialFocus() : null;
       if (wantsColdHome && state.homeV14.coldHomeFocusPending && !coldTarget && !opts.allowHomeFallback) return;
       // Do not briefly focus a Home content target while the initial Home
@@ -26559,7 +26589,10 @@ utils.encode = function encode(arr, enc) {
         state.homeV14.coldHomeFocusPending = false;
         state.homeV14.coldHomeFallbackTarget = null;
       }
-      const target = uiSnapshotRoute() === "home" ? coldHomeInitialFocus() || initialHomeFocus() || firstContentFocus() : firstContentFocus();
+      const homeColdPending = !!(state.homeV14 && state.homeV14.coldHomeFocusPending);
+      const target = uiSnapshotRoute() === "home"
+        ? homeColdPending ? coldHomeInitialFocus() || initialHomeFocus() || firstContentFocus() : homeRailFallbackTarget(null, null)
+        : firstContentFocus();
       if (!target) return false;
       focusRemoteTarget(target);
       return true;
@@ -28793,6 +28826,66 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       }
       maybeAppendGridForFocus(target);
       return true;
+    }
+
+    function captureHomeRailFocus(rail) {
+      if (!rail || !isTvLikeDevice() || !isHomeRouteActive()) return null;
+      const active = document.activeElement;
+      if (!active || !rail.contains(active)) return null;
+      const focus = homeFocusSnapshot(active, active.__mediaItem || null);
+      return {
+        focus,
+        mediaKey: focus && focus.key || "",
+        cardIndex: focus && Number(focus.cardIndex),
+        sectionId: focus && focus.sectionId || rail.closest(".home-section") && rail.closest(".home-section").id || "",
+        gridId: focus && focus.gridId || rail.dataset.homeListId || rail.id || ""
+      };
+    }
+
+    function homeRailFallbackTarget(snapshot, rail) {
+      const section = snapshot && snapshot.sectionId
+        ? document.getElementById(snapshot.sectionId)
+        : rail && rail.closest && rail.closest(".home-section");
+      const localTarget = (candidateSection) => {
+        if (!candidateSection || candidateSection.hidden || candidateSection.closest("[hidden]")) return null;
+        const cards = homeSectionCards(candidateSection);
+        if (cards.length) return cards[0];
+        const more = candidateSection.querySelector(".home-section-more");
+        if (isVisibleFocusable(more)) return more;
+        const moreCard = candidateSection.querySelector(".home-more-card");
+        return isVisibleFocusable(moreCard) ? moreCard : null;
+      };
+      const sameSection = localTarget(section);
+      if (sameSection) return sameSection;
+      const sections = homeRailSections();
+      const index = sections.indexOf(section);
+      const ordered = index >= 0
+        ? sections.slice(index + 1).concat(sections.slice(0, index))
+        : sections;
+      for (const candidateSection of ordered) {
+        const target = localTarget(candidateSection);
+        if (target) return target;
+      }
+      const home = $("home");
+      if (!home) return null;
+      return Array.from(home.querySelectorAll(".focusable,button,input,textarea"))
+        .find((target) => target !== $("homeHero") && isVisibleFocusable(target)) || null;
+    }
+
+    function restoreHomeRailFocus(rail, snapshot) {
+      if (!rail || !snapshot || !isTvLikeDevice() || !isHomeRouteActive()) return false;
+      const active = document.activeElement;
+      if (isVisibleFocusable(active) && active !== document.body && active !== document.documentElement) return false;
+      const focus = snapshot.focus || {};
+      const saved = { mediaKey: snapshot.mediaKey || focus.key || "", focus };
+      const target = findHomeReturnMediaTarget(saved, focus) || homeRailFallbackTarget(snapshot, rail);
+      return target ? focusHomeReturnTarget(target) : false;
+    }
+
+    function replaceHomeRailChildren(rail, children, snapshot) {
+      if (!rail) return;
+      rail.replaceChildren(...(Array.isArray(children) ? children : []));
+      restoreHomeRailFocus(rail, snapshot);
     }
 
     function restoreHomeReturn() {
@@ -35665,6 +35758,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           updateTvDiagnostic();
         }
         const el = document.activeElement;
+        cancelColdHomeFocusOnUserNavigation(key);
         if (key === "Menu" && handleSidebarMenuKey(event)) return;
         const editing = isTextEditingElement(el);
         if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(key) && state.recentDelete && (state.recentDelete.armedKey || state.recentDelete.pendingKey || state.recentDelete.remotePressLocked)) cancelRecentDeleteArm();
