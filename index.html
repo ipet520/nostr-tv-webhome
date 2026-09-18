@@ -20833,6 +20833,7 @@ utils.encode = function encode(arr, enc) {
         reason: String(opts.reason || "detail_prepare"),
         phase: "PREPARING",
         settledResult: "",
+        finalFailureNotified: false,
         cancelled: false,
         cancelReason: "",
         staleLogged: false
@@ -20888,6 +20889,7 @@ utils.encode = function encode(arr, enc) {
         if (detailPlaybackCurrentOrRecord(run)) {
           run.error = String(error && error.message || error || "detail_prepare_failed");
           settleDetailPlayback(run, "CONNECTION_FAILED", "detail_prepare_failed");
+          notifyCurrentDetailFinalFailure(run, "CONNECTION_FAILED");
           updateDetailContinueButton();
         }
         return null;
@@ -30996,15 +30998,48 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return opened;
     }
 
+    function currentDetailFailureRunFor(action) {
+      if (!action || !action.item || state.selected !== action.item) return null;
+      const sheet = $("detailSheet");
+      if (!sheet || !sheet.classList.contains("active")) return null;
+      const run = state.detailPlayback;
+      if (!run || !detailPlaybackIsCurrent(run)) return null;
+      if (action.detailPrimary && action.detailRun !== run) return null;
+      return run;
+    }
+
+    function notifyCurrentDetailFinalFailure(run, type) {
+      if (!run || run.finalFailureNotified || !detailPlaybackIsCurrent(run)) return false;
+      const sheet = $("detailSheet");
+      if (!sheet || !sheet.classList.contains("active") || state.selected !== run.item) return false;
+      const failureType = ["NO_RESOURCE", "CONNECTION_FAILED"].includes(String(type || ""))
+        ? String(type)
+        : "CONNECTION_FAILED";
+      toast(detailDirectFailureMessage(failureType));
+      run.finalFailureNotified = true;
+      return true;
+    }
+
     function suppressDirectPlayPanFallback(action, message) {
       if (!action || !action.suppressAutoPan) return false;
       clearDirectPlayStatus(action.token, "detail_primary_no_source");
-      // 纯 prepareOnly 失败保持静默；只有明确用户播放请求才显示最终提示。
-      // Pan UI 仍只允许用户主动进入，本链路不自动打开。
+      // 当前详情的后台准备达到最终失败时也要明确告知用户；旧 run、关闭详情
+      // 或切换影片后的异步失败不得提示。人工点击仍沿用原有提示语义。
+      const detailRun = currentDetailFailureRunFor(action);
       const userRequested = !action.prepareOnly || !!action.playRequested;
+      const automaticDetailFailure = !!detailRun
+        && action.detailPrimary
+        && action.prepareOnly
+        && !action.playRequested;
       const failureType = detailDirectFailureTypeFor(action.item);
       const failureMessage = failureType ? detailDirectFailureMessage(failureType) : message;
-      if (userRequested && failureMessage) toast(failureMessage);
+      const alreadyNotified = !!action.finalFailureNotified
+        || !!(automaticDetailFailure && detailRun.finalFailureNotified);
+      if ((userRequested || automaticDetailFailure) && failureMessage && !alreadyNotified) {
+        toast(failureMessage);
+        action.finalFailureNotified = true;
+        if (detailRun) detailRun.finalFailureNotified = true;
+      }
       action.playRequested = false;
       return true;
     }
@@ -31078,6 +31113,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         newSessionId: 0,
         newInitialAttemptCount: null,
         detailPrimary: !!opts.detailPrimary,
+        detailRun: opts.detailPrimary ? state.detailPlayback : null,
         suppressAutoPan: !!opts.suppressAutoPan,
         prepareOnly,
         explicitEpisodeTarget: !!explicitEpisodeTarget,
@@ -31088,6 +31124,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         startedAt: Date.now(),
         waitStartedAt: Date.now(),
         handoffStageStartedAt: 0,
+        finalFailureNotified: false,
         promise: null
       };
       _directPlayPending = action;
