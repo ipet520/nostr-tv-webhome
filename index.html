@@ -16939,7 +16939,7 @@ utils.encode = function encode(arr, enc) {
       tvFullscreen: false,
       detailReturn: null,
       detailPreload: null,
-      detailPlayback: { seq: 0, token: "", itemKey: "", active: false, promise: null, candidate: null, sourceId: "", provider: "", playRequested: false, handoffStarted: false, history: null, historyVerified: false, directAction: null, error: "" },
+      detailPlayback: { seq: 0, token: "", itemKey: "", active: false, promise: null, candidate: null, sourceId: "", provider: "", playRequested: false, handoffStarted: false, history: null, historyVerified: false, episodeTarget: null, explicitEpisodeTarget: false, directAction: null, error: "" },
       detailEpisodeTarget: null,
       historyResume: null,
       detailMode: "FIRST_PLAY",
@@ -20574,9 +20574,13 @@ utils.encode = function encode(arr, enc) {
       state.detailHistory = history;
       const pending = typeof _directPlayPending !== "undefined" ? _directPlayPending : null;
       if (pending && pending.item === item) {
-        pending.history = history;
-        pending.episodeTarget = history ? detailContinuePlaybackTargetFor(item, history) : null;
-        if (pending.episodeTarget) setDetailPlaybackTarget(item, pending.episodeTarget);
+        if (pending.explicitEpisodeTarget) {
+          pending.history = null;
+        } else {
+          pending.history = history;
+          pending.episodeTarget = history ? detailContinuePlaybackTargetFor(item, history) : null;
+          if (pending.episodeTarget) setDetailPlaybackTarget(item, pending.episodeTarget);
+        }
       }
       return state.detailMode;
     }
@@ -20649,7 +20653,7 @@ utils.encode = function encode(arr, enc) {
       run.historyVerified = true;
       run.history = history;
       syncDetailMode(item, history, { freshNative: true });
-      if (history) {
+      if (history && !(run && run.explicitEpisodeTarget)) {
         const target = detailContinuePlaybackTargetFor(item, history);
         if (target) setDetailPlaybackTarget(item, target);
       }
@@ -20671,10 +20675,14 @@ utils.encode = function encode(arr, enc) {
       return candidate;
     }
 
-    async function playPreparedDetailCandidate(item, candidate, button) {
+    async function playPreparedDetailCandidate(item, candidate, button, options) {
+      const opts = options || {};
       const run = state.detailPlayback;
       if (!run || !detailPlaybackIsCurrent(run) || !candidate) return false;
       if (run.handoffStarted) return false;
+      const explicitTarget = opts.explicitEpisodeTarget
+        ? normalizePlaybackTarget(item, opts.episodeTarget)
+        : run.explicitEpisodeTarget ? run.episodeTarget : null;
       run.handoffStarted = true;
       run.playRequested = false;
       run.candidate = null;
@@ -20683,8 +20691,10 @@ utils.encode = function encode(arr, enc) {
         await run.historyPromise.catch(() => null);
         if (!detailPlaybackIsCurrent(run)) return false;
       }
-      const history = run.history || state.detailHistory;
-      const episodeTarget = detailContinuePlaybackTargetFor(item, history);
+      const history = explicitTarget ? null : run.history || state.detailHistory;
+      const episodeTarget = explicitTarget || (history
+        ? detailContinuePlaybackTargetFor(item, history)
+        : currentPlaybackTargetForItem(item));
       if (episodeTarget) setDetailPlaybackTarget(item, episodeTarget);
       // 预检可能在等待 Native History 的期间晚到；handoff 前必须再读一次当前鲜活状态。
       if (isPanHealthBad(candidate)) {
@@ -20694,14 +20704,19 @@ utils.encode = function encode(arr, enc) {
         showDirectPlayStatus(run.token, "FINAL_ERROR", DIRECT_PLAY_STATUS_TEXT.FINAL_ERROR, "fresh_bad_at_native_handoff");
         updateDetailContinueButton();
         // 让现有详情准备入口继续做下一站/Direct fallback，不把已失效资源送进播放器。
-        prepareDetailPlayback(item, { reason: "curated_late_bad", playRequested: true });
+        const retryOptions = { reason: "curated_late_bad", playRequested: true };
+        if (explicitTarget) {
+          retryOptions.episodeTarget = explicitTarget;
+          retryOptions.explicitEpisodeTarget = true;
+        }
+        prepareDetailPlayback(item, retryOptions);
         return false;
       }
       if (button) rememberDetailReturn(button);
       await playPanResult(candidate, {
         prechecked: true,
         episodeTarget,
-        historyResume: !!history
+        historyResume: !explicitTarget && !!history
       });
       armDirectPlayStatusUiFallback(run.token);
       return true;
@@ -20711,6 +20726,9 @@ utils.encode = function encode(arr, enc) {
       const opts = options || {};
       const previous = state.detailPlayback || {};
       cancelDetailPlaybackPreparation("new_detail_prepare");
+      const explicitTarget = opts.explicitEpisodeTarget
+        ? normalizePlaybackTarget(item, opts.episodeTarget)
+        : null;
       const run = {
         seq: Number(previous.seq || 0) + 1,
         // 复用 Direct 状态使用的单调数字 token，保证诊断/状态提示不会被字符串 token 丢弃，
@@ -20727,6 +20745,8 @@ utils.encode = function encode(arr, enc) {
         handoffStarted: false,
         history: null,
         historyVerified: false,
+        episodeTarget: explicitTarget,
+        explicitEpisodeTarget: !!explicitTarget,
         directAction: null,
         error: "",
         reason: String(opts.reason || "detail_prepare"),
@@ -20767,7 +20787,10 @@ utils.encode = function encode(arr, enc) {
           detailPrimary: true,
           suppressAutoPan: true,
           prepareOnly: true,
-          playRequested: !!run.playRequested
+          playRequested: !!run.playRequested,
+          episodeTarget: run.episodeTarget,
+          explicitEpisodeTarget: run.explicitEpisodeTarget,
+          history: run.explicitEpisodeTarget ? null : undefined
         });
         run.directAction = typeof _directPlayPending !== "undefined" && _directPlayPending && _directPlayPending.item === item
           ? _directPlayPending
@@ -20921,11 +20944,16 @@ utils.encode = function encode(arr, enc) {
       return normalizePlaybackTarget(item, source);
     }
 
-    async function playDetailDirectReadyCandidate(item, candidate, history, button) {
+    async function playDetailDirectReadyCandidate(item, candidate, history, button, options) {
+      const opts = options || {};
       if (!item || !candidate || !detailDirectPlayReadyFor(item)) return false;
-      const episodeTarget = detailContinuePlaybackTargetFor(item, history);
+      const explicitTarget = opts.explicitEpisodeTarget
+        ? normalizePlaybackTarget(item, opts.episodeTarget)
+        : null;
+      const effectiveHistory = explicitTarget ? null : history;
+      const episodeTarget = explicitTarget || detailContinuePlaybackTargetFor(item, effectiveHistory);
       if (episodeTarget) setDetailPlaybackTarget(item, episodeTarget);
-      if (history) {
+      if (effectiveHistory) {
         // Ready 已经确定了当前 Direct 资源；历史记录只补充季/集和进度上下文，
         // 不再进入会重新搜索或切换资源的旧续播分支。
         rememberDetailReturn(button);
@@ -20942,29 +20970,44 @@ utils.encode = function encode(arr, enc) {
       await playPanResult(candidate, {
         prechecked: true,
         episodeTarget,
-        historyResume: !!history
+        historyResume: !explicitTarget && !!effectiveHistory
       });
       return true;
     }
 
-    function handleDetailPrimaryAction() {
-      const item = state.selected;
+    function requestDetailPlayback(item, options) {
+      const opts = options || {};
       if (!item) return;
+      const explicitTarget = opts.explicitEpisodeTarget
+        ? normalizePlaybackTarget(item, opts.episodeTarget)
+        : null;
+      if (explicitTarget) setDetailPlaybackTarget(item, explicitTarget);
       const button = $("detailContinueBtn");
       if (state.detailModeItemKey !== panSearchItemKey(item)) syncDetailMode(item);
       const mode = state.detailMode === "CONTINUE" ? "CONTINUE" : "FIRST_PLAY";
-      const history = mode === "CONTINUE" ? state.detailHistory : null;
+      const history = explicitTarget ? null : mode === "CONTINUE" ? state.detailHistory : null;
       const directOptions = { detailPrimary: true, suppressAutoPan: true };
-      if (history) directOptions.history = history;
+      if (explicitTarget) {
+        directOptions.episodeTarget = explicitTarget;
+        directOptions.explicitEpisodeTarget = true;
+        directOptions.origin = "episode_select";
+      } else if (history) {
+        directOptions.history = history;
+      }
       const prepared = detailPreparedCandidateFor(item);
       if (prepared) {
-        playPreparedDetailCandidate(item, prepared, button).catch(() => {});
+        playPreparedDetailCandidate(item, prepared, button, directOptions).catch(() => {});
         return;
       }
       const detailPlayback = state.detailPlayback;
       if (detailPlayback && detailPlaybackIsCurrent(detailPlayback) && detailPlayback.handoffStarted) return;
       if (detailPlayback && detailPlaybackIsCurrent(detailPlayback) && detailPlayback.active && !detailPlayback.candidate) {
         detailPlayback.playRequested = true;
+        if (explicitTarget) {
+          detailPlayback.episodeTarget = explicitTarget;
+          detailPlayback.explicitEpisodeTarget = true;
+          detailPlayback.history = null;
+        }
         if (detailPlayback.directAction && typeof _directPlayPending !== "undefined" && _directPlayPending === detailPlayback.directAction) {
           playBestQuark(item, directOptions);
         } else {
@@ -20975,7 +21018,7 @@ utils.encode = function encode(arr, enc) {
       }
       const readyCandidate = detailDirectPlayCandidateFor(item);
       if (readyCandidate) {
-        playDetailDirectReadyCandidate(item, readyCandidate, history, button).catch(() => {});
+        playDetailDirectReadyCandidate(item, readyCandidate, history, button, directOptions).catch(() => {});
         return;
       }
       // 详情进入时的 prepareOnly 仍在同一个 playBestQuark action 中运行时，
@@ -20995,6 +21038,10 @@ utils.encode = function encode(arr, enc) {
       // 播放/准备统一由同一个 playBestQuark action 处理；若当前是
       // prepareOnly action，由 playBestQuark 内部记录 playRequested 并继续等待。
       playBestQuark(item, directOptions);
+    }
+
+    function handleDetailPrimaryAction() {
+      return requestDetailPlayback(state.selected);
     }
 
     function updateDetailContinueButton() {
@@ -29369,10 +29416,26 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           }, 0);
         });
         button.addEventListener("click", (event) => {
-          // 同步移动版：点分集 → 直接解析最佳盘搜资源并进播放器（焦点预览仍保留在 focus 事件里）
           event.preventDefault();
           event.stopPropagation();
-          playEpisodeViaPan(Object.assign({}, ep, { season_number: Number(ep.season_number) || renderedSeason }));
+          const item = state.selected;
+          if (!item) return;
+          const episodeTarget = {
+            mediaType: "tv",
+            tmdbId: item.tmdbId,
+            title: item.title,
+            poster: item.pic,
+            seasonNumber: Number(ep.season_number) || renderedSeason,
+            episodeNumber: Number(ep.episode_number) || 0,
+            episodeTitle: ep.name || "",
+            sourceType: "episode_select"
+          };
+          setDetailPlaybackTarget(item, episodeTarget);
+          requestDetailPlayback(item, {
+            episodeTarget,
+            explicitEpisodeTarget: true,
+            origin: "episode_select"
+          });
         });
         return button;
       }));
@@ -30651,14 +30714,24 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     async function playBestQuark(item, options) {
       if (!item) return;
       const opts = options || {};
-      const continueHistory = opts.history && typeof opts.history === "object" ? opts.history : null;
+      const explicitEpisodeTarget = opts.explicitEpisodeTarget
+        ? normalizePlaybackTarget(item, opts.episodeTarget)
+        : null;
+      const continueHistory = explicitEpisodeTarget
+        ? null
+        : opts.history && typeof opts.history === "object" ? opts.history : null;
       const continueTarget = continueHistory ? detailContinuePlaybackTargetFor(item, continueHistory) : null;
-      if (continueTarget) setDetailPlaybackTarget(item, continueTarget);
+      const requestedTarget = explicitEpisodeTarget || continueTarget;
+      if (requestedTarget) setDetailPlaybackTarget(item, requestedTarget);
       if (_directPlayPending) {
         if (_directPlayPending.item === item) {
           // 详情进入时的 prepareOnly 与用户点击必须共享同一个 action。
           // 这里只改变当前 action 的意图，不创建新的搜索/session。
-          if (continueHistory) {
+          if (explicitEpisodeTarget) {
+            _directPlayPending.history = null;
+            _directPlayPending.episodeTarget = explicitEpisodeTarget;
+            _directPlayPending.explicitEpisodeTarget = true;
+          } else if (continueHistory && !_directPlayPending.explicitEpisodeTarget) {
             _directPlayPending.history = continueHistory;
             _directPlayPending.episodeTarget = continueTarget;
           }
@@ -30691,8 +30764,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         detailPrimary: !!opts.detailPrimary,
         suppressAutoPan: !!opts.suppressAutoPan,
         prepareOnly,
+        explicitEpisodeTarget: !!explicitEpisodeTarget,
         history: continueHistory,
-        episodeTarget: continueTarget,
+        episodeTarget: requestedTarget,
         playRequested: prepareOnly ? !!opts.playRequested : true,
         forceFreshDirect: !!opts.forceFreshDirect,
         startedAt: Date.now(),
@@ -30880,10 +30954,15 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
               action.playRequested = false;
               return;
             }
-            action.history = detailRun.history || state.detailHistory || null;
-            action.episodeTarget = action.history
-              ? detailContinuePlaybackTargetFor(item, action.history)
-              : action.episodeTarget || currentPlaybackTargetForItem(item);
+            if (action.explicitEpisodeTarget) {
+              action.history = null;
+              action.episodeTarget = action.episodeTarget || currentPlaybackTargetForItem(item);
+            } else {
+              action.history = detailRun.history || state.detailHistory || null;
+              action.episodeTarget = action.history
+                ? detailContinuePlaybackTargetFor(item, action.history)
+                : action.episodeTarget || currentPlaybackTargetForItem(item);
+            }
           }
         }
         // 最终同步坏源保护：不新增网络检查，只拒绝当前缓存已明确失效的候选。
