@@ -16812,6 +16812,29 @@ utils.encode = function encode(arr, enc) {
     const DETAIL_TEXT_CLAMP_LIMIT_LARGE = 210;
     const canonicalResourceTitleCache = new Map();
     const canonicalResourceTitlePromises = new Map();
+
+    function canonicalResourceAuthority(value) {
+      const authority = String(value || "").trim().toUpperCase();
+      if (authority === "EXACT_DETAIL") return "EXACT_DETAIL";
+      if (authority === "ITEM_FALLBACK") return "ITEM_FALLBACK";
+      return "SEARCH_MULTI_FALLBACK";
+    }
+
+    function canonicalResourceCacheEntry(value) {
+      if (typeof value === "string") {
+        return {
+          title: value,
+          resourceSearchTitle: value,
+          aliases: [],
+          authority: "SEARCH_MULTI_FALLBACK"
+        };
+      }
+      if (!value || typeof value !== "object") return null;
+      return Object.assign({}, value, {
+        authority: canonicalResourceAuthority(value.authority)
+      });
+    }
+
     const state = {
       site: null,
       config: null,
@@ -28249,6 +28272,7 @@ utils.encode = function encode(arr, enc) {
           detail && detail.original_name,
           detail && detail.original_title
         ),
+        authority: "EXACT_DETAIL",
         canonicalResolved: true
       };
     }
@@ -28265,8 +28289,11 @@ utils.encode = function encode(arr, enc) {
         });
         return item;
       }
-      if (canonicalResourceTitleCache.has(key)) {
-        return applyCanonicalResourceIdentity(item, canonicalResourceTitleCache.get(key));
+      const cached = canonicalResourceTitleCache.has(key)
+        ? canonicalResourceCacheEntry(canonicalResourceTitleCache.get(key))
+        : null;
+      if (cached && cached.authority === "EXACT_DETAIL") {
+        return applyCanonicalResourceIdentity(item, cached);
       }
       const pending = canonicalResourceTitlePromises.get(key);
       if (pending) return applyCanonicalResourceIdentity(item, await pending);
@@ -28275,6 +28302,29 @@ utils.encode = function encode(arr, enc) {
         const mediaType = String(item.mediaType || item.media_type || "").toLowerCase();
         const tmdbId = String(item.tmdbId || item.tmdb_id || "").trim();
         const query = String(item.originalTitle || item.title || "").trim();
+        const fallback = cached || {
+          title: item.title,
+          originalTitle: item.originalTitle,
+          resourceSearchTitle: item.resourceSearchTitle || item.title || item.originalTitle || "",
+          aliases: mergeTitleAliases(item.aliases, item.title, item.originalTitle),
+          authority: "ITEM_FALLBACK"
+        };
+        const fallbackIdentity = (patch) => {
+          const next = patch || {};
+          return Object.assign({}, fallback, next, {
+            title: item.title,
+            originalTitle: item.originalTitle || fallback.originalTitle,
+            resourceSearchTitle: next.resourceSearchTitle || fallback.resourceSearchTitle || item.title || item.originalTitle || "",
+            aliases: mergeTitleAliases(
+              fallback.aliases,
+              item.aliases,
+              item.title,
+              item.originalTitle,
+              next.aliases
+            ),
+            authority: canonicalResourceAuthority(next.authority || fallback.authority || "ITEM_FALLBACK")
+          });
+        };
         if ((mediaType === "tv" || mediaType === "movie") && tmdbId) {
           let exactDetail = canonicalExactDetailFor(item);
           if (!exactDetail) {
@@ -28287,12 +28337,7 @@ utils.encode = function encode(arr, enc) {
           const exactIdentity = canonicalIdentityFromDetail(item, exactDetail);
           if (exactIdentity) return exactIdentity;
           if (!query) {
-            return {
-              title: item.title,
-              originalTitle: item.originalTitle,
-              resourceSearchTitle: item.resourceSearchTitle || item.title || item.originalTitle || "",
-              aliases: mergeTitleAliases(item.aliases, item.title, item.originalTitle)
-            };
+            return fallbackIdentity();
           }
           try {
             const body = await requestJson(tmdbSearchUrl(query), 18);
@@ -28313,23 +28358,20 @@ utils.encode = function encode(arr, enc) {
                   localizedTitle,
                   originalTitle
                 ),
+                authority: "SEARCH_MULTI_FALLBACK",
                 canonicalResolved: true
               };
             }
           } catch (e) {}
         }
-        return {
-          title: item.title,
-          originalTitle: item.originalTitle,
-          resourceSearchTitle: item.resourceSearchTitle || item.title || item.originalTitle || "",
-          aliases: mergeTitleAliases(item.aliases, item.title, item.originalTitle)
-        };
+        return fallbackIdentity();
       })();
       canonicalResourceTitlePromises.set(key, task);
       try {
         const identity = await task;
-        if (identity && identity.canonicalResolved) canonicalResourceTitleCache.set(key, identity);
-        return applyCanonicalResourceIdentity(item, identity);
+        const cacheEntry = canonicalResourceCacheEntry(identity);
+        if (cacheEntry) canonicalResourceTitleCache.set(key, cacheEntry);
+        return applyCanonicalResourceIdentity(item, cacheEntry || identity);
       } finally {
         if (canonicalResourceTitlePromises.get(key) === task) canonicalResourceTitlePromises.delete(key);
       }
@@ -32610,13 +32652,23 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         .replace(/\{p\}|\{page\}/g, String(page || 1));
     }
 
+    function curatedSourceResult(kind, detail) {
+      return Object.assign({
+        kind: String(kind || "TRANSPORT_FAILURE"),
+        terminalReason: String(kind || "TRANSPORT_FAILURE"),
+        entryCount: 0,
+        matchedEntryCount: 0,
+        sampleEntryTitles: []
+      }, detail || {});
+    }
+
     async function searchCuratedSource(source, item, run, context) {
       const keyword = resourceSearchKeyword(item);
       const templates = curatedSourceTemplates(source);
       outer: for (const template of templates) {
         for (const domain of source.domains || []) {
           const beforeRequest = curatedRequestStartState(context, run);
-          if (beforeRequest) return { kind: beforeRequest };
+          if (beforeRequest) return curatedSourceResult(beforeRequest);
           const remainingSearchMs = curatedRemainingMs(context);
           const url = curatedAbsoluteUrl(curatedSearchPath(template, keyword, 1), domain);
           if (!url) continue;
@@ -32628,21 +32680,39 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
               "SOURCE_TIMEOUT"
             );
           } catch (e) {
-            if (e && e.curatedDeadline) return { kind: "SOURCE_TIMEOUT" };
+            if (e && e.curatedDeadline) return curatedSourceResult("SOURCE_TIMEOUT");
             const afterFailure = curatedAttemptState(context, run);
-            if (afterFailure) return { kind: afterFailure };
+            if (afterFailure) return curatedSourceResult(afterFailure);
             continue;
           }
           const afterSearch = curatedAttemptState(context, run);
-          if (afterSearch) return { kind: afterSearch };
+          if (afterSearch) return curatedSourceResult(afterSearch);
           const entries = curatedSearchEntries(response.html, source, response.base || url);
-          if (!entries.length) return { kind: "NO_MATCH" };
+          const entryCount = entries.length;
+          const sampleEntryTitles = entries.slice(0, 3)
+            .map((entry) => String(entry && entry.title || "").trim().slice(0, 80))
+            .filter(Boolean);
+          if (!entries.length) {
+            return curatedSourceResult("NO_MATCH", {
+              terminalReason: "NO_ENTRIES",
+              entryCount,
+              matchedEntryCount: 0,
+              sampleEntryTitles
+            });
+          }
           rememberCuratedTemplate(source.id, template);
-          const matches = entries.filter((entry) => curatedTitleMatches(item, entry.title, entry)).slice(0, 5);
-          if (!matches.length) return { kind: "NO_MATCH" };
+          const matchedEntries = entries.filter((entry) => curatedTitleMatches(item, entry.title, entry));
+          const matchedEntryCount = matchedEntries.length;
+          const matches = matchedEntries.slice(0, 5);
+          const diagnostics = { entryCount, matchedEntryCount, sampleEntryTitles };
+          if (!matches.length) {
+            return curatedSourceResult("NO_MATCH", Object.assign({
+              terminalReason: "TITLE_NO_MATCH"
+            }, diagnostics));
+          }
           for (const entry of matches) {
             const beforeDetail = curatedRequestStartState(context, run);
-            if (beforeDetail) return { kind: beforeDetail };
+            if (beforeDetail) return curatedSourceResult(beforeDetail, diagnostics);
             const remainingDetailMs = curatedRemainingMs(context);
             try {
               const detail = await curatedRequestWithDeadline(
@@ -32651,20 +32721,24 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
                 "SOURCE_TIMEOUT"
               );
               const afterDetail = curatedAttemptState(context, run);
-              if (afterDetail) return { kind: afterDetail };
+              if (afterDetail) return curatedSourceResult(afterDetail, diagnostics);
               const candidates = curatedDetailCandidates(detail.html, source, detail.base || entry.href, item, entry);
-              if (candidates.length) return { kind: "CANDIDATES", candidates };
+              if (candidates.length) {
+                return curatedSourceResult("CANDIDATES", Object.assign({ candidates }, diagnostics));
+              }
             } catch (e) {
-              if (e && e.curatedDeadline) return { kind: "SOURCE_TIMEOUT" };
+              if (e && e.curatedDeadline) return curatedSourceResult("SOURCE_TIMEOUT", diagnostics);
               const afterFailure = curatedAttemptState(context, run);
-              if (afterFailure) return { kind: afterFailure };
+              if (afterFailure) return curatedSourceResult(afterFailure, diagnostics);
               // 当前匹配条目的详情请求失败，继续检查本次搜索返回的其它匹配条目。
             }
           }
-          return { kind: "NO_RESOURCE" };
+          return curatedSourceResult("NO_RESOURCE", Object.assign({
+            terminalReason: "NO_CANDIDATE"
+          }, diagnostics));
         }
       }
-      return { kind: "TRANSPORT_FAILURE" };
+      return curatedSourceResult("TRANSPORT_FAILURE");
     }
 
     function curatedCandidateOrder(items) {
@@ -32851,7 +32925,17 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         recordCuratedRaceSummary(run, {
           keyword: resourceSearchKeyword(item),
           resourceSearchTitle: String(item && item.resourceSearchTitle || ""),
-          sources: sources.map((source) => ({ id: source.id, startMs: null, doneMs: null, kind: "STALE", candidateCount: 0 })),
+          sources: sources.map((source) => ({
+            id: source.id,
+            startMs: null,
+            doneMs: null,
+            kind: "STALE",
+            terminalReason: "STALE",
+            entryCount: 0,
+            matchedEntryCount: 0,
+            sampleEntryTitles: [],
+            candidateCount: 0
+          })),
           collectionReason: "STALE",
           totalCuratedMs: Math.max(0, Date.now() - startedAt)
         });
@@ -32885,6 +32969,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             startMs: Number.isFinite(sourceState.startedAt) ? Math.max(0, sourceState.startedAt - startedAt) : null,
             doneMs: sourceState.doneAt ? Math.max(0, sourceState.doneAt - startedAt) : null,
             kind: sourceState.kind || "",
+            terminalReason: sourceState.terminalReason || "",
+            entryCount: Number(sourceState.entryCount || 0),
+            matchedEntryCount: Number(sourceState.matchedEntryCount || 0),
+            sampleEntryTitles: Array.isArray(sourceState.sampleEntryTitles) ? sourceState.sampleEntryTitles.slice(0, 3) : [],
             candidateCount: sourceState.candidates.length
           })),
           firstCandidateMs: firstCandidateAt ? Math.max(0, firstCandidateAt - startedAt) : null,
@@ -32914,6 +33002,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         },
         terminal: false,
         kind: "",
+        terminalReason: "",
+        entryCount: 0,
+        matchedEntryCount: 0,
+        sampleEntryTitles: [],
         candidates: [],
         doneAt: 0
       }));
@@ -33004,6 +33096,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         sourceState.doneAt = Date.now();
         sourceState.terminal = true;
         sourceState.kind = kind;
+        sourceState.terminalReason = String(sourceResult.terminalReason || kind);
+        sourceState.entryCount = Number(sourceResult.entryCount || 0);
+        sourceState.matchedEntryCount = Number(sourceResult.matchedEntryCount || 0);
+        sourceState.sampleEntryTitles = Array.isArray(sourceResult.sampleEntryTitles)
+          ? sourceResult.sampleEntryTitles.slice(0, 3)
+          : [];
         sourceState.context.active = false;
         sourceState.candidates = kind === "CANDIDATES"
           ? (Array.isArray(sourceResult.candidates) ? sourceResult.candidates : [])
@@ -33014,6 +33112,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           kind,
           elapsedMs: Math.max(0, sourceState.doneAt - startedAt),
           sourceDoneMs: Math.max(0, sourceState.doneAt - startedAt),
+          terminalReason: sourceState.terminalReason,
+          entryCount: sourceState.entryCount,
+          matchedEntryCount: sourceState.matchedEntryCount,
+          sampleEntryTitles: sourceState.sampleEntryTitles,
           candidateCount: sourceState.candidates.length
         });
         if (sourceState.candidates.length && !firstCandidateAt) {
