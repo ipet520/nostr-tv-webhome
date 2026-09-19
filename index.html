@@ -21291,6 +21291,14 @@ utils.encode = function encode(arr, enc) {
         : "暂无可播放资源，可尝试聚搜或盘搜";
     }
 
+    function detailDirectReadyCandidateFor(item, ready) {
+      if (!item || !ready || !ready.candidateKey) return null;
+      const selected = ready.candidate;
+      if (selected && detailDirectPlayCandidateKey(selected) === ready.candidateKey) return selected;
+      return (state.pan && Array.isArray(state.pan.results) ? state.pan.results : [])
+        .find((candidate) => detailDirectPlayCandidateKey(candidate) === ready.candidateKey) || null;
+    }
+
     function detailDirectPlayReadyFor(item) {
       if (!item) return false;
       const detailRun = state.detailPlayback;
@@ -21311,8 +21319,7 @@ utils.encode = function encode(arr, enc) {
       if (!ready || ready.itemKey !== panSearchItemKey(item)
         || Number(ready.sessionId || 0) !== Number(lifecycle.sessionId || 0)
         || !ready.candidateKey) return false;
-      const candidate = (pan.results || []).find((entry) => isQuarkOrBaidu(entry)
-        && detailDirectPlayCandidateKey(entry) === ready.candidateKey);
+      const candidate = detailDirectReadyCandidateFor(item, ready);
       if (!candidate) return false;
       const identity = panAutoIdentityVerdict(item, candidate);
       if (identity.verdict === "REJECT") return false;
@@ -21324,10 +21331,7 @@ utils.encode = function encode(arr, enc) {
       if (prepared) return prepared;
       if (!detailDirectPlayReadyFor(item)) return null;
       const ready = state.pan && state.pan.directReady;
-      return (state.pan && Array.isArray(state.pan.results) ? state.pan.results : [])
-        .find((candidate) => isQuarkOrBaidu(candidate)
-          && ready
-          && detailDirectPlayCandidateKey(candidate) === ready.candidateKey) || null;
+      return detailDirectReadyCandidateFor(item, ready);
     }
 
     function detailContinuePlaybackTargetFor(item, history) {
@@ -32479,6 +32483,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             itemKey: panSearchItemKey(item),
             sessionId: Number(readyLifecycle.sessionId || 0),
             candidateKey: readyCandidateKey,
+            candidate: pick,
             identityVerdict: String(pick.identityVerdict || ""),
             healthState: String(readyAdmission.state || ""),
             serverDiskRank: Number.isFinite(Number(pick.panServerDiskRank)) ? Number(pick.panServerDiskRank) : null
