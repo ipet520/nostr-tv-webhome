@@ -19839,7 +19839,7 @@ utils.encode = function encode(arr, enc) {
       const row = $("directPlayStatus");
       const text = $("directPlayStatusText");
       if (!row || !text) return;
-      row.hidden = !status.active;
+      row.hidden = !status.active || detailPlaybackStatusHiddenFor(document.activeElement);
       text.textContent = status.active ? String(status.text || "") : "";
     }
 
@@ -30858,8 +30858,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         $("episodeRail").replaceChildren(emptyNode("暂无分集信息"));
         return;
       }
+      const renderEpisodeCardStill = !isTvLikeDevice();
       $("episodeRail").replaceChildren(...list.map((ep, index) => {
-        const stillSource = ep.still_path ? imageUrl(ep.still_path, true) : "";
+        const stillSource = renderEpisodeCardStill && ep.still_path ? imageUrl(ep.still_path, true) : "";
         const still = stillSource ? displayImage(stillSource, { size: "w300" }) : "";
         const button = document.createElement("button");
         button.className = "episode-card focusable" + (still ? " has-still" : "");
@@ -30934,6 +30935,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     }
 
     function preloadEpisodeRailNeighbors(index) {
+      if (isTvLikeDevice()) return;
       const episodes = state.episodeViewer.episodes || [];
       const center = Number(index);
       if (!Number.isFinite(center)) return;
@@ -34708,18 +34710,27 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           }
         });
       });
+      syncDetailPlaybackStatusVisibility(document.activeElement);
+    }
+
+    function detailPlaybackStatusHiddenFor(target) {
+      const sheet = $("detailSheet");
+      if (!sheet || !sheet.classList.contains("active")) return false;
+      const lowerBlock = target && target.closest
+        ? target.closest("#seasonBlock, #castBlock, #personWorkBlock, #recommendBlock")
+        : null;
+      return !!(lowerBlock && sheet.contains(lowerBlock));
     }
 
     function syncDetailPlaybackStatusVisibility(target) {
       const sheet = $("detailSheet");
       if (!sheet) return;
-      const lowerBlock = target && target.closest
-        ? target.closest("#seasonBlock, #castBlock, #personWorkBlock, #recommendBlock")
-        : null;
+      const hidden = detailPlaybackStatusHiddenFor(target || document.activeElement);
       sheet.classList.toggle(
         "detail-focus-below-episodes",
-        !!(sheet.classList.contains("active") && lowerBlock && sheet.contains(lowerBlock))
+        hidden
       );
+      renderDirectPlayStatus(target || document.activeElement);
     }
 
     function panEmptyStateText() {
