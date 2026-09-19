@@ -21079,6 +21079,7 @@ utils.encode = function encode(arr, enc) {
         historyVerified: false,
         episodeTarget: explicitTarget,
         explicitEpisodeTarget: !!explicitTarget,
+        episodeCandidates: Array.isArray(opts.episodeCandidates) ? opts.episodeCandidates : [],
         directAction: null,
         error: "",
         reason: String(opts.reason || "detail_prepare"),
@@ -21142,18 +21143,22 @@ utils.encode = function encode(arr, enc) {
           nativeHistoryKnown: !!(continueDecision && continueDecision.history),
           nativeProgress: continueDecision && continueDecision.history
             ? historyPlaybackPositionValue(continueDecision.history) : 0,
-          decision: "FIRST_PLAY_PREPARE",
-          curatedStarted: true
+          decision: run.explicitEpisodeTarget ? "EPISODE_SELECT_PREPARE" : "FIRST_PLAY_PREPARE",
+          curatedStarted: !run.explicitEpisodeTarget
         });
         showDirectPlayStatus(run.token, "BACKGROUND_PREPARING", DIRECT_PLAY_STATUS_TEXT.BACKGROUND_PREPARING, "detail_prepare_start");
-        run.historyPromise = continueDecision && continueDecision.attempted
+        run.historyPromise = run.explicitEpisodeTarget
+          ? Promise.resolve(null)
+          : continueDecision && continueDecision.attempted
           ? Promise.resolve(continueDecision.history)
           : verifyDetailNativeHistory(item, run).catch(() => null);
         let curated = null;
-        try {
-          curated = await resolveCuratedPlaybackCandidate(item, run);
-        } catch (e) {
-          run.error = String(e && e.message || e || "curated_failed");
+        if (!run.explicitEpisodeTarget) {
+          try {
+            curated = await resolveCuratedPlaybackCandidate(item, run);
+          } catch (e) {
+            run.error = String(e && e.message || e || "curated_failed");
+          }
         }
         if (!detailPlaybackCurrentOrRecord(run)) return null;
         if (curated && curated.candidate) {
@@ -21178,6 +21183,8 @@ utils.encode = function encode(arr, enc) {
           playRequested: !!run.playRequested,
           episodeTarget: run.episodeTarget,
           explicitEpisodeTarget: run.explicitEpisodeTarget,
+          episodeSelector: run.explicitEpisodeTarget,
+          episodeCandidates: run.episodeCandidates,
           history: run.explicitEpisodeTarget ? null : undefined
         });
         run.directAction = typeof _directPlayPending !== "undefined" && _directPlayPending && _directPlayPending.item === item
@@ -21334,6 +21341,16 @@ utils.encode = function encode(arr, enc) {
         ? Object.assign({}, entry || {}, rawTarget || {})
         : historyPlaybackContext(history);
       return normalizePlaybackTarget(item, source);
+    }
+
+    function detailEpisodeTargetMatchesHistory(item, target, history) {
+      if (!item || !target || !detailContinueHistoryIsValid(history)) return false;
+      const historyTarget = detailContinuePlaybackTargetFor(item, history);
+      return !!(historyTarget
+        && Number(historyTarget.seasonNumber || 0) > 0
+        && Number(historyTarget.episodeNumber || 0) > 0
+        && Number(historyTarget.seasonNumber) === Number(target.seasonNumber)
+        && Number(historyTarget.episodeNumber) === Number(target.episodeNumber));
     }
 
     async function playDetailDirectReadyCandidate(item, candidate, history, button, options) {
@@ -21508,25 +21525,51 @@ utils.encode = function encode(arr, enc) {
       const pendingContinueRun = state.detailPlayback && detailPlaybackIsCurrent(state.detailPlayback)
         && state.detailPlayback.continuePending ? state.detailPlayback : null;
       if (pendingContinueRun) {
-        if (explicitTarget) {
-          // 明确选集不是续播同一资源；取消尚未完成的 Continue gate，
-          // 让该集建立自己的正常准备 run。
-          cancelDetailPlaybackPreparation("explicit_episode_target");
-          prepareDetailPlayback(item, {
-            reason: "episode_select",
-            playRequested: true,
-            episodeTarget: explicitTarget,
-            explicitEpisodeTarget: true
-          }).catch(() => {});
-          return;
-        }
         await (pendingContinueRun.continueDecisionPromise || Promise.resolve(null)).catch(() => null);
         if (state.selected !== item) return;
-        if (state.detailMode === "CONTINUE" && state.detailHistory) {
-          return requestDetailPlayback(item, opts);
-        }
       }
       const button = $("detailContinueBtn");
+      if (explicitTarget) {
+        const activeRun = state.detailPlayback && detailPlaybackIsCurrent(state.detailPlayback)
+          ? state.detailPlayback : null;
+        const latestHistory = activeRun && activeRun.historyVerified && detailContinueHistoryIsValid(activeRun.history)
+          ? activeRun.history
+          : findDetailContinueHistory(item)
+          || detailContinueHistoryIsValid(state.detailHistory) && state.detailHistory;
+        const historyTarget = latestHistory ? detailContinuePlaybackTargetFor(item, latestHistory) : null;
+        const sameHistoryEpisode = detailEpisodeTargetMatchesHistory(item, explicitTarget, latestHistory);
+        recordEpisodeSelectorDiagnostic("EPISODE_CLICK", item, explicitTarget, {
+          historySeason: Number(historyTarget && historyTarget.seasonNumber || 0) || 0,
+          historyEpisode: Number(historyTarget && historyTarget.episodeNumber || 0) || 0,
+          sameHistoryEpisode,
+          decision: sameHistoryEpisode ? "CONTINUE_CURRENT_EPISODE" : "SELECT_NEW_EPISODE"
+        });
+        if (sameHistoryEpisode && await playDetailContinueHistoryFirst(item, latestHistory, button)) return;
+        const episodeCandidates = [];
+        [
+          activeRun && activeRun.candidate,
+          activeRun && activeRun.continueResource && activeRun.continueResource.candidate,
+          detailPreparedCandidateFor(item),
+          detailDirectPlayCandidateFor(item)
+        ].forEach((candidate) => {
+          if (candidate && !episodeCandidates.includes(candidate)) episodeCandidates.push(candidate);
+        });
+        cancelDetailPlaybackPreparation("explicit_episode_target");
+        const pending = typeof _directPlayPending !== "undefined" ? _directPlayPending : null;
+        if (pending && pending.item === item && pending.promise) {
+          cancelPendingDirectPlay("explicit_episode_target");
+          await pending.promise.catch(() => {});
+          if (state.selected !== item) return;
+        }
+        prepareDetailPlayback(item, {
+          reason: "episode_select",
+          playRequested: true,
+          episodeTarget: explicitTarget,
+          explicitEpisodeTarget: true,
+          episodeCandidates
+        }).catch(() => {});
+        return;
+      }
       if (state.detailModeItemKey !== panSearchItemKey(item)) syncDetailMode(item);
       const mode = state.detailMode === "CONTINUE" ? "CONTINUE" : "FIRST_PLAY";
       const history = explicitTarget ? null : mode === "CONTINUE" ? state.detailHistory : null;
@@ -31039,6 +31082,165 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       });
     }
 
+    function panItemCoversEpisode(candidate, season, episode) {
+      const title = String(candidate && (candidate.title || candidate.fileName || candidate.file_name || candidate.filename) || "");
+      const targetEpisode = Number(episode) || 0;
+      if (!title || !targetEpisode) return false;
+      const rangePatterns = [
+        /(?:^|[^0-9A-Za-z])S\s*0*\d+\s*E\s*0*(\d+)\s*[-~～]\s*E?\s*0*(\d+)(?![0-9])/i,
+        /(?:^|[^0-9A-Za-z])E\s*0*(\d+)\s*[-~～]\s*E?\s*0*(\d+)(?![0-9])/i,
+        /第\s*0*(\d+)\s*[-~～]\s*0*(\d+)\s*集/
+      ];
+      for (const pattern of rangePatterns) {
+        const match = pattern.exec(title);
+        if (match) {
+          const start = Number(match[1]) || 0;
+          const end = Number(match[2]) || 0;
+          return start > 0 && end >= start && targetEpisode >= start && targetEpisode <= end;
+        }
+      }
+      const count = /全\s*0*(\d+)\s*集/.exec(title);
+      if (count) return targetEpisode <= (Number(count[1]) || 0);
+      return true;
+    }
+
+    function episodeSelectionTypeFor(candidate, target) {
+      if (!candidate || !target || target.mediaType !== "tv") return "";
+      const season = Number(target.seasonNumber || 0) || 0;
+      const episode = Number(target.episodeNumber || 0) || 0;
+      if (!season || !episode) return "";
+      if (panItemMatchesEpisode(candidate, season, episode)) return "EXACT_SINGLE";
+      if (panItemIsSeasonPack(candidate, season) && panItemCoversEpisode(candidate, season, episode)) return "PACK";
+      return "";
+    }
+
+    function panEpisodeCandidatePool(item, target, extraCandidates) {
+      const list = (state.pan.results || []).slice();
+      (Array.isArray(extraCandidates) ? extraCandidates : []).forEach((candidate) => {
+        if (candidate && !list.includes(candidate)) list.push(candidate);
+      });
+      return list;
+    }
+
+    function panAutoEpisodeCandidateTiers(item, target, candidates) {
+      const tiers = {
+        strongExact: [],
+        strongPack: [],
+        tentativeExact: [],
+        tentativePack: [],
+        rejected: [],
+        identityStrongCount: 0,
+        identityTentativeCount: 0,
+        identityRejectCount: 0
+      };
+      (candidates || []).forEach((candidate) => {
+        const selectionType = episodeSelectionTypeFor(candidate, target);
+        if (!selectionType) {
+          tiers.rejected.push(candidate);
+          return;
+        }
+        const verdict = panAutoIdentityVerdict(item, candidate);
+        candidate.episodeSelectionType = selectionType;
+        if (verdict.verdict === "STRONG") {
+          tiers.identityStrongCount++;
+          (selectionType === "EXACT_SINGLE" ? tiers.strongExact : tiers.strongPack).push(candidate);
+        } else if (verdict.verdict === "TENTATIVE") {
+          tiers.identityTentativeCount++;
+          (selectionType === "EXACT_SINGLE" ? tiers.tentativeExact : tiers.tentativePack).push(candidate);
+        } else {
+          tiers.identityRejectCount++;
+          tiers.rejected.push(candidate);
+        }
+      });
+      return tiers;
+    }
+
+    function recordEpisodeSelectorDiagnostic(name, item, target, detail) {
+      const payload = Object.assign({
+        itemKey: item ? panSearchItemKey(item) : "",
+        seasonNumber: Number(target && target.seasonNumber || 0) || 0,
+        episodeNumber: Number(target && target.episodeNumber || 0) || 0
+      }, detail || {});
+      try { console.debug(String(name || "EPISODE_SELECTOR"), payload); } catch (e) {}
+      if (state.tvDiag) state.tvDiag[String(name || "EPISODE_SELECTOR")] = payload;
+      return payload;
+    }
+
+    async function pickEpisodeSelectorCandidate(item, target, randomize, handoffAction, options) {
+      const opts = options || {};
+      const candidates = panEpisodeCandidatePool(item, target, opts.extraCandidates);
+      const tiers = panAutoEpisodeCandidateTiers(item, target, candidates);
+      const hasStrong = tiers.strongExact.length || tiers.strongPack.length;
+      const tier = opts.tentativeOnly
+        ? "TENTATIVE"
+        : hasStrong ? "STRONG"
+        : opts.allowTentative && (tiers.tentativeExact.length || tiers.tentativePack.length) ? "TENTATIVE" : "";
+      const exact = tier === "STRONG" ? tiers.strongExact : tier === "TENTATIVE" ? tiers.tentativeExact : [];
+      const packs = tier === "STRONG" ? tiers.strongPack : tier === "TENTATIVE" ? tiers.tentativePack : [];
+      const pool = panAutoCandidateOrder(exact.concat(packs));
+      const previousHealth = panHealthSnapshot(pool);
+      let freshHealth = {};
+      const checkable = pool.filter((candidate) => isPanCheckSupported(candidate) && !isPanHealthFresh(candidate));
+      if (panCheckAvailable() && checkable.length) {
+        const context = { token: state.pan.viewToken, item: state.selected };
+        const preflight = await playbackPanHealthPreflight(checkable, context);
+        freshHealth = preflight.states || {};
+        if (!panContextIsCurrent(context)) return { candidate: null, tier, tiers, pendingExact: false };
+      }
+      const acceptedExact = [];
+      const acceptedPacks = [];
+      const unconfirmedExact = [];
+      pool.forEach((candidate) => {
+        const admission = panAutoHealthAdmission(candidate, freshHealth);
+        candidate.healthAdmission = admission.state;
+        if (admission.accepted) {
+          (exact.includes(candidate) ? acceptedExact : acceptedPacks).push(candidate);
+        } else if (exact.includes(candidate) && !["bad", "locked", "unavailable"].includes(admission.state)) {
+          unconfirmedExact.push(candidate);
+        }
+      });
+      const pendingExact = !!unconfirmedExact.length;
+      let selectedPool = acceptedExact;
+      if (!selectedPool.length) {
+        // 仍有机会出现精确单集时，活动 lifecycle 不得提前消费全集包。
+        if (opts.deferPack && (!exact.length || pendingExact)) {
+          selectedPool = [];
+        } else {
+          selectedPool = acceptedPacks;
+        }
+      }
+      const ordered = panAutoCandidateOrder(selectedPool);
+      const pick = ordered.length
+        ? (randomize ? ordered[Math.floor(Math.random() * ordered.length)] : ordered[0])
+        : null;
+      recordEpisodeSelectorDiagnostic("EPISODE_CANDIDATES", item, target, {
+        strongExact: tiers.strongExact.length,
+        strongPack: tiers.strongPack.length,
+        tentativeExact: tiers.tentativeExact.length,
+        tentativePack: tiers.tentativePack.length,
+        rejected: tiers.rejected.length,
+        healthAccepted: acceptedExact.length + acceptedPacks.length,
+        healthUnconfirmed: unconfirmedExact.length,
+        lifecycleActive: !!opts.deferPack
+      });
+      if (handoffAction) recordPanDirectHandoffStage("EPISODE_PICK", item, handoffAction, {
+        selectionType: pick ? episodeSelectionTypeFor(pick, target) : "NONE",
+        identityVerdict: pick && pick.identityVerdict || "",
+        healthState: pick && pick.healthAdmission || "",
+        diskType: pick && normalizePanDiskType(pick.diskType) || "",
+        panSnapshotSeq: pick && Number(pick.panSnapshotSeq || 0) || 0,
+        serverDiskRank: pick && Number.isFinite(Number(pick.panServerDiskRank)) ? Number(pick.panServerDiskRank) : null,
+        candidateKey: pick ? detailDirectPlayCandidateKey(pick) : ""
+      });
+      return {
+        candidate: pick,
+        tier,
+        tiers,
+        pendingExact,
+        selectionType: pick ? episodeSelectionTypeFor(pick, target) : ""
+      };
+    }
+
     // 自动播放只消费身份合格且健康已确认的前 5 条；手动盘搜仍保留完整结果。
     async function pickQuarkBaiduTop5(item, randomize, handoffAction, options) {
       const opts = options || {};
@@ -31794,8 +31996,15 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         }
         const lifecycle = getPanSearchLifecycleFor(action.item);
         const counts = panDirectPlayResultCounts(state.pan.results);
-        const identityTiers = panAutoQBCandidateTiers(action.item, state.pan.results);
-        const hasStrongCandidate = lifecycle.sameSession && identityTiers.strong.length > 0;
+        const episodeTarget = opts.episodeSelector
+          ? normalizePlaybackTarget(action.item, opts.episodeTarget)
+          : null;
+        const identityTiers = episodeTarget
+          ? panAutoEpisodeCandidateTiers(action.item, episodeTarget, panEpisodeCandidatePool(action.item, episodeTarget, action.episodeCandidates))
+          : panAutoQBCandidateTiers(action.item, state.pan.results);
+        const hasStrongCandidate = lifecycle.sameSession && (episodeTarget
+          ? identityTiers.strongExact.length > 0 || identityTiers.strongPack.length > 0
+          : identityTiers.strong.length > 0);
         const snapshotAdvanced = Number(state.pan.panSnapshotSeq || 0) > baselineSnapshotSeq;
         if (hasStrongCandidate && (!waitForNewSnapshot || snapshotAdvanced || lifecycle.terminal)) {
           if (lastMarker !== "FOUND_QB") {
@@ -31965,6 +32174,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const explicitEpisodeTarget = opts.explicitEpisodeTarget
         ? normalizePlaybackTarget(item, opts.episodeTarget)
         : null;
+      const episodeSelector = !!(opts.episodeSelector && explicitEpisodeTarget);
       const continueHistory = explicitEpisodeTarget
         ? null
         : opts.history && typeof opts.history === "object" ? opts.history : null;
@@ -31979,6 +32189,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             _directPlayPending.history = null;
             _directPlayPending.episodeTarget = explicitEpisodeTarget;
             _directPlayPending.explicitEpisodeTarget = true;
+            _directPlayPending.episodeSelector = episodeSelector;
+            _directPlayPending.episodeCandidates = Array.isArray(opts.episodeCandidates) ? opts.episodeCandidates : _directPlayPending.episodeCandidates;
           } else if (continueHistory && !_directPlayPending.explicitEpisodeTarget) {
             _directPlayPending.history = continueHistory;
             _directPlayPending.episodeTarget = continueTarget;
@@ -32014,6 +32226,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         suppressAutoPan: !!opts.suppressAutoPan,
         prepareOnly,
         explicitEpisodeTarget: !!explicitEpisodeTarget,
+        episodeSelector,
+        episodeCandidates: Array.isArray(opts.episodeCandidates) ? opts.episodeCandidates : [],
         history: continueHistory,
         episodeTarget: requestedTarget,
         playRequested: prepareOnly ? !!opts.playRequested : true,
@@ -32059,12 +32273,22 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           suppressDirectPlayPanFallback(action, message);
           return;
         }
-        const connectionFailureNeedsFresh = action.detailPrimary && !prepareOnly
+        const connectionFailureNeedsFresh = action.detailPrimary && (!prepareOnly || episodeSelector)
           && currentDirectFailureType === "CONNECTION_FAILED";
-        const currentIsDetailDirect = !action.detailPrimary || lifecycle.origin === "direct";
-        const currentIdentityTiers = panAutoQBCandidateTiers(item, state.pan.results);
+        const currentIsDetailDirect = !action.detailPrimary
+          || lifecycle.origin === "direct"
+          || episodeSelector && lifecycle.origin === "preload";
+        const currentIdentityTiers = episodeSelector
+          ? panAutoEpisodeCandidateTiers(item, explicitEpisodeTarget, panEpisodeCandidatePool(item, explicitEpisodeTarget, action.episodeCandidates))
+          : panAutoQBCandidateTiers(item, state.pan.results);
+        const currentHasStrong = episodeSelector
+          ? currentIdentityTiers.strongExact.length > 0 || currentIdentityTiers.strongPack.length > 0
+          : currentIdentityTiers.strong.length > 0;
+        const currentHasTentative = episodeSelector
+          ? currentIdentityTiers.tentativeExact.length > 0 || currentIdentityTiers.tentativePack.length > 0
+          : currentIdentityTiers.tentative.length > 0;
         let hasCurrentQuarkOrBaidu = !connectionFailureNeedsFresh && currentIsDetailDirect && lifecycle.sameSession
-          && (currentIdentityTiers.strong.length > 0 || lifecycle.terminal && currentIdentityTiers.tentative.length > 0);
+          && (currentHasStrong || lifecycle.terminal && currentHasTentative);
         if (hasCurrentQuarkOrBaidu) {
           action.sessionReuseDecision = "USE_EXISTING_QB";
           recordDirectPlaySessionDiag(action, action.sessionReuseDecision, lifecycle);
@@ -32072,8 +32296,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         if (!hasCurrentQuarkOrBaidu) {
           // prepareOnly 结束后，用户再次显式播放且仍没有 QB 候选时，
           // 才建立 fresh Direct session；prepareOnly 自身不会开启第二条搜索。
-          const explicitPlayNeedsFreshDirect = action.detailPrimary && !action.prepareOnly
-            && action.playRequested && currentIsDetailDirect;
+          const explicitPlayNeedsFreshDirect = action.detailPrimary
+            && action.playRequested
+            && (!action.prepareOnly || episodeSelector)
+            && currentIsDetailDirect;
           const shouldStartSearch = action.forceFreshDirect
             || explicitPlayNeedsFreshDirect
             || connectionFailureNeedsFresh
@@ -32108,7 +32334,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             action.sessionReuseDecision = "USE_EXISTING_RESULTS";
             recordDirectPlaySessionDiag(action, action.sessionReuseDecision, lifecycle);
           }
-          const waited = await waitForPanDirectPlay(action);
+          const waited = await waitForPanDirectPlay(action, episodeSelector ? {
+            episodeSelector: true,
+            episodeTarget: explicitEpisodeTarget
+          } : undefined);
           if (waited.result === "CANCELLED" || waited.cancelled || !panDirectPlayActionIsCurrent(action)) {
             action.playRequested = false;
             return;
@@ -32130,10 +32359,18 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           }
           if (waited.result !== "FOUND_QB" && waited.result !== "TERMINAL_NO_QB") return;
           lifecycle = waited.lifecycle || getPanSearchLifecycleFor(item);
-          const waitedIdentityTiers = panAutoQBCandidateTiers(item, state.pan.results);
+          const waitedIdentityTiers = episodeSelector
+            ? panAutoEpisodeCandidateTiers(item, explicitEpisodeTarget, panEpisodeCandidatePool(item, explicitEpisodeTarget, action.episodeCandidates))
+            : panAutoQBCandidateTiers(item, state.pan.results);
+          const waitedHasStrong = episodeSelector
+            ? waitedIdentityTiers.strongExact.length > 0 || waitedIdentityTiers.strongPack.length > 0
+            : waitedIdentityTiers.strong.length > 0;
+          const waitedHasTentative = episodeSelector
+            ? waitedIdentityTiers.tentativeExact.length > 0 || waitedIdentityTiers.tentativePack.length > 0
+            : waitedIdentityTiers.tentative.length > 0;
           const foundAfterWait = lifecycle.sameSession
-            && (waitedIdentityTiers.strong.length > 0
-              || lifecycle.terminal && waitedIdentityTiers.tentative.length > 0);
+            && (waitedHasStrong
+              || lifecycle.terminal && waitedHasTentative);
           hasCurrentQuarkOrBaidu = foundAfterWait;
           if (!foundAfterWait) {
             const failureType = detailDirectFailureTypeAfterPrepare();
@@ -32164,21 +32401,49 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         recordPanDirectHandoffStage("PICK_START", item, action, { repeatClick: !!isRepeat });
         let pick = null;
         let selectionTier = "";
+        let selectionType = "";
         let pickLifecycle = getPanSearchLifecycleFor(item);
         while (panDirectPlayActionIsCurrent(action)) {
           pickLifecycle = getPanSearchLifecycleFor(item);
-          const identityTiers = panAutoQBCandidateTiers(item, state.pan.results);
-          pick = await pickQuarkBaiduTop5(item, isRepeat, action, { allowTentative: false });
-          selectionTier = pick ? String(pick.identityVerdict || "STRONG") : "";
-          if (!pick && pickLifecycle.terminal && identityTiers.tentative.length) {
-            pick = await pickQuarkBaiduTop5(item, isRepeat, action, { allowTentative: true, tentativeOnly: true });
-            selectionTier = pick ? String(pick.identityVerdict || "TENTATIVE") : "";
+          const identityTiers = episodeSelector
+            ? panAutoEpisodeCandidateTiers(item, explicitEpisodeTarget, panEpisodeCandidatePool(item, explicitEpisodeTarget, action.episodeCandidates))
+            : panAutoQBCandidateTiers(item, state.pan.results);
+          if (episodeSelector) {
+            const selected = await pickEpisodeSelectorCandidate(item, explicitEpisodeTarget, isRepeat, action, {
+              allowTentative: false,
+              deferPack: !!pickLifecycle.active,
+              extraCandidates: action.episodeCandidates
+            });
+            pick = selected.candidate;
+            selectionTier = pick ? selected.tier : "";
+            selectionType = pick ? selected.selectionType : "";
+            if (!pick && pickLifecycle.terminal
+              && (identityTiers.tentativeExact.length || identityTiers.tentativePack.length)) {
+              const tentative = await pickEpisodeSelectorCandidate(item, explicitEpisodeTarget, isRepeat, action, {
+                allowTentative: true,
+                tentativeOnly: true,
+                deferPack: false,
+                extraCandidates: action.episodeCandidates
+              });
+              pick = tentative.candidate;
+              selectionTier = pick ? tentative.tier : "";
+              selectionType = pick ? tentative.selectionType : "";
+            }
+          } else {
+            pick = await pickQuarkBaiduTop5(item, isRepeat, action, { allowTentative: false });
+            selectionTier = pick ? String(pick.identityVerdict || "STRONG") : "";
+            if (!pick && pickLifecycle.terminal && identityTiers.tentative.length) {
+              pick = await pickQuarkBaiduTop5(item, isRepeat, action, { allowTentative: true, tentativeOnly: true });
+              selectionTier = pick ? String(pick.identityVerdict || "TENTATIVE") : "";
+            }
           }
           if (pick || !pickLifecycle.active) break;
           const snapshotSeq = Number(state.pan.panSnapshotSeq || 0);
           const continued = await waitForPanDirectPlay(action, {
             waitForNewSnapshot: true,
-            afterSnapshotSeq: snapshotSeq
+            afterSnapshotSeq: snapshotSeq,
+            episodeSelector,
+            episodeTarget: explicitEpisodeTarget
           });
           if (continued.result === "CANCELLED" || continued.cancelled || !panDirectPlayActionIsCurrent(action)) {
             action.playRequested = false;
@@ -32193,7 +32458,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         const after = panDirectPlayCandidateSummary(item);
         recordPanDirectPlayDiag("CANDIDATE_AFTER", item, getPanSearchLifecycleFor(item), action.startedAt, Object.assign(after, {
           selectedCandidate: panDirectPlayCandidateLabel(pick),
-          selectionTier
+          selectionTier,
+          selectionType
         }), action);
         if (!pick) {
           const failureType = detailDirectFailureTypeAfterPrepare();
