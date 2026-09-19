@@ -31044,11 +31044,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const opts = options || {};
       let pool = (state.pan.results || []).filter(isQuarkOrBaidu);
       if (!pool.length) return null;
-      // 剧集：优先整季/全集包（和"点单集"区分开，互不冲突）；没有包再用任意单条
-      if (item && item.mediaType === "tv") {
-        const packs = pool.filter((it) => panItemIsRangePack(String(it.title || "")));
-        if (packs.length) pool = packs;
-      }
       const identityTiers = panAutoCandidateTiers(item, pool);
       const tier = opts.tentativeOnly
         ? "TENTATIVE"
@@ -34226,7 +34221,13 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     }
 
     function invalidateAutomaticReadyForHealth(candidate, stateValue, context) {
-      if (!candidate || String(stateValue || "").toLowerCase() !== "bad") return false;
+      const normalizedState = String(stateValue || "").toLowerCase();
+      const invalidationReason = {
+        bad: "LATE_HEALTH_BAD",
+        locked: "LATE_HEALTH_LOCKED",
+        unavailable: "LATE_HEALTH_UNAVAILABLE"
+      }[normalizedState];
+      if (!candidate || !invalidationReason) return false;
       if (context && !panContextIsCurrent(context)) return false;
       const item = context && context.item || state.selected;
       if (!item) return false;
@@ -34245,11 +34246,11 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (run && detailPlaybackIsCurrent(run) && run.candidate
         && detailDirectPlayCandidateKey(run.candidate) === candidateKey) {
         run.candidate = null;
-        run.error = "late_health_bad";
+        run.error = "late_health_" + normalizedState;
         invalidated = true;
       }
       if (!invalidated) return false;
-      recordDirectReadyEvent("DIRECT_READY_INVALIDATED", item, candidate, "LATE_HEALTH_BAD", "bad");
+      recordDirectReadyEvent("DIRECT_READY_INVALIDATED", item, candidate, invalidationReason, normalizedState);
       if (state.selected === item) updateDetailContinueButton();
       return true;
     }
