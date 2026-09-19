@@ -19821,12 +19821,12 @@ utils.encode = function encode(arr, enc) {
       return "";
     }
 
-    function renderDirectPlayStatus() {
+    function renderDirectPlayStatus(target) {
       const status = state.directPlayStatus || {};
       const row = $("directPlayStatus");
       const text = $("directPlayStatusText");
       if (!row || !text) return;
-      row.hidden = !status.active;
+      row.hidden = !status.active || detailPlaybackStatusHiddenFor(target || document.activeElement);
       text.textContent = status.active ? String(status.text || "") : "";
     }
 
@@ -34567,6 +34567,27 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           }
         });
       });
+      syncDetailPlaybackStatusVisibility(document.activeElement);
+    }
+
+    function detailPlaybackStatusHiddenFor(target) {
+      const sheet = $("detailSheet");
+      if (!sheet || !sheet.classList.contains("active")) return false;
+      const lowerBlock = target && target.closest
+        ? target.closest("#seasonBlock, #castBlock, #personWorkBlock, #recommendBlock")
+        : null;
+      return !!(lowerBlock && sheet.contains(lowerBlock));
+    }
+
+    function syncDetailPlaybackStatusVisibility(target) {
+      const sheet = $("detailSheet");
+      if (!sheet) return;
+      const focusTarget = target || document.activeElement;
+      sheet.classList.toggle(
+        "detail-focus-below-episodes",
+        detailPlaybackStatusHiddenFor(focusTarget)
+      );
+      renderDirectPlayStatus(focusTarget);
     }
 
     function panEmptyStateText() {
@@ -38732,7 +38753,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (leftEdge && rightEdge) card.classList.add("focus-halo-edge-both");
     }
 
-    document.addEventListener("focusin", (event) => syncFocusedCardHalo(event.target), true);
+    document.addEventListener("focusin", (event) => {
+      syncDetailPlaybackStatusVisibility(event.target);
+      syncFocusedCardHalo(event.target);
+    }, true);
 
     function focusRemoteTarget(target, options) {
       if (!target) return;
