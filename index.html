@@ -19829,7 +19829,10 @@ utils.encode = function encode(arr, enc) {
       const sheet = $("detailSheet");
       const hiddenByFocus = detailPlaybackStatusHiddenFor(target || document.activeElement)
         || !!(sheet && sheet.classList.contains("active") && sheet.classList.contains("detail-focus-below-episodes"));
-      row.hidden = !status.active || hiddenByFocus;
+      const hidden = !status.active || hiddenByFocus;
+      row.hidden = hidden;
+      if (hidden) row.style.setProperty("display", "none", "important");
+      else row.style.removeProperty("display");
       text.textContent = status.active ? String(status.text || "") : "";
     }
 
@@ -34575,9 +34578,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
     function detailPlaybackStatusHiddenFor(target) {
       const sheet = $("detailSheet");
-      if (!sheet || !sheet.classList.contains("active")) return false;
+      if (!sheet) return false;
       const lowerBlock = target && target.closest
-        ? target.closest("#seasonBlock, #castBlock, #personWorkBlock, #recommendBlock")
+        ? target.closest("#seasonBlock, #episodeRail, #seasonTabs, #castBlock, #castRail, #personWorkBlock, #personWorkRail, #recommendBlock, #recommendWorkRail")
         : null;
       return !!(lowerBlock && sheet.contains(lowerBlock));
     }
@@ -38293,6 +38296,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       } catch (e) {
         target.focus();
       }
+      syncDetailPlaybackStatusVisibility(target);
       keepEpisodeCardHorizontallyVisible(target);
     }
 
