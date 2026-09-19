@@ -19834,12 +19834,12 @@ utils.encode = function encode(arr, enc) {
       return "";
     }
 
-    function renderDirectPlayStatus() {
+    function renderDirectPlayStatus(target) {
       const status = state.directPlayStatus || {};
       const row = $("directPlayStatus");
       const text = $("directPlayStatusText");
       if (!row || !text) return;
-      row.hidden = !status.active;
+      row.hidden = !status.active || detailPlaybackStatusHiddenFor(target || document.activeElement);
       text.textContent = status.active ? String(status.text || "") : "";
     }
 
@@ -30529,10 +30529,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       $("detailMeta").replaceChildren();
       const overview = ep.overview || "暂无剧情概要";
       text.textContent = overview;
-      pauseDetailCoverCarousel();
-      const still = episodeFullStill(ep);
-      const fallback = state.detailCover.images && state.detailCover.images[state.detailCover.index] || state.selected && state.selected.landscape || "";
-      setDetailCoverImage(still || fallback, "", { allowPoster: false, keepLoading: false });
       preloadEpisodeRailNeighbors(index);
       preserveEpisodePreviewAnchor(anchor, anchorTop);
       syncEpisodePreviewLayout(info);
@@ -30859,8 +30855,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         return;
       }
       $("episodeRail").replaceChildren(...list.map((ep, index) => {
-        const stillSource = ep.still_path ? imageUrl(ep.still_path, true) : "";
-        const still = stillSource ? displayImage(stillSource, { size: "w300" }) : "";
+        const still = episodeCardStillSource(ep);
         const button = document.createElement("button");
         button.className = "episode-card focusable" + (still ? " has-still" : "");
         button.type = "button";
@@ -30868,7 +30863,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         button.dataset.seasonNumber = String(Number(ep.season_number) || renderedSeason);
         button.innerHTML = `
           <span class="episode-badge">第${escapeHtml(ep.episode_number || "?")}集</span>
-          ${still ? `<div class="episode-still-wrap"><img class="episode-still" alt="" ${imageAttrs(still)}></div>` : ""}
+          ${still ? `<div class="episode-still-wrap"><img class="episode-still" alt="" ${episodeCardStillAttrs(still)}></div>` : ""}
           <div class="episode-body">
             <b>${ep.episode_number}. ${escapeHtml(ep.name || "未命名")}</b>
             <span>${escapeHtml(ep.air_date || "")}</span>
@@ -30876,6 +30871,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           </div>
         `;
         button.addEventListener("focus", () => {
+          preloadEpisodeRailNeighbors(index);
           scheduleInlineEpisodePreview(index, { expanded: false });
         });
         button.addEventListener("blur", () => {
@@ -30893,6 +30889,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         });
         return button;
       }));
+      preloadEpisodeRailNeighbors(state.episodeViewer.index >= 0 ? state.episodeViewer.index : 0);
       if (restoreEpisode) requestAnimationFrame(() => focusRemoteTarget(findByDataset($("episodeRail"), "episodeNumber", restoreEpisode) || $("episodeRail").querySelector(".episode-card")));
       updatePostPanFocusState();
     }
@@ -30933,13 +30930,29 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return stillSource ? displayImage(stillSource, { size: "w300" }) : "";
     }
 
+    function episodeCardStillAttrs(src) {
+      const placeholder = "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
+      return `${imageAttrs(placeholder, { loading: "lazy" })} data-episode-src="${escapeAttr(src)}"`;
+    }
+
+    function hydrateEpisodeCardImage(card) {
+      if (!card) return;
+      const image = card.querySelector("img[data-episode-src]");
+      const source = image && image.getAttribute("data-episode-src");
+      if (!image || !source) return;
+      preloadImage(source, () => {
+        if (!document.documentElement.contains(image) || image.getAttribute("data-episode-src") !== source) return;
+        image.removeAttribute("data-episode-src");
+        image.src = source;
+      });
+    }
+
     function preloadEpisodeRailNeighbors(index) {
-      const episodes = state.episodeViewer.episodes || [];
       const center = Number(index);
       if (!Number.isFinite(center)) return;
-      [-1, 0, 1].forEach((offset) => {
-        const src = episodeCardStillSource(episodes[center + offset]);
-        if (src) preloadImage(src);
+      const cards = $("episodeRail") ? $("episodeRail").querySelectorAll(".episode-card") : [];
+      [-1, 0, 1, 2, 3].forEach((offset) => {
+        hydrateEpisodeCardImage(cards[center + offset]);
       });
     }
 
@@ -34708,18 +34721,27 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           }
         });
       });
+      syncDetailPlaybackStatusVisibility(document.activeElement);
+    }
+
+    function detailPlaybackStatusHiddenFor(target) {
+      const sheet = $("detailSheet");
+      if (!sheet || !sheet.classList.contains("active")) return false;
+      const lowerBlock = target && target.closest
+        ? target.closest("#seasonBlock, #castBlock, #personWorkBlock, #recommendBlock")
+        : null;
+      return !!(lowerBlock && sheet.contains(lowerBlock));
     }
 
     function syncDetailPlaybackStatusVisibility(target) {
       const sheet = $("detailSheet");
       if (!sheet) return;
-      const lowerBlock = target && target.closest
-        ? target.closest("#seasonBlock, #castBlock, #personWorkBlock, #recommendBlock")
-        : null;
+      const focusTarget = target || document.activeElement;
       sheet.classList.toggle(
         "detail-focus-below-episodes",
-        !!(sheet.classList.contains("active") && lowerBlock && sheet.contains(lowerBlock))
+        detailPlaybackStatusHiddenFor(focusTarget)
       );
+      renderDirectPlayStatus(focusTarget);
     }
 
     function panEmptyStateText() {
