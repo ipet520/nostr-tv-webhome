@@ -16846,7 +16846,7 @@ utils.encode = function encode(arr, enc) {
       catalogPage: {},
       recent: { items: [], loading: false, loadingPromise: null, loaded: false, error: "", refreshedAt: 0, diag: null, nativeItems: [], nativeLoaded: false, nativeLoading: false, nativeRefreshedAt: 0, nativeKeyFlow: {}, runSeq: 0, activeRun: null, pendingRefresh: false, pendingRefreshSilent: true },
       tvDetail: { cache: {}, cardTasks: {}, cardQueue: [], cardActive: 0, observer: null, scrollBound: false, scanTimer: 0, generation: 0 },
-      homeLatest: { items: [], loading: false, loaded: false, error: "", loadedAt: 0, lastRefreshAt: 0, requestSeq: 0, diag: null, promise: null, cacheChecked: false, cacheHydrated: false, cacheWeekStart: "", cacheSavedAt: 0, cacheItemCount: 0, cacheHydratedAt: 0, networkRefreshReason: "", networkRefreshSucceeded: false },
+      homeLatest: { items: [], loading: false, loaded: false, error: "", loadedAt: 0, lastRefreshAt: 0, requestSeq: 0, diag: null, promise: null, cacheChecked: false, cacheHydrated: false, cacheWeekStart: "", cacheSavedAt: 0, cacheItemCount: 0, cacheHydratedAt: 0, networkRefreshReason: "", networkRefreshSucceeded: false, refreshStartedAt: 0, firstRenderableAt: 0 },
       gridRender: {},
       gridColumnCache: {},
       fallback: [],
@@ -17522,7 +17522,7 @@ utils.encode = function encode(arr, enc) {
       };
     }
 
-    async function weeklyMapLimit(items, limit, worker) {
+    async function weeklyMapLimit(items, limit, worker, onResult) {
       const values = Array.isArray(items) ? items : [];
       const results = new Array(values.length);
       let cursor = 0;
@@ -17534,6 +17534,9 @@ utils.encode = function encode(arr, enc) {
             results[index] = { ok: true, value: await worker(values[index], index) };
           } catch (error) {
             results[index] = { ok: false, error };
+          }
+          if (typeof onResult === "function") {
+            try { onResult(results[index], values[index], index); } catch (e) {}
           }
         }
       };
@@ -17638,6 +17641,48 @@ utils.encode = function encode(arr, enc) {
       return !!(latest && Array.isArray(latest.items) && latest.items.length);
     }
 
+    function homeLatestSnapshotIsCurrent(latest) {
+      const currentWeekStart = weeklyDateRange().start;
+      return !(latest && latest.range && latest.range.start && latest.range.start !== currentWeekStart);
+    }
+
+    function publishHomeWeeklySnapshot(source, options) {
+      const latest = state.homeLatest;
+      if (!latest || !homeLatestHasItems(latest)) return false;
+      if (homeUiRoute() !== "secondary" || state.homeV14.secondaryListId !== "now-playing") return false;
+      const query = secondaryActiveQuery("now-playing") || secondaryGetQuery("now-playing");
+      if (!query) return false;
+      const opts = options || {};
+      const refreshing = opts.refreshing == null ? !!latest.loading : !!opts.refreshing;
+      const final = opts.final === true || !refreshing;
+      const items = filterBlocked(latest.items || []);
+      query.items = items.slice();
+      query.totalResults = items.length;
+      query.totalPages = 1;
+      query.page = 1;
+      query.hasMore = false;
+      query.finite = true;
+      query.snapshotReady = true;
+      query.snapshotSource = String(source || "memory");
+      query.loading = !final && refreshing;
+      query.loaded = final;
+      query.error = final ? String(latest.error || "") : "";
+      query.serverSideFilters = [];
+      query.clientSideFilters = [];
+      query.endpointMap = ["discover/tv", "tv/{id}", "movie/now_playing", "discover/movie"];
+      query.sourceStates = [];
+      state.homeV14.secondaryPage = 1;
+      if (!Number(latest.firstRenderableAt || 0)) latest.firstRenderableAt = Date.now();
+      recordHomeLatestDiag(Object.assign({}, latest.diag || {}, {
+        snapshotReady: true,
+        snapshotSource: query.snapshotSource,
+        firstRenderableMs: latest.refreshStartedAt ? Math.max(0, latest.firstRenderableAt - latest.refreshStartedAt) : 0,
+        refreshStillRunning: !!latest.loading
+      }));
+      renderSecondaryCatalog();
+      return true;
+    }
+
     function homeLatestCacheAge(latest) {
       const savedAt = Number(latest && latest.cacheSavedAt || 0);
       return savedAt > 0 ? Math.max(0, Date.now() - savedAt) : 0;
@@ -17679,6 +17724,7 @@ utils.encode = function encode(arr, enc) {
         networkRefreshSucceeded: false,
         networkRefreshReason: "cold-start"
       });
+      publishHomeWeeklySnapshot("cache", { refreshing: !!latest.loading });
       if (isHomeRouteActive()) {
         renderHomeHot();
       }
@@ -17722,6 +17768,8 @@ utils.encode = function encode(arr, enc) {
       if (!weekChanged && latest.loadedAt > 0 && ageFromNetwork < HOME_WEEKLY_REFRESH_TTL_MS) return latest;
       if (!weekChanged && !latest.loadedAt && latest.loaded && latest.lastRefreshAt > 0 && ageFromAttempt < HOME_WEEKLY_REFRESH_TTL_MS) return latest;
       if (!weekChanged && !latest.networkRefreshSucceeded && latest.loaded && latest.lastRefreshAt > 0 && ageFromAttempt < HOME_WEEKLY_REFRESH_TTL_MS) return latest;
+      latest.refreshStartedAt = Date.now();
+      latest.firstRenderableAt = 0;
       const promise = Promise.resolve().then(() => loadHomeLatestInternal(latest)).catch((error) => {
         const hasItems = homeLatestHasItems(latest);
         latest.loading = false;
@@ -17740,6 +17788,7 @@ utils.encode = function encode(arr, enc) {
           refreshFailure: true,
           error: String(error && error.message || "加载失败")
         });
+        publishHomeWeeklySnapshot("network-final", { final: true, refreshing: false });
         throw error;
       });
       latest.promise = promise;
@@ -17775,6 +17824,7 @@ utils.encode = function encode(arr, enc) {
       latest.lastRefreshAt = Date.now();
       await hydrateHomeLatestCache(latest, range);
       if (latest.requestSeq !== requestSeq) return latest;
+      const hadExistingSnapshot = homeLatestHasItems(latest);
       latest.networkRefreshReason = latest.cacheHydrated ? "cold-start" : refreshReason;
       if (isHomeRouteActive()) renderHomeHot();
       const networkStartedAt = Date.now();
@@ -17815,15 +17865,20 @@ utils.encode = function encode(arr, enc) {
       });
       const tvCandidates = Array.from(tvCandidatesById.values()).sort((a, b) => Number(b.popularity || 0) - Number(a.popularity || 0)).slice(0, HOME_WEEKLY_TV_CANDIDATE_LIMIT);
       counts.tvDiscoverCandidateCount = tvCandidates.length;
-      const tvDetails = await weeklyMapLimit(tvCandidates, HOME_WEEKLY_DETAIL_CONCURRENCY, (candidate) => requestTvDetailShared(candidate));
       const tvItems = [];
-      tvDetails.forEach((result, index) => {
+      const publishColdWeeklyPartial = () => {
+        if (hadExistingSnapshot || !tvItems.length) return;
+        const partialItems = sortWeeklyItems(tvItems).slice(0, HOME_WEEKLY_TV_LIMIT);
+        if (!partialItems.length) return;
+        latest.items = partialItems;
+        publishHomeWeeklySnapshot("network-partial", { refreshing: true });
+      };
+      const handleTvDetailResult = (result, candidate) => {
         if (!result || !result.ok || !result.value) {
           counts.tvDetailFailureCount += 1;
           return;
         }
         counts.tvDetailSuccessCount += 1;
-        const candidate = tvCandidates[index];
         const detail = result.value;
         const merged = mergeTmdbLocalizedEnrichment(candidate, detail, "tv");
         merged.id = detail.id || candidate.id;
@@ -17845,8 +17900,12 @@ utils.encode = function encode(arr, enc) {
         item.weeklyUpdateText = weeklyUpdateText(item, range);
         item.weeklyMetaText = weeklyMetaText(item);
         item.weeklyDetail = detail;
-        if (hasPoster(item) && latestIdentity(item)) tvItems.push(item);
-      });
+        if (hasPoster(item) && latestIdentity(item)) {
+          tvItems.push(item);
+          if (tvItems.length === 1 || tvItems.length % 4 === 0) publishColdWeeklyPartial();
+        }
+      };
+      await weeklyMapLimit(tvCandidates, HOME_WEEKLY_DETAIL_CONCURRENCY, (candidate) => requestTvDetailShared(candidate), handleTvDetailResult);
       const movieItemsById = new Map();
       Array.from(movieCandidatesById.values()).forEach((raw, index) => {
         const releaseDate = latestDateOnly(raw.release_date);
@@ -17865,7 +17924,11 @@ utils.encode = function encode(arr, enc) {
       const remainingMovieSlots = Math.max(0, HOME_WEEKLY_TOTAL_LIMIT - sortedTv.length);
       const sortedMovies = sortWeeklyItems(Array.from(movieItemsById.values())).slice(0, Math.min(HOME_WEEKLY_MOVIE_LIMIT, remainingMovieSlots));
       const nextItems = sortedTv.concat(sortedMovies);
-      const hadExistingItems = homeLatestHasItems(latest);
+      if (!hadExistingSnapshot && nextItems.length && !homeLatestHasItems(latest)) {
+        latest.items = nextItems.slice();
+        publishHomeWeeklySnapshot("network-partial", { refreshing: true });
+      }
+      const hadExistingItems = hadExistingSnapshot;
       if (nextItems.length || !hadExistingItems) latest.items = nextItems;
       const networkSucceeded = goodCount > 0;
       const networkRefreshSucceeded = networkSucceeded && nextItems.length > 0;
@@ -17893,6 +17956,7 @@ utils.encode = function encode(arr, enc) {
         networkRefreshDurationMs: Math.max(0, Date.now() - networkStartedAt),
         networkRefreshReason: latest.networkRefreshReason
       }));
+      publishHomeWeeklySnapshot("network-final", { final: true, refreshing: false });
       if (isHomeRouteActive()) {
         renderHomeHot();
         mergeHomeLatestIntoHeroFeed({ render: true });
@@ -25361,7 +25425,9 @@ utils.encode = function encode(arr, enc) {
           clientSideFilters: [],
           endpointMap: [],
           sourceStates: [],
-          finite: false
+          finite: false,
+          snapshotReady: false,
+          snapshotSource: ""
         };
       }
       home.secondaryActiveQueryKey = key;
@@ -25614,36 +25680,44 @@ utils.encode = function encode(arr, enc) {
         query.loading = true;
         query.error = "";
         const requestSeq = ++query.requestSeq;
-        if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
-        try {
-          await loadHomeLatest();
-        } catch (error) {
-          if (query.requestSeq === requestSeq) {
+        const latest = state.homeLatest;
+        const snapshotIsCurrent = homeLatestSnapshotIsCurrent(latest);
+        if (!snapshotIsCurrent || !homeLatestHasItems(latest)) {
+          query.items = [];
+          query.loaded = false;
+          query.snapshotReady = false;
+        }
+        const refreshPromise = Promise.resolve(loadHomeLatest());
+        const refreshStillRunning = !!(latest && (latest.loading || latest.promise));
+        if (snapshotIsCurrent && homeLatestHasItems(latest)) {
+          publishHomeWeeklySnapshot(latest.cacheHydrated ? "cache" : "memory", { refreshing: refreshStillRunning });
+        } else if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) {
+          renderSecondaryCatalog();
+        }
+        refreshPromise.then(() => {
+          if (query.requestSeq !== requestSeq) return;
+          const published = publishHomeWeeklySnapshot("network-final", { final: true, refreshing: false });
+          if (!published && homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) {
             query.loading = false;
             query.loaded = true;
-            query.error = "加载失败";
+            query.error = state.homeLatest && state.homeLatest.error || "";
             query.hasMore = false;
-            if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
+            query.snapshotReady = false;
+            renderSecondaryCatalog();
           }
-          return query;
-        }
-        if (query.requestSeq !== requestSeq) return query;
-        const items = filterBlocked(state.homeLatest && state.homeLatest.items || []);
-        query.loading = false;
-        query.loaded = true;
-        query.error = state.homeLatest && state.homeLatest.error || "";
-        query.page = 1;
-        query.totalPages = 1;
-        query.totalResults = items.length;
-        query.hasMore = false;
-        query.finite = true;
-        query.items = items.slice();
-        query.serverSideFilters = [];
-        query.clientSideFilters = [];
-        query.endpointMap = ["discover/tv", "tv/{id}", "movie/now_playing", "discover/movie"];
-        query.sourceStates = [];
-        state.homeV14.secondaryPage = 1;
-        if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
+        }).catch(() => {
+          if (query.requestSeq !== requestSeq) return;
+          if (homeLatestHasItems(state.homeLatest)) {
+            publishHomeWeeklySnapshot("network-final", { final: true, refreshing: false });
+            return;
+          }
+          query.loading = false;
+          query.loaded = true;
+          query.error = "加载失败";
+          query.hasMore = false;
+          query.snapshotReady = false;
+          if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
+        });
         return query;
       }
       if (page > 1 && !query.hasMore && !query.error) return query;
@@ -25821,6 +25895,12 @@ utils.encode = function encode(arr, enc) {
       // existing return snapshot keeps the Home scroll position intact.
       if (listId === "now-playing") applyHomeScrollTop(0);
       const query = secondaryGetQuery(listId);
+      if (listId === "now-playing" && !homeLatestSnapshotIsCurrent(state.homeLatest)) {
+        query.items = [];
+        query.loaded = false;
+        query.snapshotReady = false;
+        query.loading = false;
+      }
       renderSecondaryCatalog();
       if (listId === "recent") {
         if (state.recent.loaded) {
@@ -25854,6 +25934,8 @@ utils.encode = function encode(arr, enc) {
             renderSecondaryCatalog();
           });
         }
+      } else if (listId === "now-playing" && !query.loading) {
+        loadSecondaryPage(listId, query, 1).catch(() => {});
       } else if (!query.loaded && !query.loading) loadSecondaryPage(listId, query, 1).catch(() => {});
       requestAnimationFrame(() => {
         if (listId === "now-playing") {
@@ -26001,21 +26083,22 @@ utils.encode = function encode(arr, enc) {
       const focusSnapshot = weeklySecondaryFocusSnapshot(grid);
       grid.dataset.listId = "secondary:now-playing";
       grid.dataset.secondaryQueryKey = query && query.key || "";
-      if (status) status.textContent = query && query.loading ? "本周更新加载中…" : query && query.error ? "本周更新加载失败" : items.length ? "" : query && query.loaded ? "暂无本周更新" : "";
-      if (query && query.loading && !query.page) {
-        showGridStatus(grid, "本周更新加载中…");
-      } else if (query && query.error && !query.page) {
-        showGridStatus(grid, "本周更新加载失败");
-      } else if (!query || !query.loaded) {
-        showGridStatus(grid, "本周更新加载中…");
-      } else if (!items.length) {
-        showGridStatus(grid, "暂无本周更新");
-      } else {
+      const hasItems = items.length > 0;
+      if (status) status.textContent = hasItems && query && query.loading ? "正在更新…" : query && query.error ? "本周更新加载失败" : hasItems ? "" : query && query.loaded ? "暂无本周更新" : "";
+      if (hasItems) {
         fillRail(grid, items, { weekly: true, railKey: "secondary:weekly" });
         const restored = restoreWeeklySecondaryFocus(focusSnapshot);
         const active = grid.querySelector(".weekly-card:focus") || (!restored && grid.querySelector(".weekly-card"));
         if (active) updateWeeklySecondaryHero(active.__mediaItem || null);
         if (!restored && state.homeV14.secondaryWeeklyInitialFocusPending) requestAnimationFrame(() => focusWeeklySecondaryInitial());
+      } else if (query && query.loading) {
+        showGridStatus(grid, "本周更新加载中…");
+      } else if (query && query.error) {
+        showGridStatus(grid, "本周更新加载失败");
+      } else if (!query || !query.loaded) {
+        showGridStatus(grid, "本周更新加载中…");
+      } else {
+        showGridStatus(grid, "暂无本周更新");
       }
     }
 
@@ -26028,12 +26111,16 @@ utils.encode = function encode(arr, enc) {
       const title = isRecent ? "最近观看" : isWeekly ? "本周更新" : list && list.title || "分类";
       const query = secondaryActiveQuery(listId) || secondaryGetQuery(listId);
       const grid = $("secondaryCatalogGrid");
-      const baseItems = isRecent ? (state.recent && Array.isArray(state.recent.items) ? state.recent.items : []) : query.loaded ? filterBlocked(query.items || []) : secondaryCatalogBaseItems(listId);
+      const baseItems = isRecent
+        ? (state.recent && Array.isArray(state.recent.items) ? state.recent.items : [])
+        : isWeekly
+        ? filterBlocked(query.items || [])
+        : query.loaded ? filterBlocked(query.items || []) : secondaryCatalogBaseItems(listId);
       if (isWeekly) {
         syncSecondaryCatalogPresentation(listId);
         renderWeeklySecondaryCatalog(query, baseItems);
         if ($("secondaryCatalogTitle")) $("secondaryCatalogTitle").textContent = title;
-        if ($("secondaryCatalogCount")) $("secondaryCatalogCount").textContent = query.loaded ? `${baseItems.length} 部` : "";
+        if ($("secondaryCatalogCount")) $("secondaryCatalogCount").textContent = query.snapshotReady || query.loaded ? `${baseItems.length} 部` : "";
         return;
       }
       syncSecondaryCatalogPresentation(listId);
