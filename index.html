@@ -28210,6 +28210,14 @@ utils.encode = function encode(arr, enc) {
       if (!item || !identity) return item;
       const resourceSearchTitle = String(identity.resourceSearchTitle || identity.title || "").trim();
       if (resourceSearchTitle) item.resourceSearchTitle = resourceSearchTitle;
+      ["genreIds", "releaseDate", "originalLanguage", "originCountries"].forEach((field) => {
+        const value = identity[field];
+        const hasValue = Array.isArray(value)
+          ? value.length > 0
+          : String(value == null ? "" : value).trim() !== "";
+        if (!hasValue) return;
+        item[field] = Array.isArray(value) ? value.slice() : value;
+      });
       item.aliases = mergeTitleAliases(
         item.aliases,
         identity.aliases,
@@ -28242,12 +28250,41 @@ utils.encode = function encode(arr, enc) {
       return url.toString();
     }
 
+    function canonicalIdentityContextFromDetail(item, detail) {
+      if (!detail || typeof detail !== "object") return {};
+      const mediaType = normalizeHistoryMediaType(item && (item.mediaType || item.media_type));
+      const genreValues = Array.isArray(detail.genres)
+        ? detail.genres.map((genre) => genre && genre.id)
+        : Array.isArray(detail.genre_ids) ? detail.genre_ids : [];
+      const genreIds = Array.from(new Set(genreValues
+        .map((value) => String(value == null ? "" : value).trim())
+        .filter(Boolean)));
+      const releaseDate = String(
+        mediaType === "tv"
+          ? detail.first_air_date || ""
+          : detail.release_date || ""
+      ).trim();
+      const originalLanguage = String(detail.original_language || "").trim();
+      const originValues = Array.isArray(detail.origin_country)
+        ? detail.origin_country
+        : [];
+      const originCountries = Array.from(new Set(originValues
+        .map((value) => String(value == null ? "" : value).trim())
+        .filter(Boolean)));
+      const context = {};
+      if (genreIds.length) context.genreIds = genreIds;
+      if (releaseDate) context.releaseDate = releaseDate;
+      if (originalLanguage) context.originalLanguage = originalLanguage;
+      if (originCountries.length) context.originCountries = originCountries;
+      return context;
+    }
+
     function canonicalIdentityFromDetail(item, detail) {
       const mediaType = normalizeHistoryMediaType(item && (item.mediaType || item.media_type));
       const localizedTitle = String((mediaType === "tv" ? detail && detail.name : detail && detail.title) || "").trim();
       if (!localizedTitle) return null;
       const detailOriginalTitle = String((mediaType === "tv" ? detail && detail.original_name : detail && detail.original_title) || "").trim();
-      return {
+      return Object.assign({
         title: item.title,
         originalTitle: item.originalTitle || detailOriginalTitle,
         resourceSearchTitle: localizedTitle,
@@ -28263,7 +28300,7 @@ utils.encode = function encode(arr, enc) {
         ),
         authority: "EXACT_DETAIL",
         canonicalResolved: true
-      };
+      }, canonicalIdentityContextFromDetail(item, detail));
     }
 
     async function resolveCanonicalResourceTitle(item) {
@@ -28298,9 +28335,10 @@ utils.encode = function encode(arr, enc) {
           aliases: mergeTitleAliases(item.aliases, item.title, item.originalTitle),
           authority: "ITEM_FALLBACK"
         };
+        let exactDetailContext = {};
         const fallbackIdentity = (patch) => {
           const next = patch || {};
-          return Object.assign({}, fallback, next, {
+          return Object.assign({}, fallback, exactDetailContext, next, {
             title: item.title,
             originalTitle: item.originalTitle || fallback.originalTitle,
             resourceSearchTitle: next.resourceSearchTitle || fallback.resourceSearchTitle || item.title || item.originalTitle || "",
@@ -28323,6 +28361,7 @@ utils.encode = function encode(arr, enc) {
                 : await requestJson(canonicalExactDetailUrl(item), 18);
             } catch (e) {}
           }
+          exactDetailContext = canonicalIdentityContextFromDetail(item, exactDetail);
           const exactIdentity = canonicalIdentityFromDetail(item, exactDetail);
           if (exactIdentity) return exactIdentity;
           if (!query) {
@@ -28336,7 +28375,7 @@ utils.encode = function encode(arr, enc) {
             if (matched) {
               const localizedTitle = String((mediaType === "tv" ? matched.name : matched.title) || "").trim();
               const originalTitle = String((mediaType === "tv" ? matched.original_name : matched.original_title) || "").trim();
-              return {
+              return Object.assign({
                 title: item.title,
                 originalTitle: item.originalTitle || originalTitle,
                 resourceSearchTitle: localizedTitle || originalTitle || item.title || "",
@@ -28349,7 +28388,7 @@ utils.encode = function encode(arr, enc) {
                 ),
                 authority: "SEARCH_MULTI_FALLBACK",
                 canonicalResolved: true
-              };
+              }, exactDetailContext);
             }
           } catch (e) {}
         }
@@ -32424,6 +32463,32 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return match ? match[0] : "";
     }
 
+    function curatedEntryYear(node, anchor, remark) {
+      const dataYearValues = [
+        anchor && anchor.getAttribute && anchor.getAttribute("data-year"),
+        node && node.getAttribute && node.getAttribute("data-year")
+      ];
+      const structuredNode = node && node.querySelector
+        ? node.querySelector(".year,.module-item-year,.video-year,[data-year]")
+        : null;
+      if (structuredNode) {
+        dataYearValues.push(
+          structuredNode.getAttribute && structuredNode.getAttribute("data-year"),
+          structuredNode.textContent
+        );
+      }
+      const structuredYear = dataYearValues.map((value) => curatedYear(value)).find(Boolean) || "";
+      if (structuredYear) {
+        return { year: structuredYear, yearTrusted: true, yearSource: "STRUCTURED" };
+      }
+      const extractedYear = curatedYear(remark) || curatedYear(node && node.textContent || "");
+      return {
+        year: extractedYear,
+        yearTrusted: false,
+        yearSource: extractedYear ? "TEXT_FALLBACK" : ""
+      };
+    }
+
     function curatedItemYear(item) {
       return curatedYear(item && (item.releaseDate || item.firstAirDate || item.release_date || item.first_air_date || ""));
     }
@@ -32502,12 +32567,19 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         };
       }
       const exact = aliases.find((alias) => alias.normalized === normalizedCandidate);
-      const candidateYears = candidateEvidenceText.match(/(?:19|20)\d{2}/g) || [];
-      const targetYearMatch = String(item && (item.releaseDate || item.firstAirDate || item.release_date || item.first_air_date) || "").match(/(?:19|20)\d{2}/);
+      const titleYears = candidateTitleText.match(/(?:19|20)\d{2}/g) || [];
+      const trustedMetadataYears = meta.yearTrusted === true
+        ? String(meta.year || "").match(/(?:19|20)\d{2}/g) || []
+        : [];
+      const candidateIdentityYears = Array.from(new Set(titleYears.concat(trustedMetadataYears)));
+      const targetDate = mediaType === "movie"
+        ? item && (item.releaseDate || item.release_date)
+        : item && (item.firstAirDate || item.first_air_date);
+      const targetYearMatch = String(targetDate || "").match(/(?:19|20)\d{2}/);
       const movieYearConflict = mediaType === "movie"
         && targetYearMatch
-        && candidateYears.length
-        && candidateYears.every((year) => year !== targetYearMatch[0]);
+        && candidateIdentityYears.length
+        && candidateIdentityYears.every((year) => year !== targetYearMatch[0]);
       if (exact) {
         return {
           verdict: movieYearConflict ? "TENTATIVE" : "STRONG",
@@ -32570,16 +32642,17 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           const title = String(anchor.getAttribute("title") || titleNode && titleNode.textContent || anchor.textContent || node.textContent || "").replace(/\s+/g, " ").trim();
           const metaNode = node.querySelector(".module-item-note,.module-item-desc,.module-item-content,.remark,.year,.meta,.note");
           const remark = String(anchor.getAttribute("data-remark") || metaNode && metaNode.textContent || "").replace(/\s+/g, " ").trim();
-          const year = String(anchor.getAttribute("data-year") || curatedYear(remark) || curatedYear(node.textContent || "") || "");
-          if (href && title) entries.push({ href, title, remark, year });
+          const yearInfo = curatedEntryYear(node, anchor, remark);
+          if (href && title) entries.push({ href, title, remark, year: yearInfo.year, yearTrusted: yearInfo.yearTrusted, yearSource: yearInfo.yearSource });
         });
         if (!entries.length) {
           Array.from(documentRoot.querySelectorAll("a[href]")).forEach((anchor) => {
             const title = String(anchor.getAttribute("title") || anchor.textContent || "").replace(/\s+/g, " ").trim();
             const href = curatedAbsoluteUrl(anchor.getAttribute("href"), base);
-            const remark = String(anchor.getAttribute("data-remark") || anchor.parentElement && anchor.parentElement.textContent || "").replace(/\s+/g, " ").trim();
-            const year = String(anchor.getAttribute("data-year") || curatedYear(remark) || "");
-            if (href && title.length >= 2 && title.length <= 120) entries.push({ href, title, remark, year });
+            const entryNode = anchor.parentElement || anchor;
+            const remark = String(anchor.getAttribute("data-remark") || entryNode && entryNode.textContent || "").replace(/\s+/g, " ").trim();
+            const yearInfo = curatedEntryYear(entryNode, anchor, remark);
+            if (href && title.length >= 2 && title.length <= 120) entries.push({ href, title, remark, year: yearInfo.year, yearTrusted: yearInfo.yearTrusted, yearSource: yearInfo.yearSource });
           });
         }
       }
@@ -32589,7 +32662,14 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         while ((match = anchorRe.exec(String(html || "")))) {
           const title = String(match[2] || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
           const href = curatedAbsoluteUrl(match[1], base);
-          if (href && title.length >= 2 && title.length <= 120) entries.push({ href, title, remark: "", year: curatedYear(title) || "" });
+          if (href && title.length >= 2 && title.length <= 120) entries.push({
+            href,
+            title,
+            remark: "",
+            year: curatedYear(title) || "",
+            yearTrusted: false,
+            yearSource: curatedYear(title) ? "TITLE" : ""
+          });
         }
       }
       const seen = new Set();
