@@ -32428,33 +32428,131 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return curatedYear(item && (item.releaseDate || item.firstAirDate || item.release_date || item.first_air_date || ""));
     }
 
-    function curatedTitleMatches(item, value, metadata) {
-      if (!item) return false;
-      const actualText = String(value || "").replace(/\s+/g, " ").trim();
+    function mediaIdentityMarkers(value) {
+      const text = String(value || "");
+      return {
+        liveAction: /(?:真人版|真人剧|真人电影|真人演绎|live[\s._-]*action)/i.test(text),
+        animation: /(?:动画版|动漫版|\banime\b)/i.test(text),
+        movie: /(?:剧场版|电影版|\bmovie\b)/i.test(text),
+        special: /(?:特别篇|番外|特辑|\b(?:ova|oad|sp|special)\b)/i.test(text)
+      };
+    }
+
+    function mediaIdentityNormalizeTitle(value) {
+      return normalizeTitle(String(value || "")
+        .replace(/立刻\s*播放|立即\s*播放|点击\s*播放|在线播放/gi, " ")
+        .replace(/S\d{1,3}(?:\s*E\d{1,4})?|Season\s*\d+|第\s*[一二三四五六七八九十百\d]+\s*季|年番/ig, " ")
+        .replace(/(?:E|EP)\s*\d{1,4}|第\s*[一二三四五六七八九十百\d]+\s*(?:集|话)/ig, " ")
+        .replace(/全\s*[一二三四五六七八九十百\d]+\s*集|全集|合集|完结|打包/ig, " ")
+        .replace(/4K|2160P|1080P|720P|HDR10\+?|HDR|DV|Dolby\s*Vision|REMUX|Blu[- ]?Ray|HEVC|H\.?265|AVC|H\.?264|WEB[- ]?DL|WEBRip/ig, " ")
+        .replace(/国语|粤语|双语|中字|国粤双语/ig, " ")
+        .replace(/(?:19|20)\d{2}/g, " "));
+    }
+
+    function mediaIdentityAliases(item) {
+      return mergeTitleAliases(
+        item && item.resourceSearchTitle,
+        item && item.title,
+        item && item.originalTitle,
+        item && item.original_title,
+        item && item.originalName,
+        item && item.original_name,
+        item && item.aliases
+      ).map((value) => ({
+        raw: String(value || "").trim(),
+        normalized: mediaIdentityNormalizeTitle(value)
+      })).filter((alias) => alias.raw && alias.normalized.length >= 2);
+    }
+
+    function mediaIdentityVerdict(item, candidateTitle, metadata) {
       const meta = metadata && typeof metadata === "object" ? metadata : {};
-      const remark = String(meta.remark || "").replace(/\s+/g, " ").trim();
-      const actual = curatedCleanTitle(actualText).replace(/(?:19|20)\d{2}$/, "");
-      if (!actual) return false;
-      const expected = mergeTitleAliases(
-        item.resourceSearchTitle,
-        item.title,
-        item.originalTitle,
-        item.original_title,
-        item.originalName,
-        item.original_name,
-        item.aliases
-      )
-        .map((title) => curatedCleanTitle(title).replace(/(?:19|20)\d{2}$/, "")).filter(Boolean);
-      if (!expected.length) return false;
-      const wantedYear = curatedItemYear(item);
-      const foundYear = String(meta.year || curatedYear(actualText) || curatedYear(remark) || "");
-      if (wantedYear && foundYear && wantedYear !== foundYear) return false;
-      const markerText = `${actualText} ${remark}`;
-      const hasSpecialMarker = /(?:特别篇|番外|剧场版|特辑|OVA|OAD|(?:^|[\s·_\-])SP(?:$|[\s·_\-])|special)/i.test(markerText);
-      if (hasSpecialMarker && !expected.some((title) => /(?:特别篇|番外|剧场版|特辑|OVA|OAD|special)/i.test(title))) return false;
-      // 只接受规范化后的精确标题；季度、画质和语言后缀已在 curatedCleanTitle 中剥离，
-      // 不再用宽泛 contains 把续集、特别篇或同系列条目误当成当前作品。
-      return expected.some((title) => title === actual);
+      const candidateTitleText = String(candidateTitle || "").trim();
+      const candidateMetadataText = `${String(meta.remark || "").trim()} ${String(meta.year || "").trim()}`.trim();
+      const candidateEvidenceText = `${candidateTitleText} ${candidateMetadataText}`.trim();
+      const normalizedCandidate = mediaIdentityNormalizeTitle(candidateTitleText);
+      const aliases = mediaIdentityAliases(item);
+      const targetMarkerText = aliases.map((alias) => alias.raw).join(" ");
+      const targetMarkers = mediaIdentityMarkers(targetMarkerText);
+      const candidateMarkers = mediaIdentityMarkers(candidateEvidenceText);
+      const conflicts = [];
+      const genreIds = [];
+      if (Array.isArray(item && item.genreIds)) genreIds.push(...item.genreIds);
+      if (Array.isArray(item && item.genre_ids)) genreIds.push(...item.genre_ids);
+      const animationTarget = genreIds.map((value) => String(value)).includes("16") || targetMarkers.animation;
+      const mediaType = String(item && (item.mediaType || item.media_type) || "").toLowerCase();
+      if (animationTarget && candidateMarkers.liveAction) conflicts.push("LIVE_ACTION_CONFLICT");
+      if (mediaType === "tv" && candidateMarkers.movie && !targetMarkers.movie) conflicts.push("MOVIE_FORM_CONFLICT");
+      if (candidateMarkers.special && !targetMarkers.special) conflicts.push("SPECIAL_FORM_CONFLICT");
+      if (conflicts.length) {
+        return {
+          verdict: "REJECT",
+          reason: conflicts[0],
+          matchedAlias: "",
+          normalizedCandidate,
+          conflicts
+        };
+      }
+      if (!normalizedCandidate || !aliases.length) {
+        return {
+          verdict: "REJECT",
+          reason: "NO_TITLE_EVIDENCE",
+          matchedAlias: "",
+          normalizedCandidate,
+          conflicts
+        };
+      }
+      const exact = aliases.find((alias) => alias.normalized === normalizedCandidate);
+      const candidateYears = candidateEvidenceText.match(/(?:19|20)\d{2}/g) || [];
+      const targetYearMatch = String(item && (item.releaseDate || item.firstAirDate || item.release_date || item.first_air_date) || "").match(/(?:19|20)\d{2}/);
+      const movieYearConflict = mediaType === "movie"
+        && targetYearMatch
+        && candidateYears.length
+        && candidateYears.every((year) => year !== targetYearMatch[0]);
+      if (exact) {
+        return {
+          verdict: movieYearConflict ? "TENTATIVE" : "STRONG",
+          reason: movieYearConflict ? "MOVIE_YEAR_VARIANT" : "EXACT_ALIAS",
+          matchedAlias: exact.raw,
+          normalizedCandidate,
+          conflicts: movieYearConflict ? ["YEAR_MISMATCH"] : conflicts
+        };
+      }
+      const contained = aliases
+        .filter((alias) => normalizedCandidate.includes(alias.normalized))
+        .sort((a, b) => b.normalized.length - a.normalized.length);
+      if (contained.length > 1) {
+        let remainder = normalizedCandidate;
+        contained.forEach((alias) => { remainder = remainder.replace(alias.normalized, ""); });
+        if (!remainder) {
+          return {
+            verdict: movieYearConflict ? "TENTATIVE" : "STRONG",
+            reason: movieYearConflict ? "MOVIE_YEAR_VARIANT" : "ALIAS_COMBINATION",
+            matchedAlias: contained.map((alias) => alias.raw).join(" + "),
+            normalizedCandidate,
+            conflicts: movieYearConflict ? ["YEAR_MISMATCH"] : conflicts
+          };
+        }
+      }
+      if (contained.length) {
+        return {
+          verdict: "TENTATIVE",
+          reason: "KNOWN_ALIAS_WITH_UNRECOGNIZED_SUFFIX",
+          matchedAlias: contained[0].raw,
+          normalizedCandidate,
+          conflicts
+        };
+      }
+      return {
+        verdict: "REJECT",
+        reason: "NO_ALIAS_MATCH",
+        matchedAlias: "",
+        normalizedCandidate,
+        conflicts
+      };
+    }
+
+    function curatedTitleMatches(item, value, metadata) {
+      return !!(item && mediaIdentityVerdict(item, value, metadata).verdict !== "REJECT");
     }
 
     function curatedSearchEntries(html, source, base) {
@@ -32638,12 +32736,73 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         terminalReason: String(kind || "TRANSPORT_FAILURE"),
         entryCount: 0,
         matchedEntryCount: 0,
-        sampleEntryTitles: []
+        sampleEntryTitles: [],
+        searchKeywordsTried: [],
+        identityStrongCount: 0,
+        identityTentativeCount: 0,
+        identityRejectCount: 0,
+        identityReason: "",
+        identityReasons: []
       }, detail || {});
     }
 
-    async function searchCuratedSource(source, item, run, context) {
-      const keyword = resourceSearchKeyword(item);
+    function curatedSearchKeywords(item) {
+      const values = mergeTitleAliases(
+        item && item.resourceSearchTitle,
+        item && item.title,
+        item && item.originalTitle,
+        item && item.original_title,
+        item && item.originalName,
+        item && item.original_name,
+        item && item.aliases
+      );
+      const seen = new Set();
+      return values.filter((value) => {
+        const text = String(value || "").trim();
+        const key = normalizeTitle(text) || text.toLowerCase();
+        if (!text || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+
+    async function curatedDetailCandidatesForMatches(source, item, run, context, matches, diagnostics) {
+      const candidates = [];
+      for (const match of matches || []) {
+        const beforeDetail = curatedRequestStartState(context, run);
+        if (beforeDetail) return { result: curatedSourceResult(beforeDetail, diagnostics) };
+        const remainingDetailMs = curatedRemainingMs(context);
+        try {
+          const entry = match.entry;
+          const detail = await curatedRequestWithDeadline(
+            () => requestCuratedHtml(
+              entry.href,
+              curatedNativeTimeoutSec(remainingDetailMs),
+              { referer: match.searchUrl || entry.href }
+            ),
+            context,
+            "SOURCE_TIMEOUT"
+          );
+          const afterDetail = curatedAttemptState(context, run);
+          if (afterDetail) return { result: curatedSourceResult(afterDetail, diagnostics) };
+          candidates.push(...curatedDetailCandidates(
+            detail.html,
+            source,
+            detail.base || entry.href,
+            item,
+            entry
+          ));
+        } catch (e) {
+          if (e && e.curatedDeadline) return { result: curatedSourceResult("SOURCE_TIMEOUT", diagnostics) };
+          const afterFailure = curatedAttemptState(context, run);
+          if (afterFailure) return { result: curatedSourceResult(afterFailure, diagnostics) };
+          // 当前匹配条目的详情请求失败，继续检查本次搜索返回的其它匹配条目。
+        }
+      }
+      return { candidates };
+    }
+
+    async function searchCuratedSourceKeyword(source, item, run, context, keyword) {
       const templates = curatedSourceTemplates(source);
       for (const template of templates) {
         for (const domain of source.domains || []) {
@@ -32681,44 +32840,173 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             });
           }
           rememberCuratedTemplate(source.id, template);
-          const matchedEntries = entries.filter((entry) => curatedTitleMatches(item, entry.title, entry));
-          const matchedEntryCount = matchedEntries.length;
-          const matches = matchedEntries.slice(0, 5);
-          const diagnostics = { entryCount, matchedEntryCount, sampleEntryTitles };
-          if (!matches.length) {
+          const identityResults = entries.map((entry) => ({
+            entry,
+            searchUrl: url,
+            verdict: mediaIdentityVerdict(item, entry.title, entry)
+          }));
+          const identityStrongCount = identityResults.filter((result) => result.verdict.verdict === "STRONG").length;
+          const identityTentativeCount = identityResults.filter((result) => result.verdict.verdict === "TENTATIVE").length;
+          const identityRejectCount = identityResults.filter((result) => result.verdict.verdict === "REJECT").length;
+          const identityReasons = Array.from(new Set(identityResults
+            .map((result) => String(result.verdict.reason || "").trim())
+            .filter(Boolean))).slice(0, 12);
+          const diagnostics = {
+            entryCount,
+            matchedEntryCount: identityStrongCount + identityTentativeCount,
+            sampleEntryTitles,
+            identityStrongCount,
+            identityTentativeCount,
+            identityRejectCount,
+            identityReason: identityReasons[0] || "",
+            identityReasons
+          };
+          const strongMatches = identityResults
+            .filter((result) => result.verdict.verdict === "STRONG")
+            .slice(0, 5);
+          const tentativeMatches = identityResults
+            .filter((result) => result.verdict.verdict === "TENTATIVE")
+            .slice(0, 5);
+          if (!strongMatches.length && !tentativeMatches.length) {
             return curatedSourceResult("NO_MATCH", Object.assign({
               terminalReason: "TITLE_NO_MATCH"
             }, diagnostics));
           }
-          for (const entry of matches) {
-            const beforeDetail = curatedRequestStartState(context, run);
-            if (beforeDetail) return curatedSourceResult(beforeDetail, diagnostics);
-            const remainingDetailMs = curatedRemainingMs(context);
-            try {
-              const detail = await curatedRequestWithDeadline(
-                () => requestCuratedHtml(entry.href, curatedNativeTimeoutSec(remainingDetailMs), { referer: url }),
-                context,
-                "SOURCE_TIMEOUT"
-              );
-              const afterDetail = curatedAttemptState(context, run);
-              if (afterDetail) return curatedSourceResult(afterDetail, diagnostics);
-              const candidates = curatedDetailCandidates(detail.html, source, detail.base || entry.href, item, entry);
-              if (candidates.length) {
-                return curatedSourceResult("CANDIDATES", Object.assign({ candidates }, diagnostics));
-              }
-            } catch (e) {
-              if (e && e.curatedDeadline) return curatedSourceResult("SOURCE_TIMEOUT", diagnostics);
-              const afterFailure = curatedAttemptState(context, run);
-              if (afterFailure) return curatedSourceResult(afterFailure, diagnostics);
-              // 当前匹配条目的详情请求失败，继续检查本次搜索返回的其它匹配条目。
-            }
+          if (!strongMatches.length) {
+            return curatedSourceResult("TENTATIVE_MATCHES", Object.assign({
+              terminalReason: "TENTATIVE_IDENTITY",
+              tentativeEntries: tentativeMatches
+            }, diagnostics));
+          }
+          const detailResult = await curatedDetailCandidatesForMatches(
+            source,
+            item,
+            run,
+            context,
+            strongMatches,
+            diagnostics
+          );
+          if (detailResult.result) return detailResult.result;
+          if (detailResult.candidates.length) {
+            return curatedSourceResult("CANDIDATES", Object.assign({
+              candidates: detailResult.candidates,
+              candidateVerdict: "STRONG"
+            }, diagnostics));
           }
           return curatedSourceResult("NO_RESOURCE", Object.assign({
-            terminalReason: "NO_CANDIDATE"
+            terminalReason: "NO_CANDIDATE",
+            tentativeEntries: tentativeMatches
           }, diagnostics));
         }
       }
       return curatedSourceResult("TRANSPORT_FAILURE");
+    }
+
+    async function searchCuratedSource(source, item, run, context) {
+      const keywords = curatedSearchKeywords(item);
+      const aggregate = {
+        entryCount: 0,
+        matchedEntryCount: 0,
+        sampleEntryTitles: [],
+        searchKeywordsTried: [],
+        identityStrongCount: 0,
+        identityTentativeCount: 0,
+        identityRejectCount: 0,
+        identityReason: "",
+        identityReasons: []
+      };
+      let tentativeEntries = [];
+      const tentativeEntryKeys = new Set();
+      let lastResult = null;
+      const absorb = (result, keyword) => {
+        aggregate.searchKeywordsTried.push(keyword);
+        aggregate.entryCount += Number(result && result.entryCount || 0);
+        aggregate.matchedEntryCount += Number(result && result.matchedEntryCount || 0);
+        (result && result.sampleEntryTitles || []).forEach((title) => {
+          const value = String(title || "").trim();
+          if (value && !aggregate.sampleEntryTitles.includes(value) && aggregate.sampleEntryTitles.length < 3) {
+            aggregate.sampleEntryTitles.push(value);
+          }
+        });
+        aggregate.identityStrongCount += Number(result && result.identityStrongCount || 0);
+        aggregate.identityTentativeCount += Number(result && result.identityTentativeCount || 0);
+        aggregate.identityRejectCount += Number(result && result.identityRejectCount || 0);
+        if (!aggregate.identityReason && result && result.identityReason) aggregate.identityReason = result.identityReason;
+        (result && result.identityReasons || []).forEach((reason) => {
+          const value = String(reason || "").trim();
+          if (value && !aggregate.identityReasons.includes(value)) aggregate.identityReasons.push(value);
+        });
+        aggregate.identityReasons = aggregate.identityReasons.slice(0, 12);
+      };
+      const rememberTentativeEntries = (entries) => {
+        (entries || []).forEach((match) => {
+          const entry = match && match.entry;
+          const key = `${entry && entry.href || ""}\u001f${entry && entry.title || ""}`;
+          if (!entry || tentativeEntryKeys.has(key)) return;
+          tentativeEntryKeys.add(key);
+          tentativeEntries.push(match);
+        });
+      };
+      for (const keyword of keywords) {
+        const result = await searchCuratedSourceKeyword(source, item, run, context, keyword);
+        absorb(result, keyword);
+        lastResult = result;
+        if (result.kind === "CANDIDATES") {
+          if (result.candidateVerdict === "STRONG") {
+            return curatedSourceResult("CANDIDATES", Object.assign({}, result, aggregate));
+          }
+          rememberTentativeEntries(result.tentativeEntries);
+          continue;
+        }
+        rememberTentativeEntries(result.tentativeEntries);
+        if (result.kind === "TENTATIVE_MATCHES") continue;
+        if (result.kind === "NO_MATCH" || result.kind === "NO_RESOURCE") continue;
+        return curatedSourceResult(result.kind, Object.assign({}, result, aggregate));
+      }
+      if (tentativeEntries.length) {
+        const detailResult = await curatedDetailCandidatesForMatches(
+          source,
+          item,
+          run,
+          context,
+          tentativeEntries,
+          aggregate
+        );
+        if (detailResult.result) {
+          return curatedSourceResult(
+            detailResult.result.kind,
+            Object.assign({}, detailResult.result, aggregate)
+          );
+        }
+        if (detailResult.candidates.length) {
+          return curatedSourceResult("CANDIDATES", Object.assign({}, lastResult || {}, aggregate, {
+            kind: "CANDIDATES",
+            candidates: detailResult.candidates,
+            candidateVerdict: "TENTATIVE",
+            terminalReason: "CANDIDATES"
+          }));
+        }
+        return curatedSourceResult("NO_RESOURCE", Object.assign({}, lastResult || {}, aggregate, {
+          kind: "NO_RESOURCE",
+          terminalReason: "NO_CANDIDATE"
+        }));
+      }
+      if (lastResult && lastResult.kind === "TENTATIVE_MATCHES") {
+        return curatedSourceResult("NO_MATCH", Object.assign({}, lastResult, aggregate, {
+          kind: "NO_MATCH",
+          terminalReason: "TITLE_NO_MATCH"
+        }));
+      }
+      if (lastResult && lastResult.kind === "NO_RESOURCE") {
+        return curatedSourceResult("NO_RESOURCE", Object.assign({}, lastResult, aggregate));
+      }
+      if (lastResult && lastResult.kind === "NO_MATCH") {
+        return curatedSourceResult("NO_MATCH", Object.assign({}, lastResult, aggregate));
+      }
+      return curatedSourceResult(
+        lastResult && lastResult.kind || "TRANSPORT_FAILURE",
+        Object.assign({}, lastResult || {}, aggregate)
+      );
     }
 
     function curatedCandidateOrder(items) {
@@ -32732,8 +33020,21 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     }
 
     async function curatedCentralHealthCandidate(sourceStates, item, run, startedAt) {
+      const hasStrong = (sourceStates || []).some((state) =>
+        state
+        && state.candidates
+        && state.candidates.length
+        && state.candidateVerdict === "STRONG"
+      );
       const sourcePools = (sourceStates || [])
-        .filter((state) => state && state.kind === "CANDIDATES" && Array.isArray(state.candidates) && state.candidates.length)
+        .filter((state) =>
+          state
+          && state.kind === "CANDIDATES"
+          && Array.isArray(state.candidates)
+          && state.candidates.length
+          && (!hasStrong || state.candidateVerdict === "STRONG")
+          && (hasStrong || state.candidateVerdict === "TENTATIVE")
+        )
         .map((state) => ({
           index: state.index,
           sourceId: state.source.id,
@@ -32877,6 +33178,13 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             entryCount: 0,
             matchedEntryCount: 0,
             sampleEntryTitles: [],
+            searchKeywordsTried: [],
+            identityStrongCount: 0,
+            identityTentativeCount: 0,
+            identityRejectCount: 0,
+            identityReason: "",
+            identityReasons: [],
+            candidateVerdict: "",
             candidateCount: 0
           })),
           collectionReason: "STALE",
@@ -32908,6 +33216,13 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             entryCount: Number(sourceState.entryCount || 0),
             matchedEntryCount: Number(sourceState.matchedEntryCount || 0),
             sampleEntryTitles: Array.isArray(sourceState.sampleEntryTitles) ? sourceState.sampleEntryTitles.slice(0, 3) : [],
+            searchKeywordsTried: Array.isArray(sourceState.searchKeywordsTried) ? sourceState.searchKeywordsTried.slice() : [],
+            identityStrongCount: Number(sourceState.identityStrongCount || 0),
+            identityTentativeCount: Number(sourceState.identityTentativeCount || 0),
+            identityRejectCount: Number(sourceState.identityRejectCount || 0),
+            identityReason: String(sourceState.identityReason || ""),
+            identityReasons: Array.isArray(sourceState.identityReasons) ? sourceState.identityReasons.slice(0, 12) : [],
+            candidateVerdict: String(sourceState.candidateVerdict || ""),
             candidateCount: sourceState.candidates.length
           })),
           firstCandidateMs: firstCandidateAt ? Math.max(0, firstCandidateAt - startedAt) : null,
@@ -32940,6 +33255,13 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         entryCount: 0,
         matchedEntryCount: 0,
         sampleEntryTitles: [],
+        searchKeywordsTried: [],
+        identityStrongCount: 0,
+        identityTentativeCount: 0,
+        identityRejectCount: 0,
+        identityReason: "",
+        identityReasons: [],
+        candidateVerdict: "",
         candidates: [],
         doneAt: 0
       }));
@@ -32993,19 +33315,37 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           finishCollection("STALE");
           return;
         }
-        const available = sourceStates.filter((sourceState) => sourceState.terminal && sourceState.candidates.length);
-        if (!available.length) {
-          if (sourceStates.every((sourceState) => sourceState.terminal)) finishCollection("ALL_SOURCES_TERMINAL_NO_CANDIDATE");
+        const strongAvailable = sourceStates.filter((sourceState) =>
+          sourceState.terminal
+          && sourceState.candidates.length
+          && sourceState.candidateVerdict === "STRONG"
+        );
+        const tentativeAvailable = sourceStates.filter((sourceState) =>
+          sourceState.terminal
+          && sourceState.candidates.length
+          && sourceState.candidateVerdict === "TENTATIVE"
+        );
+        if (!strongAvailable.length) {
+          if (sourceStates.every((sourceState) => sourceState.terminal)) {
+            finishCollection(
+              tentativeAvailable.length
+                ? "ALL_SOURCES_TERMINAL_NO_STRONG_CANDIDATE"
+                : "ALL_SOURCES_TERMINAL_NO_CANDIDATE"
+            );
+          }
           return;
         }
-        const best = available.reduce((current, next) => next.index < current.index ? next : current);
+        const best = strongAvailable.reduce((current, next) => next.index < current.index ? next : current);
         if (best.index === 0) {
           finishCollection("TOP_PRIORITY_READY");
           return;
         }
         const higherPriorityTerminal = sourceStates
           .slice(0, best.index)
-          .every((sourceState) => sourceState.terminal && !sourceState.candidates.length);
+          .every((sourceState) =>
+            sourceState.terminal
+            && !(sourceState.candidates.length && sourceState.candidateVerdict === "STRONG")
+          );
         if (higherPriorityTerminal) {
           finishCollection("HIGHER_PRIORITY_TERMINAL");
           return;
@@ -33036,6 +33376,19 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         sourceState.sampleEntryTitles = Array.isArray(sourceResult.sampleEntryTitles)
           ? sourceResult.sampleEntryTitles.slice(0, 3)
           : [];
+        sourceState.searchKeywordsTried = Array.isArray(sourceResult.searchKeywordsTried)
+          ? sourceResult.searchKeywordsTried.slice()
+          : [];
+        sourceState.identityStrongCount = Number(sourceResult.identityStrongCount || 0);
+        sourceState.identityTentativeCount = Number(sourceResult.identityTentativeCount || 0);
+        sourceState.identityRejectCount = Number(sourceResult.identityRejectCount || 0);
+        sourceState.identityReason = String(sourceResult.identityReason || "");
+        sourceState.identityReasons = Array.isArray(sourceResult.identityReasons)
+          ? sourceResult.identityReasons.slice(0, 12)
+          : [];
+        sourceState.candidateVerdict = kind === "CANDIDATES"
+          ? String(sourceResult.candidateVerdict || "").toUpperCase()
+          : "";
         sourceState.context.active = false;
         sourceState.candidates = kind === "CANDIDATES"
           ? (Array.isArray(sourceResult.candidates) ? sourceResult.candidates : [])
@@ -33050,9 +33403,20 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           entryCount: sourceState.entryCount,
           matchedEntryCount: sourceState.matchedEntryCount,
           sampleEntryTitles: sourceState.sampleEntryTitles,
+          searchKeywordsTried: sourceState.searchKeywordsTried,
+          identityStrongCount: sourceState.identityStrongCount,
+          identityTentativeCount: sourceState.identityTentativeCount,
+          identityRejectCount: sourceState.identityRejectCount,
+          identityReason: sourceState.identityReason,
+          identityReasons: sourceState.identityReasons,
+          candidateVerdict: sourceState.candidateVerdict,
           candidateCount: sourceState.candidates.length
         });
-        if (sourceState.candidates.length && !firstCandidateAt) {
+        if (
+          sourceState.candidates.length
+          && sourceState.candidateVerdict === "STRONG"
+          && !firstCandidateAt
+        ) {
           firstCandidateAt = sourceState.doneAt;
           firstCandidateSource = sourceState.source.id;
           candidateDeadline = Math.min(firstCandidateAt + CURATED_QUALITY_GRACE_MS, discoveryDeadline);
