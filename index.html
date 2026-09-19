@@ -32701,7 +32701,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       try {
         const parsed = new URL(href);
         const pathname = parsed.pathname.replace(/\/+$/, "");
-        return /^\/vod\/detail\/id\/[^/]+\.html$/i.test(pathname) ? href : "";
+        return /^\/(?:index\.php\/)?vod\/detail\/id\/[^/]+\.html$/i.test(pathname) ? href : "";
       } catch (e) {
         return "";
       }
@@ -32716,19 +32716,23 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         let nodes = Array.from(documentRoot.querySelectorAll(strictSource ? ".module-search-item" : (source.searchListSelector || ".module-search-item")));
         if (!strictSource && !nodes.length) nodes = Array.from(documentRoot.querySelectorAll(".module-search-item"));
         nodes.forEach((node) => {
-          const anchor = strictSource
+          const shandian = String(source && source.id || "") === "shandian";
+          const titleAnchor = strictSource
             ? node.querySelector(".video-info-header h3 a[href]")
             : node.matches && node.matches("a[href]") ? node : node.querySelector("a[href]") || node.closest && node.closest("a[href]");
-          if (!anchor) return;
+          const hrefAnchor = strictSource && shandian
+            ? node.querySelector(".module-item-pic a[href]")
+            : titleAnchor;
+          if (!titleAnchor || !hrefAnchor) return;
           const href = strictSource
-            ? curatedDetailEntryHref(anchor.getAttribute("href"), base)
-            : curatedAbsoluteUrl(anchor.getAttribute("href"), base);
+            ? curatedDetailEntryHref(hrefAnchor.getAttribute("href"), base)
+            : curatedAbsoluteUrl(hrefAnchor.getAttribute("href"), base);
           if (strictSource && !href) return;
           const titleNode = node.querySelector(".module-item-title,.module-search-item-title,.video-title,.title,h1,h2,h3");
-          const title = String(anchor.getAttribute("title") || titleNode && titleNode.textContent || anchor.textContent || node.textContent || "").replace(/\s+/g, " ").trim();
+          const title = String(titleAnchor.getAttribute("title") || titleNode && titleNode.textContent || titleAnchor.textContent || node.textContent || "").replace(/\s+/g, " ").trim();
           const metaNode = node.querySelector(".module-item-note,.module-item-desc,.module-item-content,.remark,.year,.meta,.note");
-          const remark = String(anchor.getAttribute("data-remark") || metaNode && metaNode.textContent || "").replace(/\s+/g, " ").trim();
-          const yearInfo = curatedEntryYear(node, anchor, remark);
+          const remark = String(titleAnchor.getAttribute("data-remark") || metaNode && metaNode.textContent || "").replace(/\s+/g, " ").trim();
+          const yearInfo = curatedEntryYear(node, titleAnchor, remark);
           const idMatch = strictSource && href.match(/\/vod\/detail\/id\/([^/.]+)\.html/i);
           if (href && title) entries.push({
             href,
@@ -32898,8 +32902,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             ? row
             : row.querySelector && row.querySelector("[data-clipboard-text]");
           const raw = holder && holder.getAttribute && holder.getAttribute("data-clipboard-text") || "";
-          if (!raw) return;
           curatedExtractUrls(raw).forEach((url) => add(url, row.textContent || raw));
+          Array.from(row.querySelectorAll ? row.querySelectorAll("a[href]") : []).forEach((anchor) => {
+            add(anchor.getAttribute("href"), row.textContent || anchor.textContent || "");
+          });
         });
         return candidates;
       }
@@ -33007,19 +33013,20 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const urls = String(vodItem && vodItem.vod_down_url || "").split("$$$");
       const title = String(vodItem && vodItem.vod_name || item && item.title || "盘搜资源").trim();
       const sourceEntryId = String(vodItem && vodItem.vod_id || "").trim();
+      const remarks = String(vodItem && vodItem.vod_remarks || "").trim();
       urls.forEach((rawUrl, index) => {
         const url = String(rawUrl || "").trim();
         const typeHint = wanouDiskTypeForCode(types[index]);
         if (!typeHint || !url) return;
         const diskType = curatedVerifiedDiskTypeForUrl(url);
-        if (!diskType) return;
+        if (!diskType || diskType !== typeHint) return;
         const normalized = normalizePanUrl(url);
         candidates.push({
           key: `${diskType}|${normalized}`,
           diskType,
           url,
           normalizedUrl: url,
-          password: curatedPasswordFromText(vodItem && vodItem.vod_remarks || ""),
+          password: curatedPasswordFromText(`${url} ${remarks}`),
           title,
           mediaTitle: String(item && item.title || "").trim(),
           resourceTitle: title,
