@@ -28206,17 +28206,6 @@ utils.encode = function encode(arr, enc) {
       return mediaType && tmdbId ? `${mediaType}:${tmdbId}` : "";
     }
 
-    function canonicalFreshTmdbPool() {
-      const home = state.homeLatest && Array.isArray(state.homeLatest.items) ? state.homeLatest.items : [];
-      const hero = state.homeV14 || {};
-      const heroItems = Array.isArray(hero.heroItems) ? hero.heroItems : [];
-      const heroFeed = hero.heroFeed && Array.isArray(hero.heroFeed.items) ? hero.heroFeed.items : [];
-      const legacyHero = state.homeHero && Array.isArray(state.homeHero.items) ? state.homeHero.items : [];
-      return allItems().concat(state.searchItems || [], home, heroItems, heroFeed, legacyHero)
-        .filter((candidate) => candidate
-          && (candidate.source === "tmdb" || /^tmdb:(?:movie|tv):/i.test(String(candidate.id || ""))));
-    }
-
     function applyCanonicalResourceIdentity(item, identity) {
       if (!item || !identity) return item;
       const resourceSearchTitle = String(identity.resourceSearchTitle || identity.title || "").trim();
@@ -29086,15 +29075,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         if (apply(true, true)) scheduleUiSnapshotSave();
       }, 520);
       return true;
-    }
-
-    function detailNeedsCanonicalResourceTitle(item) {
-      return !!(item && (
-        item.source === "history"
-        || item.continueContext
-        || item.recentWatching
-        || !String(item.resourceSearchTitle || "").trim()
-      ));
     }
 
     async function prepareDetailPlaybackForDetail(item, options) {
@@ -32665,7 +32645,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     async function searchCuratedSource(source, item, run, context) {
       const keyword = resourceSearchKeyword(item);
       const templates = curatedSourceTemplates(source);
-      outer: for (const template of templates) {
+      for (const template of templates) {
         for (const domain of source.domains || []) {
           const beforeRequest = curatedRequestStartState(context, run);
           if (beforeRequest) return curatedSourceResult(beforeRequest);
@@ -32749,43 +32729,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         if (quality) return quality;
         return panPackScore(b) - panPackScore(a);
       });
-    }
-
-    async function curatedHealthyCandidate(items, item, run, sourceContext) {
-      const candidates = curatedCandidateOrder((items || []).filter((candidate) => buildPanPlayPayload(candidate)));
-      if (!candidates.length) return { candidate: null, sourceTimeout: false, stale: false };
-      const checkable = candidates.filter((candidate) => isPanCheckSupported(candidate));
-      let freshHealth = {};
-      if (!detailPlaybackIsCurrent(run) || !sourceContext || !sourceContext.active) {
-        return { candidate: null, sourceTimeout: false, stale: true };
-      }
-      if (checkable.length && panCheckAvailable()) {
-        const context = { token: state.pan.viewToken, item };
-        const chainDeadline = Number(sourceContext.chainDeadline);
-        const chainRemainingMs = Number.isFinite(chainDeadline)
-          ? Math.max(0, chainDeadline - Date.now())
-          : Infinity;
-        if (chainRemainingMs > 0) {
-          const preflightAllowedMs = Math.min(CURATED_PREFLIGHT_BUDGET_MS, chainRemainingMs);
-          const checked = await playbackPanHealthPreflight(checkable.slice(0, 12), context, preflightAllowedMs);
-          if (!detailPlaybackIsCurrent(run) || !sourceContext.active || !panContextIsCurrent(context)) {
-            return { candidate: null, sourceTimeout: false, stale: true };
-          }
-          freshHealth = checked.states || {};
-        }
-      }
-      if (!detailPlaybackIsCurrent(run) || !sourceContext.active) {
-        return { candidate: null, sourceTimeout: false, stale: true };
-      }
-      const decision = panPreflightCandidates(candidates, freshHealth, {}, { rejectAllBad: true });
-      // 只有本次新鲜预检确认可用的候选才能进入 Ready；混合结果中已确认
-      // fresh-bad 的条目也必须剔除，否则会阻断后续站源 / Pan Direct fallback。
-      const healthyCandidates = (decision.candidates || []).filter((candidate) => {
-        const freshState = freshHealth && freshHealth[panHealthKey(candidate)];
-        return String(freshState || "").toLowerCase() !== "bad" && !isPanHealthBad(candidate);
-      });
-      recordPanPreflightResult(candidates, freshHealth, panPreflightCheckErrorCount(checkable, freshHealth), healthyCandidates[0] || null, decision.allBadBatch);
-      return { candidate: curatedCandidateOrder(healthyCandidates)[0] || null, sourceTimeout: false, stale: false };
     }
 
     async function curatedCentralHealthCandidate(sourceStates, item, run, startedAt) {
@@ -32942,11 +32885,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         return null;
       }
       const discoveryDeadline = startedAt + CURATED_DISCOVERY_WINDOW_MS;
-      const chainContext = {
-        chainDeadline: discoveryDeadline,
-        active: true,
-        sourceAttemptId: 0
-      };
       recordCuratedRaceDiag("CURATED_RACE_START", {
         runId: run && (run.id || run.runId || run.itemKey) || "",
         startedAt,
@@ -32955,10 +32893,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         sourceCount: sources.length
       });
 
-      let summarySent = false;
       const emitSummary = (detail) => {
-        if (summarySent) return;
-        summarySent = true;
         const health = detail && detail.healthResult || {};
         const collection = detail && detail.collection || {};
         recordCuratedRaceSummary(run, {
@@ -32997,7 +32932,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           chainDeadline: discoveryDeadline,
           sourceDeadline: discoveryDeadline,
           sourceId: source.id,
-          sourceAttemptId: ++chainContext.sourceAttemptId,
           active: true
         },
         terminal: false,
