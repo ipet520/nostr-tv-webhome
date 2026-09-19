@@ -353,11 +353,6 @@
       pointer-events: none;
     }
 
-    body.episode-active #detailSheet {
-      visibility: hidden;
-      pointer-events: none;
-    }
-
     .mobile-detail-back {
       display: none;
       position: fixed;
@@ -394,8 +389,7 @@
       transform: translateY(-8px);
     }
 
-    html.native-mobile-app body.detail-active .mobile-detail-back,
-    html.native-mobile-app body.episode-active .image-viewer .mobile-detail-back {
+    html.native-mobile-app body.detail-active .mobile-detail-back {
       display: grid;
     }
 
@@ -1584,10 +1578,6 @@
     }
 
     @media (max-width: 719px) {
-      html:not(.tv-mode) #imageViewer.episode-mode #closeImageBtn {
-        display: none;
-      }
-
       html:not(.tv-mode) #detailSheet:not(.detail-large) .detail-cover {
         border-radius: 14px;
         overflow: hidden;
@@ -1700,9 +1690,8 @@
       overflow: hidden;
     }
 
-    /* 影片简介：默认折叠 3 行，点击文字展开/收起（已去掉“更多”按钮）。
-       排除分集剧情预览（episode-preview-active），保留其原有行为。 */
-    #detailSheet:not(.episode-preview-active) .detail-info p#detailText.clamped {
+    /* 影片简介：默认折叠 3 行，点击文字展开/收起（已去掉“更多”按钮）。 */
+    #detailSheet .detail-info p#detailText.clamped {
       display: -webkit-box;
       -webkit-box-orient: vertical;
       -webkit-line-clamp: 3;
@@ -1710,7 +1699,7 @@
       overflow: hidden;
     }
 
-    #detailSheet:not(.episode-preview-active) .detail-info p#detailText.detail-expandable {
+    #detailSheet .detail-info p#detailText.detail-expandable {
       cursor: pointer;
     }
 
@@ -1753,79 +1742,18 @@
       line-height: 1.2;
     }
 
-    .episode-card {
-      flex: 0 0 230px;
-      max-width: 260px;
-      min-height: 138px;
-      padding: 11px;
-      border-radius: var(--radius);
-      background: var(--panel);
-      border: 1px solid var(--line);
-      color: var(--text);
-      text-align: left;
-      scroll-snap-align: start;
-      contain: layout style;
-    }
-
-    .episode-card.has-still {
-      padding: 0;
-      overflow: hidden;
-    }
-
-    .episode-card.has-still .episode-body {
-      padding: 8px 9px 9px;
-    }
-
-    .episode-still-wrap {
-      width: calc(100% + 2px);
-      max-width: calc(100% + 2px);
-      display: block;
-      margin: -1px -1px 0;
-      aspect-ratio: 16 / 9;
-      overflow: hidden;
-      line-height: 0;
-      background: transparent;
-    }
-
-    .episode-still {
-      width: 100%;
-      max-width: none;
-      height: 100%;
-      margin: 0;
-      aspect-ratio: 16 / 9;
-      object-fit: cover;
-      object-position: center top;
-    }
-
-    .episode-card b,
     .person-card b {
       display: block;
       font-size: 13px;
       line-height: 1.25;
     }
 
-    .episode-card span,
     .person-card span {
       display: block;
       margin-top: 6px;
       color: var(--muted);
       font-size: 11px;
       line-height: 1.35;
-    }
-
-    #detailSheet .episode-card .episode-badge {
-      display: none;
-    }
-
-    .episode-card p {
-      margin: 3px 0 0;
-      color: rgba(244, 247, 251, .78);
-      font-size: 11px;
-      line-height: 1.26;
-      display: -webkit-box;
-      -webkit-line-clamp: 4;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
     }
 
     /* 圆形胶囊式演职员卡片 */
@@ -2146,160 +2074,6 @@
       box-shadow: none;
     }
 
-    #detailSheet.detail-large.episode-preview-active .detail-info {
-      max-width: calc(100vw - var(--detail-side-pad) - var(--detail-side-pad));
-      height: var(--episode-preview-info-height, auto);
-      overflow: visible;
-    }
-
-    #detailSheet.detail-large.episode-preview-active .detail-title-row {
-      flex-wrap: nowrap;
-      max-width: calc(100vw - var(--detail-side-pad) - var(--detail-side-pad));
-      height: 64px;
-      height: clamp(50px, 5.8vw, 74px);
-      overflow: hidden;
-      text-shadow: none !important;
-      box-shadow: none !important;
-      filter: none !important;
-      -webkit-backdrop-filter: none !important;
-      backdrop-filter: none !important;
-    }
-
-    #detailSheet.detail-large.episode-preview-active .detail-info h2 {
-      flex: 0 1 auto;
-      min-width: 0;
-      max-width: min(760px, 54vw);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      text-shadow: none !important;
-      box-shadow: none !important;
-      filter: none !important;
-      -webkit-backdrop-filter: none !important;
-      backdrop-filter: none !important;
-    }
-
-    #detailSheet.detail-large.episode-preview-active .detail-title-meta {
-      display: none;
-      flex: 0 0 auto;
-      white-space: nowrap;
-      text-shadow: none !important;
-      box-shadow: none !important;
-      filter: none !important;
-      -webkit-backdrop-filter: none !important;
-      backdrop-filter: none !important;
-    }
-
-    #detailSheet.detail-large.episode-preview-active > .actions {
-      visibility: hidden;
-      pointer-events: none;
-    }
-
-    #detailSheet.detail-large.episode-preview-active .detail-info p#detailText {
-      max-width: min(620px, 42vw);
-      outline: none !important;
-      border-color: transparent !important;
-      box-shadow: none !important;
-      pointer-events: none;
-      user-select: none;
-      -webkit-user-select: none;
-      -webkit-tap-highlight-color: transparent;
-    }
-
-    #detailSheet.detail-large.episode-preview-active .detail-info p#detailText.clamped[data-more-label] {
-      position: relative;
-      padding-right: 64px;
-    }
-
-    #detailSheet.detail-large.episode-preview-active .detail-info p#detailText.clamped[data-more-label]::after {
-      content: attr(data-more-label);
-      position: absolute;
-      right: 0;
-      bottom: 0;
-      min-width: 0;
-      color: rgba(129, 190, 255, .96);
-      font-weight: 780;
-      text-align: right;
-      background: transparent !important;
-      background-color: transparent !important;
-      background-image: none !important;
-      box-shadow: none !important;
-      text-shadow: none !important;
-      filter: none !important;
-      -webkit-backdrop-filter: none !important;
-      backdrop-filter: none !important;
-    }
-
-    #detailSheet.detail-large.episode-preview-active #detailMoreBtn {
-      background: transparent !important;
-      background-color: transparent !important;
-      background-image: none !important;
-      box-shadow: none !important;
-      text-shadow: none !important;
-      filter: none !important;
-      -webkit-backdrop-filter: none !important;
-      backdrop-filter: none !important;
-      display: none !important;
-    }
-
-    #detailSheet.detail-large.episode-preview-active .detail-info p#detailText.clamped {
-      max-height: var(--episode-preview-text-max, 7.6em);
-      overflow: hidden;
-    }
-
-    #detailSheet.detail-large.episode-preview-expanded .detail-info p#detailText {
-      visibility: visible;
-      max-width: none;
-      width: calc(100vw - var(--detail-side-pad) - var(--detail-side-pad));
-      max-height: none;
-      overflow: visible;
-    }
-
-    #detailSheet.detail-large.episode-preview-expanded .detail-info h2 {
-      max-width: calc(100vw - var(--detail-side-pad) - var(--detail-side-pad));
-    }
-
-    #detailSheet.detail-large.episode-preview-expanded #seasonBlock > h3,
-    #detailSheet.detail-large.episode-preview-expanded #seasonTabs {
-      visibility: hidden;
-      pointer-events: none;
-    }
-
-    html.no-css-functions #detailSheet.detail-large.episode-preview-active .detail-info,
-    html.no-css-functions #detailSheet.detail-large.episode-preview-active .detail-title-row,
-    html.legacy-detail-layout #detailSheet.detail-large.episode-preview-active .detail-info,
-    html.legacy-detail-layout #detailSheet.detail-large.episode-preview-active .detail-title-row {
-      max-width: 1152px;
-    }
-
-    html.no-css-functions #detailSheet.detail-large .detail-info p,
-    html.legacy-detail-layout #detailSheet.detail-large .detail-info p,
-    html.no-css-functions #detailSheet.detail-large.episode-preview-active .detail-info p#detailText,
-    html.legacy-detail-layout #detailSheet.detail-large.episode-preview-active .detail-info p#detailText {
-      max-width: 560px;
-    }
-
-    html.no-css-functions #detailSheet.detail-large.episode-preview-active .detail-info,
-    html.legacy-detail-layout #detailSheet.detail-large.episode-preview-active .detail-info {
-      height: 220px;
-      max-height: 220px;
-    }
-
-    html.no-css-functions #detailSheet.detail-large.episode-preview-active .detail-title-row,
-    html.legacy-detail-layout #detailSheet.detail-large.episode-preview-active .detail-title-row {
-      height: 64px;
-    }
-
-    html.no-css-functions #detailSheet.detail-large.episode-preview-active .detail-info p#detailText.clamped,
-    html.legacy-detail-layout #detailSheet.detail-large.episode-preview-active .detail-info p#detailText.clamped {
-      max-height: 116px;
-    }
-
-    html.no-css-functions #detailSheet.detail-large.episode-preview-expanded .detail-info p#detailText,
-    html.legacy-detail-layout #detailSheet.detail-large.episode-preview-expanded .detail-info p#detailText {
-      width: 1152px;
-    }
-
     #detailSheet.detail-large > .actions {
       gap: 16px;
       margin-top: 24px;
@@ -2336,15 +2110,10 @@
       margin-top: 34px;
     }
 
-    #detailSheet.detail-large #seasonBlock,
     #detailSheet.detail-large #castBlock,
     #detailSheet.detail-large #recommendBlock,
     #detailSheet.detail-large #personWorkBlock {
       max-width: none;
-    }
-
-    #detailSheet.detail-large #seasonBlock {
-      margin-top: clamp(34px, 5.2vh, 58px);
     }
 
     #detailSheet.detail-large .detail-block h3 {
@@ -2354,102 +2123,10 @@
       text-shadow: 0 2px 12px rgba(0, 0, 0, .45);
     }
 
-    #detailSheet.detail-large #seasonTabs {
-      max-width: min(760px, 54vw);
-      padding-bottom: 8px;
-    }
-
-    #detailSheet.detail-large #seasonTabs:empty {
-      display: none;
-    }
-
     #detailSheet.detail-large .rail {
       gap: 18px;
       padding: 6px 6px 16px;
       overflow-y: visible;
-    }
-
-    #detailSheet.detail-large .episode-card {
-      flex: 0 0 clamp(210px, 18.4vw, 286px);
-      max-width: clamp(210px, 18.4vw, 286px);
-      min-height: 0;
-      aspect-ratio: 16 / 9;
-      padding: 0;
-      overflow: hidden;
-      position: relative;
-      border-radius: 7px;
-      background: rgba(32, 45, 58, .74);
-      border-color: rgba(255, 255, 255, .15);
-      box-shadow: 0 12px 28px rgba(0, 0, 0, .24);
-    }
-
-    #detailSheet.detail-large .episode-card::before {
-      content: "";
-      position: absolute;
-      right: 0;
-      bottom: 0;
-      left: 0;
-      z-index: 1;
-      height: 62%;
-      background: linear-gradient(180deg, rgba(0, 0, 0, 0), rgba(4, 10, 16, .72) 55%, rgba(4, 10, 16, .92));
-      pointer-events: none;
-    }
-
-    #detailSheet.detail-large .episode-still {
-      width: 100%;
-      max-width: 100%;
-      height: 100%;
-      margin: 0;
-      aspect-ratio: auto;
-      object-fit: cover;
-      opacity: .92;
-    }
-
-    #detailSheet.detail-large .episode-badge {
-      display: inline-flex;
-      position: absolute;
-      top: 8px;
-      left: 8px;
-      z-index: 2;
-      min-height: 26px;
-      align-items: center;
-      padding: 0 8px;
-      border-radius: 5px;
-      background: rgba(54, 119, 199, .84);
-      border: 1px solid rgba(255, 255, 255, .18);
-      color: rgba(255, 255, 255, .94);
-      font-size: 13px;
-      font-weight: 780;
-      line-height: 1;
-    }
-
-    .episode-badge {
-      display: none;
-    }
-
-    #detailSheet.detail-large .episode-body {
-      position: absolute;
-      right: 0;
-      bottom: 0;
-      left: 0;
-      z-index: 2;
-      padding: 0 12px 12px;
-    }
-
-    #detailSheet.detail-large .episode-card b {
-      color: #fff;
-      font-size: clamp(15px, 1.35vw, 18px);
-      font-weight: 800;
-      line-height: 1.18;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      text-shadow: 0 2px 8px rgba(0, 0, 0, .72);
-    }
-
-    #detailSheet.detail-large .episode-card span:not(.episode-badge),
-    #detailSheet.detail-large .episode-card p {
-      display: none;
     }
 
     #detailSheet.detail-large .person-card {
@@ -2558,10 +2235,6 @@
       #detailSheet.detail-large .detail-info,
       #detailSheet.detail-large > .actions,
       #detailSheet.detail-large .detail-block,
-      #detailSheet.detail-large #seasonTabs {
-        max-width: min(720px, 68vw);
-      }
-
       #detailSheet.detail-large .detail-cover {
         width: 100%;
       }
@@ -2887,38 +2560,6 @@
       scroll-padding-left: 0;
     }
 
-    html.native-mobile-app.mobile-detail-translucent #detailSheet:not(.detail-large) #seasonTabs {
-      width: 100%;
-      max-width: 100%;
-      margin: 0;
-      padding-right: 0;
-      padding-left: 0;
-      scroll-padding-left: 0;
-    }
-
-    html.native-mobile-app.mobile-detail-translucent #detailSheet:not(.detail-large) .episode-card {
-      flex: 0 0 230px;
-      max-width: 260px;
-      min-height: 138px;
-      display: flex;
-      flex-direction: column;
-      border-radius: var(--radius);
-      background: var(--panel);
-      border-color: var(--line);
-      box-shadow: none;
-    }
-
-    html.native-mobile-app.mobile-detail-translucent #detailSheet:not(.detail-large) .episode-still-wrap {
-      height: 130px;
-      min-height: 130px;
-      flex-basis: 130px;
-    }
-
-    html.native-mobile-app.mobile-detail-translucent #detailSheet:not(.detail-large) .episode-card b {
-      font-size: 13px;
-      line-height: 1.18;
-    }
-
     html.native-mobile-app.mobile-detail-translucent #detailSheet:not(.detail-large) .person-card {
       flex: 0 0 auto;
       max-width: none;
@@ -2972,1054 +2613,6 @@
       max-width: 140px;
     }
 
-    html.native-mobile-app .image-viewer.episode-mode {
-      display: none;
-      grid-template-rows: minmax(0, 1fr);
-      gap: 0;
-      background: #081016;
-      padding: 0 0 calc(28px + max(var(--fm-safe-bottom, 0px), env(safe-area-inset-bottom, 0px)));
-      overflow: hidden;
-    }
-    html.no-css-functions.native-mobile-app .image-viewer.episode-mode {
-      padding: 0 0 calc(28px + var(--fm-safe-bottom, 0px));
-    }
-
-    html.native-mobile-app .image-viewer.episode-mode.active {
-      display: grid;
-    }
-
-    html.native-mobile-app .image-viewer.episode-mode #closeImageBtn {
-      display: none;
-    }
-
-    html.native-mobile-app .image-viewer.episode-mode .mobile-detail-back {
-      position: fixed;
-      top: max(14px, var(--safe-t));
-      left: 16px;
-      width: 54px;
-      height: 54px;
-      z-index: 95;
-      color: rgba(255, 255, 255, .96);
-      background: rgba(25, 35, 44, .28);
-      border-color: rgba(255, 255, 255, .22);
-      box-shadow: 0 12px 30px rgba(0, 0, 0, .24), inset 0 1px 0 rgba(255, 255, 255, .12);
-      -webkit-backdrop-filter: blur(14px) saturate(1.08);
-      backdrop-filter: blur(14px) saturate(1.08);
-    }
-
-    html.native-mobile-app .image-viewer.episode-mode .mobile-detail-back .icon {
-      width: 25px;
-      height: 25px;
-      stroke-width: 2.4;
-    }
-
-    html.native-mobile-app .image-viewer.episode-mode .image-content {
-      width: 100%;
-      height: 100%;
-      display: block;
-      overflow-y: auto;
-      overscroll-behavior: contain;
-      background: #081016;
-    }
-
-    html.native-mobile-app .image-viewer.episode-mode .episode-view {
-      width: 100%;
-      min-height: var(--fm-web-height);
-      display: block;
-      padding: 0 22px calc(34px + max(var(--fm-safe-bottom, 0px), env(safe-area-inset-bottom, 0px)));
-      border: 0;
-      border-radius: 0;
-      background: #081016;
-      box-shadow: none;
-    }
-    html.no-css-functions.native-mobile-app .image-viewer.episode-mode .episode-view {
-      padding: 0 22px calc(34px + var(--fm-safe-bottom, 0px));
-    }
-
-    html.native-mobile-app .image-viewer.episode-mode .episode-view img {
-      width: calc(100% + 44px);
-      max-width: none;
-      height: min(64vh, 620px);
-      max-height: none;
-      margin: 0 -22px;
-      aspect-ratio: auto;
-      object-fit: cover;
-      object-position: center top;
-      border: 0;
-      border-radius: 0;
-      filter: saturate(.94) contrast(.98) brightness(.84);
-    }
-
-    html.native-mobile-app .image-viewer.episode-mode .episode-view::before {
-      content: "";
-      position: fixed;
-      top: 0;
-      right: 0;
-      left: 0;
-      height: min(68vh, 660px);
-      z-index: 1;
-      pointer-events: none;
-      background:
-        linear-gradient(180deg, rgba(2, 5, 8, .02) 0%, rgba(2, 5, 8, .1) 42%, rgba(5, 10, 15, .72) 76%, #081016 100%),
-        linear-gradient(90deg, rgba(3, 7, 11, .28), transparent 42%, rgba(3, 7, 11, .22));
-    }
-
-    html.native-mobile-app .image-viewer.episode-mode .episode-view > div,
-    html.native-mobile-app .image-viewer.episode-mode .episode-view > p {
-      position: relative;
-      z-index: 2;
-      text-shadow: 0 2px 12px rgba(0, 0, 0, .58);
-    }
-
-    html.native-mobile-app .image-viewer.episode-mode .episode-view > div {
-      margin-top: -142px;
-      padding-bottom: 18px;
-    }
-
-    html.native-mobile-app .image-viewer.episode-mode .episode-view.no-still {
-      padding-top: max(96px, var(--safe-t));
-      background:
-        linear-gradient(180deg, rgba(12, 20, 28, .96), #081016 42%),
-        var(--detail-hero-bg, none);
-      background-size: cover;
-      background-position: center top;
-    }
-
-    html.native-mobile-app .image-viewer.episode-mode .episode-view.no-still > div {
-      margin-top: 0;
-    }
-
-    html.native-mobile-app .image-viewer.episode-mode .episode-view h3 {
-      margin: 0 0 10px;
-      color: rgba(255, 255, 255, .98);
-      font-size: 29px;
-      line-height: 1.14;
-      font-weight: 900;
-      letter-spacing: 0;
-    }
-
-    html.native-mobile-app .image-viewer.episode-mode .episode-view span {
-      display: inline-flex;
-      min-height: 30px;
-      align-items: center;
-      padding: 0 11px;
-      border-radius: 999px;
-      color: rgba(245, 248, 251, .76);
-      background: rgba(255, 255, 255, .12);
-      font-size: 13px;
-      line-height: 1;
-      -webkit-backdrop-filter: blur(10px) saturate(1.04);
-      backdrop-filter: blur(10px) saturate(1.04);
-    }
-
-    html.native-mobile-app .image-viewer.episode-mode .episode-view p {
-      margin: 0;
-      color: rgba(246, 249, 252, .84);
-      font-size: 16px;
-      line-height: 1.78;
-      white-space: pre-wrap;
-    }
-
-    .sync-panel {
-      display: grid;
-      gap: 12px;
-      padding: 12px;
-      border-radius: var(--radius);
-      background: var(--panel);
-      border: 1px solid var(--line);
-    }
-
-    .hint {
-      margin: 0;
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.55;
-    }
-
-    .mono {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      word-break: break-all;
-    }
-
-    .toast {
-      position: fixed;
-      left: 50%;
-      bottom: max(18px, calc(max(var(--fm-safe-bottom, 0px), env(safe-area-inset-bottom, 0px))));
-      z-index: 90;
-      transform: translateX(-50%) translateY(24px);
-      max-width: calc(100vw - 28px);
-      padding: 10px 12px;
-      border-radius: var(--radius);
-      background: rgba(6, 8, 10, .86);
-      border: 1px solid var(--line);
-      color: var(--text);
-      box-shadow: var(--shadow);
-      opacity: 0;
-      pointer-events: none;
-      transition: .18s ease;
-      font-size: 12px;
-    }
-    html.no-css-functions .toast {
-      bottom: calc(18px + var(--fm-safe-bottom, 0px));
-    }
-
-    .toast.show {
-      opacity: 1;
-      transform: translateX(-50%) translateY(0);
-    }
-
-    .back-top {
-      position: fixed;
-      right: max(14px, env(safe-area-inset-right));
-      bottom: max(76px, calc(58px + max(var(--fm-safe-bottom, 0px), env(safe-area-inset-bottom, 0px))));
-      z-index: 55;
-      width: 44px;
-      height: 44px;
-      display: grid;
-      place-items: center;
-      border-radius: var(--radius);
-      background: rgba(34, 43, 51, .68);
-      border: 1px solid var(--line);
-      color: var(--text);
-      box-shadow: 0 12px 32px rgba(0, 0, 0, .24);
-      -webkit-backdrop-filter: blur(12px) saturate(1.05);
-      backdrop-filter: blur(12px) saturate(1.05);
-      opacity: 0;
-      visibility: hidden;
-      pointer-events: none;
-      transform: translateY(10px);
-      transition: opacity .16s ease, transform .16s ease, visibility .16s ease;
-    }
-    html.no-css-functions .back-top {
-      right: 14px;
-      bottom: calc(76px + var(--fm-safe-bottom, 0px));
-    }
-
-    .back-top.show {
-      opacity: 1;
-      visibility: visible;
-      pointer-events: auto;
-      transform: translateY(0);
-    }
-
-    .connection-dock {
-      position: relative;
-      z-index: 50;
-      width: fit-content;
-      max-width: 100%;
-      justify-self: end;
-      margin-left: auto;
-      margin: 0;
-      border-radius: var(--radius);
-      border: 1px solid rgba(255, 255, 255, .1);
-      background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,0)), var(--control);
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08);
-      -webkit-backdrop-filter: blur(10px) saturate(1.3);
-      backdrop-filter: blur(10px) saturate(1.3);
-      overflow: visible;
-    }
-
-    .connection-toggle {
-      width: auto;
-      min-height: 34px;
-      display: grid;
-      grid-template-columns: auto auto auto;
-      align-items: center;
-      gap: 7px;
-      padding: 0 9px;
-      background: transparent;
-      color: var(--text);
-      text-align: left;
-    }
-
-    .connection-title {
-      font-size: 12px;
-      font-weight: 800;
-      white-space: nowrap;
-    }
-
-    .connection-arrow {
-      color: var(--muted);
-      font-size: 12px;
-      transition: transform .16s ease;
-    }
-
-    .connection-dock.open .connection-arrow {
-      transform: rotate(180deg);
-    }
-
-    .connection-body {
-      display: none;
-      position: absolute;
-      right: 0;
-      top: calc(100% + 8px);
-      z-index: 80;
-      width: min(calc(var(--fm-web-width, 100vw) - 28px), 420px);
-      max-width: calc(var(--fm-web-width, 100vw) - 28px);
-      margin: 0;
-      padding: 11px;
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      background: rgba(34, 43, 51, .72);
-      box-shadow: 0 14px 36px rgba(0, 0, 0, .24);
-      -webkit-backdrop-filter: blur(14px) saturate(1.05);
-      backdrop-filter: blur(14px) saturate(1.05);
-      transform: translateX(var(--connection-shift, 0px));
-    }
-
-    .connection-body.open {
-      display: block;
-    }
-
-    .connection-grid {
-      display: grid;
-      gap: 8px;
-      margin-top: 10px;
-    }
-
-    .connection-item {
-      display: grid;
-      grid-template-columns: minmax(56px, 74px) minmax(0, 1fr);
-      gap: 8px;
-      align-items: baseline;
-      font-size: 11px;
-      line-height: 1.45;
-    }
-
-    .connection-item b {
-      color: var(--muted);
-      font-weight: 700;
-    }
-
-    .connection-item span {
-      min-width: 0;
-      word-break: break-word;
-    }
-
-    .connection-item.refresh-progress {
-      align-items: start;
-    }
-
-    .connection-item.refresh-progress span {
-      white-space: pre-line;
-    }
-
-    .detail-style-segmented {
-      min-width: 0;
-      display: inline-grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 2px;
-      padding: 2px;
-      border-radius: 8px;
-      border: 1px solid rgba(255, 255, 255, .14);
-      background: rgba(255, 255, 255, .06);
-    }
-
-    .detail-style-option {
-      min-width: 0;
-      min-height: 28px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 0 8px;
-      border-radius: 6px;
-      border: 1px solid transparent;
-      color: rgba(244, 247, 251, .7);
-      font-size: 11px;
-      font-weight: 760;
-      line-height: 1;
-      white-space: nowrap;
-    }
-
-    .detail-style-option.active {
-      color: var(--text);
-      background: rgba(184, 226, 255, .2);
-      border-color: rgba(184, 226, 255, .34);
-    }
-
-    .relay-mirror-config {
-      display: grid;
-      gap: 8px;
-      margin-top: 10px;
-      padding-top: 10px;
-      border-top: 1px solid rgba(255, 255, 255, .12);
-    }
-
-    .relay-mirror-config label {
-      display: grid;
-      gap: 5px;
-      color: var(--muted);
-      font-size: 11px;
-      font-weight: 700;
-    }
-
-    .relay-mirror-config .field {
-      width: 100%;
-      min-height: 36px;
-      padding: 8px 10px;
-      font-size: 11px;
-    }
-
-    .relay-mirror-config textarea.field {
-      min-height: 68px;
-    }
-
-    .relay-mirror-progress {
-      min-height: 58px;
-      padding: 8px 10px;
-      border: 1px solid rgba(255, 255, 255, .12);
-      border-radius: var(--radius);
-      color: var(--text);
-      background: rgba(0, 0, 0, .16);
-      font-size: 11px;
-      line-height: 1.45;
-      white-space: pre-line;
-      word-break: break-word;
-    }
-
-    .connection-body .actions {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
-      gap: 8px;
-    }
-
-    .connection-body .btn {
-      min-width: 0;
-      padding: 0 10px;
-      font-size: 11px;
-      white-space: nowrap;
-    }
-
-    .pan-config {
-      display: grid;
-      gap: 8px;
-      margin-top: 10px;
-      padding-top: 10px;
-      border-top: 1px solid rgba(255, 255, 255, .12);
-    }
-
-    .pan-config label {
-      display: grid;
-      gap: 5px;
-      color: var(--muted);
-      font-size: 11px;
-      line-height: 1.35;
-    }
-
-    .pan-config .field {
-      min-height: 38px;
-      font-size: 11px;
-    }
-
-    .pan-disk-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
-      gap: 6px;
-    }
-
-    .pan-disk-grid label {
-      min-width: 0;
-      min-height: 32px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 0 8px;
-      border-radius: var(--radius);
-      border: 1px solid rgba(255, 255, 255, .14);
-      background: rgba(255, 255, 255, .04);
-      color: var(--text);
-      font-size: 11px;
-      font-weight: 720;
-    }
-
-    .pan-disk-grid input {
-      width: 14px;
-      height: 14px;
-      accent-color: rgba(244, 247, 251, .82);
-    }
-
-    .pan-disk-grid label:focus-within {
-      background: rgba(70, 85, 96, .72);
-      border-color: rgba(255, 255, 255, .14);
-      color: var(--text);
-    }
-
-    .source-domains-config {
-      display: grid;
-      gap: 8px;
-    }
-
-    .source-domains-toggle {
-      text-align: left;
-      justify-content: flex-start;
-    }
-
-    .source-domains-body {
-      display: grid;
-      gap: 8px;
-      padding: 8px;
-      border: 1px solid rgba(255, 255, 255, .1);
-      background: rgba(255, 255, 255, .025);
-    }
-
-    .source-domains-body[hidden] {
-      display: none !important;
-    }
-
-    .panel-editing {
-      background: rgba(24, 36, 46, .88) !important;
-      border-color: rgba(184, 226, 255, .9) !important;
-    }
-
-    .pan-search-block {
-      display: none;
-      margin-top: 18px;
-    }
-
-    .pan-search-block.active {
-      display: block;
-    }
-
-    .pan-search-progress {
-      display: none;
-      height: 3px;
-      margin: 0 0 10px;
-      overflow: hidden;
-      border-radius: 999px;
-      background: rgba(184, 226, 255, .12);
-    }
-
-    .pan-search-progress.active {
-      display: block;
-    }
-
-    .pan-search-progress > span {
-      display: block;
-      width: 34%;
-      height: 100%;
-      border-radius: inherit;
-      background: var(--focus-line);
-      animation: pan-search-progress-slide 1.35s linear infinite;
-      transform: translateX(-120%);
-    }
-
-    @keyframes pan-search-progress-slide {
-      from { transform: translateX(-120%); }
-      to { transform: translateX(420%); }
-    }
-
-    .pan-result-list {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr);
-      gap: 9px;
-      align-content: flex-start;
-      align-items: start;
-      grid-auto-rows: max-content;
-      height: 52vh;
-      max-height: 560px;
-      min-height: 260px;
-      overflow-y: auto;
-      overscroll-behavior-y: contain;
-      padding-right: 2px;
-      scrollbar-width: none;
-    }
-
-    .pan-result-list::-webkit-scrollbar { display: none; }
-
-    .pan-tabs {
-      margin: 0 0 9px;
-    }
-
-    .pan-tabs:empty { display: none; }
-
-    .pan-tabs .chip {
-      min-height: 30px;
-      padding: 0 10px;
-      font-size: 11px;
-    }
-
-    .pan-tabs .chip.active {
-      background: rgba(82, 98, 108, .82);
-      border-color: rgba(184, 226, 255, .74);
-    }
-
-    .pan-result-item {
-      width: 100%;
-      min-width: 0;
-      display: grid;
-      gap: 7px;
-      padding: 11px;
-      border-radius: var(--radius);
-      border: 1px solid var(--line);
-      background: var(--panel);
-      color: var(--text);
-      text-align: left;
-      -webkit-backdrop-filter: blur(10px) saturate(1.05);
-      backdrop-filter: blur(10px) saturate(1.05);
-      contain: layout style;
-    }
-
-    .pan-result-item.is-bad {
-      opacity: .58;
-    }
-
-    .pan-result-title {
-      display: flex;
-      min-width: 0;
-      align-items: center;
-      gap: 8px;
-      font-size: 12px;
-      font-weight: 800;
-      line-height: 1.3;
-    }
-
-    .pan-result-title span:first-child {
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .pan-result-meta,
-    .pan-result-url {
-      color: var(--muted);
-      font-size: 11px;
-      line-height: 1.35;
-    }
-
-    .pan-result-meta {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-    }
-
-    .pan-tag.quality {
-      display: inline-flex;
-      align-items: center;
-      line-height: 1;
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-size: 10px;
-      font-weight: 700;
-      color: #7dd3fc;
-      border: 1px solid rgba(125,211,252,.3);
-      background: rgba(125,211,252,.08);
-    }
-    .pan-tag.quality.dv   { color: #b8a4f8; border-color: rgba(184,164,248,.35); background: rgba(184,164,248,.12); letter-spacing: .02em; }
-    .pan-tag.quality.hdrp { color: #f4a8d0; border-color: rgba(244,168,208,.3);  background: rgba(244,168,208,.1); }
-    .pan-tag.quality.fhd  { color: #7ec8e3; border-color: rgba(126,200,227,.3);  background: rgba(126,200,227,.1); }
-    .pan-tag.quality.hd   { color: #82c98a; border-color: rgba(130,201,138,.28); background: rgba(130,201,138,.09); }
-    .pan-tag.quality.sd   { color: rgba(240,237,232,.4); border-color: rgba(255,255,255,.1); background: rgba(255,255,255,.04); }
-
-    .pan-result-url {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .pan-health {
-      flex: 0 0 auto;
-      display: inline-block;
-      width: .55rem;
-      height: .55rem;
-      border-radius: 999px;
-      background: #94a3b8;
-      box-shadow: 0 0 0 1px rgba(255, 255, 255, .18);
-    }
-
-    .pan-health.ok { background: #22c55e; }
-    .pan-health.bad { background: #ef4444; }
-    .pan-health.locked { background: #f59e0b; }
-    .pan-health.pending {
-      background: #60a5fa;
-      animation: pulse-dot 1.1s ease-in-out infinite;
-    }
-
-    .pan-health.uncertain,
-    .pan-health.unsupported { background: #94a3b8; }
-
-    @keyframes pulse-dot {
-      0%, 100% { opacity: .45; transform: scale(.92); }
-      50% { opacity: 1; transform: scale(1.08); }
-    }
-
-    .dot {
-      width: 9px;
-      height: 9px;
-      border-radius: 999px;
-      background: var(--muted);
-    }
-
-    .dot.ok { background: var(--ok); }
-    .dot.warn { background: #ffcc4d; }
-    .dot.bad { background: var(--danger); }
-
-    /* 状态按钮里的 dot — 方案 6：数据矩阵闪烁 */
-    .connection-toggle .dot {
-      width: 12px;
-      height: 12px;
-      border-radius: 3px;
-      background: transparent;
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      grid-template-rows: repeat(3, 1fr);
-      gap: 1.5px;
-      padding: 0;
-      flex-shrink: 0;
-      margin: auto;
-    }
-    .connection-toggle .dot.ok   { --dot-color: 74,222,128; }
-    .connection-toggle .dot.warn { --dot-color: 251,191,36; }
-    .connection-toggle .dot.bad  { --dot-color: 251,113,133; }
-
-    .connection-toggle .dot span {
-      border-radius: 1px;
-      background: rgba(var(--dot-color, 148,163,184), .15);
-      animation: dot-matrix-flicker 1.6s ease-in-out infinite;
-    }
-    .connection-toggle .dot span:nth-child(1) { animation-delay: 0s; }
-    .connection-toggle .dot span:nth-child(2) { animation-delay: .12s; }
-    .connection-toggle .dot span:nth-child(3) { animation-delay: .24s; }
-    .connection-toggle .dot span:nth-child(4) { animation-delay: .36s; }
-    .connection-toggle .dot span:nth-child(5) { animation-delay: .48s; }
-    .connection-toggle .dot span:nth-child(6) { animation-delay: .6s; }
-    .connection-toggle .dot span:nth-child(7) { animation-delay: .72s; }
-    .connection-toggle .dot span:nth-child(8) { animation-delay: .84s; }
-    .connection-toggle .dot span:nth-child(9) { animation-delay: .96s; }
-
-    @keyframes dot-matrix-flicker {
-      0%, 100% { background: rgba(var(--dot-color, 148,163,184), .15); box-shadow: none; }
-      50%      { background: rgb(var(--dot-color, 148,163,184)); box-shadow: 0 0 4px rgba(var(--dot-color, 148,163,184), .9); }
-    }
-
-    /* TV 端：关闭矩阵闪烁动画，改为静态点亮，避免 9 个元素持续重绘造成卡顿 */
-    html.tv-mode .connection-toggle .dot span {
-      animation: none;
-      background: rgb(var(--dot-color, 148,163,184));
-      box-shadow: none;
-    }
-
-    .image-viewer {
-      display: none;
-      position: fixed;
-      top: 0;
-      right: 0;
-      bottom: 0;
-      left: 0;
-      top: 0; right: 0; bottom: 0; left: 0;
-      inset: 0;
-      z-index: 100;
-      height: 100vh;
-      min-height: var(--fm-web-height);
-      background: var(--panel-strong);
-      -webkit-backdrop-filter: blur(8px) saturate(1.05);
-      backdrop-filter: blur(8px) saturate(1.05);
-      padding: max(14px, var(--safe-t)) 14px calc(18px + max(var(--fm-safe-bottom, 0px), env(safe-area-inset-bottom, 0px)));
-    }
-    html.no-css-functions .image-viewer {
-      padding-top: calc(14px + var(--fm-safe-top, 0px));
-      padding-left: 14px;
-      padding-right: 14px;
-      padding-bottom: calc(18px + var(--fm-safe-bottom, 0px));
-    }
-
-    .image-viewer.episode-mode {
-      background: transparent;
-      -webkit-backdrop-filter: none;
-      backdrop-filter: none;
-    }
-
-    .image-viewer.active {
-      display: grid;
-      grid-template-rows: auto minmax(0, 1fr);
-      gap: 14px;
-    }
-
-    .image-content {
-      min-width: 0;
-      min-height: 0;
-      display: grid;
-      place-items: center;
-      overflow-y: auto;
-      scrollbar-width: none;
-    }
-
-    .image-content::-webkit-scrollbar { display: none; }
-
-    .image-content img {
-      align-self: center;
-      justify-self: center;
-      width: 100%;
-      height: 100%;
-      max-height: calc(var(--fm-web-height) - 86px - var(--fm-safe-bottom));
-      object-fit: contain;
-      background: transparent;
-    }
-
-    .episode-view {
-      width: min(860px, 100%);
-      min-width: 0;
-      align-self: start;
-      display: grid;
-      gap: 12px;
-      padding: 12px;
-      padding-bottom: 20px;
-      border-radius: var(--radius);
-      border: 1px solid var(--line);
-      background: var(--panel);
-      box-shadow: var(--shadow);
-    }
-
-    .episode-view img {
-      width: 100%;
-      height: auto;
-      max-height: min(48vh, 460px);
-      aspect-ratio: 16 / 9;
-      object-fit: cover;
-      border-radius: var(--radius);
-      border: 1px solid var(--line);
-      background: rgba(0, 0, 0, .18);
-    }
-
-    .episode-view h3 {
-      margin: 0;
-      font-size: 18px;
-      line-height: 1.3;
-    }
-
-    .episode-view span {
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.4;
-    }
-
-    .episode-view p {
-      margin: 0;
-      color: rgba(244, 247, 251, .9);
-      font-size: 14px;
-      line-height: 1.65;
-      white-space: pre-wrap;
-    }
-
-    /* Episode synopsis viewer: use the same immersive canvas language as
-       Weekly Secondary instead of the generic framed image-preview card. */
-    .image-viewer.episode-mode {
-      display: none;
-      inset: 0;
-      padding: 0;
-      overflow: hidden;
-      background: #070a10;
-      -webkit-backdrop-filter: none;
-      backdrop-filter: none;
-    }
-
-    .image-viewer.episode-mode.active {
-      display: block;
-    }
-
-    .image-viewer.episode-mode #closeImageBtn {
-      display: none !important;
-    }
-
-    .image-viewer.episode-mode .mobile-detail-back {
-      display: grid;
-      position: fixed;
-      top: max(14px, var(--safe-t));
-      right: clamp(16px, 3.8vw, 64px);
-      left: auto;
-      width: 44px;
-      height: 44px;
-      z-index: 12;
-      color: rgba(255, 255, 255, .96);
-      background: rgba(8, 13, 20, .42);
-      border: 1px solid rgba(255, 255, 255, .24);
-      border-radius: 50%;
-      box-shadow: 0 12px 34px rgba(0, 0, 0, .34), inset 0 1px 0 rgba(255, 255, 255, .12);
-      -webkit-backdrop-filter: blur(14px) saturate(1.12);
-      backdrop-filter: blur(14px) saturate(1.12);
-    }
-
-    .image-viewer.episode-mode .mobile-detail-back .icon {
-      width: 21px;
-      height: 21px;
-    }
-
-    .image-viewer.episode-mode .image-content {
-      position: relative;
-      display: block;
-      width: 100%;
-      height: 100%;
-      min-height: 0;
-      overflow-x: hidden;
-      overflow-y: auto;
-      background: #070a10;
-      scrollbar-width: none;
-    }
-
-    .image-viewer.episode-mode .episode-view {
-      position: relative;
-      display: block;
-      width: 100%;
-      min-height: 100%;
-      padding: 0 0 max(42px, calc(34px + var(--fm-safe-bottom, 0px)));
-      overflow: hidden;
-      border: 0;
-      border-radius: 0;
-      background: #070a10;
-      box-shadow: none;
-    }
-
-    .image-viewer.episode-mode .episode-view img {
-      display: block;
-      width: 100%;
-      height: min(72vh, 820px);
-      max-width: none;
-      max-height: none;
-      margin: 0;
-      aspect-ratio: auto;
-      object-fit: cover;
-      object-position: center center;
-      border: 0;
-      border-radius: 0;
-      background: #101722;
-      filter: saturate(.96) contrast(1.02) brightness(.78);
-    }
-
-    .image-viewer.episode-mode .episode-view::before {
-      content: "";
-      position: absolute;
-      top: 0;
-      right: 0;
-      left: 0;
-      height: min(82vh, 920px);
-      z-index: 1;
-      pointer-events: none;
-      background:
-        linear-gradient(180deg, rgba(3, 6, 10, .08) 0%, rgba(3, 6, 10, .04) 36%, rgba(5, 9, 15, .68) 70%, #070a10 100%),
-        linear-gradient(90deg, rgba(3, 7, 12, .22), transparent 42%, rgba(3, 7, 12, .18));
-    }
-
-    .image-viewer.episode-mode .episode-view > div,
-    .image-viewer.episode-mode .episode-view > p {
-      position: relative;
-      z-index: 2;
-      width: min(980px, calc(100% - clamp(32px, 7.6vw, 128px)));
-      margin-right: auto;
-      margin-left: auto;
-      text-shadow: 0 2px 18px rgba(0, 0, 0, .62);
-    }
-
-    .image-viewer.episode-mode .episode-view > div {
-      margin-top: clamp(-180px, -16vh, -96px);
-      padding: 0;
-    }
-
-    .image-viewer.episode-mode .episode-view > p {
-      margin-top: 18px;
-      padding-bottom: 8px;
-      color: rgba(246, 249, 252, .86);
-      font-size: clamp(15px, 1.25vw, 20px);
-      line-height: 1.75;
-    }
-
-    .image-viewer.episode-mode .episode-view h3 {
-      margin: 0 0 10px;
-      color: rgba(255, 255, 255, .98);
-      font-size: clamp(25px, 3vw, 46px);
-      line-height: 1.12;
-      font-weight: 850;
-      letter-spacing: -.02em;
-    }
-
-    .image-viewer.episode-mode .episode-view span {
-      display: inline-flex;
-      min-height: 30px;
-      align-items: center;
-      padding: 0 12px;
-      border: 1px solid rgba(255, 255, 255, .14);
-      border-radius: 999px;
-      color: rgba(245, 248, 251, .78);
-      background: rgba(12, 20, 29, .42);
-      font-size: clamp(12px, .9vw, 15px);
-      line-height: 1;
-      -webkit-backdrop-filter: blur(12px) saturate(1.05);
-      backdrop-filter: blur(12px) saturate(1.05);
-    }
-
-    .image-viewer.episode-mode .episode-view.no-still {
-      min-height: 100%;
-      padding-top: max(110px, calc(96px + var(--safe-t)));
-      background:
-        radial-gradient(ellipse 80% 58% at 50% 0%, rgba(94, 181, 223, .18), transparent 68%),
-        linear-gradient(180deg, #101923 0%, #070a10 68%);
-    }
-
-    .image-viewer.episode-mode .episode-view.no-still::before {
-      display: none;
-    }
-
-    .image-viewer.episode-mode .episode-view.no-still > div {
-      margin-top: 0;
-    }
-
-    html.native-mobile-app .image-viewer.episode-mode .mobile-detail-back {
-      top: max(14px, var(--safe-t));
-      right: 16px;
-      left: auto;
-    }
-
-    html.native-mobile-app .image-viewer.episode-mode.active {
-      display: block;
-    }
-
-    html.native-mobile-app .image-viewer.episode-mode .episode-view {
-      padding-left: 0;
-      padding-right: 0;
-      padding-bottom: calc(42px + max(var(--fm-safe-bottom, 0px), env(safe-area-inset-bottom, 0px)));
-    }
-
-    html.no-css-functions.native-mobile-app .image-viewer.episode-mode .episode-view {
-      padding-left: 0;
-      padding-right: 0;
-      padding-bottom: calc(42px + var(--fm-safe-bottom, 0px));
-    }
-
-    html.native-mobile-app .image-viewer.episode-mode .episode-view img {
-      width: 100%;
-      max-width: none;
-      max-height: none;
-      height: min(70vh, 680px);
-      margin: 0;
-      aspect-ratio: auto;
-      object-position: center top;
-      border: 0;
-      border-radius: 0;
-    }
-
-    html.native-mobile-app .image-viewer.episode-mode .episode-view::before {
-      position: absolute;
-      top: 0;
-      height: min(80vh, 760px);
-      background:
-        linear-gradient(180deg, rgba(3, 6, 10, .05) 0%, rgba(3, 6, 10, .08) 38%, rgba(5, 9, 15, .72) 72%, #070a10 100%),
-        linear-gradient(90deg, rgba(3, 7, 12, .2), transparent 44%, rgba(3, 7, 12, .16));
-    }
-
-    html.native-mobile-app .image-viewer.episode-mode .episode-view > div,
-    html.native-mobile-app .image-viewer.episode-mode .episode-view > p {
-      width: calc(100% - 40px);
-    }
-
-    html.native-mobile-app .image-viewer.episode-mode .episode-view > div {
-      margin-top: -132px;
-    }
-
-    html.native-mobile-app .image-viewer.episode-mode .episode-view > p {
-      margin-top: 16px;
-      font-size: 15px;
-      line-height: 1.72;
-    }
-
     .focusable:focus,
     button:focus,
     input:focus,
@@ -4044,13 +2637,11 @@
     }
 
     .card:focus img,
-    .episode-card:focus img,
     .person-card:focus img {
       filter: brightness(1.06) saturate(1.04);
     }
 
     html.tv-mode .card:focus,
-    html.tv-mode .episode-card:focus,
     html.tv-mode .person-card:focus {
       transform: translateY(-1px) scale(1.025);
       outline: 2px solid rgba(255, 255, 255, .9);
@@ -4060,10 +2651,6 @@
       box-shadow: none;
       transition: none;
       z-index: 12;
-    }
-
-    html.tv-mode .episode-card:focus {
-      transform: translateY(-1px) scale(1.03);
     }
 
     html.tv-mode .card:focus {
@@ -4087,7 +2674,6 @@
     }
 
     html.tv-mode .card:focus img,
-    html.tv-mode .episode-card:focus img,
     html.tv-mode .person-card:focus img {
       filter: none;
     }
@@ -4211,7 +2797,6 @@
 
     html.tv-mode .media-grid .card,
     html.tv-mode #searchRail .card,
-    html.tv-mode .episode-card,
     html.tv-mode .person-card,
     html.tv-mode .pan-result-item,
     html.tv-mode .live-entry-card {
@@ -4223,7 +2808,6 @@
       transform: translateY(-1px) scale(1.025) translateZ(0);
     }
 
-    html.tv-mode .episode-card:focus,
     html.tv-mode .person-card:focus {
       transform: translateY(-1px) scale(1.03) translateZ(0);
     }
@@ -4258,13 +2842,11 @@
     }
 
     html.no-layout-gap .rail > .card,
-    html.no-layout-gap .rail > .episode-card,
     html.no-layout-gap .rail > .person-card {
       margin-right: 12px;
     }
 
     html.no-layout-gap .rail > .card:last-child,
-    html.no-layout-gap .rail > .episode-card:last-child,
     html.no-layout-gap .rail > .person-card:last-child {
       margin-right: 0;
     }
@@ -4322,13 +2904,11 @@
       margin: 3px;
     }
 
-    html.no-layout-gap #detailSheet.detail-large .rail > .episode-card,
     html.no-layout-gap #detailSheet.detail-large .rail > .person-card,
     html.no-layout-gap #detailSheet.detail-large .rail > .card {
       margin-right: 18px;
     }
 
-    html.no-layout-gap #detailSheet.detail-large .rail > .episode-card:last-child,
     html.no-layout-gap #detailSheet.detail-large .rail > .person-card:last-child,
     html.no-layout-gap #detailSheet.detail-large .rail > .card:last-child {
       margin-right: 0;
@@ -4409,11 +2989,6 @@
       border-radius: var(--radius);
     }
 
-    html.no-aspect-ratio #detailSheet.detail-large .episode-card {
-      height: 141px;
-    }
-
-    html.no-aspect-ratio #detailSheet.detail-large .episode-still,
     html.no-aspect-ratio #detailSheet.detail-large .landscape-card .poster {
       position: absolute;
       top: 0;
@@ -4473,31 +3048,9 @@
       font-size: 19px;
     }
 
-    html.no-css-functions #detailSheet.detail-large #seasonBlock,
-    html.legacy-detail-layout #detailSheet.detail-large #seasonBlock {
-      margin-top: 46px;
-    }
-
     html.no-css-functions #detailSheet.detail-large .detail-block h3,
     html.legacy-detail-layout #detailSheet.detail-large .detail-block h3 {
       font-size: 24px;
-    }
-
-    html.no-css-functions #detailSheet.detail-large #seasonTabs,
-    html.legacy-detail-layout #detailSheet.detail-large #seasonTabs {
-      max-width: 720px;
-    }
-
-    html.no-css-functions #detailSheet.detail-large .episode-card,
-    html.legacy-detail-layout #detailSheet.detail-large .episode-card {
-      flex: 0 0 250px;
-      max-width: 250px;
-      height: 141px;
-    }
-
-    html.no-css-functions #detailSheet.detail-large .episode-card b,
-    html.legacy-detail-layout #detailSheet.detail-large .episode-card b {
-      font-size: 16px;
     }
 
     html.no-css-functions #detailSheet.detail-large .person-card,
@@ -4528,7 +3081,7 @@
        TV 模式（html.tv-mode）完全保持原有渲染与布局不变。
        仅调整“材质”：毛玻璃模糊、半透明、描边高光、柔和投影、圆角；
        不改动任何元素的尺寸、内外边距、定位、栅格与排版。
-       全屏透明浮层（.sheet、.image-viewer.episode-mode）按文档要求保持透明，不玻璃化。
+       全屏透明浮层（.sheet）按文档要求保持透明，不玻璃化。
        ============================================================ */
     html:not(.tv-mode) {
       --radius: 12px;
@@ -4570,9 +3123,8 @@
       box-shadow: none;
     }
 
-    /* 海报 / 分集卡片 —— 轻毛玻璃 + 顶部高光 + 极柔投影（栅格内不显杂乱） */
-    html:not(.tv-mode) .card,
-    html:not(.tv-mode) .episode-card {
+    /* 海报卡片 —— 轻毛玻璃 + 顶部高光 + 极柔投影（栅格内不显杂乱） */
+    html:not(.tv-mode) .card {
       -webkit-backdrop-filter: var(--glass-blur-light);
       backdrop-filter: var(--glass-blur-light);
       box-shadow: var(--glass-edge), var(--glass-shadow-card);
@@ -4625,11 +3177,6 @@
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
     }
 
-    /* 沉浸式图片预览：加深磨砂（episode-mode 透明态保持不变，见文档 22.3） */
-    html:not(.tv-mode) .image-viewer:not(.episode-mode) {
-      -webkit-backdrop-filter: blur(20px) saturate(150%);
-      backdrop-filter: blur(20px) saturate(150%);
-    }
     /* ------------------------------------------------------------
        全站按钮统一：偏亮玻璃质感（对齐「搜索」按钮）
        覆盖 .btn / .icon-btn / .mini-icon-btn 的静置态；
@@ -4772,7 +3319,6 @@
       }
 
       html:not(.tv-mode) .card:hover,
-      html:not(.tv-mode) .episode-card:hover,
       html:not(.tv-mode) .person-card:hover {
         border-color: rgba(255, 255, 255, .30);
         box-shadow:
@@ -5383,8 +3929,7 @@
 
     /* ── 卡片背景全部改为透明（演员表 / 详情页关联卡片 / 海报卡片），适配浅色壁纸 ── */
     .card,
-    html:not(.tv-mode) .card,
-    html:not(.tv-mode) .episode-card {
+    html:not(.tv-mode) .card {
       background: transparent !important;
       -webkit-backdrop-filter: none !important;
       backdrop-filter: none !important;
@@ -6986,10 +5531,10 @@
 
     /* V1.4.6.11.1: TV focus is a state fill for controls.  Image cards keep
        one inner frame; business states such as Recent delete remain distinct. */
-    html.tv-mode .focusable:focus:not(.card):not(.episode-card):not(.person-card),
-    html.tv-mode button:focus:not(.card):not(.episode-card):not(.person-card),
-    html.tv-preview .focusable:focus:not(.card):not(.episode-card):not(.person-card),
-    html.tv-preview button:focus:not(.card):not(.episode-card):not(.person-card) {
+    html.tv-mode .focusable:focus:not(.card):not(.person-card),
+    html.tv-mode button:focus:not(.card):not(.person-card),
+    html.tv-preview .focusable:focus:not(.card):not(.person-card),
+    html.tv-preview button:focus:not(.card):not(.person-card) {
       outline: none !important;
       outline-offset: 0 !important;
       box-shadow: none !important;
@@ -7002,12 +5547,6 @@
       background: rgba(70, 85, 96, .72) !important;
       border-color: var(--line) !important;
       color: #fff !important;
-    }
-
-    html.tv-mode .image-content:focus,
-    html.tv-preview .image-content:focus {
-      background: rgba(70, 85, 96, .72) !important;
-      border-color: var(--line) !important;
     }
 
     html.tv-mode input:focus,
@@ -7039,8 +5578,8 @@
       color: currentColor !important;
     }
 
-    html.tv-mode .secondary-page button:focus:not(.card):not(.episode-card):not(.person-card),
-    html.tv-preview .secondary-page button:focus:not(.card):not(.episode-card):not(.person-card) {
+    html.tv-mode .secondary-page button:focus:not(.card):not(.person-card),
+    html.tv-preview .secondary-page button:focus:not(.card):not(.person-card) {
       background: rgba(255, 255, 255, .18);
       color: #fff;
       outline: 2px solid rgba(120, 210, 255, .95) !important;
@@ -7052,22 +5591,13 @@
     }
 
     html.tv-mode .card:focus,
-    html.tv-mode .episode-card:focus,
     html.tv-mode .person-card:focus,
     html.tv-preview .card:focus,
-    html.tv-preview .episode-card:focus,
     html.tv-preview .person-card:focus {
       outline: 2px solid rgba(255, 255, 255, .9) !important;
       outline-offset: -2px !important;
       border-color: var(--line) !important;
       box-shadow: none !important;
-    }
-
-    html.tv-mode .episode-card:focus,
-    html.tv-mode .person-card:focus,
-    html.tv-preview .episode-card:focus,
-    html.tv-preview .person-card:focus {
-      transform: translateY(-1px) scale(1.03) translateZ(0);
     }
 
     html.tv-mode .card.recent-watching-card.recent-delete-armed:focus,
@@ -7375,8 +5905,7 @@
     }
 
     .secondary-page-back.return-control,
-    #closeSyncBtn.return-control,
-    #closeImageBtn.return-control {
+    #closeSyncBtn.return-control {
       display: inline-flex !important;
     }
 
@@ -7397,26 +5926,6 @@
       top: calc(14px + var(--fm-safe-top, 0px));
     }
 
-    /* 剧情沉浸页此前误放在右上角，这里统一改为左上角。 */
-    .image-viewer.episode-mode .mobile-detail-back.return-control {
-      top: max(14px, var(--safe-t));
-      right: auto !important;
-      left: 16px !important;
-    }
-
-    html.no-css-functions .image-viewer.episode-mode .mobile-detail-back.return-control {
-      top: calc(14px + var(--fm-safe-top, 0px));
-    }
-
-    html.native-mobile-app .image-viewer.episode-mode .mobile-detail-back.return-control {
-      top: max(14px, var(--safe-t));
-      right: auto !important;
-      left: 16px !important;
-    }
-
-    html.no-css-functions.native-mobile-app .image-viewer.episode-mode .mobile-detail-back.return-control {
-      top: calc(14px + var(--fm-safe-top, 0px));
-    }
   </style>
 </head>
 <body>
@@ -7688,11 +6197,6 @@
       <div class="chips pan-tabs" id="panTabs"></div>
       <div class="pan-result-list" id="panResultList"></div>
     </div>
-    <div class="detail-block" id="seasonBlock" style="display:none">
-      <h3>剧情概要</h3>
-      <div class="chips" id="seasonTabs"></div>
-      <div class="rail" id="episodeRail"></div>
-    </div>
     <div class="detail-block" id="castBlock" style="display:none">
       <h3>演职员表</h3>
       <div class="rail" id="castRail"></div>
@@ -7727,20 +6231,6 @@
       </div>
       <p class="hint mono" id="identityText">身份未就绪</p>
       <p class="hint" id="relayText">relay 未连接</p>
-    </div>
-  </section>
-
-  <section class="image-viewer" id="imageViewer" aria-hidden="true">
-    <button class="mobile-detail-back return-control focusable" id="mobileImageBackBtn" type="button" aria-label="返回">
-      <svg class="icon" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
-    </button>
-    <button class="btn return-control focusable" id="closeImageBtn" type="button" aria-label="返回">
-      <svg class="icon" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
-      返回
-    </button>
-    <div class="image-content focusable" id="imageContent" tabindex="0">
-      <img id="viewerImage" alt="">
-      <div class="episode-view" id="episodeViewer" style="display:none"></div>
     </div>
   </section>
 
@@ -17278,8 +15768,6 @@ utils.encode = function encode(arr, enc) {
       continueIndex: { loaded: false, loading: false, promise: null, entries: [], diag: null },
       recentDelete: { armedKey: "", armedCard: null, pendingKey: "", pendingCard: null, pendingTimer: 0, remotePressLocked: false, remotePressCard: null, remotePressKey: "" },
       detailCover: { images: [], index: 0, timer: 0, token: 0, swipe: null },
-      episodeViewer: { episodes: [], effectiveIndexes: [], index: -1, seasonNumber: "", episodeNumber: "", swipe: null },
-      episodePreview: { active: false, expanded: false, index: -1, episodeNumber: "", lastEpisodeNumber: "", infoHeight: 0 },
       deviceMode: "unknown",
       previewMode: false,
       tvFullscreen: false,
@@ -20465,13 +18953,6 @@ utils.encode = function encode(arr, enc) {
       url.searchParams.set("api_key", tmdbApiKey());
       url.searchParams.set("language", window.WEBHOME_CONFIG.tmdb.language);
       url.searchParams.set("page", "1");
-      return url.toString();
-    }
-
-    function tmdbSeasonUrl(item, seasonNumber) {
-      const url = new URL(`${window.WEBHOME_CONFIG.tmdb.apiBase}/tv/${item.tmdbId}/season/${seasonNumber}`);
-      url.searchParams.set("api_key", tmdbApiKey());
-      url.searchParams.set("language", window.WEBHOME_CONFIG.tmdb.language);
       return url.toString();
     }
 
@@ -28527,10 +27008,6 @@ utils.encode = function encode(arr, enc) {
     function setDetailPlaybackTarget(item, context) {
       const target = normalizePlaybackTarget(item, context);
       state.detailEpisodeTarget = target;
-      if (target && target.mediaType === "tv") {
-        state.episodeViewer.seasonNumber = target.seasonNumber ? String(target.seasonNumber) : state.episodeViewer.seasonNumber || "";
-        state.episodeViewer.episodeNumber = target.episodeNumber ? String(target.episodeNumber) : state.episodeViewer.episodeNumber || "";
-      }
       scheduleUiSnapshotSave();
       return target;
     }
@@ -29601,11 +28078,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       sheet.style.width = "100%";
       sheet.style.height = "100vh";
       sheet.style.display = display || "block";
-      sheet.style.zIndex = sheet.id === "imageViewer" ? "100" : "60";
+      sheet.style.zIndex = "60";
     }
 
     function renderDetailBase(item) {
-      clearInlineEpisodePreview({ restoreDetail: false });
       resetDetailTextClamp();
       // 清除上一个影视的 logo，显示文字标题（emby 风格 wrap）
       const logoWrap = $("detailLogoWrap");
@@ -29988,8 +28464,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     }
 
     function clearDetailExtras() {
-      ["seasonBlock", "castBlock", "personWorkBlock", "recommendBlock"].forEach((id) => $(id).style.display = "none");
-      ["seasonTabs", "episodeRail", "castRail", "personInfo", "personWorkRail", "recommendWorkRail"].forEach((id) => $(id).replaceChildren());
+      ["castBlock", "personWorkBlock", "recommendBlock"].forEach((id) => $(id).style.display = "none");
+      ["castRail", "personInfo", "personWorkRail", "recommendWorkRail"].forEach((id) => $(id).replaceChildren());
     }
 
     async function loadDetail(item) {
@@ -30036,9 +28512,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       scheduleDetailTextClamp();
       renderDetailCoverFromDetail(item, detail);
       renderCast(detail.credits && detail.credits.cast || []);
-      if (item.mediaType === "tv") {
-        renderSeasons(item, detail);
-      }
       // 详情入口统一由 Direct prepare 提供资源；History 只在用户明确
       // 点击主按钮时提供季/集和进度上下文，不在详情渲染阶段自动续播。
       loadRecommendations(item);
@@ -30241,7 +28714,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         text.removeAttribute("data-detail-toggle");
         text.removeAttribute("data-more-label");
         text.style.removeProperty("--detail-text-max");
-        text.style.removeProperty("--episode-preview-text-max");
         setDetailTextFocusable(false);
       }
       if (more) {
@@ -30278,10 +28750,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const more = $("detailMoreBtn");
       const actions = more && more.closest(".detail-info") && more.closest(".detail-info").nextElementSibling;
       if (!sheet || !text || !more || !actions || !sheet.classList.contains("active")) return;
-      if (state.episodePreview && state.episodePreview.active) {
-        updateInlineEpisodePreviewClamp();
-        return;
-      }
       const mobileDetail = isMobileDetailSheetActive(sheet);
       if (more.dataset.expanded === "1") {
         if (mobileDetail) {
@@ -30320,11 +28788,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     }
 
     function toggleDetailTextMore() {
-      if (state.episodePreview && state.episodePreview.active) {
-        toggleInlineEpisodePreviewExpanded();
-        scheduleUiSnapshotSave();
-        return;
-      }
       const more = $("detailMoreBtn");
       if (!more) return;
       more.dataset.expanded = more.dataset.expanded === "1" ? "" : "1";
@@ -30337,263 +28800,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const text = $("detailText");
       const more = $("detailMoreBtn");
       if (!sheet || !text || !more) return;
-      // 分集剧情预览模式：沿用原有展开逻辑
-      if (state.episodePreview && state.episodePreview.active) {
-        toggleInlineEpisodePreviewExpanded();
-        scheduleUiSnapshotSave();
-        return;
-      }
       // 仅当简介处于“可展开/可收起”状态时才响应点击
       const expanded = more.dataset.expanded === "1";
       if (!expanded && !text.classList.contains("clamped")) return;
       more.dataset.expanded = expanded ? "" : "1";
       updateDetailTextClamp();
       scheduleUiSnapshotSave();
-    }
-
-    function useInlineEpisodePreview() {
-      const sheet = $("detailSheet");
-      return !!(sheet && sheet.classList.contains("active") && sheet.classList.contains("detail-large") && useLargeDetailLayout());
-    }
-
-    function episodePreviewTitle(ep) {
-      const number = ep && ep.episode_number ? `第${ep.episode_number}集` : "分集剧情";
-      const name = String(ep && ep.name || "").trim();
-      return name ? `${number} ${name}` : number;
-    }
-
-    function episodePreviewMeta(ep) {
-      return [
-        ep && ep.air_date ? formatDateCn(ep.air_date) : "",
-        state.selected && state.selected.title || ""
-      ].filter(Boolean).join(" · ");
-    }
-
-    function renderEpisodePreviewTitleMeta(metaText) {
-      const root = $("detailTitleMeta");
-      if (!root) return;
-      root.replaceChildren();
-      if (!metaText) return;
-      const span = document.createElement("span");
-      span.textContent = metaText;
-      root.appendChild(span);
-    }
-
-    function applyInlineEpisodePreview(index, options) {
-      if (!useInlineEpisodePreview()) return false;
-      const episodes = state.episodeViewer.episodes || [];
-      const ep = episodes[index];
-      if (!ep) return false;
-      const opts = options || {};
-      const sheet = $("detailSheet");
-      const text = $("detailText");
-      const info = text && text.closest(".detail-info");
-      const anchor = currentEpisodePreviewAnchor();
-      const anchorTop = anchor ? anchor.getBoundingClientRect().top : 0;
-      const infoHeight = state.episodePreview.infoHeight || measureEpisodePreviewInfoHeight(info);
-      state.episodePreview.active = true;
-      state.episodePreview.expanded = !!opts.expanded;
-      state.episodePreview.index = index;
-      state.episodePreview.episodeNumber = String(ep.episode_number || "");
-      state.episodePreview.lastEpisodeNumber = String(ep.episode_number || "") || state.episodePreview.lastEpisodeNumber || "";
-      state.episodePreview.infoHeight = infoHeight;
-      state.episodeViewer.index = index;
-      state.episodeViewer.episodeNumber = String(ep.episode_number || "");
-      sheet.classList.add("episode-preview-active");
-      sheet.classList.toggle("episode-preview-expanded", state.episodePreview.expanded);
-      if (info && infoHeight) setEpisodePreviewInfoHeight(info, infoHeight);
-      $("detailTitle").textContent = episodePreviewTitle(ep);
-      renderEpisodePreviewTitleMeta(episodePreviewMeta(ep));
-      $("detailMeta").replaceChildren();
-      const overview = ep.overview || "暂无剧情概要";
-      text.textContent = overview;
-      pauseDetailCoverCarousel();
-      const still = episodeFullStill(ep);
-      const fallback = state.detailCover.images && state.detailCover.images[state.detailCover.index] || state.selected && state.selected.landscape || "";
-      setDetailCoverImage(still || fallback, "", { allowPoster: false, keepLoading: false });
-      preserveEpisodePreviewAnchor(anchor, anchorTop);
-      syncEpisodePreviewLayout(info);
-      return true;
-    }
-
-    function measureEpisodePreviewInfoHeight(info) {
-      if (!info) return 0;
-      const rect = info.getBoundingClientRect ? info.getBoundingClientRect() : null;
-      const height = rect && rect.height || info.offsetHeight || 0;
-      return Math.max(0, Math.round(height));
-    }
-
-    function useLegacyEpisodePreviewLayout() {
-      const root = document.documentElement;
-      return !!(root && (root.classList.contains("no-css-functions") || root.classList.contains("legacy-detail-layout")));
-    }
-
-    function setEpisodePreviewInfoHeight(info, height) {
-      if (!info) return;
-      if (useLegacyEpisodePreviewLayout()) {
-        const fixedHeight = Math.max(180, Math.min(240, Number(height || 0) || 220));
-        info.style.height = `${fixedHeight}px`;
-        info.style.maxHeight = `${fixedHeight}px`;
-        return;
-      }
-      info.style.setProperty("--episode-preview-info-height", `${height}px`);
-    }
-
-    function updateEpisodePreviewPosition(info) {
-      if (!info || !info.getBoundingClientRect) return;
-      const sheet = $("detailSheet");
-      if (!sheet || !sheet.getBoundingClientRect) {
-        info.style.transform = "";
-        return;
-      }
-      info.style.transform = "";
-      const infoRect = info.getBoundingClientRect();
-      const sheetRect = sheet.getBoundingClientRect ? sheet.getBoundingClientRect() : { top: 0 };
-      const styles = window.getComputedStyle ? getComputedStyle(sheet) : null;
-      const topPad = styles ? parseFloat(styles.paddingTop || "0") || 0 : 0;
-      const defaultTop = sheetRect.top + topPad;
-      const offset = Math.round(defaultTop - infoRect.top);
-      info.style.transform = Math.abs(offset) > 1 ? `translateY(${offset}px)` : "";
-    }
-
-    function syncEpisodePreviewLayout(info) {
-      if (!state.episodePreview || !state.episodePreview.active) return;
-      updateEpisodePreviewPosition(info);
-      updateInlineEpisodePreviewClamp();
-      if (!info) return;
-      requestAnimationFrame(() => {
-        if (!state.episodePreview || !state.episodePreview.active || !info.isConnected) return;
-        updateEpisodePreviewPosition(info);
-        updateInlineEpisodePreviewClamp();
-        requestAnimationFrame(() => {
-          if (!state.episodePreview || !state.episodePreview.active || !info.isConnected) return;
-          updateEpisodePreviewPosition(info);
-          updateInlineEpisodePreviewClamp();
-        });
-      });
-    }
-
-    function currentEpisodePreviewAnchor() {
-      const active = document.activeElement;
-      const rail = $("episodeRail");
-      return active && rail && rail.contains(active) && active.getBoundingClientRect ? active : null;
-    }
-
-    function lastEpisodeFocusTarget() {
-      const rail = $("episodeRail");
-      if (!rail) return null;
-      const episodeNumber = state.episodePreview && state.episodePreview.lastEpisodeNumber || state.episodeViewer && state.episodeViewer.episodeNumber || "";
-      const target = episodeNumber ? findByDataset(rail, "episodeNumber", episodeNumber) : null;
-      return isVisibleFocusable(target) ? target : rail.querySelector(".episode-card.focusable");
-    }
-
-    function preserveEpisodePreviewAnchor(anchor, top) {
-      const sheet = $("detailSheet");
-      if (!sheet || !anchor || !anchor.isConnected || !sheet.contains(anchor) || !Number.isFinite(top)) return;
-      const nextTop = anchor.getBoundingClientRect().top;
-      const delta = nextTop - top;
-      if (Math.abs(delta) > .5) sheet.scrollTop += delta;
-    }
-
-    function updateInlineEpisodePreviewClamp() {
-      const sheet = $("detailSheet");
-      const text = $("detailText");
-      const more = $("detailMoreBtn");
-      if (!sheet || !text || !more) return;
-      more.dataset.expanded = "";
-      more.style.display = "inline-flex";
-      more.style.visibility = "";
-      if (!state.episodePreview || !state.episodePreview.active) return;
-      setDetailTextFocusable(false);
-      const lineHeight = parseFloat(getComputedStyle(text).lineHeight || "28") || 28;
-      const textRect = text.getBoundingClientRect ? text.getBoundingClientRect() : null;
-      const info = text.closest(".detail-info");
-      const infoRect = info && info.getBoundingClientRect ? info.getBoundingClientRect() : null;
-      const actions = info && info.nextElementSibling;
-      const actionsRect = actions && actions.getBoundingClientRect ? actions.getBoundingClientRect() : null;
-      const seasonBlock = $("seasonBlock");
-      const seasonRect = seasonBlock && seasonBlock.style.display !== "none" && seasonBlock.getBoundingClientRect ? seasonBlock.getBoundingClientRect() : null;
-      const lowerBound = seasonRect && seasonRect.top || actionsRect && actionsRect.bottom || infoRect && infoRect.bottom || 0;
-      const available = textRect && infoRect
-        ? lowerBound - textRect.top - (state.episodePreview && state.episodePreview.expanded ? 18 : 22)
-        : lineHeight * 5.25;
-      const fullLines = useLegacyEpisodePreviewLayout() ? 4 : Math.max(3, Math.floor(Math.max(lineHeight * 3, available) / lineHeight));
-      const maxHeight = Math.round(fullLines * lineHeight);
-      if (useLegacyEpisodePreviewLayout()) text.style.maxHeight = `${maxHeight}px`;
-      else text.style.setProperty("--episode-preview-text-max", `${maxHeight}px`);
-      if (state.episodePreview.expanded) {
-        text.classList.remove("clamped");
-        text.removeAttribute("data-more-label");
-        text.style.removeProperty("--episode-preview-text-max");
-        text.style.maxHeight = "";
-        more.textContent = "收起";
-        return;
-      }
-      const shouldClamp = text.scrollHeight > maxHeight + 2 || detailTextShouldClampByLength(text);
-      text.classList.toggle("clamped", shouldClamp);
-      if (shouldClamp) text.setAttribute("data-more-label", "更多");
-      else text.removeAttribute("data-more-label");
-      more.textContent = shouldClamp ? "更多" : "";
-      more.style.display = shouldClamp ? "inline-flex" : "none";
-    }
-
-    function toggleInlineEpisodePreviewExpanded() {
-      if (!state.episodePreview || !state.episodePreview.active) return false;
-      const index = Number(state.episodePreview.index);
-      if (!Number.isFinite(index) || index < 0) return false;
-      return applyInlineEpisodePreview(index, { expanded: !state.episodePreview.expanded });
-    }
-
-    function collapseInlineEpisodePreview(event) {
-      if (!state.episodePreview || !state.episodePreview.active || !state.episodePreview.expanded) return false;
-      if (event) {
-        event.preventDefault();
-        event.stopPropagation();
-        if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-      }
-      applyInlineEpisodePreview(Number(state.episodePreview.index), { expanded: false });
-      return true;
-    }
-
-    function clearInlineEpisodePreview(options) {
-      const opts = options || {};
-      const sheet = $("detailSheet");
-      if (sheet) sheet.classList.remove("episode-preview-active", "episode-preview-expanded");
-      state.episodePreview.active = false;
-      state.episodePreview.expanded = false;
-      state.episodePreview.index = -1;
-      state.episodePreview.episodeNumber = "";
-      state.episodePreview.infoHeight = 0;
-      const text = $("detailText");
-      if (text) {
-        text.style.removeProperty("--episode-preview-text-max");
-        text.style.maxHeight = "";
-        text.classList.remove("clamped");
-        text.removeAttribute("data-more-label");
-        const info = text.closest(".detail-info");
-        if (info) {
-          info.style.removeProperty("--episode-preview-info-height");
-          info.style.height = "";
-          info.style.maxHeight = "";
-          info.style.transform = "";
-        }
-      }
-      if (!opts.restoreDetail) return;
-      restoreBaseDetailView();
-    }
-
-    function restoreBaseDetailView() {
-      const item = state.selected;
-      if (!item) return;
-      resetDetailTextClamp();
-      $("detailTitle").textContent = item.title || "详情";
-      const detail = state.detail;
-      setDetailTextContent(detail && detail.overview || item.desc || item.remark || "");
-      renderDetailMeta(item, detail);
-      renderDetailTitleMeta(item, detail);
-      if (detail) renderDetailCoverFromDetail(item, detail);
-      else setDetailCoverCarousel(item.landscape ? [item.landscape] : [], "", { allowPoster: false });
-      scheduleDetailTextClamp();
     }
 
     function renderDetailCoverFromDetail(item, detail) {
@@ -30659,229 +28871,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         button.addEventListener("click", () => loadPersonWorks(person));
         return button;
       }));
-    }
-
-    function renderSeasons(item, detail) {
-      const seasons = (detail.seasons || []).filter((season) => season.season_number > 0);
-      if (!seasons.length) return;
-      $("seasonBlock").style.display = "";
-      const activeEl = document.activeElement;
-      const savedTarget = currentPlaybackTargetForItem(item);
-      const focusedSeason = activeEl && $("seasonTabs").contains(activeEl) && activeEl.dataset.seasonNumber || "";
-      const requestedSeason = Number(savedTarget && savedTarget.seasonNumber || focusedSeason || 0);
-      const initialSeason = seasons.some((season) => Number(season.season_number) === requestedSeason)
-        ? requestedSeason
-        : Number(seasons[0].season_number);
-      const singleSeason = seasons.length === 1;
-      $("seasonTabs").replaceChildren(...seasons.map((season, index) => {
-        const button = document.createElement("button");
-        button.className = "chip" + (singleSeason ? "" : " focusable") + (Number(season.season_number) === initialSeason ? " active" : "");
-        button.type = "button";
-        button.dataset.seasonNumber = String(season.season_number);
-        button.textContent = season.name || "第 " + season.season_number + " 季";
-        if (singleSeason) {
-          button.tabIndex = -1;
-          button.setAttribute("aria-hidden", "true");
-          return button;
-        }
-        button.addEventListener("click", () => {
-          document.querySelectorAll("#seasonTabs .chip").forEach((el) => el.classList.remove("active"));
-          button.classList.add("active");
-          setDetailPlaybackTarget(item, { mediaType: "tv", tmdbId: item.tmdbId, title: item.title, seasonNumber: season.season_number, episodeNumber: 0, sourceType: "season_select" });
-          loadSeason(item, season.season_number);
-        });
-        return button;
-      }));
-      if (focusedSeason && !singleSeason) requestAnimationFrame(() => focusRemoteTarget(findByDataset($("seasonTabs"), "seasonNumber", String(initialSeason)) || $("seasonTabs").querySelector(".chip.active") || $("seasonTabs").querySelector(".chip")));
-      const initial = detail["season/" + initialSeason] || null;
-      if (initial && initial.episodes) renderEpisodes(initial.episodes, initialSeason);
-      else loadSeason(item, initialSeason);
-    }
-
-    async function loadSeason(item, seasonNumber) {
-      try {
-        const body = await requestJson(tmdbSeasonUrl(item, seasonNumber), 18);
-        if (state.selected !== item) return;
-        renderEpisodes(body.episodes || [], seasonNumber);
-      } catch (e) {
-        $("episodeRail").replaceChildren(emptyNode("分集加载失败"));
-      }
-      updatePostPanFocusState();
-    }
-
-    function renderEpisodes(episodes, seasonNumber) {
-      if (state.episodePreview && state.episodePreview.active) clearInlineEpisodePreview({ restoreDetail: true });
-      const list = Array.isArray(episodes) ? episodes : [];
-      const renderedSeason = Number(seasonNumber || state.episodeViewer.seasonNumber || activeSeasonNumber() || 1) || 1;
-      const activeEl = document.activeElement;
-      const savedTarget = currentPlaybackTargetForItem(state.selected);
-      const targetEpisode = savedTarget && Number(savedTarget.seasonNumber || 0) === renderedSeason ? String(savedTarget.episodeNumber || "") : "";
-      const restoreEpisode = activeEl && $("episodeRail").contains(activeEl) && activeEl.dataset.episodeNumber || "";
-      const keepEpisode = $("imageViewer") && $("imageViewer").classList.contains("active") && $("imageViewer").classList.contains("episode-mode")
-        && Number(state.episodeViewer.seasonNumber || renderedSeason) === renderedSeason
-        ? String(state.episodeViewer.episodeNumber || "")
-        : "";
-      state.episodeViewer.seasonNumber = String(renderedSeason);
-      state.episodeViewer.episodes = list.slice();
-      state.episodeViewer.effectiveIndexes = episodeEffectiveIndexes(state.episodeViewer.episodes);
-      if (keepEpisode) {
-        const index = state.episodeViewer.episodes.findIndex((ep) => String(ep && ep.episode_number || "") === keepEpisode);
-        state.episodeViewer.index = index;
-        state.episodeViewer.episodeNumber = index >= 0 ? keepEpisode : "";
-      } else {
-        const lastEpisode = state.episodePreview && state.episodePreview.lastEpisodeNumber || "";
-        const preferredEpisode = restoreEpisode || targetEpisode || lastEpisode;
-        const index = preferredEpisode ? state.episodeViewer.episodes.findIndex((ep) => String(ep && ep.episode_number || "") === preferredEpisode) : -1;
-        state.episodeViewer.index = index;
-        state.episodeViewer.episodeNumber = index >= 0 ? preferredEpisode : "";
-      }
-      if (!list.length) {
-        $("episodeRail").replaceChildren(emptyNode("暂无分集信息"));
-        return;
-      }
-      $("episodeRail").replaceChildren(...list.map((ep, index) => {
-        const stillSource = ep.still_path ? imageUrl(ep.still_path, true) : "";
-        const still = stillSource ? displayImage(stillSource, { size: "w300" }) : "";
-        const button = document.createElement("button");
-        button.className = "episode-card focusable" + (still ? " has-still" : "");
-        button.type = "button";
-        button.dataset.episodeNumber = String(ep.episode_number || "");
-        button.dataset.seasonNumber = String(Number(ep.season_number) || renderedSeason);
-        button.innerHTML = `
-          <span class="episode-badge">第${escapeHtml(ep.episode_number || "?")}集</span>
-          ${still ? `<div class="episode-still-wrap"><img class="episode-still" alt="" ${imageAttrs(still)}></div>` : ""}
-          <div class="episode-body">
-            <b>${ep.episode_number}. ${escapeHtml(ep.name || "未命名")}</b>
-            <span>${escapeHtml(ep.air_date || "")}</span>
-            <p>${escapeHtml(ep.overview || "暂无剧情")}</p>
-          </div>
-        `;
-        button.addEventListener("focus", () => {
-          applyInlineEpisodePreview(index, { expanded: false });
-        });
-        button.addEventListener("blur", () => {
-          setTimeout(() => {
-            const rail = $("episodeRail");
-            if (state.episodePreview && state.episodePreview.active && rail && !rail.contains(document.activeElement)) {
-              clearInlineEpisodePreview({ restoreDetail: true });
-            }
-          }, 0);
-        });
-        button.addEventListener("click", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          openEpisodeViewer(index);
-        });
-        return button;
-      }));
-      if (restoreEpisode) requestAnimationFrame(() => focusRemoteTarget(findByDataset($("episodeRail"), "episodeNumber", restoreEpisode) || $("episodeRail").querySelector(".episode-card")));
-      updatePostPanFocusState();
-    }
-
-    function isEffectiveEpisode(ep, maxAiredEpisode) {
-      if (!ep) return false;
-      const airDate = String(ep.air_date || "").trim();
-      if (airDate) {
-        const airMs = dateOnlyMs(airDate);
-        const todayMs = dateOnlyMs(today());
-        if (airMs) return airMs <= todayMs;
-      }
-      if (maxAiredEpisode > 0) return Number(ep.episode_number || 0) > 0 && Number(ep.episode_number || 0) <= maxAiredEpisode;
-      return !!(ep.still_path || String(ep.overview || "").trim());
-    }
-
-    function episodeEffectiveIndexes(episodes) {
-      const todayMs = dateOnlyMs(today());
-      const maxAiredEpisode = (Array.isArray(episodes) ? episodes : []).reduce((max, ep) => {
-        const airMs = dateOnlyMs(ep && ep.air_date);
-        if (!airMs || airMs > todayMs) return max;
-        return Math.max(max, Number(ep && ep.episode_number || 0));
-      }, 0);
-      const indexes = [];
-      (Array.isArray(episodes) ? episodes : []).forEach((ep, index) => {
-        if (isEffectiveEpisode(ep, maxAiredEpisode)) indexes.push(index);
-      });
-      return indexes.length ? indexes : (episodes || []).map((_, index) => index);
-    }
-
-    function episodeFullStill(ep) {
-      const stillSource = ep && ep.still_path ? imageUrl(ep.still_path, true) : "";
-      return stillSource ? displayImage(stillSource, { size: "w780" }) : "";
-    }
-
-    function episodeViewerPayload(ep) {
-      const still = episodeFullStill(ep);
-      const title = `${ep.episode_number || ""}${ep.episode_number ? ". " : ""}${ep.name || "未命名"}`;
-      const meta = [ep.air_date || "", state.selected && state.selected.title || ""].filter(Boolean).join(" · ");
-      const overview = ep.overview || "暂无剧情概要";
-      return { title, meta, overview, still };
-    }
-
-    function openEpisodeViewer(index) {
-      const episodes = state.episodeViewer.episodes || [];
-      const ep = episodes[index];
-      if (!ep) return;
-      state.episodeViewer.index = index;
-      state.episodeViewer.episodeNumber = String(ep.episode_number || "");
-      const returnCard = findByDataset($('episodeRail'), "episodeNumber", String(ep.episode_number || ""));
-      const episode = episodeViewerPayload(ep);
-      openImage(episode.still || "", { episode });
-      if (returnCard && returnCard.isConnected) state.focusReturnEl = returnCard;
-    }
-
-    function currentEpisodeViewerIndex() {
-      const episodes = state.episodeViewer.episodes || [];
-      const episodeNumber = String(state.episodeViewer.episodeNumber || "");
-      if (episodeNumber) {
-        const index = episodes.findIndex((ep) => String(ep && ep.episode_number || "") === episodeNumber);
-        if (index >= 0) return index;
-      }
-      const index = Number(state.episodeViewer.index);
-      return Number.isFinite(index) && index >= 0 ? index : 0;
-    }
-
-    function renderEpisodeViewerContent(episode) {
-      const episodeBox = $("episodeViewer");
-      if (!episodeBox) return;
-      const still = episode && episode.still || "";
-      episodeBox.style.display = "grid";
-      episodeBox.classList.toggle("no-still", !still);
-      episodeBox.innerHTML = `
-        ${still ? `<img alt="" ${imageAttrs(still)}>` : ""}
-        <div>
-          <h3>${escapeHtml(episode && episode.title || "分集剧情")}</h3>
-          ${episode && episode.meta ? `<span>${escapeHtml(episode.meta)}</span>` : ""}
-        </div>
-        <p>${escapeHtml(episode && episode.overview || "暂无剧情概要")}</p>
-      `;
-    }
-
-    function switchEpisodeViewer(delta) {
-      const viewer = $("imageViewer");
-      if (!viewer || !viewer.classList.contains("active") || !viewer.classList.contains("episode-mode")) return false;
-      const episodes = state.episodeViewer.episodes || [];
-      if (episodes.length <= 1) return false;
-      const current = currentEpisodeViewerIndex();
-      const effective = (state.episodeViewer.effectiveIndexes || []).filter((index) => index >= 0 && index < episodes.length);
-      const indexes = effective.length ? effective : episodes.map((_, index) => index);
-      if (indexes.length <= 1) return false;
-      let currentPos = indexes.indexOf(current);
-      if (currentPos < 0) {
-        currentPos = delta > 0
-          ? indexes.findIndex((index) => index > current) - 1
-          : indexes.findIndex((index) => index >= current);
-        if (currentPos < 0) currentPos = delta > 0 ? indexes.length - 1 : 0;
-      }
-      const next = indexes[(currentPos + delta + indexes.length) % indexes.length];
-      state.episodeViewer.index = next;
-      state.episodeViewer.episodeNumber = String(episodes[next].episode_number || "");
-      renderEpisodeViewerContent(episodeViewerPayload(episodes[next]));
-      const content = $("imageContent");
-      if (content) content.scrollTop = 0;
-      const currentCard = findByDataset($("episodeRail"), "episodeNumber", String(episodes[next].episode_number || ""));
-      if (currentCard) state.focusReturnEl = currentCard;
-      scheduleUiSnapshotSave();
-      return true;
     }
 
     async function loadPersonWorks(person) {
@@ -31021,13 +29010,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       }
     }
 
-    // 当前选中的季号（用于 SxxEyy 匹配）；优先用 episode 自带 season_number。
-    function activeSeasonNumber() {
-      const el = $("seasonTabs") && $("seasonTabs").querySelector(".chip.active");
-      return el ? (Number(el.dataset.seasonNumber) || 0) : 0;
-    }
-
-    // 标题是否为「整季/区间合集」。
     function panItemIsRangePack(title) {
       const t = String(title || "");
       return /S?\d{1,2}\s*E\d{1,3}\s*[-~～]\s*E?\d{1,3}/i.test(t)   // S01E01-E24 / E01-E24
@@ -34555,7 +32537,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
     function updatePostPanFocusState() {
       const panActive = isPanSearchActive();
-      ["seasonBlock", "castBlock", "personWorkBlock", "recommendBlock"].forEach((id) => {
+      ["castBlock", "personWorkBlock", "recommendBlock"].forEach((id) => {
         const block = $(id);
         if (!block) return;
         block.setAttribute("aria-hidden", panActive ? "true" : "false");
@@ -34582,7 +32564,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const sheet = $("detailSheet");
       if (!sheet) return false;
       const lowerBlock = target && target.closest
-        ? target.closest("#seasonBlock, #episodeRail, #seasonTabs, #castBlock, #castRail, #personWorkBlock, #personWorkRail, #recommendBlock, #recommendWorkRail")
+        ? target.closest("#castBlock, #castRail, #personWorkBlock, #personWorkRail, #recommendBlock, #recommendWorkRail")
         : null;
       return !!(lowerBlock && sheet.contains(lowerBlock));
     }
@@ -35329,12 +33311,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         sheet.style.display = "";
         sheet.setAttribute("aria-hidden", "true");
         document.body.classList.remove("detail-active");
-        document.body.classList.remove("episode-active");
         state.detailReturn = null;
         state.detailMode = "FIRST_PLAY";
         state.detailModeItemKey = "";
         state.detailHistory = null;
-        clearInlineEpisodePreview({ restoreDetail: false });
         if (heroBgEl) {
           heroBgEl.classList.remove("active", "closing");
           heroBgEl.style.backgroundImage = "none";
@@ -35381,56 +33361,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       sheet.setAttribute("aria-hidden", "true");
       scheduleUiSnapshotSave();
       if (!fromPopState && location.hash === "#sync") history.back();
-    }
-
-    function openImage(url, options) {
-      const opts = options || {};
-      const episode = opts.episode || null;
-      if (!url && !episode) return;
-      if (!opts.restore) rememberFocusReturn();
-      const image = $("viewerImage");
-      const episodeBox = $("episodeViewer");
-      if (episode) {
-        document.body.classList.add("episode-active");
-        $("imageViewer").classList.add("episode-mode");
-        image.style.display = "none";
-        image.removeAttribute("src");
-        renderEpisodeViewerContent(Object.assign({}, episode, { still: episode.still || url || "" }));
-      } else {
-        document.body.classList.remove("episode-active");
-        $("imageViewer").classList.remove("episode-mode");
-        episodeBox.style.display = "none";
-        episodeBox.classList.remove("no-still");
-        episodeBox.replaceChildren();
-        image.style.display = "";
-        image.src = url;
-      }
-      ensureSheetViewport($("imageViewer"), "grid");
-      $("imageViewer").classList.add("active");
-      $("imageViewer").setAttribute("aria-hidden", "false");
-      if (episode) $("mobileImageBackBtn").classList.remove("is-hidden");
-      if (!opts.skipHistory) history.pushState({ sheet: "image" }, "", "#image");
-      scheduleUiSnapshotSave();
-      if (!opts.restore) setTimeout(() => focusRemoteTarget(episode ? $("imageContent") : $("closeImageBtn")), 40);
-    }
-
-    function closeImage(fromPopState) {
-      const viewer = $("imageViewer");
-      document.body.classList.remove("episode-active");
-      viewer.classList.remove("active");
-      viewer.classList.remove("episode-mode");
-      viewer.style.display = "";
-      viewer.setAttribute("aria-hidden", "true");
-      $("viewerImage").removeAttribute("src");
-      $("viewerImage").style.display = "";
-      $("episodeViewer").style.display = "none";
-      $("episodeViewer").classList.remove("no-still");
-      $("episodeViewer").replaceChildren();
-      state.episodeViewer.swipe = null;
-      $("mobileImageBackBtn").classList.remove("is-hidden");
-      if (!fromPopState && location.hash === "#image") history.back();
-      scheduleUiSnapshotSave();
-      restoreFocusReturn($("detailSheet") && $("detailSheet").classList.contains("active") ? $("closeDetailBtn") : null);
     }
 
     async function nativeSearch(title) {
@@ -37083,11 +35013,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         panConfig.addEventListener("input", markPanConfigDirty);
         panConfig.addEventListener("change", markPanConfigDirty);
       }
-      $("closeImageBtn").addEventListener("click", () => closeImage(false));
-      $("mobileImageBackBtn").addEventListener("click", () => closeImage(false));
-      $("imageViewer").addEventListener("click", (event) => {
-        if (event.target === $("imageViewer")) closeImage(false);
-      });
       (function () {
         const sheet = $("detailSheet");
         if (sheet) {
@@ -37121,7 +35046,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       })();
       bindHomeHeroSwipe();
       bindDetailCoverSwipe();
-      bindEpisodeViewerSwipe();
       $("detailMoreBtn").addEventListener("click", toggleDetailTextMore);
       $("detailText").addEventListener("click", handleDetailTextClick);
       $("panTabs").addEventListener("click", handlePanTabEvent);
@@ -37290,46 +35214,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       }, { passive: false });
       cover.addEventListener("touchcancel", () => {
         state.detailCover.swipe = null;
-      }, { passive: true });
-    }
-
-    function bindEpisodeViewerSwipe() {
-      const content = $("imageContent");
-      if (!content) return;
-      content.addEventListener("touchstart", (event) => {
-        const viewer = $("imageViewer");
-        if (!viewer || !viewer.classList.contains("episode-mode") || !viewer.classList.contains("active")) return;
-        if ((state.episodeViewer.episodes || []).length <= 1) return;
-        const touch = event.touches && event.touches[0];
-        if (!touch) return;
-        state.episodeViewer.swipe = { x: touch.clientX, y: touch.clientY, at: Date.now(), moved: false };
-      }, { passive: true });
-      content.addEventListener("touchmove", (event) => {
-        const swipe = state.episodeViewer.swipe;
-        const touch = event.touches && event.touches[0];
-        if (!swipe || !touch) return;
-        const dx = touch.clientX - swipe.x;
-        const dy = touch.clientY - swipe.y;
-        if (Math.abs(dx) > 16 && Math.abs(dx) > Math.abs(dy) * 1.35) {
-          swipe.moved = true;
-          event.preventDefault();
-        }
-      }, { passive: false });
-      content.addEventListener("touchend", (event) => {
-        const swipe = state.episodeViewer.swipe;
-        state.episodeViewer.swipe = null;
-        if (!swipe || !swipe.moved) return;
-        const touch = event.changedTouches && event.changedTouches[0];
-        if (!touch) return;
-        const dx = touch.clientX - swipe.x;
-        const dy = touch.clientY - swipe.y;
-        if (Math.abs(dx) < 46 || Math.abs(dx) < Math.abs(dy) * 1.35 || Date.now() - swipe.at > 1000) return;
-        event.preventDefault();
-        event.stopPropagation();
-        switchEpisodeViewer(dx < 0 ? 1 : -1);
-      }, { passive: false });
-      content.addEventListener("touchcancel", () => {
-        state.episodeViewer.swipe = null;
       }, { passive: true });
     }
 
@@ -37531,7 +35415,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             event.preventDefault();
             return;
           }
-          if (collapseInlineEpisodePreview(event)) return;
           if (handleSearchSuggestBackKey(event)) return;
           if (handleConnectionPanelBackKey(event)) return;
           if (handlePanBackKey(event)) return;
@@ -37541,7 +35424,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           if ($("detailSheet").classList.contains("active")) { event.preventDefault(); recordBackDiag(event, "history.back", { historyBackCalled: true }); return history.back(); }
           if (handleSecondaryBackKey(event)) return;
           if (handleSearchBackKey(event)) return;
-          if ($("imageViewer").classList.contains("active")) { event.preventDefault(); recordBackDiag(event, "history.back", { historyBackCalled: true }); return history.back(); }
           if ($("syncSheet").classList.contains("active")) { event.preventDefault(); recordBackDiag(event, "history.back", { historyBackCalled: true }); return history.back(); }
           // TV 端：主页处于持久全屏时，首次返回先退出全屏（消费本次返回键）
           if (tvFullscreenActive() && uiSnapshotRoute() === "home") {
@@ -37562,8 +35444,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           return;
         }
         if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(key)) return;
-        if (handleEpisodeViewerDirectionalKey(key, event)) return;
-        if (handleScrollableOverlayKey(key, event)) return;
         if (handlePanDirectionalKey(key, event)) return;
         if (handleDetailDirectionalKey(key, event)) return;
         if (key === "ArrowLeft" && isHomeLeftBoundary(el)) {
@@ -37599,7 +35479,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           return;
         }
         if (state.blocked.selecting) return;
-        if (collapseInlineEpisodePreview(event)) return;
         // 状态面板打开时优先收起并回到状态按钮（面板是最上层浮层，返回键应先关它）。
         // 必须排在搜索/建议返回处理之前：状态按钮本身在搜索表单内，
         // 否则有搜索结果时返回键会先去清空搜索而不是收起面板。
@@ -37723,37 +35602,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         return false;
       }
       return false;
-    }
-
-    function handleScrollableOverlayKey(key, event) {
-      if (!$("imageViewer") || !$("imageViewer").classList.contains("active")) return false;
-      const content = $("imageContent");
-      if (!content || key !== "ArrowUp" && key !== "ArrowDown") return false;
-      const max = content.scrollHeight - content.clientHeight;
-      if (max <= 4) return false;
-      const delta = Math.max(80, Math.round(content.clientHeight * 0.72)) * (key === "ArrowDown" ? 1 : -1);
-      if (key === "ArrowUp" && content.scrollTop <= 0) {
-        event.preventDefault();
-        focusRemoteTarget($("closeImageBtn"));
-        return true;
-      }
-      if (key === "ArrowDown" && content.scrollTop >= max - 2) return false;
-      event.preventDefault();
-      content.scrollTop = Math.max(0, Math.min(max, content.scrollTop + delta));
-      if (!content.contains(document.activeElement)) focusRemoteTarget(content);
-      return true;
-    }
-
-    function handleEpisodeViewerDirectionalKey(key, event) {
-      if (key !== "ArrowLeft" && key !== "ArrowRight") return false;
-      const viewer = $("imageViewer");
-      if (!viewer || !viewer.classList.contains("active") || !viewer.classList.contains("episode-mode")) return false;
-      event.preventDefault();
-      event.stopPropagation();
-      if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-      switchEpisodeViewer(key === "ArrowRight" ? 1 : -1);
-      focusRemoteTarget($("imageContent"));
-      return true;
     }
 
     function closePanSearchToDetail() {
@@ -38231,7 +36079,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (key === "ArrowLeft" || key === "ArrowRight") target = detailHorizontalTarget(currentBlock, active, key === "ArrowRight" ? 1 : -1);
       else target = detailVerticalTarget(currentBlock, active, key === "ArrowDown" ? 1 : -1);
       if (!target && isTvLikeDevice() && (key === "ArrowLeft" || key === "ArrowRight")) {
-        const row = active.closest && active.closest("#seasonTabs, #episodeRail, #castRail, #personWorkRail, #recommendWorkRail, #panTabs, .actions");
+        const row = active.closest && active.closest("#castRail, #personWorkRail, #recommendWorkRail, #panTabs, .actions");
         if (row) {
           event.preventDefault();
           event.stopPropagation();
@@ -38257,71 +36105,15 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         restoreDetailTopAnchor({ reason: "focus_return_from_below", fromTarget: active, target });
         return true;
       }
-      if (prepareEpisodeFocusFromBelow(currentBlock, target)) {
-        requestAnimationFrame(() => focusEpisodeReturnTarget(target));
-        return true;
-      }
       focusRemoteTarget(target);
       return true;
-    }
-
-    function prepareEpisodeFocusFromBelow(currentBlock, target) {
-      const sheet = $("detailSheet");
-      const rail = $("episodeRail");
-      if (!sheet || !rail || !target || !rail.contains(target)) return false;
-      if (!currentBlock || ["seasonBlock", "detailActions", "detailInfo"].includes(currentBlock.id)) return false;
-      positionEpisodeRailAtViewportBottom(target);
-      return true;
-    }
-
-    function positionEpisodeRailAtViewportBottom(target) {
-      const sheet = $("detailSheet");
-      if (!sheet || !target || !target.getBoundingClientRect) return;
-      if (isTvLikeDevice()) {
-        revealVerticalInContainer(target, sheet);
-        return;
-      }
-      const sheetRect = sheet.getBoundingClientRect ? sheet.getBoundingClientRect() : { top: 0, bottom: window.innerHeight || 0 };
-      const targetRect = target.getBoundingClientRect();
-      const height = sheet.clientHeight || window.innerHeight || 0;
-      const bottomGap = Math.max(34, Math.round(height * .08));
-      const desiredBottom = sheetRect.top + height - bottomGap;
-      const delta = targetRect.bottom - desiredBottom;
-      if (Math.abs(delta) < 2) return;
-      sheet.scrollTop += delta;
-    }
-
-    function focusEpisodeReturnTarget(target) {
-      if (!target) return;
-      try {
-        target.focus({ preventScroll: true });
-      } catch (e) {
-        target.focus();
-      }
-      syncDetailPlaybackStatusVisibility(target);
-      keepEpisodeCardHorizontallyVisible(target);
-    }
-
-    function keepEpisodeCardHorizontallyVisible(target) {
-      const rail = $("episodeRail");
-      if (!rail || !target || !rail.contains(target) || !target.getBoundingClientRect) return;
-      if (isTvLikeDevice()) {
-        revealHorizontalInContainer(target, rail);
-        return;
-      }
-      const itemRect = target.getBoundingClientRect();
-      const railRect = rail.getBoundingClientRect();
-      const leftDelta = itemRect.left - railRect.left - 8;
-      const rightDelta = itemRect.right - railRect.right + 8;
-      if (leftDelta < 0) rail.scrollLeft += leftDelta;
-      else if (rightDelta > 0) rail.scrollLeft += rightDelta;
     }
 
     function detailFocusBlock(el) {
       if (el === $("closeDetailBtn")) return useLargeDetailLayout() ? null : { id: "closeDetailBtn", root: $("closeDetailBtn") };
       if (el === $("detailMoreBtn")) return { id: "detailInfo", root: el.closest(".detail-info") };
       if (el === $("detailContinueBtn") || el === $("detailSearchBtn") || el === $("panSearchBtn")) return { id: "detailActions", root: el.closest(".actions") };
-      const ids = ["panSearchBlock", "seasonBlock", "castBlock", "personWorkBlock", "recommendBlock"];
+      const ids = ["panSearchBlock", "castBlock", "personWorkBlock", "recommendBlock"];
       for (const id of ids) {
         const root = $(id);
         if (root && root.contains(el)) return { id, root };
@@ -38330,7 +36122,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     }
 
     function detailBlockOrderIds() {
-      return ["panSearchBlock", "seasonBlock", "castBlock", "personWorkBlock", "recommendBlock"];
+      return ["panSearchBlock", "castBlock", "personWorkBlock", "recommendBlock"];
     }
 
     function detailBlockOrder() {
@@ -38348,93 +36140,23 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     }
 
     function detailVerticalTarget(currentBlock, active, delta) {
-      const seasonTarget = currentBlock.id === "seasonBlock" ? detailSeasonVerticalTarget(active, delta) : null;
-      if (seasonTarget) return seasonTarget;
       const order = detailBlockOrder();
       const index = order.findIndex((block) => block.id === currentBlock.id);
       if (index < 0) return null;
       const blocks = delta > 0 ? order.slice(index + 1) : order.slice(0, index).reverse();
       for (const block of blocks) {
-        const target = block.id === "seasonBlock" && delta > 0
-          ? lastEpisodeFocusTarget() || detailClosestInBlock(block.root, active, delta)
-          : detailClosestInBlock(block.root, active, delta);
+        const target = detailClosestInBlock(block.root, active, delta);
         if (target) return target;
       }
       return null;
     }
 
     function detailHorizontalTarget(currentBlock, active, delta) {
-      const episodeTarget = detailEpisodeHorizontalTarget(active, delta);
-      if (episodeTarget) return episodeTarget;
-      const row = active && active.closest && active.closest("#seasonTabs, #episodeRail, #castRail, #personWorkRail, #recommendWorkRail, #panTabs, .actions");
+      const row = active && active.closest && active.closest("#castRail, #personWorkRail, #recommendWorkRail, #panTabs, .actions");
       const items = detailBlockFocusables(row || currentBlock.root);
       const index = items.indexOf(active);
       if (index < 0) return null;
       return items[index + delta] || null;
-    }
-
-    function detailEpisodeHorizontalTarget(active, delta) {
-      const rail = $("episodeRail");
-      if (!rail || !active || !rail.contains(active)) return null;
-      // The remote rail graph follows the cards actually rendered in the
-      // rail.  Effective episodes remain a viewer/business concept and must
-      // not make an already visible future episode unreachable by DPAD.
-      const cards = Array.from(rail.querySelectorAll(".episode-card.focusable")).filter(isVisibleFocusable);
-      if (cards.length <= 1) return null;
-      let currentPos = cards.indexOf(active);
-      if (currentPos < 0) {
-        const episodeNumber = active.dataset && active.dataset.episodeNumber || "";
-        currentPos = cards.findIndex((card) => String(card.dataset.episodeNumber || "") === episodeNumber);
-      }
-      if (currentPos < 0) currentPos = delta > 0 ? -1 : 0;
-      const nextPos = (currentPos + (delta > 0 ? 1 : -1) + cards.length) % cards.length;
-      return cards[nextPos] || null;
-    }
-
-    function detailSeasonVerticalTarget(active, delta) {
-      const tabs = $("seasonTabs");
-      const rail = $("episodeRail");
-      if (tabs && tabs.contains(active)) {
-        if (delta < 0) return null;
-        return lastEpisodeFocusTarget() || detailClosestInBlock(rail, active, delta);
-      }
-      if (rail && rail.contains(active)) {
-        if (delta > 0) return null;
-        if (state.episodePreview && state.episodePreview.active) {
-          clearInlineEpisodePreview({ restoreDetail: true });
-          ensureDefaultDetailHeaderVisible();
-        }
-        const tabTarget = detailClosestInBlock(tabs, active, delta);
-        if (tabTarget) return tabTarget;
-        return detailPrimaryActionButton() || $("panSearchBtn");
-      }
-      return null;
-    }
-
-    function ensureDefaultDetailHeaderVisible() {
-      const sheet = $("detailSheet");
-      const info = $("detailTitle") && $("detailTitle").closest(".detail-info");
-      const text = $("detailText");
-      if (!sheet || !info || !text || !sheet.classList.contains("active")) return;
-      const lineHeight = parseFloat(getComputedStyle(text).lineHeight || "28") || 28;
-      const maxHeight = Math.round(lineHeight * 3.2);
-      text.style.setProperty("--detail-text-max", `${maxHeight}px`);
-      text.classList.add("clamped");
-      setDetailTextFocusable(true);
-      if ($("detailMoreBtn")) {
-        $("detailMoreBtn").dataset.expanded = "";
-        $("detailMoreBtn").style.display = "none";
-        $("detailMoreBtn").textContent = "更多";
-      }
-      requestAnimationFrame(() => {
-        const sheetRect = sheet.getBoundingClientRect ? sheet.getBoundingClientRect() : { top: 0 };
-        const infoRect = info.getBoundingClientRect ? info.getBoundingClientRect() : null;
-        if (!infoRect) return;
-        const desiredTop = sheetRect.top + 42;
-        if (infoRect.top < desiredTop || infoRect.top > desiredTop + 24) {
-          sheet.scrollTop += infoRect.top - desiredTop;
-        }
-      });
     }
 
     function detailClosestInBlock(root, active, delta) {
@@ -38744,10 +36466,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const previous = document.querySelectorAll(".focus-halo-edge-left, .focus-halo-edge-right, .focus-halo-edge-both");
       Array.from(previous).forEach((card) => card.classList.remove("focus-halo-edge-left", "focus-halo-edge-right", "focus-halo-edge-both"));
       if (!isTvLikeDevice() || !target || !target.closest) return;
-      const card = target.closest(".card, .episode-card, .person-card");
+      const card = target.closest(".card, .person-card");
       const container = card && card.closest(".home-rail, .rail, .media-grid");
       if (!card || !container) return;
-      const cards = Array.from(container.children || []).filter((item) => item.matches && item.matches(".card, .episode-card, .person-card"));
+      const cards = Array.from(container.children || []).filter((item) => item.matches && item.matches(".card, .person-card"));
       const index = cards.indexOf(card);
       if (index < 0) return;
       let columns = 1;
@@ -38818,7 +36540,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (el.id) return "#" + el.id;
       const chip = el.closest && el.closest(".chip");
       if (chip) return "chip:" + (chip.dataset.chipId || chip.id || "");
-      const card = el.closest && el.closest(".card,.episode-card,.person-card,.pan-result-item,.live-entry-card");
+      const card = el.closest && el.closest(".card,.person-card,.pan-result-item,.live-entry-card");
       if (card) return (card.className || "focusable").split(/\s+/)[0] + ":" + (card.dataset.mediaKey || card.dataset.episodeNumber || card.dataset.panKey || card.dataset.cardIndex || "");
       return (el.tagName || "element").toLowerCase() + (el.className ? "." + String(el.className).split(/\s+/)[0] : "");
     }
@@ -38829,7 +36551,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (el.closest && el.closest("#panTabs, #panResultList")) return "PAN_RESULTS";
       if (el.closest && el.closest("#detailSheet")) return "DETAIL";
       if (el.closest && el.closest("#searchForm")) return "SEARCH";
-      if (el.closest && el.closest("#imageViewer, #syncSheet, #connectionBody, #suggestPanel")) return "OVERLAY";
+      if (el.closest && el.closest("#syncSheet, #connectionBody, #suggestPanel")) return "OVERLAY";
       if (el.closest && el.closest(".media-grid, #searchRail")) return "HOME_GRID";
       return "HOME";
     }
@@ -38837,9 +36559,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     function focusDiagnosticScrollScope(el) {
       if (!el) return "";
       if (el.closest && el.closest("#homeSidebar")) return "SIDEBAR";
-      if (el.closest && el.closest("#imageViewer, #syncSheet, #connectionBody, #suggestPanel")) return "OVERLAY";
+      if (el.closest && el.closest("#syncSheet, #connectionBody, #suggestPanel")) return "OVERLAY";
       if (el.closest && el.closest("#panResultList")) return "PAN_RESULTS";
-      if (el.closest && el.closest("#seasonTabs, .rail, #panTabs")) return "HORIZONTAL_RAIL";
+      if (el.closest && el.closest(".rail, #panTabs")) return "HORIZONTAL_RAIL";
       if (el.closest && el.closest("#detailSheet")) return "DETAIL";
       return "HOME";
     }
@@ -39264,9 +36986,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (!target || !target.getBoundingClientRect || !isTvLikeDevice()) return { x: 0, y: 0 };
       let deltaX = 0;
       let deltaY = 0;
-      const horizontal = target.closest && target.closest("#seasonTabs, .rail, #panTabs, .secondary-filter-row");
+      const horizontal = target.closest && target.closest(".rail, #panTabs, .secondary-filter-row");
       const panList = $("panResultList");
-      const imageContent = $("imageContent");
       const connectionBody = $("connectionBody");
       const suggestPanel = $("suggestPanel");
       const detail = $("detailSheet");
@@ -39279,9 +37000,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (panList && panList.contains(target)) {
         const listDelta = revealVerticalInContainer(target, panList, 20, 20);
         deltaY += listDelta.y;
-      } else if (imageContent && imageContent.contains(target)) {
-        const overlayDelta = revealVerticalInContainer(target, imageContent, 28, 28);
-        deltaY += overlayDelta.y;
       } else if (connectionBody && connectionBody.contains(target)) {
         const panelDelta = revealVerticalInContainer(target, connectionBody, 24, 24);
         deltaY += panelDelta.y;
@@ -39298,7 +37016,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       } else if (secondary && !secondary.hidden && secondary.contains(target)) {
         const secondaryDelta = revealSecondaryFocusedTarget(target);
         deltaY += secondaryDelta.y;
-      } else if (!(connectionBody && connectionBody.contains(target)) && !(suggestPanel && suggestPanel.contains(target)) && !(imageContent && imageContent.contains(target))) {
+      } else if (!(connectionBody && connectionBody.contains(target)) && !(suggestPanel && suggestPanel.contains(target))) {
         const homeDelta = revealHomeFocusedTarget(target, options);
         deltaY += homeDelta.y;
       }
@@ -39416,7 +37134,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     }
 
     function focusScopeRoot() {
-      if ($("imageViewer") && $("imageViewer").classList.contains("active")) return $("imageViewer");
       if ($("syncSheet") && $("syncSheet").classList.contains("active")) return $("syncSheet");
       if ($("detailSheet") && $("detailSheet").classList.contains("active")) return $("detailSheet");
       if (isSidebarOpen()) return $("homeSidebar");
@@ -39464,7 +37181,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     }
 
     function uiSnapshotRoute() {
-      if ($("imageViewer") && $("imageViewer").classList.contains("active")) return "image";
       if ($("syncSheet") && $("syncSheet").classList.contains("active")) return "sync";
       if ($("detailSheet") && $("detailSheet").classList.contains("active")) return "detail";
       if (homeUiRoute() === "search" || homeUiRoute() === "secondary") return homeUiRoute();
@@ -39504,7 +37220,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         selected: state.selected ? normalizeSnapshot(state.selected) : null,
         detailEpisodeTarget: state.detailEpisodeTarget || null,
         detailScrollTop: detail ? Math.round(detail.scrollTop || 0) : 0,
-        imageUrl: $("viewerImage") && $("viewerImage").style.display !== "none" ? $("viewerImage").getAttribute("src") || "" : "",
         detailReturn: state.detailReturn || null,
         homeReturn: state.homeReturn || null,
         homeRoute: homeUiRoute(),
@@ -39661,7 +37376,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         $("connectionBody").classList.add("open");
         fitConnectionPanel();
       }
-      if ((snapshot.route === "detail" || snapshot.route === "image") && snapshot.selected) {
+      if (snapshot.route === "detail" && snapshot.selected) {
         if (location.hash !== "#detail" && snapshot.route === "detail") history.replaceState({ sheet: "detail" }, "", "#detail");
         openDetail(snapshot.selected, {
           restore: true,
@@ -39673,10 +37388,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         requestAnimationFrame(() => {
           if ($("detailSheet")) $("detailSheet").scrollTop = Number(snapshot.detailScrollTop || 0);
         });
-        if (snapshot.route === "image" && snapshot.imageUrl) {
-          history.replaceState({ sheet: "image" }, "", "#image");
-          openImage(snapshot.imageUrl, { restore: true, skipHistory: true });
-        }
       } else if (snapshot.route === "sync") {
         history.replaceState({ sheet: "sync" }, "", "#sync");
         openSync({ restore: true, skipHistory: true });
@@ -39744,7 +37455,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           try {
             const snapshot = await readUiSnapshot();
             if (snapshot && snapshot.homeReturn) state.homeReturn = normalizeLegacySavedState(snapshot.homeReturn);
-            if (snapshot && snapshot.selected && (snapshot.route === "detail" || snapshot.route === "image")) {
+            if (snapshot && snapshot.selected && snapshot.route === "detail") {
               if (snapshot.detailReturn) state.detailReturn = snapshot.detailReturn;
               state.detailEpisodeTarget = snapshot.detailEpisodeTarget && normalizePlaybackTarget(snapshot.selected, snapshot.detailEpisodeTarget) || null;
               if (location.hash !== "#detail") history.replaceState({ sheet: "detail" }, "", "#detail");
@@ -39910,7 +37621,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     }
 
     function refreshActiveDetailView() {
-      if (state.episodePreview && state.episodePreview.active) clearInlineEpisodePreview({ restoreDetail: false });
       if (state.detail && state.selected) {
         renderDetailExtras(state.selected, state.detail);
         return;
@@ -39967,11 +37677,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const isClosing = detailSheet && detailSheet.classList.contains("sheet-closing");
       if (isClosing) return;
 
-      // 二级页面关闭逻辑：依次检查，有 active 就关闭
-      if (location.hash !== "#image" && $("imageViewer").classList.contains("active")) {
-        closeImage(true);
-        return;
-      }
       // Native Back 可能绕过 keydown 直接改变 history；Pan 是 Detail 的子态，
       // 先消费这一次返回并恢复 #detail，不能继续落入 closeDetail()。
       if (isTvLikeDevice() && location.hash !== "#detail" && detailSheet && detailSheet.classList.contains("active") && isPanSearchActive()) {
@@ -40027,8 +37732,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (!location.hash) {
         const anySheetActive = (
           ($("detailSheet") && $("detailSheet").classList.contains("active")) ||
-          ($("syncSheet") && $("syncSheet").classList.contains("active")) ||
-          ($("imageViewer") && $("imageViewer").classList.contains("active"))
+          $("syncSheet") && $("syncSheet").classList.contains("active")
         );
         if (!anySheetActive) {
           const _sy = _pendingHomeScrollY || Math.round(window.scrollY || document.documentElement.scrollTop || 0);
