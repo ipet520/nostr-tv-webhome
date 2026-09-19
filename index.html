@@ -3801,6 +3801,225 @@
       white-space: pre-wrap;
     }
 
+    /* Episode synopsis viewer: use the same immersive canvas language as
+       Weekly Secondary instead of the generic framed image-preview card. */
+    .image-viewer.episode-mode {
+      display: none;
+      inset: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #070a10;
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+
+    .image-viewer.episode-mode.active {
+      display: block;
+    }
+
+    .image-viewer.episode-mode #closeImageBtn {
+      display: none !important;
+    }
+
+    .image-viewer.episode-mode .mobile-detail-back {
+      display: grid;
+      position: fixed;
+      top: max(14px, var(--safe-t));
+      right: clamp(16px, 3.8vw, 64px);
+      left: auto;
+      width: 44px;
+      height: 44px;
+      z-index: 12;
+      color: rgba(255, 255, 255, .96);
+      background: rgba(8, 13, 20, .42);
+      border: 1px solid rgba(255, 255, 255, .24);
+      border-radius: 50%;
+      box-shadow: 0 12px 34px rgba(0, 0, 0, .34), inset 0 1px 0 rgba(255, 255, 255, .12);
+      -webkit-backdrop-filter: blur(14px) saturate(1.12);
+      backdrop-filter: blur(14px) saturate(1.12);
+    }
+
+    .image-viewer.episode-mode .mobile-detail-back .icon {
+      width: 21px;
+      height: 21px;
+    }
+
+    .image-viewer.episode-mode .image-content {
+      position: relative;
+      display: block;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      overflow-x: hidden;
+      overflow-y: auto;
+      background: #070a10;
+      scrollbar-width: none;
+    }
+
+    .image-viewer.episode-mode .episode-view {
+      position: relative;
+      display: block;
+      width: 100%;
+      min-height: 100%;
+      padding: 0 0 max(42px, calc(34px + var(--fm-safe-bottom, 0px)));
+      overflow: hidden;
+      border: 0;
+      border-radius: 0;
+      background: #070a10;
+      box-shadow: none;
+    }
+
+    .image-viewer.episode-mode .episode-view img {
+      display: block;
+      width: 100%;
+      height: min(72vh, 820px);
+      max-width: none;
+      max-height: none;
+      margin: 0;
+      aspect-ratio: auto;
+      object-fit: cover;
+      object-position: center center;
+      border: 0;
+      border-radius: 0;
+      background: #101722;
+      filter: saturate(.96) contrast(1.02) brightness(.78);
+    }
+
+    .image-viewer.episode-mode .episode-view::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      right: 0;
+      left: 0;
+      height: min(82vh, 920px);
+      z-index: 1;
+      pointer-events: none;
+      background:
+        linear-gradient(180deg, rgba(3, 6, 10, .08) 0%, rgba(3, 6, 10, .04) 36%, rgba(5, 9, 15, .68) 70%, #070a10 100%),
+        linear-gradient(90deg, rgba(3, 7, 12, .22), transparent 42%, rgba(3, 7, 12, .18));
+    }
+
+    .image-viewer.episode-mode .episode-view > div,
+    .image-viewer.episode-mode .episode-view > p {
+      position: relative;
+      z-index: 2;
+      width: min(980px, calc(100% - clamp(32px, 7.6vw, 128px)));
+      margin-right: auto;
+      margin-left: auto;
+      text-shadow: 0 2px 18px rgba(0, 0, 0, .62);
+    }
+
+    .image-viewer.episode-mode .episode-view > div {
+      margin-top: clamp(-180px, -16vh, -96px);
+      padding: 0;
+    }
+
+    .image-viewer.episode-mode .episode-view > p {
+      margin-top: 18px;
+      padding-bottom: 8px;
+      color: rgba(246, 249, 252, .86);
+      font-size: clamp(15px, 1.25vw, 20px);
+      line-height: 1.75;
+    }
+
+    .image-viewer.episode-mode .episode-view h3 {
+      margin: 0 0 10px;
+      color: rgba(255, 255, 255, .98);
+      font-size: clamp(25px, 3vw, 46px);
+      line-height: 1.12;
+      font-weight: 850;
+      letter-spacing: -.02em;
+    }
+
+    .image-viewer.episode-mode .episode-view span {
+      display: inline-flex;
+      min-height: 30px;
+      align-items: center;
+      padding: 0 12px;
+      border: 1px solid rgba(255, 255, 255, .14);
+      border-radius: 999px;
+      color: rgba(245, 248, 251, .78);
+      background: rgba(12, 20, 29, .42);
+      font-size: clamp(12px, .9vw, 15px);
+      line-height: 1;
+      -webkit-backdrop-filter: blur(12px) saturate(1.05);
+      backdrop-filter: blur(12px) saturate(1.05);
+    }
+
+    .image-viewer.episode-mode .episode-view.no-still {
+      min-height: 100%;
+      padding-top: max(110px, calc(96px + var(--safe-t)));
+      background:
+        radial-gradient(ellipse 80% 58% at 50% 0%, rgba(94, 181, 223, .18), transparent 68%),
+        linear-gradient(180deg, #101923 0%, #070a10 68%);
+    }
+
+    .image-viewer.episode-mode .episode-view.no-still::before {
+      display: none;
+    }
+
+    .image-viewer.episode-mode .episode-view.no-still > div {
+      margin-top: 0;
+    }
+
+    html.native-mobile-app .image-viewer.episode-mode .mobile-detail-back {
+      top: max(14px, var(--safe-t));
+      right: 16px;
+      left: auto;
+    }
+
+    html.native-mobile-app .image-viewer.episode-mode.active {
+      display: block;
+    }
+
+    html.native-mobile-app .image-viewer.episode-mode .episode-view {
+      padding-left: 0;
+      padding-right: 0;
+      padding-bottom: calc(42px + max(var(--fm-safe-bottom, 0px), env(safe-area-inset-bottom, 0px)));
+    }
+
+    html.no-css-functions.native-mobile-app .image-viewer.episode-mode .episode-view {
+      padding-left: 0;
+      padding-right: 0;
+      padding-bottom: calc(42px + var(--fm-safe-bottom, 0px));
+    }
+
+    html.native-mobile-app .image-viewer.episode-mode .episode-view img {
+      width: 100%;
+      max-width: none;
+      max-height: none;
+      height: min(70vh, 680px);
+      margin: 0;
+      aspect-ratio: auto;
+      object-position: center top;
+      border: 0;
+      border-radius: 0;
+    }
+
+    html.native-mobile-app .image-viewer.episode-mode .episode-view::before {
+      position: absolute;
+      top: 0;
+      height: min(80vh, 760px);
+      background:
+        linear-gradient(180deg, rgba(3, 6, 10, .05) 0%, rgba(3, 6, 10, .08) 38%, rgba(5, 9, 15, .72) 72%, #070a10 100%),
+        linear-gradient(90deg, rgba(3, 7, 12, .2), transparent 44%, rgba(3, 7, 12, .16));
+    }
+
+    html.native-mobile-app .image-viewer.episode-mode .episode-view > div,
+    html.native-mobile-app .image-viewer.episode-mode .episode-view > p {
+      width: calc(100% - 40px);
+    }
+
+    html.native-mobile-app .image-viewer.episode-mode .episode-view > div {
+      margin-top: -132px;
+    }
+
+    html.native-mobile-app .image-viewer.episode-mode .episode-view > p {
+      margin-top: 16px;
+      font-size: 15px;
+      line-height: 1.72;
+    }
+
     .focusable:focus,
     button:focus,
     input:focus,
