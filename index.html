@@ -16754,7 +16754,7 @@ utils.encode = function encode(arr, enc) {
       "/search.html?wd={kw}"
     ];
     const CURATED_SOURCE_DEFINITIONS = [
-      { id: "wanou", name: "玩偶", domains: ["https://www.wogg.net"], searchUrl: "/vodsearch/-------------.html?wd={kw}&page={p}" },
+      { id: "wanou", name: "玩偶", domains: ["https://www.wogg.net"], searchApi: "https://woog.nxog.eu.org/api.php/provide/vod?ac=detail&wd={kw}" },
       { id: "muou", name: "木偶", domains: ["https://666.666291.xyz"] },
       { id: "duoduo", name: "多多", domains: ["https://tv.yydsys.cc"] },
       { id: "huban", name: "虎斑", domains: ["http://xhban.xyz"] },
@@ -20018,7 +20018,7 @@ utils.encode = function encode(arr, enc) {
       const url = new URL(`${window.WEBHOME_CONFIG.tmdb.apiBase}/${item.mediaType}/${item.tmdbId}`);
       url.searchParams.set("api_key", tmdbApiKey());
       url.searchParams.set("language", window.WEBHOME_CONFIG.tmdb.language);
-      url.searchParams.set("append_to_response", item.mediaType === "tv" ? "credits,images,season/1" : "credits,images");
+      url.searchParams.set("append_to_response", item.mediaType === "tv" ? "credits,images,season/1,alternative_titles" : "credits,images,alternative_titles");
       url.searchParams.set("include_image_language", "zh,null,en");
       return url.toString();
     }
@@ -28229,12 +28229,47 @@ utils.encode = function encode(arr, enc) {
       return item;
     }
 
+    function canonicalAlternativeTitlesFromDetail(item, detail) {
+      const mediaType = normalizeHistoryMediaType(item && (item.mediaType || item.media_type));
+      const container = detail && detail.alternative_titles;
+      const entries = mediaType === "tv"
+        ? container && container.results
+        : container && container.titles;
+      if (!Array.isArray(entries)) return [];
+      const allowedRegions = new Set(["CN", "HK", "TW", "SG", "MO"]);
+      return entries
+        .filter((entry) => entry && allowedRegions.has(String(entry.iso_3166_1 || "").trim().toUpperCase()))
+        .map((entry) => String(entry.title || "").trim())
+        .filter(Boolean);
+    }
+
+    function canonicalDetailLooksRaw(item, detail) {
+      if (!detail || typeof detail !== "object") return false;
+      const mediaType = normalizeHistoryMediaType(item && (item.mediaType || item.media_type));
+      const tmdbId = String(item && (item.tmdbId || item.tmdb_id) || "").trim();
+      if (!mediaType || !tmdbId || String(detail.id || detail.tmdbId || "").trim() !== tmdbId) return false;
+      const detailTitle = mediaType === "tv"
+        ? detail.name || detail.original_name
+        : detail.title || detail.original_title;
+      if (!String(detailTitle || "").trim()) return false;
+      const hasRawDetailField = mediaType === "tv"
+        ? Object.prototype.hasOwnProperty.call(detail, "genres")
+          || Object.prototype.hasOwnProperty.call(detail, "genre_ids")
+          || Object.prototype.hasOwnProperty.call(detail, "first_air_date")
+          || Object.prototype.hasOwnProperty.call(detail, "alternative_titles")
+        : Object.prototype.hasOwnProperty.call(detail, "genres")
+          || Object.prototype.hasOwnProperty.call(detail, "genre_ids")
+          || Object.prototype.hasOwnProperty.call(detail, "release_date")
+          || Object.prototype.hasOwnProperty.call(detail, "alternative_titles");
+      return hasRawDetailField;
+    }
+
     function canonicalExactDetailFor(item) {
       const mediaType = normalizeHistoryMediaType(item && (item.mediaType || item.media_type));
       const tmdbId = String(item && (item.tmdbId || item.tmdb_id) || "").trim();
       if (!mediaType || !tmdbId) return null;
       const matches = (detail) => {
-        if (!detail || String(detail.id || detail.tmdbId || "").trim() !== tmdbId) return null;
+        if (!canonicalDetailLooksRaw(item, detail)) return null;
         const detailType = normalizeHistoryMediaType(detail.mediaType || detail.media_type);
         return detailType && detailType !== mediaType ? null : detail;
       };
@@ -28293,6 +28328,7 @@ utils.encode = function encode(arr, enc) {
           item.title,
           item.originalTitle,
           localizedTitle,
+          ...canonicalAlternativeTitlesFromDetail(item, detail),
           detail && detail.name,
           detail && detail.title,
           detail && detail.original_name,
@@ -32332,6 +32368,30 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return { html: String(html), base: String(response && response.url || url) };
     }
 
+    async function requestCuratedJson(url, timeout, options) {
+      const opts = options || {};
+      let referer = String(opts.referer || "").trim();
+      if (!referer) {
+        try { referer = new URL(url).origin + "/"; } catch (e) { referer = String(url || location.href); }
+      }
+      const headers = {
+        "User-Agent": CURATED_REQUEST_USER_AGENT,
+        Referer: referer
+      };
+      const requestTimeout = Math.max(1, Number(timeout || CURATED_REQUEST_TIMEOUT_SEC));
+      const response = await sdk().req(url, { method: "GET", responseType: "text", timeout: requestTimeout, headers });
+      if (response && response.error) throw new Error(String(response.error));
+      if (response && response.ok === false) throw new Error("HTTP " + Number(response.status || 0));
+      if (response && Number(response.status || 0) >= 400) throw new Error("HTTP " + Number(response.status));
+      const raw = response && response.body != null ? response.body : response && response.data != null ? response.data : response;
+      let body = raw;
+      if (typeof body === "string") {
+        try { body = JSON.parse(body); } catch (e) { throw new Error("站源返回无效 JSON"); }
+      }
+      if (!body || typeof body !== "object") throw new Error("站源返回无效 JSON");
+      return { body, base: String(response && response.url || url) };
+    }
+
     function curatedDeadlineError(kind) {
       const error = new Error(String(kind || "SOURCE_TIMEOUT"));
       error.curatedDeadline = true;
@@ -32408,6 +32468,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         preflightFreshStateCount: 0,
         selectedSource: "",
         selectedDiskType: "",
+        plannedSearchKeywords: [],
+        selectedEntryTitle: "",
+        selectedExtractionMethod: "",
+        selectedUrlHost: "",
         totalCuratedMs: 0
       }, detail || {});
       recordCuratedRaceDiag("CURATED_RACE_SUMMARY", payload);
@@ -32627,25 +32691,56 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return !!(item && mediaIdentityVerdict(item, value, metadata).verdict !== "REJECT");
     }
 
+    function curatedHtmlSourceIsStrict(source) {
+      return ["muou", "duoduo", "huban", "shandian"].includes(String(source && source.id || ""));
+    }
+
+    function curatedDetailEntryHref(value, base) {
+      const href = curatedAbsoluteUrl(value, base);
+      if (!href) return "";
+      try {
+        const parsed = new URL(href);
+        const pathname = parsed.pathname.replace(/\/+$/, "");
+        return /^\/vod\/detail\/id\/[^/]+\.html$/i.test(pathname) ? href : "";
+      } catch (e) {
+        return "";
+      }
+    }
+
     function curatedSearchEntries(html, source, base) {
       const entries = [];
+      const strictSource = curatedHtmlSourceIsStrict(source);
       let documentRoot = null;
       try { documentRoot = new DOMParser().parseFromString(String(html || ""), "text/html"); } catch (e) { documentRoot = null; }
       if (documentRoot) {
-        let nodes = Array.from(documentRoot.querySelectorAll(source.searchListSelector || ".module-search-item"));
-        if (!nodes.length) nodes = Array.from(documentRoot.querySelectorAll(".module-search-item"));
+        let nodes = Array.from(documentRoot.querySelectorAll(strictSource ? ".module-search-item" : (source.searchListSelector || ".module-search-item")));
+        if (!strictSource && !nodes.length) nodes = Array.from(documentRoot.querySelectorAll(".module-search-item"));
         nodes.forEach((node) => {
-          const anchor = node.matches && node.matches("a[href]") ? node : node.querySelector("a[href]") || node.closest && node.closest("a[href]");
+          const anchor = strictSource
+            ? node.querySelector(".video-info-header h3 a[href]")
+            : node.matches && node.matches("a[href]") ? node : node.querySelector("a[href]") || node.closest && node.closest("a[href]");
           if (!anchor) return;
-          const href = curatedAbsoluteUrl(anchor.getAttribute("href"), base);
+          const href = strictSource
+            ? curatedDetailEntryHref(anchor.getAttribute("href"), base)
+            : curatedAbsoluteUrl(anchor.getAttribute("href"), base);
+          if (strictSource && !href) return;
           const titleNode = node.querySelector(".module-item-title,.module-search-item-title,.video-title,.title,h1,h2,h3");
           const title = String(anchor.getAttribute("title") || titleNode && titleNode.textContent || anchor.textContent || node.textContent || "").replace(/\s+/g, " ").trim();
           const metaNode = node.querySelector(".module-item-note,.module-item-desc,.module-item-content,.remark,.year,.meta,.note");
           const remark = String(anchor.getAttribute("data-remark") || metaNode && metaNode.textContent || "").replace(/\s+/g, " ").trim();
           const yearInfo = curatedEntryYear(node, anchor, remark);
-          if (href && title) entries.push({ href, title, remark, year: yearInfo.year, yearTrusted: yearInfo.yearTrusted, yearSource: yearInfo.yearSource });
+          const idMatch = strictSource && href.match(/\/vod\/detail\/id\/([^/.]+)\.html/i);
+          if (href && title) entries.push({
+            href,
+            title,
+            remark,
+            year: yearInfo.year,
+            yearTrusted: yearInfo.yearTrusted,
+            yearSource: yearInfo.yearSource,
+            sourceEntryId: idMatch ? idMatch[1] : ""
+          });
         });
-        if (!entries.length) {
+        if (!strictSource && !entries.length) {
           Array.from(documentRoot.querySelectorAll("a[href]")).forEach((anchor) => {
             const title = String(anchor.getAttribute("title") || anchor.textContent || "").replace(/\s+/g, " ").trim();
             const href = curatedAbsoluteUrl(anchor.getAttribute("href"), base);
@@ -32656,7 +32751,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           });
         }
       }
-      if (!entries.length) {
+      if (!strictSource && !entries.length) {
         const anchorRe = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/ig;
         let match;
         while ((match = anchorRe.exec(String(html || "")))) {
@@ -32699,6 +32794,34 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return "";
     }
 
+    function curatedVerifiedDiskTypeForUrl(url) {
+      const value = String(url || "").trim();
+      if (!value) return "";
+      if (/^magnet:\?[^#\s]*xt=urn:btih:[a-z0-9]{16,}/i.test(value)) return "magnet";
+      if (/^ed2k:\/\/\|file\|[^|]+\|\d+\|[a-f0-9]{16,}\|/i.test(value)) return "ed2k";
+      let parsed;
+      try { parsed = new URL(value); } catch (e) { return ""; }
+      if (!/^https?:$/i.test(parsed.protocol)) return "";
+      const host = String(parsed.hostname || "").toLowerCase();
+      const path = String(parsed.pathname || "").replace(/\/+$/, "");
+      const sharePath = /^\/s\/[^/]+$/i.test(path);
+      if (host === "pan.quark.cn" && sharePath) return "quark";
+      if (host === "drive.uc.cn" && sharePath) return "uc";
+      if (host === "pan.baidu.com" && sharePath) return "baidu";
+      if (["aliyundrive.com", "www.aliyundrive.com", "alipan.com", "www.alipan.com"].includes(host) && sharePath) return "aliyun";
+      if (host === "pan.xunlei.com" && sharePath) return "xunlei";
+      if (host === "cloud.189.cn" && /^\/t\/[^/]+$/i.test(path)) return "tianyi";
+      if (["115.com", "www.115.com"].includes(host) && sharePath) return "115";
+      if (host === "caiyun.feixin.10086.cn" && /^\/[a-z0-9][a-z0-9_-]{3,}$/i.test(path)) return "mobile";
+      if (["123pan.com", "www.123pan.com"].includes(host) && sharePath) return "123";
+      if (["mypikpak.com", "www.mypikpak.com"].includes(host) && sharePath) return "pikpak";
+      return "";
+    }
+
+    function curatedUrlHost(url) {
+      try { return new URL(String(url || "")).hostname; } catch (e) { return ""; }
+    }
+
     function curatedExtractUrls(value) {
       const text = String(value || "").replace(/\\\//g, "/").replace(/&amp;/g, "&");
       const matches = text.match(/(?:https?:\/\/|magnet:|ed2k:\/\/)[^\s"'<>，。、）)]+/ig) || [];
@@ -32726,7 +32849,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const add = (value, contextText) => {
         const url = curatedAbsoluteUrl(value, base) || String(value || "").trim();
         if (!url) return;
-        const diskType = normalizePanDiskType(curatedDiskTypeForUrl(url));
+        const diskType = curatedVerifiedDiskTypeForUrl(url);
         if (!diskType || !PAN_DISK_TYPES.some((disk) => disk.id === diskType)) return;
         const normalized = normalizePanUrl(url);
         const key = `${diskType}|${normalized}`;
@@ -32757,6 +32880,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           source: source.id,
           provider: source.id,
           curatedSourceId: source.id,
+          sourceEntryTitle: String(entry && entry.title || "").trim(),
+          sourceEntryId: String(entry && (entry.sourceEntryId || entry.id || entry.vod_id) || "").trim(),
+          sourceEntryUrl: String(entry && entry.href || "").trim(),
+          extractionMethod: curatedHtmlSourceIsStrict(source) ? "DOWNLOAD_LIST" : "HTML_DETAIL",
           fileName: title,
           index: candidates.length
         });
@@ -32764,6 +32891,18 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       };
       let documentRoot = null;
       try { documentRoot = new DOMParser().parseFromString(String(html || ""), "text/html"); } catch (e) { documentRoot = null; }
+      if (curatedHtmlSourceIsStrict(source)) {
+        if (!documentRoot) return candidates;
+        Array.from(documentRoot.querySelectorAll("#download-list .module-row-one")).forEach((row) => {
+          const holder = row.getAttribute && row.getAttribute("data-clipboard-text")
+            ? row
+            : row.querySelector && row.querySelector("[data-clipboard-text]");
+          const raw = holder && holder.getAttribute && holder.getAttribute("data-clipboard-text") || "";
+          if (!raw) return;
+          curatedExtractUrls(raw).forEach((url) => add(url, row.textContent || raw));
+        });
+        return candidates;
+      }
       if (documentRoot) {
         Array.from(documentRoot.querySelectorAll(source.detailPanSelector || ".module-row-info p")).forEach((node) => {
           const text = node.textContent || "";
@@ -32782,7 +32921,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           add(anchor.getAttribute("href"), text);
         });
       }
-      // 全 HTML 只负责补漏 URL，不把页面第一个提取码无条件绑定给所有链接。
+      // 非 strict source 的旧兼容路径只负责补漏 URL，不把页面第一个提取码无条件绑定给所有链接。
       curatedExtractUrls(html).forEach((url) => add(url, ""));
       return candidates;
     }
@@ -32846,9 +32985,164 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       });
     }
 
+    function wanouDiskTypeForCode(value) {
+      const key = String(value || "").trim().toUpperCase().replace(/[\s_-]+/g, "");
+      return ({
+        BD: "baidu",
+        KG: "quark",
+        UC: "uc",
+        ALY: "aliyun",
+        XL: "xunlei",
+        TY: "tianyi",
+        "115": "115",
+        MB: "mobile",
+        "123": "123",
+        PIKPAK: "pikpak"
+      })[key] || "";
+    }
+
+    function curatedWanouCandidates(vodItem, source, item, sourceUrl) {
+      const candidates = [];
+      const types = String(vodItem && vodItem.vod_down_from || "").split("$$$");
+      const urls = String(vodItem && vodItem.vod_down_url || "").split("$$$");
+      const title = String(vodItem && vodItem.vod_name || item && item.title || "盘搜资源").trim();
+      const sourceEntryId = String(vodItem && vodItem.vod_id || "").trim();
+      urls.forEach((rawUrl, index) => {
+        const url = String(rawUrl || "").trim();
+        const typeHint = wanouDiskTypeForCode(types[index]);
+        if (!typeHint || !url) return;
+        const diskType = curatedVerifiedDiskTypeForUrl(url);
+        if (!diskType) return;
+        const normalized = normalizePanUrl(url);
+        candidates.push({
+          key: `${diskType}|${normalized}`,
+          diskType,
+          url,
+          normalizedUrl: url,
+          password: curatedPasswordFromText(vodItem && vodItem.vod_remarks || ""),
+          title,
+          mediaTitle: String(item && item.title || "").trim(),
+          resourceTitle: title,
+          source: source.id,
+          provider: source.id,
+          curatedSourceId: source.id,
+          sourceEntryTitle: title,
+          sourceEntryId,
+          sourceEntryUrl: String(sourceUrl || "").trim(),
+          extractionMethod: "WANOU_JSON_VOD_DOWN",
+          fileName: title,
+          index: index
+        });
+      });
+      return candidates;
+    }
+
+    async function searchWanouSourceKeyword(source, item, run, context, keyword) {
+      const beforeRequest = curatedRequestStartState(context, run);
+      if (beforeRequest) return curatedSourceResult(beforeRequest);
+      const remainingSearchMs = curatedRemainingMs(context);
+      const template = curatedSearchPath(source.searchApi, keyword, 1);
+      const url = curatedAbsoluteUrl(template, source.domains && source.domains[0]);
+      if (!url) return curatedSourceResult("TRANSPORT_FAILURE", { terminalReason: "INVALID_REQUEST_URL" });
+      let response;
+      try {
+        response = await curatedRequestWithDeadline(
+          () => requestCuratedJson(url, curatedNativeTimeoutSec(remainingSearchMs), {
+            referer: source.domains && source.domains[0] || url
+          }),
+          context,
+          "SOURCE_TIMEOUT"
+        );
+      } catch (e) {
+        if (e && e.curatedDeadline) return curatedSourceResult("SOURCE_TIMEOUT");
+        const afterFailure = curatedAttemptState(context, run);
+        return curatedSourceResult(afterFailure || "TRANSPORT_FAILURE");
+      }
+      const afterSearch = curatedAttemptState(context, run);
+      if (afterSearch) return curatedSourceResult(afterSearch);
+      const list = response && response.body && Array.isArray(response.body.list) ? response.body.list : null;
+      if (!list) return curatedSourceResult("TRANSPORT_FAILURE", { terminalReason: "INVALID_RESPONSE" });
+      const sampleEntryTitles = list.slice(0, 3)
+        .map((entry) => String(entry && entry.vod_name || "").trim().slice(0, 80))
+        .filter(Boolean);
+      const identityResults = list.map((vodItem) => {
+        const entry = Object.assign({}, vodItem, {
+          title: String(vodItem && vodItem.vod_name || "").trim(),
+          href: url,
+          sourceEntryId: String(vodItem && vodItem.vod_id || "").trim(),
+          sourceEntryUrl: url,
+          remark: String(vodItem && vodItem.vod_remarks || "").trim(),
+          year: String(vodItem && vodItem.vod_year || "").trim(),
+          yearTrusted: !!String(vodItem && vodItem.vod_year || "").trim(),
+          yearSource: "WANOU_VOD_YEAR"
+        });
+        return {
+          entry,
+          searchUrl: url,
+          verdict: mediaIdentityVerdict(item, entry.title, entry)
+        };
+      });
+      const identityStrongCount = identityResults.filter((result) => result.verdict.verdict === "STRONG").length;
+      const identityTentativeCount = identityResults.filter((result) => result.verdict.verdict === "TENTATIVE").length;
+      const identityRejectCount = identityResults.filter((result) => result.verdict.verdict === "REJECT").length;
+      const identityReasons = Array.from(new Set(identityResults
+        .map((result) => String(result.verdict.reason || "").trim())
+        .filter(Boolean))).slice(0, 12);
+      const diagnostics = {
+        entryCount: list.length,
+        matchedEntryCount: identityStrongCount + identityTentativeCount,
+        sampleEntryTitles,
+        identityStrongCount,
+        identityTentativeCount,
+        identityRejectCount,
+        identityReason: identityReasons[0] || "",
+        identityReasons
+      };
+      const strongMatches = identityResults
+        .filter((result) => result.verdict.verdict === "STRONG")
+        .slice(0, 5);
+      const tentativeMatches = identityResults
+        .filter((result) => result.verdict.verdict === "TENTATIVE")
+        .slice(0, 5);
+      if (!strongMatches.length && !tentativeMatches.length) {
+        return curatedSourceResult("NO_MATCH", Object.assign({ terminalReason: "TITLE_NO_MATCH" }, diagnostics));
+      }
+      if (!strongMatches.length) {
+        return curatedSourceResult("TENTATIVE_MATCHES", Object.assign({
+          terminalReason: "TENTATIVE_IDENTITY",
+          tentativeEntries: tentativeMatches
+        }, diagnostics));
+      }
+      const candidates = [];
+      strongMatches.forEach((match) => {
+        candidates.push(...curatedWanouCandidates(match.entry, source, item, match.searchUrl));
+      });
+      if (candidates.length) {
+        return curatedSourceResult("CANDIDATES", Object.assign({
+          candidates,
+          candidateVerdict: "STRONG"
+        }, diagnostics));
+      }
+      return curatedSourceResult("NO_RESOURCE", Object.assign({
+        terminalReason: "NO_CANDIDATE",
+        tentativeEntries: tentativeMatches
+      }, diagnostics));
+    }
+
     async function curatedDetailCandidatesForMatches(source, item, run, context, matches, diagnostics) {
       const candidates = [];
       for (const match of matches || []) {
+        if (String(source && source.id || "") === "wanou") {
+          const currentState = curatedAttemptState(context, run);
+          if (currentState) return { result: curatedSourceResult(currentState, diagnostics) };
+          candidates.push(...curatedWanouCandidates(
+            match && match.entry && match.entry.wanouVodItem || match && match.entry,
+            source,
+            item,
+            match && match.searchUrl
+          ));
+          continue;
+        }
         const beforeDetail = curatedRequestStartState(context, run);
         if (beforeDetail) return { result: curatedSourceResult(beforeDetail, diagnostics) };
         const remainingDetailMs = curatedRemainingMs(context);
@@ -32883,6 +33177,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     }
 
     async function searchCuratedSourceKeyword(source, item, run, context, keyword) {
+      if (String(source && source.id || "") === "wanou") {
+        return searchWanouSourceKeyword(source, item, run, context, keyword);
+      }
       const templates = curatedSourceTemplates(source);
       for (const template of templates) {
         for (const domain of source.domains || []) {
@@ -33315,6 +33612,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           preflightFreshStateCount: Number(health.freshStateCount || 0),
           selectedSource: String(health.sourceId || ""),
           selectedDiskType: String(health.candidate && health.candidate.diskType || ""),
+          plannedSearchKeywords: curatedSearchKeywords(item),
+          selectedEntryTitle: String(health.candidate && health.candidate.sourceEntryTitle || ""),
+          selectedExtractionMethod: String(health.candidate && health.candidate.extractionMethod || ""),
+          selectedUrlHost: curatedUrlHost(health.candidate && health.candidate.url),
           totalCuratedMs: Math.max(0, Date.now() - startedAt)
         });
       };
