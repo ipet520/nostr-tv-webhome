@@ -31203,7 +31203,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       let selectedPool = acceptedExact;
       if (!selectedPool.length) {
         // 仍有机会出现精确单集时，活动 lifecycle 不得提前消费全集包。
-        if (opts.deferPack && (!exact.length || pendingExact)) {
+        if (opts.deferPack) {
           selectedPool = [];
         } else {
           selectedPool = acceptedPacks;
