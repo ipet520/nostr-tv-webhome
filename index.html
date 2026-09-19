@@ -30549,24 +30549,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         button.addEventListener("click", (event) => {
           event.preventDefault();
           event.stopPropagation();
-          const item = state.selected;
-          if (!item) return;
-          const episodeTarget = {
-            mediaType: "tv",
-            tmdbId: item.tmdbId,
-            title: item.title,
-            poster: item.pic,
-            seasonNumber: Number(ep.season_number) || renderedSeason,
-            episodeNumber: Number(ep.episode_number) || 0,
-            episodeTitle: ep.name || "",
-            sourceType: "episode_select"
-          };
-          setDetailPlaybackTarget(item, episodeTarget);
-          requestDetailPlayback(item, {
-            episodeTarget,
-            explicitEpisodeTarget: true,
-            origin: "episode_select"
-          });
+          openEpisodeViewer(index);
         });
         return button;
       }));
