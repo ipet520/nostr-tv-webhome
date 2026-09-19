@@ -21321,16 +21321,6 @@ utils.encode = function encode(arr, enc) {
       return normalizePlaybackTarget(item, source);
     }
 
-    function detailEpisodeTargetMatchesHistory(item, target, history) {
-      if (!item || !target || !detailContinueHistoryIsValid(history)) return false;
-      const historyTarget = detailContinuePlaybackTargetFor(item, history);
-      return !!(historyTarget
-        && Number(historyTarget.seasonNumber || 0) > 0
-        && Number(historyTarget.episodeNumber || 0) > 0
-        && Number(historyTarget.seasonNumber) === Number(target.seasonNumber)
-        && Number(historyTarget.episodeNumber) === Number(target.episodeNumber));
-    }
-
     async function playDetailDirectReadyCandidate(item, candidate, history, button) {
       if (!item || !candidate || !detailDirectPlayReadyFor(item)) return false;
       const effectiveHistory = history;
@@ -30713,16 +30703,13 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       }
     }
 
-    // ── 点击分集 → 直接进播放器播放盘搜匹配到的「当前集」单集资源（优先 115）──
-    // 行为：先尝试直接播；匹配不到单集时回退打开盘搜并高亮，不再弹剧照预览页。
-
     // 当前选中的季号（用于 SxxEyy 匹配）；优先用 episode 自带 season_number。
     function activeSeasonNumber() {
       const el = $("seasonTabs") && $("seasonTabs").querySelector(".chip.active");
       return el ? (Number(el.dataset.seasonNumber) || 0) : 0;
     }
 
-    // 标题是否为「整季/区间合集」（这类无法定位到单集，单集自动播时排除）
+    // 标题是否为「整季/区间合集」。
     function panItemIsRangePack(title) {
       const t = String(title || "");
       return /S?\d{1,2}\s*E\d{1,3}\s*[-~～]\s*E?\d{1,3}/i.test(t)   // S01E01-E24 / E01-E24
@@ -30832,16 +30819,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return true;                                                      // 无季号的全集 → 视为本季
     }
 
-    // 收集当前集候选：精确单集（115 优先）+ 本季全集包（不限网盘、按「全集」字眼择优）
-    function episodePanCandidates(season, epNo) {
-      const singles = [], packs = [];
-      (state.pan.results || []).forEach((it) => {
-        if (panItemMatchesEpisode(it, season, epNo)) singles.push(it);
-        else if (panItemIsSeasonPack(it, season)) packs.push(it);
-      });
-      return { singles: rankPanCandidates(singles), packs: rankPanPacks(packs) };
-    }
-
     function panCheckAvailable() {
       const pan = sdk().pan || {};
       return typeof pan.check === "function";
@@ -30894,24 +30871,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       });
     }
 
-    // 从已排序候选里挑第一条「能播」的。
-    // requireOk=true：只取绿灯(ok / 无法检测的盘)，灰灯(uncertain/idle)跳过 → 这样灰灯 115 不会卡住，会跳别的盘。
-    async function firstUsableCandidate(list, requireOk, options) {
-      const opts = options || {};
-      let pool = (list || []).filter(Boolean);
-      if (!pool.length) return null;
-      if (panCheckAvailable()) {
-        const unprobed = pool.filter((it) => !isPanHealthFresh(it) && isPanCheckSupported(it)).slice(0, 12);
-        const context = { token: state.pan.viewToken, item: state.selected };
-        if (unprobed.length) await playbackPanHealthPreflight(unprobed, context);
-        if (!panContextIsCurrent(context)) return null;
-      }
-      const bad = pool.filter(isPanHealthBad);
-      if (bad.length === pool.length && opts.rejectAllBad) return null;
-      if (bad.length) pool = pool.filter((it) => !isPanHealthBad(it));
-      return pool[0] || null;   // 非 bad 优先；timeout/error/uncertain/unsupported 不视为 bad
-    }
-
     // ── 夸克/百度 Top5 候选池（"搜索播放"首选 + 1 分钟内重复点击的随机来源）──
     // 1 分钟内重复点击同一目标（同部影片，或同一集）则从前 5 里随机挑一个，
     // 超过 1 分钟（或首次点击）则固定取排名第 1 的（即最优画质/最贴合关键字那条）。
@@ -30927,10 +30886,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     function isQuarkOrBaidu(it) {
       const t = normalizePanDiskType(it && it.diskType);
       return t === "quark" || t === "baidu";
-    }
-
-    function isPanDirectAutoPlayable(candidate) {
-      return isQuarkOrBaidu(candidate);
     }
 
     function panAutoIdentityVerdict(item, candidate) {
@@ -30986,169 +30941,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         return (positions.get(a && a.key) == null ? Number.MAX_SAFE_INTEGER : positions.get(a.key))
           - (positions.get(b && b.key) == null ? Number.MAX_SAFE_INTEGER : positions.get(b.key));
       });
-    }
-
-    function panItemCoversEpisode(candidate, season, episode) {
-      const title = String(candidate && (candidate.title || candidate.fileName || candidate.file_name || candidate.filename) || "");
-      const targetEpisode = Number(episode) || 0;
-      if (!title || !targetEpisode) return false;
-      const rangePatterns = [
-        /(?:^|[^0-9A-Za-z])S\s*0*\d+\s*E\s*0*(\d+)\s*[-~～]\s*E?\s*0*(\d+)(?![0-9])/i,
-        /(?:^|[^0-9A-Za-z])E\s*0*(\d+)\s*[-~～]\s*E?\s*0*(\d+)(?![0-9])/i,
-        /第\s*0*(\d+)\s*[-~～]\s*0*(\d+)\s*集/
-      ];
-      for (const pattern of rangePatterns) {
-        const match = pattern.exec(title);
-        if (match) {
-          const start = Number(match[1]) || 0;
-          const end = Number(match[2]) || 0;
-          return start > 0 && end >= start && targetEpisode >= start && targetEpisode <= end;
-        }
-      }
-      const count = /全\s*0*(\d+)\s*集/.exec(title);
-      if (count) return targetEpisode <= (Number(count[1]) || 0);
-      return true;
-    }
-
-    function episodeSelectionTypeFor(candidate, target) {
-      if (!candidate || !target || target.mediaType !== "tv") return "";
-      const season = Number(target.seasonNumber || 0) || 0;
-      const episode = Number(target.episodeNumber || 0) || 0;
-      if (!season || !episode) return "";
-      if (panItemMatchesEpisode(candidate, season, episode)) return "EXACT_SINGLE";
-      if (panItemIsSeasonPack(candidate, season) && panItemCoversEpisode(candidate, season, episode)) return "PACK";
-      return "";
-    }
-
-    function panEpisodeCandidatePool(item, target, extraCandidates) {
-      const list = (state.pan.results || []).slice();
-      (Array.isArray(extraCandidates) ? extraCandidates : []).forEach((candidate) => {
-        if (candidate && !list.includes(candidate)) list.push(candidate);
-      });
-      return list;
-    }
-
-    function panAutoEpisodeCandidateTiers(item, target, candidates) {
-      const tiers = {
-        strongExact: [],
-        strongPack: [],
-        tentativeExact: [],
-        tentativePack: [],
-        rejected: [],
-        identityStrongCount: 0,
-        identityTentativeCount: 0,
-        identityRejectCount: 0
-      };
-      (candidates || []).forEach((candidate) => {
-        if (!isPanDirectAutoPlayable(candidate)) {
-          tiers.rejected.push(candidate);
-          return;
-        }
-        const selectionType = episodeSelectionTypeFor(candidate, target);
-        if (!selectionType) {
-          tiers.rejected.push(candidate);
-          return;
-        }
-        const verdict = panAutoIdentityVerdict(item, candidate);
-        candidate.episodeSelectionType = selectionType;
-        if (verdict.verdict === "STRONG") {
-          tiers.identityStrongCount++;
-          (selectionType === "EXACT_SINGLE" ? tiers.strongExact : tiers.strongPack).push(candidate);
-        } else if (verdict.verdict === "TENTATIVE") {
-          tiers.identityTentativeCount++;
-          (selectionType === "EXACT_SINGLE" ? tiers.tentativeExact : tiers.tentativePack).push(candidate);
-        } else {
-          tiers.identityRejectCount++;
-          tiers.rejected.push(candidate);
-        }
-      });
-      return tiers;
-    }
-
-    function recordEpisodeSelectorDiagnostic(name, item, target, detail) {
-      const payload = Object.assign({
-        itemKey: item ? panSearchItemKey(item) : "",
-        seasonNumber: Number(target && target.seasonNumber || 0) || 0,
-        episodeNumber: Number(target && target.episodeNumber || 0) || 0
-      }, detail || {});
-      try { console.debug(String(name || "EPISODE_SELECTOR"), payload); } catch (e) {}
-      if (state.tvDiag) state.tvDiag[String(name || "EPISODE_SELECTOR")] = payload;
-      return payload;
-    }
-
-    async function pickEpisodeSelectorCandidate(item, target, randomize, handoffAction, options) {
-      const opts = options || {};
-      const candidates = panEpisodeCandidatePool(item, target, opts.extraCandidates);
-      const tiers = panAutoEpisodeCandidateTiers(item, target, candidates);
-      const hasStrong = tiers.strongExact.length || tiers.strongPack.length;
-      const tier = opts.tentativeOnly
-        ? "TENTATIVE"
-        : hasStrong ? "STRONG"
-        : opts.allowTentative && (tiers.tentativeExact.length || tiers.tentativePack.length) ? "TENTATIVE" : "";
-      const exact = tier === "STRONG" ? tiers.strongExact : tier === "TENTATIVE" ? tiers.tentativeExact : [];
-      const packs = tier === "STRONG" ? tiers.strongPack : tier === "TENTATIVE" ? tiers.tentativePack : [];
-      const pool = panAutoCandidateOrder(exact.concat(packs));
-      const previousHealth = panHealthSnapshot(pool);
-      let freshHealth = {};
-      const checkable = pool.filter((candidate) => isPanCheckSupported(candidate) && !isPanHealthFresh(candidate));
-      if (panCheckAvailable() && checkable.length) {
-        const context = { token: state.pan.viewToken, item: state.selected };
-        const preflight = await playbackPanHealthPreflight(checkable, context);
-        freshHealth = preflight.states || {};
-        if (!panContextIsCurrent(context)) return { candidate: null, tier, tiers, pendingExact: false };
-      }
-      const acceptedExact = [];
-      const acceptedPacks = [];
-      const unconfirmedExact = [];
-      pool.forEach((candidate) => {
-        const admission = panAutoHealthAdmission(candidate, freshHealth);
-        candidate.healthAdmission = admission.state;
-        if (admission.accepted) {
-          (exact.includes(candidate) ? acceptedExact : acceptedPacks).push(candidate);
-        } else if (exact.includes(candidate) && !["bad", "locked", "unavailable"].includes(admission.state)) {
-          unconfirmedExact.push(candidate);
-        }
-      });
-      const pendingExact = !!unconfirmedExact.length;
-      let selectedPool = acceptedExact;
-      if (!selectedPool.length) {
-        // 仍有机会出现精确单集时，活动 lifecycle 不得提前消费全集包。
-        if (opts.deferPack) {
-          selectedPool = [];
-        } else {
-          selectedPool = acceptedPacks;
-        }
-      }
-      const ordered = panAutoCandidateOrder(selectedPool);
-      const pick = ordered.length
-        ? (randomize ? ordered[Math.floor(Math.random() * ordered.length)] : ordered[0])
-        : null;
-      recordEpisodeSelectorDiagnostic("EPISODE_CANDIDATES", item, target, {
-        strongExact: tiers.strongExact.length,
-        strongPack: tiers.strongPack.length,
-        tentativeExact: tiers.tentativeExact.length,
-        tentativePack: tiers.tentativePack.length,
-        rejected: tiers.rejected.length,
-        healthAccepted: acceptedExact.length + acceptedPacks.length,
-        healthUnconfirmed: unconfirmedExact.length,
-        lifecycleActive: !!opts.deferPack
-      });
-      if (handoffAction) recordPanDirectHandoffStage("EPISODE_PICK", item, handoffAction, {
-        selectionType: pick ? episodeSelectionTypeFor(pick, target) : "NONE",
-        identityVerdict: pick && pick.identityVerdict || "",
-        healthState: pick && pick.healthAdmission || "",
-        diskType: pick && normalizePanDiskType(pick.diskType) || "",
-        panSnapshotSeq: pick && Number(pick.panSnapshotSeq || 0) || 0,
-        serverDiskRank: pick && Number.isFinite(Number(pick.panServerDiskRank)) ? Number(pick.panServerDiskRank) : null,
-        candidateKey: pick ? detailDirectPlayCandidateKey(pick) : ""
-      });
-      return {
-        candidate: pick,
-        tier,
-        tiers,
-        pendingExact,
-        selectionType: pick ? episodeSelectionTypeFor(pick, target) : ""
-      };
     }
 
     // 自动播放只消费身份合格且健康已确认的前 5 条；手动盘搜仍保留完整结果。
@@ -31225,117 +31017,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return pick;
     }
 
-    // 针对「某一集」的夸克/百度候选（用于点分集 1 分钟内重复点击 → 换源）：
-    // 优先精确命中本集的单集资源，没有单集再退到本季全集包；按画质排序后取前 5。
-    // randomize=false → 取第 1；randomize=true → 前 5 里随机取一个。
-    async function pickQuarkBaiduEpisodeTop5(season, epNo, randomize, handoffAction) {
-      const { singles, packs } = episodePanCandidates(season, epNo);
-      const byQuality = (arr) => arr.filter(isQuarkOrBaidu).slice().sort((a, b) => panQualityInfo(b).score - panQualityInfo(a).score);
-      const qbSingles = byQuality(singles);
-      const qbPacks = rankQuarkPacks(packs.filter(isQuarkOrBaidu));
-      const pool = qbSingles.length ? qbSingles : qbPacks;   // 单集优先，没有单集再用全集包
-      const top5 = pool.slice(0, 5);
-      const previousHealth = panHealthSnapshot(top5);
-      const item = handoffAction && handoffAction.item || state.selected;
-      if (!top5.length) {
-        if (handoffAction) recordPanDirectHandoffStage("PICK_DONE", item, handoffAction, { selectedCandidate: "", episodeCandidateCount: 0 });
-        return null;
-      }
-      let freshHealth = {};
-      const checkable = top5.filter(isPanCheckSupported);
-      if (handoffAction) recordPanDirectHandoffStage("HEALTH_CHECK_START", item, handoffAction, { healthCheckCandidateCount: checkable.length, episodeCandidateCount: top5.length });
-      if (panCheckAvailable()) {
-        const context = { token: state.pan.viewToken, item: state.selected };
-        if (checkable.length) {
-          const preflight = await playbackPanHealthPreflight(checkable, context);
-          freshHealth = preflight.states || {};
-          if (handoffAction) recordPanDirectHandoffStage(preflight.timedOut ? "HEALTH_CHECK_TIMEOUT" : "HEALTH_CHECK_OK", item, handoffAction, {
-            healthCheckTimedOut: !!preflight.timedOut,
-            healthCheckError: !!preflight.checkError,
-            healthCheckAvailable: Object.keys(freshHealth).length > 0
-          });
-        } else if (handoffAction) {
-          recordPanDirectHandoffStage("HEALTH_CHECK_OK", item, handoffAction, { healthCheckSkipped: true, healthCheckAvailable: false });
-        }
-        if (!panContextIsCurrent(context)) return null;
-      } else if (handoffAction) {
-        recordPanDirectHandoffStage("HEALTH_CHECK_OK", item, handoffAction, { healthCheckSkipped: true, healthCheckAvailable: false });
-      }
-      const decision = panPreflightCandidates(top5, freshHealth, previousHealth, { rejectAllBad: true });
-      const finalPool = decision.candidates.filter((candidate) => !isPanHealthBad(candidate));
-      const pick = finalPool.length ? (randomize ? finalPool[Math.floor(Math.random() * finalPool.length)] : finalPool[0]) : null;
-      recordPanPreflightResult(top5, freshHealth, panPreflightCheckErrorCount(checkable, freshHealth), pick, decision.allBadBatch);
-      if (handoffAction) recordPanDirectHandoffStage("PICK_DONE", item, handoffAction, {
-        selectedCandidate: panDirectPlayCandidateLabel(pick),
-        allBadBatch: !!decision.allBadBatch,
-        confirmedBadCount: Number(decision.confirmedBadCount || 0),
-        episodeCandidateCount: top5.length
-      });
-      return pick ? { item: pick, kind: qbSingles.length ? "single" : "pack" } : null;
-    }
-
-    // 定时解析（按网盘优先级逐级回退，每级 ~3-4 秒及时切换）：
-    //   1) 115 单集（精确命中本集）
-    //   2) 115 全集（115 没有单集时，找 115 本季全集/合集包）
-    //   3) 夸克全集（115 单集、全集都搜不出来时，播放夸克全集包）
-    //   4) 兜底：任意网盘的非失效单集/全集（含灰灯）
-    async function resolveEpisodePlayableTimed(season, epNo, item, seq) {
-      const SINGLE_115_WINDOW_MS = 3500;   // 3-4s 内优先等 115 单集
-      const PACK_115_WINDOW_MS   = 7000;   // 之后等 115 全集
-      const QUARK_WINDOW_MS      = 10500;  // 再之后切夸克全集
-      const HARD_DEADLINE_MS     = 13000;  // 最终兜底
-      const start = Date.now();
-      const active = () => _episodeLoadSeq === seq && state.selected === item;
-      const is115   = (it) => normalizePanDiskType(it && it.diskType) === "115";
-      const isQuark = (it) => normalizePanDiskType(it && it.diskType) === "quark";
-
-      while (active()) {
-        const { singles, packs } = episodePanCandidates(season, epNo);
-        const elapsed = Date.now() - start;
-
-        const singles115  = singles.filter(is115);
-        const packs115    = packs.filter(is115);
-        const packsQuark  = rankQuarkPacks(packs.filter(isQuark));  // 夸克：画质+关键字命中择优
-        const has115Any   = singles115.length || packs115.length;
-
-        // 1) 115 单集（始终最优先）
-        const ok115Single = await firstUsableCandidate(singles115.slice(0, 6), true, { rejectAllBad: true });
-        if (!active()) return null;
-        if (ok115Single) return { item: ok115Single, kind: "single" };
-
-        // 2) 过了单集窗口：115 全集
-        if (elapsed >= SINGLE_115_WINDOW_MS) {
-          const ok115Pack = await firstUsableCandidate(packs115.slice(0, 8), true, { rejectAllBad: true });
-          if (!active()) return null;
-          if (ok115Pack) return { item: ok115Pack, kind: "pack" };
-        }
-
-        // 3) 115 都搜不出来（或等够时间仍无 115）：夸克全集
-        if (elapsed >= PACK_115_WINDOW_MS || (elapsed >= SINGLE_115_WINDOW_MS && !has115Any)) {
-          const okQuarkPack = await firstUsableCandidate(packsQuark.slice(0, 8), true, { rejectAllBad: true });
-          if (!active()) return null;
-          if (okQuarkPack) return { item: okQuarkPack, kind: "pack" };
-        }
-
-        // 4) 再退一步：任意网盘绿灯全集
-        if (elapsed >= QUARK_WINDOW_MS) {
-          const okAnyPack = await firstUsableCandidate(packs.slice(0, 12), true, { rejectAllBad: true });
-          if (!active()) return null;
-          if (okAnyPack) return { item: okAnyPack, kind: "pack" };
-        }
-
-        // 5) 硬超时兜底：接受非失效（含灰灯）的单集/全集
-        if (elapsed >= HARD_DEADLINE_MS) {
-          const anySingle = await firstUsableCandidate(singles.slice(0, 6), false, { rejectAllBad: true });
-          if (anySingle) return { item: anySingle, kind: "single" };
-          const anyPack = await firstUsableCandidate(packs.slice(0, 12), false, { rejectAllBad: true });
-          return (active() && anyPack) ? { item: anyPack, kind: "pack" } : null;
-        }
-        await new Promise((r) => setTimeout(r, 300));
-      }
-      return null;
-    }
-
     function openPanBlockIfNeeded() {
       const block = $("panSearchBlock");
       if (!block || block.classList.contains("active")) return;
@@ -31346,111 +31027,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       centerPanSearchBlock();
     }
 
-    // 回退：匹配不到单集时只提示；盘搜必须由用户主动进入。
-    function fallbackHighlightEpisode(item, season, epNo) {
-      toast(`未找到第${epNo}集可播放资源，可使用盘搜`);
-      return false;
-    }
-
-    let _episodeLoadSeq = 0;
-
-    async function playEpisodeViaPan(ep) {
-      const item = state.selected;
-      if (!item) return;
-      if (canonicalResourceKey(item)) {
-        try { await resolveCanonicalResourceTitle(item); } catch (e) {}
-        if (state.selected !== item) return;
-      }
-      const season = Number(ep && ep.season_number) || activeSeasonNumber() || 1;
-      const epNo = Number(ep && ep.episode_number) || 0;
-      if (!epNo) { toast("缺少集数信息"); return; }
-      const episodeTarget = setDetailPlaybackTarget(item, {
-        mediaType: "tv",
-        tmdbId: item.tmdbId,
-        title: item.title,
-        poster: item.pic,
-        seasonNumber: season,
-        episodeNumber: epNo,
-        episodeTitle: ep && ep.name || "",
-        sourceType: "episode_select"
-      });
-
-      const seq = ++_episodeLoadSeq;
-      const alive = () => _episodeLoadSeq === seq && state.selected === item;
-      const statusAction = {
-        item,
-        token: ++_directPlayActionSeq,
-        startedAt: Date.now(),
-        handoffStageStartedAt: Date.now()
-      };
-      showDirectPlayStatus(statusAction.token, "SEARCHING", DIRECT_PLAY_STATUS_TEXT.SEARCHING, "episode_play_click");
-      toast(`正在加载第${epNo}集…`);
-
-      // 后台静默盘搜（不弹盘搜页）；已有同一生命周期（包括终态空结果）则复用。
-      // 没有生命周期时只交给带一次性 guard 的 preload 入口，避免每次点分集都重开搜索。
-      const lifecycle = getPanSearchLifecycleFor(item);
-      if (!lifecycle.sameSession && !state.pan.loading) beginDetailPreload(item);
-
-      // 1 分钟内重复点击「同一集」→ 自动换源：改用夸克/百度排名前 5 随机挑一个；
-      // 首次点击 / 超过 1 分钟 → 维持原逻辑（115 单集优先，逐级回退）
-      const clickKey = `ep:${item.tmdbId || item.title}:${season}:${epNo}`;
-      const isRepeat = isRepeatClickWithinWindow(clickKey);
-      if (isRepeat) {
-        const keyword = panKeyword(item);
-        const haveResults = () => state.pan.keyword === keyword && (state.pan.results || []).length;
-        updateDirectPlayStatus(statusAction.token, "RETRYING", DIRECT_PLAY_STATUS_TEXT.RETRYING, "episode_repeat_click");
-        if (!haveResults()) {
-          const deadline = Date.now() + 2500;
-          while (Date.now() < deadline && alive() && !haveResults()) {
-            if (state.pan.keyword === keyword && !state.pan.loading) break;
-            await new Promise((r) => setTimeout(r, 120));
-          }
-        }
-        if (!alive()) return;
-        recordPanDirectHandoffStage("PICK_START", item, statusAction, { repeatClick: true, episode: true });
-        const switched = await pickQuarkBaiduEpisodeTop5(season, epNo, true, statusAction);
-        if (!alive()) return;
-        if (switched) {
-          if (isPanHealthBad(switched.item)) {
-            updateDirectPlayStatus(statusAction.token, "FINAL_ERROR", DIRECT_PLAY_STATUS_TEXT.FINAL_ERROR, "episode_bad_candidate");
-            fallbackHighlightEpisode(item, season, epNo);
-            return;
-          }
-          if (switched.kind === "single") {
-            toast(`已换源播放 第${epNo}集 · ${panDiskName(switched.item.diskType)}`);
-          } else {
-            toast(`已换源加载本季全集 · ${panDiskName(switched.item.diskType)}，请在播放器中选第${epNo}集`);
-          }
-          playPanResult(switched.item, { handoffAction: statusAction, episodeTarget });
-          return;
-        }
-        // 没有夸克/百度可换源资源时，回退到下方原 115 优先逐级解析逻辑
-      }
-
-      // 5 秒内优先拿 115 单集；超时换任意网盘能播的全集；拿到即丢给原生播放器（由它转圈加载）
-      updateDirectPlayStatus(statusAction.token, "POLLING", DIRECT_PLAY_STATUS_TEXT.POLLING, "episode_candidate_wait");
-      const resolved = await resolveEpisodePlayableTimed(season, epNo, item, seq);
-      if (!alive()) return;
-      if (resolved) {
-        if (isPanHealthBad(resolved.item)) {
-          updateDirectPlayStatus(statusAction.token, "FINAL_ERROR", DIRECT_PLAY_STATUS_TEXT.FINAL_ERROR, "episode_bad_candidate");
-          fallbackHighlightEpisode(item, season, epNo);
-          return;
-        }
-        if (resolved.kind === "single") {
-          toast(`播放 第${epNo}集 · ${panDiskName(resolved.item.diskType)}`);
-        } else {
-          toast(`第${epNo}集已加载本季全集 · ${panDiskName(resolved.item.diskType)}，请在播放器中选第${epNo}集`);
-        }
-        recordPanDirectHandoffStage("PICK_DONE", item, statusAction, { selectedCandidate: panDirectPlayCandidateLabel(resolved.item), episode: true });
-        playPanResult(resolved.item, { handoffAction: statusAction, episodeTarget });   // 原生播放器接管，自行显示加载/缓冲
-        return;
-      }
-      // 实在没有可播资源时只提示；盘搜由用户主动进入。
-      updateDirectPlayStatus(statusAction.token, "FINAL_ERROR", DIRECT_PLAY_STATUS_TEXT.FINAL_ERROR, "episode_no_candidate");
-      fallbackHighlightEpisode(item, season, epNo);
-    }
-
     function resourceSearchKeyword(item) {
       return String(item && (item.resourceSearchTitle || item.title || item.originalTitle) || "").trim();
     }
@@ -31459,9 +31035,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return resourceSearchKeyword(item);
     }
 
-    // 进入剧集（tv）详情页即后台静默预搜盘搜资源，缩短点击分集后的等待时间。
-    // 仅预加载、不弹盘搜页、不抢焦点；点击分集时若已有同剧结果会直接复用
-    // （见 playEpisodeViaPan 的 sameSeries 判断），播放判断逻辑保持不变。
+    // 进入剧集（tv）详情页即后台静默预搜盘搜资源，缩短主播放准备时间。
+    // 仅预加载、不弹盘搜页、不抢焦点；已有同剧结果时直接复用。
     async function preloadPanForSeries(item) {
       if (!item || (item.mediaType !== "tv" && item.mediaType !== "movie")) return;  // 剧集 + 电影
       if (state.selected !== item) return;              // 详情页已切走则放弃
@@ -31488,11 +31063,11 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       try {
         await searchPanResources(item, { silent: true, origin: "preload", preloadKey });
       } catch (e) {}
-      warm();                                           // 搜完立刻预热，点分集/点搜索播放即可秒开
+      warm();                                           // 搜完立刻预热，详情主播放/手动盘搜即可复用
     }
 
     // 预热健康检查：进详情页后先把最可能用到的候选（115 单集 + 115/夸克/百度全集包）
-    // 的有效性查好并缓存（5 分钟内有效），点分集时 firstUsableCandidate 命中缓存即可秒开，
+    // 的有效性查好并缓存（5 分钟内有效），详情主播放或手动盘搜可直接复用，
     // 不必现场等待网盘探活。一次最多探 ~15 条，避免占用过多请求。
     async function warmEpisodePanHealth(item) {
       if (!item || state.selected !== item) return;
@@ -32435,7 +32010,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const totalPollRounds = panSearchPollIntervals().length;
       armPanSearchSessionHardGuard(item, token, sessionId);
       setPanProgress(true, "initial", 0, totalPollRounds);
-      // silent：后台静默搜索，不打开盘搜页、不抢焦点（用于进剧集详情页预搜 / 点分集直连播放）
+      // silent：后台静默搜索，不打开盘搜页、不抢焦点（用于详情页主播放预搜）
       if (!silent) {
         if ($("panSearchBlock")) {
           $("panSearchBlock").classList.add("active");
