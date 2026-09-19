@@ -7331,6 +7331,93 @@
       flex-basis: 10px;
     }
   </style>
+  <style id="unified-return-controls-v1">
+    /* 所有页面返回入口统一为左上角的小型箭头按钮；“返回顶部”仍是独立的滚动控制。 */
+    .return-control {
+      box-sizing: border-box;
+      width: 44px !important;
+      min-width: 44px !important;
+      height: 44px !important;
+      min-height: 44px !important;
+      flex: 0 0 44px;
+      padding: 0 !important;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      border: 1px solid rgba(255, 255, 255, .22) !important;
+      border-radius: 50% !important;
+      background: rgba(8, 13, 20, .54) !important;
+      color: rgba(255, 255, 255, .96) !important;
+      font-size: 0 !important;
+      line-height: 1;
+      text-shadow: none;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, .28), inset 0 1px 0 rgba(255, 255, 255, .12) !important;
+      -webkit-backdrop-filter: blur(14px) saturate(1.08) !important;
+      backdrop-filter: blur(14px) saturate(1.08) !important;
+      transition: background .18s ease, border-color .18s ease, box-shadow .18s ease, transform .12s ease;
+    }
+
+    .return-control .icon {
+      width: 21px !important;
+      height: 21px !important;
+      stroke-width: 2.35;
+    }
+
+    .return-control:hover,
+    .return-control:focus {
+      background: rgba(24, 34, 45, .78) !important;
+      border-color: rgba(255, 255, 255, .46) !important;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, .34), 0 0 0 2px rgba(184, 226, 255, .22) !important;
+    }
+
+    .return-control:active {
+      transform: scale(.96);
+    }
+
+    .secondary-page-back.return-control,
+    #closeSyncBtn.return-control,
+    #closeImageBtn.return-control {
+      display: inline-flex !important;
+    }
+
+    .secondary-page-head .secondary-page-back.return-control {
+      align-self: flex-start;
+      margin: 0;
+    }
+
+    /* 详情页的小屏返回入口若被恢复显示，也固定在与其它入口相同的左上角。 */
+    html:not(.tv-mode) #detailSheet:not(.detail-large) #closeDetailBtn.return-control {
+      position: fixed;
+      top: max(14px, var(--safe-t));
+      left: 16px;
+      z-index: 95;
+    }
+
+    html.no-css-functions:not(.tv-mode) #detailSheet:not(.detail-large) #closeDetailBtn.return-control {
+      top: calc(14px + var(--fm-safe-top, 0px));
+    }
+
+    /* 剧情沉浸页此前误放在右上角，这里统一改为左上角。 */
+    .image-viewer.episode-mode .mobile-detail-back.return-control {
+      top: max(14px, var(--safe-t));
+      right: auto !important;
+      left: 16px !important;
+    }
+
+    html.no-css-functions .image-viewer.episode-mode .mobile-detail-back.return-control {
+      top: calc(14px + var(--fm-safe-top, 0px));
+    }
+
+    html.native-mobile-app .image-viewer.episode-mode .mobile-detail-back.return-control {
+      top: max(14px, var(--safe-t));
+      right: auto !important;
+      left: 16px !important;
+    }
+
+    html.no-css-functions.native-mobile-app .image-viewer.episode-mode .mobile-detail-back.return-control {
+      top: calc(14px + var(--fm-safe-top, 0px));
+    }
+  </style>
 </head>
 <body>
   <main class="app home-root" id="home">
@@ -7441,7 +7528,9 @@
 
     <section class="secondary-page search-page" id="searchPage" hidden aria-labelledby="searchPageTitle">
       <div class="secondary-page-head">
-        <button class="secondary-page-back focusable" id="searchPageBack" type="button">返回</button>
+        <button class="secondary-page-back return-control focusable" id="searchPageBack" type="button" aria-label="返回">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+        </button>
         <h1 id="searchPageTitle">搜索</h1>
         <span class="secondary-page-count" aria-hidden="true"></span>
         <button class="search-history-clear search-history-clear-top focusable" id="searchHistoryClear" type="button" hidden tabindex="-1" aria-label="清空搜索历史">清空历史</button>
@@ -7470,7 +7559,9 @@
       <div class="weekly-secondary-backdrop weekly-secondary-backdrop-next" id="weeklySecondaryBackdropNext" aria-hidden="true"></div>
       <div class="weekly-secondary-shade" aria-hidden="true"></div>
       <div class="secondary-page-head">
-        <button class="secondary-page-back focusable" id="secondaryCatalogBack" type="button">返回</button>
+        <button class="secondary-page-back return-control focusable" id="secondaryCatalogBack" type="button" aria-label="返回">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+        </button>
         <h1 id="secondaryCatalogTitle">分类</h1>
         <span class="secondary-page-count" id="secondaryCatalogCount"></span>
       </div>
@@ -7574,7 +7665,7 @@
         <svg class="icon" viewBox="0 0 24 24"><path d="M6.2 18.3h11.6a4.1 4.1 0 0 0 .42-8.18 6.2 6.2 0 0 0-11.9 1.68A3.28 3.28 0 0 0 6.2 18.3Z"/></svg>
         盘搜
       </button>
-      <button class="btn focusable" id="closeDetailBtn" type="button" aria-label="返回" style="display:none">
+      <button class="btn return-control focusable" id="closeDetailBtn" type="button" aria-label="返回" style="display:none">
         <svg class="icon" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
         返回
       </button>
@@ -7619,7 +7710,7 @@
   </section>
 
   <section class="sheet" id="syncSheet" aria-hidden="true">
-    <button class="btn focusable" id="closeSyncBtn" type="button">
+    <button class="btn return-control focusable" id="closeSyncBtn" type="button" aria-label="返回">
       <svg class="icon" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
       返回
     </button>
@@ -7640,10 +7731,10 @@
   </section>
 
   <section class="image-viewer" id="imageViewer" aria-hidden="true">
-    <button class="mobile-detail-back focusable" id="mobileImageBackBtn" type="button" aria-label="返回">
+    <button class="mobile-detail-back return-control focusable" id="mobileImageBackBtn" type="button" aria-label="返回">
       <svg class="icon" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
     </button>
-    <button class="btn focusable" id="closeImageBtn" type="button">
+    <button class="btn return-control focusable" id="closeImageBtn" type="button" aria-label="返回">
       <svg class="icon" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
       返回
     </button>
