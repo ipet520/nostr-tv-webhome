@@ -2059,8 +2059,6 @@
     html.tv-mode #detailSheet.detail-large {
       --detail-top-pad: clamp(72px, 9.5vh, 110px);
       --detail-side-pad: clamp(56px, 6vw, 100px);
-      /* TV 端由固定的背景/渐变层承载底色，sheet 本身不再形成一块独立的透明底板。 */
-      background: transparent;
     }
     /* 1) 隐藏移动端沉浸式占位块：它的 min-height:42vh 在 TV 的 block 布局下仍生效，会把信息整体下压约 42% 屏高 */
     html.tv-mode #detailSheet.detail-large .detail-spacer {
@@ -7331,11 +7329,6 @@
       width: 10px;
       height: 10px;
       flex-basis: 10px;
-    }
-
-    /* 播放按钮区保留状态文字；焦点进入剧情卡片及更下层内容后收起，避免覆盖剧情文案。 */
-    #detailSheet.detail-focus-below-episodes > .direct-play-status {
-      display: none !important;
     }
   </style>
   <style id="unified-return-controls-v1">
@@ -17129,11 +17122,6 @@ utils.encode = function encode(arr, enc) {
     const DETAIL_TEXT_CLAMP_LIMIT_LARGE = 210;
     const canonicalResourceTitleCache = new Map();
     const canonicalResourceTitlePromises = new Map();
-    const detailImagePreloadCache = new Map();
-    const DETAIL_IMAGE_PRELOAD_CACHE_LIMIT = 24;
-    let episodePreviewTimer = 0;
-    let episodePreviewRequest = 0;
-    let lastFocusHaloCard = null;
 
     function canonicalResourceAuthority(value) {
       const authority = String(value || "").trim().toUpperCase();
@@ -17304,7 +17292,6 @@ utils.encode = function encode(arr, enc) {
       detailMode: "FIRST_PLAY",
       detailModeItemKey: "",
       detailHistory: null,
-      detailHistoryRearm: null,
       homeReturn: null,
       focusReturnEl: null,
       remoteInitialFocused: false,
@@ -19834,12 +19821,12 @@ utils.encode = function encode(arr, enc) {
       return "";
     }
 
-    function renderDirectPlayStatus(target) {
+    function renderDirectPlayStatus() {
       const status = state.directPlayStatus || {};
       const row = $("directPlayStatus");
       const text = $("directPlayStatusText");
       if (!row || !text) return;
-      row.hidden = !status.active || detailPlaybackStatusHiddenFor(target || document.activeElement);
+      row.hidden = !status.active;
       text.textContent = status.active ? String(status.text || "") : "";
     }
 
@@ -21082,12 +21069,6 @@ utils.encode = function encode(arr, enc) {
       return detailHasAuthoritativeNativeHistory(history);
     }
 
-    function detailRearmedHistoryFor(item) {
-      const saved = state.detailHistoryRearm;
-      if (!saved || !item || saved.itemKey !== panSearchItemKey(item)) return null;
-      return detailContinueHistoryIsValid(saved.history) ? saved.history : null;
-    }
-
     function findDetailContinueHistory(item) {
       return (state.recent.items || []).find((history) => (
         detailHasAuthoritativeNativeHistory(history) && detailHistoryMatches(item, history)
@@ -21967,30 +21948,8 @@ utils.encode = function encode(arr, enc) {
               if (state.activeList === "all") renderHome();
               if ($("detailSheet") && $("detailSheet").classList.contains("active")) {
                 const detailPlayback = state.detailPlayback;
-                const refreshedHistory = findDetailContinueHistory(state.selected);
-                const rearmedHistory = detailRearmedHistoryFor(state.selected);
-                const rearmMarker = state.detailHistoryRearm
-                  && state.detailHistoryRearm.itemKey === panSearchItemKey(state.selected);
                 if (detailPlayback && detailPlayback.itemKey === panSearchItemKey(state.selected) && detailPlayback.historyVerified) {
                   syncDetailMode(state.selected, detailPlayback.history, { freshNative: true });
-                  if (rearmMarker && detailContinueHistoryIsValid(detailPlayback.history)) {
-                    state.detailHistoryRearm = {
-                      itemKey: panSearchItemKey(state.selected),
-                      history: detailPlayback.history
-                    };
-                  }
-                } else if (refreshedHistory) {
-                  syncDetailMode(state.selected, refreshedHistory);
-                  if (rearmMarker) {
-                    state.detailHistoryRearm = {
-                      itemKey: panSearchItemKey(state.selected),
-                      history: refreshedHistory
-                    };
-                  }
-                } else if (rearmedHistory) {
-                  // 播放器刚返回时 Native History 可能还未及时回读；暂时空的
-                  // history 刷新不能把已经恢复的“续播”状态降回“播放”。
-                  syncDetailMode(state.selected, rearmedHistory, { freshNative: true });
                 } else {
                   syncDetailMode(state.selected, null);
                 }
@@ -29567,7 +29526,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         cancelDetailPlaybackPreparation("selected_change");
         state.detailHistoryHandoff = null;
       }
-      if (!detailWasActive || !sameSelected) state.detailHistoryRearm = null;
       if (!detailWasActive || !sameSelected || !opts.keepPan) {
         state.detailPreload = null;
       }
@@ -29744,73 +29702,11 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       }, () => tryPreloadDetailCover(next, step, attempts + 1, token, options));
     }
 
-    function trimDetailImagePreloadCache() {
-      if (detailImagePreloadCache.size <= DETAIL_IMAGE_PRELOAD_CACHE_LIMIT) return;
-      const removable = Array.from(detailImagePreloadCache.entries())
-        .filter((entry) => entry[1] && entry[1].state !== "pending")
-        .sort((a, b) => Number(a[1].touchedAt || 0) - Number(b[1].touchedAt || 0));
-      while (detailImagePreloadCache.size > DETAIL_IMAGE_PRELOAD_CACHE_LIMIT && removable.length) {
-        detailImagePreloadCache.delete(removable.shift()[0]);
-      }
-    }
-
     function preloadImage(src, onload, onerror) {
-      const source = String(src || "").trim();
-      if (!source) {
-        if (typeof onerror === "function") onerror();
-        return;
-      }
-      let entry = detailImagePreloadCache.get(source);
-      if (entry) {
-        entry.touchedAt = Date.now();
-        if (entry.state === "ready") {
-          if (typeof onload === "function") requestAnimationFrame(onload);
-          return;
-        }
-        if (entry.state === "error") {
-          if (typeof onerror === "function") requestAnimationFrame(onerror);
-          return;
-        }
-        if (typeof onload === "function" || typeof onerror === "function") {
-          entry.callbacks.push({ onload, onerror });
-        }
-        return;
-      }
-      if (typeof Image !== "function") {
-        if (typeof onerror === "function") onerror();
-        return;
-      }
-      entry = {
-        state: "pending",
-        touchedAt: Date.now(),
-        callbacks: []
-      };
-      if (typeof onload === "function" || typeof onerror === "function") {
-        entry.callbacks.push({ onload, onerror });
-      }
-      detailImagePreloadCache.set(source, entry);
       const img = new Image();
-      entry.image = img;
-      img.onload = () => {
-        entry.state = "ready";
-        entry.touchedAt = Date.now();
-        const callbacks = entry.callbacks.splice(0);
-        callbacks.forEach((callback) => {
-          if (typeof callback.onload === "function") callback.onload();
-        });
-        trimDetailImagePreloadCache();
-      };
-      img.onerror = () => {
-        entry.state = "error";
-        entry.touchedAt = Date.now();
-        const callbacks = entry.callbacks.splice(0);
-        callbacks.forEach((callback) => {
-          if (typeof callback.onerror === "function") callback.onerror();
-        });
-        detailImagePreloadCache.delete(source);
-      };
-      img.src = source;
-      trimDetailImagePreloadCache();
+      img.onload = onload;
+      img.onerror = onerror;
+      img.src = src;
     }
 
     function restartDetailCoverCarousel() {
@@ -29831,7 +29727,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const usePoster = allowPoster && (!land || isSameImageSource(land, post));
       const src = usePoster ? post || land : land;
       const bgSrc = src ? displayImage(src, { size: usePoster ? "w780" : "w1280" }) : "";
-      const coverToken = state.detailCover.token;
       cover.classList.toggle("loading", !src && opts.keepLoading !== false);
       cover.classList.toggle("poster-mode", !!usePoster && !!src);
       cover.dataset.coverMode = usePoster ? "poster" : "landscape";
@@ -29856,7 +29751,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (src) {
         const nextSrc = opts.preloadedSrc || bgSrc;
         const applyLoaded = () => {
-          if (coverToken !== state.detailCover.token) return;
           image.onload = null;
           image.onerror = null;
           image.src = nextSrc;
@@ -29869,7 +29763,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         }
         if (image.getAttribute("src") === nextSrc && image.classList.contains("active")) return;
         preloadImage(nextSrc, applyLoaded, () => {
-          if (coverToken !== state.detailCover.token) return;
           image.onload = null;
           image.onerror = null;
           image.classList.remove("active");
@@ -30480,27 +30373,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       root.appendChild(span);
     }
 
-    function cancelScheduledInlineEpisodePreview() {
-      episodePreviewRequest += 1;
-      if (episodePreviewTimer) clearTimeout(episodePreviewTimer);
-      episodePreviewTimer = 0;
-    }
-
-    function scheduleInlineEpisodePreview(index, options) {
-      const opts = options || {};
-      if (episodePreviewTimer) clearTimeout(episodePreviewTimer);
-      const request = ++episodePreviewRequest;
-      const delay = opts.immediate ? 0 : 64;
-      episodePreviewTimer = setTimeout(() => {
-        episodePreviewTimer = 0;
-        if (request !== episodePreviewRequest) return;
-        const rail = $("episodeRail");
-        const active = document.activeElement;
-        if (!rail || !active || !rail.contains(active) || !active.matches || !active.matches(".episode-card.focusable")) return;
-        applyInlineEpisodePreview(index, opts);
-      }, delay);
-    }
-
     function applyInlineEpisodePreview(index, options) {
       if (!useInlineEpisodePreview()) return false;
       const episodes = state.episodeViewer.episodes || [];
@@ -30529,7 +30401,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       $("detailMeta").replaceChildren();
       const overview = ep.overview || "暂无剧情概要";
       text.textContent = overview;
-      preloadEpisodeRailNeighbors(index);
+      pauseDetailCoverCarousel();
+      const still = episodeFullStill(ep);
+      const fallback = state.detailCover.images && state.detailCover.images[state.detailCover.index] || state.selected && state.selected.landscape || "";
+      setDetailCoverImage(still || fallback, "", { allowPoster: false, keepLoading: false });
       preserveEpisodePreviewAnchor(anchor, anchorTop);
       syncEpisodePreviewLayout(info);
       return true;
@@ -30584,6 +30459,11 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         if (!state.episodePreview || !state.episodePreview.active || !info.isConnected) return;
         updateEpisodePreviewPosition(info);
         updateInlineEpisodePreviewClamp();
+        requestAnimationFrame(() => {
+          if (!state.episodePreview || !state.episodePreview.active || !info.isConnected) return;
+          updateEpisodePreviewPosition(info);
+          updateInlineEpisodePreviewClamp();
+        });
       });
     }
 
@@ -30671,7 +30551,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
     function clearInlineEpisodePreview(options) {
       const opts = options || {};
-      cancelScheduledInlineEpisodePreview();
       const sheet = $("detailSheet");
       if (sheet) sheet.classList.remove("episode-preview-active", "episode-preview-expanded");
       state.episodePreview.active = false;
@@ -30855,7 +30734,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         return;
       }
       $("episodeRail").replaceChildren(...list.map((ep, index) => {
-        const still = episodeCardStillSource(ep);
+        const stillSource = ep.still_path ? imageUrl(ep.still_path, true) : "";
+        const still = stillSource ? displayImage(stillSource, { size: "w300" }) : "";
         const button = document.createElement("button");
         button.className = "episode-card focusable" + (still ? " has-still" : "");
         button.type = "button";
@@ -30863,7 +30743,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         button.dataset.seasonNumber = String(Number(ep.season_number) || renderedSeason);
         button.innerHTML = `
           <span class="episode-badge">第${escapeHtml(ep.episode_number || "?")}集</span>
-          ${still ? `<div class="episode-still-wrap"><img class="episode-still" alt="" ${episodeCardStillAttrs(still)}></div>` : ""}
+          ${still ? `<div class="episode-still-wrap"><img class="episode-still" alt="" ${imageAttrs(still)}></div>` : ""}
           <div class="episode-body">
             <b>${ep.episode_number}. ${escapeHtml(ep.name || "未命名")}</b>
             <span>${escapeHtml(ep.air_date || "")}</span>
@@ -30871,8 +30751,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           </div>
         `;
         button.addEventListener("focus", () => {
-          preloadEpisodeRailNeighbors(index);
-          scheduleInlineEpisodePreview(index, { expanded: false });
+          applyInlineEpisodePreview(index, { expanded: false });
         });
         button.addEventListener("blur", () => {
           setTimeout(() => {
@@ -30889,7 +30768,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         });
         return button;
       }));
-      preloadEpisodeRailNeighbors(state.episodeViewer.index >= 0 ? state.episodeViewer.index : 0);
       if (restoreEpisode) requestAnimationFrame(() => focusRemoteTarget(findByDataset($("episodeRail"), "episodeNumber", restoreEpisode) || $("episodeRail").querySelector(".episode-card")));
       updatePostPanFocusState();
     }
@@ -30925,37 +30803,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return stillSource ? displayImage(stillSource, { size: "w780" }) : "";
     }
 
-    function episodeCardStillSource(ep) {
-      const stillSource = ep && ep.still_path ? imageUrl(ep.still_path, true) : "";
-      return stillSource ? displayImage(stillSource, { size: "w300" }) : "";
-    }
-
-    function episodeCardStillAttrs(src) {
-      const placeholder = "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
-      return `${imageAttrs(placeholder, { loading: "lazy" })} data-episode-src="${escapeAttr(src)}"`;
-    }
-
-    function hydrateEpisodeCardImage(card) {
-      if (!card) return;
-      const image = card.querySelector("img[data-episode-src]");
-      const source = image && image.getAttribute("data-episode-src");
-      if (!image || !source) return;
-      preloadImage(source, () => {
-        if (!document.documentElement.contains(image) || image.getAttribute("data-episode-src") !== source) return;
-        image.removeAttribute("data-episode-src");
-        image.src = source;
-      });
-    }
-
-    function preloadEpisodeRailNeighbors(index) {
-      const center = Number(index);
-      if (!Number.isFinite(center)) return;
-      const cards = $("episodeRail") ? $("episodeRail").querySelectorAll(".episode-card") : [];
-      [-1, 0, 1, 2, 3].forEach((offset) => {
-        hydrateEpisodeCardImage(cards[center + offset]);
-      });
-    }
-
     function episodeViewerPayload(ep) {
       const still = episodeFullStill(ep);
       const title = `${ep.episode_number || ""}${ep.episode_number ? ". " : ""}${ep.name || "未命名"}`;
@@ -30968,7 +30815,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const episodes = state.episodeViewer.episodes || [];
       const ep = episodes[index];
       if (!ep) return;
-      cancelScheduledInlineEpisodePreview();
       state.episodeViewer.index = index;
       state.episodeViewer.episodeNumber = String(ep.episode_number || "");
       const episode = episodeViewerPayload(ep);
@@ -34721,27 +34567,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           }
         });
       });
-      syncDetailPlaybackStatusVisibility(document.activeElement);
-    }
-
-    function detailPlaybackStatusHiddenFor(target) {
-      const sheet = $("detailSheet");
-      if (!sheet || !sheet.classList.contains("active")) return false;
-      const lowerBlock = target && target.closest
-        ? target.closest("#seasonBlock, #castBlock, #personWorkBlock, #recommendBlock")
-        : null;
-      return !!(lowerBlock && sheet.contains(lowerBlock));
-    }
-
-    function syncDetailPlaybackStatusVisibility(target) {
-      const sheet = $("detailSheet");
-      if (!sheet) return;
-      const focusTarget = target || document.activeElement;
-      sheet.classList.toggle(
-        "detail-focus-below-episodes",
-        detailPlaybackStatusHiddenFor(focusTarget)
-      );
-      renderDirectPlayStatus(focusTarget);
     }
 
     function panEmptyStateText() {
@@ -35427,7 +35252,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       cancelPendingDirectPlay("detail_closed");
       cancelDetailPlaybackPreparation("detail_closed");
       state.detailHistoryHandoff = null;
-      state.detailHistoryRearm = null;
       // 防止动画期间重复触发
       if (sheet.classList.contains("sheet-closing")) return;
 
@@ -38525,9 +38349,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       // The remote rail graph follows the cards actually rendered in the
       // rail.  Effective episodes remain a viewer/business concept and must
       // not make an already visible future episode unreachable by DPAD.
-      const cards = Array.from(rail.querySelectorAll(".episode-card.focusable")).filter((card) => (
-        !card.disabled && card.getAttribute("tabindex") !== "-1"
-      ));
+      const cards = Array.from(rail.querySelectorAll(".episode-card.focusable")).filter(isVisibleFocusable);
       if (cards.length <= 1) return null;
       let currentPos = cards.indexOf(active);
       if (currentPos < 0) {
@@ -38889,11 +38711,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     }
 
     function syncFocusedCardHalo(target) {
-      const previous = lastFocusHaloCard;
-      if (previous && previous.classList) {
-        previous.classList.remove("focus-halo-edge-left", "focus-halo-edge-right", "focus-halo-edge-both");
-      }
-      lastFocusHaloCard = null;
+      const previous = document.querySelectorAll(".focus-halo-edge-left, .focus-halo-edge-right, .focus-halo-edge-both");
+      Array.from(previous).forEach((card) => card.classList.remove("focus-halo-edge-left", "focus-halo-edge-right", "focus-halo-edge-both"));
       if (!isTvLikeDevice() || !target || !target.closest) return;
       const card = target.closest(".card, .episode-card, .person-card");
       const container = card && card.closest(".home-rail, .rail, .media-grid");
@@ -38911,13 +38730,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (leftEdge) card.classList.add("focus-halo-edge-left");
       if (rightEdge) card.classList.add("focus-halo-edge-right");
       if (leftEdge && rightEdge) card.classList.add("focus-halo-edge-both");
-      lastFocusHaloCard = card;
     }
 
-    document.addEventListener("focusin", (event) => {
-      syncDetailPlaybackStatusVisibility(event.target);
-      syncFocusedCardHalo(event.target);
-    }, true);
+    document.addEventListener("focusin", (event) => syncFocusedCardHalo(event.target), true);
 
     function focusRemoteTarget(target, options) {
       if (!target) return;
@@ -39977,10 +39792,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           state.detailModeItemKey = panSearchItemKey(item);
           state.detailHistory = effectiveHistory;
         }
-        state.detailHistoryRearm = {
-          itemKey: panSearchItemKey(item),
-          history: effectiveHistory
-        };
         recordDetailPlaybackDecision("PLAYER_RETURN_PLAYBACK_DECISION", item, {
           playbackReturnFound: !!playbackReturn,
           continueContextFound: reusableResource.source === "continue-context",
@@ -39999,9 +39810,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       else state.detailEpisodeTarget = null;
       resetPanSearchState(false, { reason: "player_return_rearm_fallback", preserveHealth: true });
       syncDetailMode(item, nativeHistory || null, nativeHistory ? { freshNative: true } : undefined);
-      state.detailHistoryRearm = nativeHistory
-        ? { itemKey: panSearchItemKey(item), history: nativeHistory }
-        : null;
       recordDetailPlaybackDecision("PLAYER_RETURN_PLAYBACK_DECISION", item, {
         playbackReturnFound: !!playbackReturn,
         continueContextFound: !!(resource && resource.contextFound),
