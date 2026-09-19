@@ -23903,6 +23903,10 @@ utils.encode = function encode(arr, enc) {
 
     function homeDomesticPreferred(item, mediaType) {
       const type = String(mediaType || "").toLowerCase();
+      if (type === "anime") {
+        const itemType = String(item && (item.mediaType || item.media_type) || "").toLowerCase();
+        return itemType === "movie" || itemType === "tv" ? homeDomesticPreferred(item, itemType) : false;
+      }
       if (!item || (type !== "movie" && type !== "tv")) return false;
       if (type === "movie") {
         return String(item.originalLanguage || item.original_language || "").trim().toLowerCase() === "zh";
@@ -24027,7 +24031,7 @@ utils.encode = function encode(arr, enc) {
           variant: config.variant,
           limit: config.initialLimit,
           homeMore: true,
-          homeDomesticType: config.listId === "movie" || config.listId === "tv" ? config.listId : "",
+          homeDomesticType: ["movie", "tv", "anime"].includes(config.listId) ? config.listId : "",
           railKey: `home:${config.listId}`,
           homeEagerCount: 4
         });
