@@ -30823,8 +30823,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (!ep) return;
       state.episodeViewer.index = index;
       state.episodeViewer.episodeNumber = String(ep.episode_number || "");
+      const returnCard = findByDataset($('episodeRail'), "episodeNumber", String(ep.episode_number || ""));
       const episode = episodeViewerPayload(ep);
       openImage(episode.still || "", { episode });
+      if (returnCard && returnCard.isConnected) state.focusReturnEl = returnCard;
     }
 
     function currentEpisodeViewerIndex() {
@@ -39400,7 +39402,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     }
 
     function restoreFocusReturn(fallback) {
-      const target = isVisibleFocusable(state.focusReturnEl) ? state.focusReturnEl : fallback || firstContentFocus();
+      const target = isVisibleFocusable(state.focusReturnEl)
+        ? state.focusReturnEl
+        : isVisibleFocusable(fallback) ? fallback : firstContentFocus();
       state.focusReturnEl = null;
       if (target) requestAnimationFrame(() => focusRemoteTarget(target));
     }
