@@ -15945,13 +15945,13 @@ utils.encode = function encode(arr, enc) {
             hint: "近期国内外最新上线",
             mediaType: "all",
             sources: [
-              { endpoint: "discover/tv", mediaType: "tv", params: { with_original_language: "zh", with_origin_country: "CN", without_genres: "10764,10766,10767", sort_by: "popularity.desc", include_null_first_air_dates: "false", "first_air_date_gte": "today-90", "first_air_date_lte": "today+7", vote_count_gte: "2" } },
-              { endpoint: "discover/movie", mediaType: "movie", params: { with_original_language: "zh", sort_by: "popularity.desc", "primary_release_date_gte": "today-90", "primary_release_date_lte": "today+7", vote_count_gte: "2" } },
+              { endpoint: "discover/tv", mediaType: "tv", params: { with_original_language: "zh", with_origin_country: "CN", without_genres: "10764,10766,10767", sort_by: "popularity.desc", include_null_first_air_dates: "false", "first_air_date_gte": "today-90", "first_air_date_lte": "today", vote_count_gte: "2" } },
+              { endpoint: "discover/movie", mediaType: "movie", params: { with_original_language: "zh", sort_by: "popularity.desc", "primary_release_date_gte": "today-90", "primary_release_date_lte": "today", vote_count_gte: "2" } },
               { endpoint: "movie/now_playing", mediaType: "movie", params: { language: "zh-CN" } },
-              { endpoint: "discover/tv", mediaType: "tv", params: { with_original_language: "en", with_origin_country: "US|GB", without_genres: "10764,10767,10766,16", with_watch_providers: "8|337|350|384|9|15|386|531", watch_region: "US", sort_by: "popularity.desc", include_null_first_air_dates: "false", "first_air_date_gte": "today-60", "first_air_date_lte": "today+7" } },
-              { endpoint: "discover/movie", mediaType: "movie", params: { with_original_language: "en", with_watch_providers: "8|337|350|384|9|15|386|531", watch_region: "US", sort_by: "popularity.desc", "primary_release_date_gte": "today-90", "primary_release_date_lte": "today+7", vote_count_gte: "5" } },
-              { endpoint: "discover/tv", mediaType: "tv", params: { with_original_language: "ko", with_origin_country: "KR", without_genres: "10764,10767,10766,16", sort_by: "popularity.desc", include_null_first_air_dates: "false", "first_air_date_gte": "today-60", "first_air_date_lte": "today+7" } },
-              { endpoint: "discover/tv", mediaType: "tv", params: { with_original_language: "ja", with_origin_country: "JP", without_genres: "10764,10767,10766,16", sort_by: "popularity.desc", include_null_first_air_dates: "false", "first_air_date_gte": "today-60", "first_air_date_lte": "today+7" } }
+              { endpoint: "discover/tv", mediaType: "tv", params: { with_original_language: "en", with_origin_country: "US|GB", without_genres: "10764,10767,10766,16", with_watch_providers: "8|337|350|384|9|15|386|531", watch_region: "US", sort_by: "popularity.desc", include_null_first_air_dates: "false", "first_air_date_gte": "today-60", "first_air_date_lte": "today" } },
+              { endpoint: "discover/movie", mediaType: "movie", params: { with_original_language: "en", with_watch_providers: "8|337|350|384|9|15|386|531", watch_region: "US", sort_by: "popularity.desc", "primary_release_date_gte": "today-90", "primary_release_date_lte": "today", vote_count_gte: "5" } },
+              { endpoint: "discover/tv", mediaType: "tv", params: { with_original_language: "ko", with_origin_country: "KR", without_genres: "10764,10767,10766,16", sort_by: "popularity.desc", include_null_first_air_dates: "false", "first_air_date_gte": "today-60", "first_air_date_lte": "today" } },
+              { endpoint: "discover/tv", mediaType: "tv", params: { with_original_language: "ja", with_origin_country: "JP", without_genres: "10764,10767,10766,16", sort_by: "popularity.desc", include_null_first_air_dates: "false", "first_air_date_gte": "today-60", "first_air_date_lte": "today" } }
             ]
           },
           {
@@ -15960,20 +15960,19 @@ utils.encode = function encode(arr, enc) {
             hint: "华语、日韩、欧美等地区剧集",
             mediaType: "tv",
             sources: [
-              { endpoint: "discover/tv", mediaType: "tv", params: { with_origin_country: "CN|HK|TW|KR|JP|US|GB", without_genres: "16,99,10763,10764,10766,10767", sort_by: "popularity.desc", include_null_first_air_dates: "false", "first_air_date_gte": "today-180", "first_air_date_lte": "today+14" } },
-              { endpoint: "discover/tv", mediaType: "tv", params: { with_origin_country: "CN|HK|TW|KR|JP|US|GB", without_genres: "16,99,10763,10764,10766,10767", sort_by: "first_air_date.desc", include_null_first_air_dates: "false", "first_air_date_gte": "today-180", "first_air_date_lte": "today+14" } }
+              { endpoint: "discover/tv", mediaType: "tv", params: { with_origin_country: "CN|HK|TW|KR|JP|US|GB", without_genres: "16,99,10763,10764,10766,10767", sort_by: "popularity.desc", include_null_first_air_dates: "false", "first_air_date_gte": "today-180", "first_air_date_lte": "today" } },
+              { endpoint: "discover/tv", mediaType: "tv", params: { with_origin_country: "CN|HK|TW|KR|JP|US|GB", without_genres: "16,99,10763,10764,10766,10767", sort_by: "first_air_date.desc", include_null_first_air_dates: "false", "first_air_date_gte": "today-180", "first_air_date_lte": "today" } }
             ]
           },
           {
             id: "movie",
             title: "电影",
-            hint: "最新上映·即将上映·流媒体",
+            hint: "最新上映·流媒体",
             mediaType: "movie",
             sources: [
               { endpoint: "movie/now_playing", mediaType: "movie", params: { language: "zh-CN" } },
-              { endpoint: "movie/upcoming", mediaType: "movie", params: { language: "zh-CN" } },
-              { endpoint: "discover/movie", mediaType: "movie", params: { with_original_language: "zh", sort_by: "popularity.desc", "primary_release_date_gte": "today-120", "primary_release_date_lte": "today+60" } },
-              { endpoint: "discover/movie", mediaType: "movie", params: { with_watch_providers: "8|337|350|384|9|15|386|531", watch_region: "US", sort_by: "popularity.desc", "primary_release_date_gte": "today-90", "primary_release_date_lte": "today+14", vote_count_gte: "10" } }
+              { endpoint: "discover/movie", mediaType: "movie", params: { with_original_language: "zh", sort_by: "popularity.desc", "primary_release_date_gte": "today-120", "primary_release_date_lte": "today" } },
+              { endpoint: "discover/movie", mediaType: "movie", params: { with_watch_providers: "8|337|350|384|9|15|386|531", watch_region: "US", sort_by: "popularity.desc", "primary_release_date_gte": "today-90", "primary_release_date_lte": "today", vote_count_gte: "10" } }
             ]
           },
           {
@@ -15982,9 +15981,9 @@ utils.encode = function encode(arr, enc) {
             hint: "国内外最新动画",
             mediaType: "tv",
             sources: [
-              { endpoint: "discover/tv", mediaType: "tv", params: { with_genres: "16", with_original_language: "ja", with_origin_country: "JP", sort_by: "first_air_date.desc", include_null_first_air_dates: "false", "first_air_date_gte": "today-120", "first_air_date_lte": "today+30" } },
-              { endpoint: "discover/tv", mediaType: "tv", params: { with_genres: "16", with_original_language: "zh", sort_by: "first_air_date.desc", include_null_first_air_dates: "false", "first_air_date_gte": "today-120", "first_air_date_lte": "today+30" } },
-              { endpoint: "discover/movie", mediaType: "movie", params: { with_genres: "16", sort_by: "primary_release_date.desc", "primary_release_date_gte": "today-120", "primary_release_date_lte": "today+30" } }
+              { endpoint: "discover/tv", mediaType: "tv", params: { with_genres: "16", with_original_language: "ja", with_origin_country: "JP", sort_by: "first_air_date.desc", include_null_first_air_dates: "false", "first_air_date_gte": "today-120", "first_air_date_lte": "today" } },
+              { endpoint: "discover/tv", mediaType: "tv", params: { with_genres: "16", with_original_language: "zh", sort_by: "first_air_date.desc", include_null_first_air_dates: "false", "first_air_date_gte": "today-120", "first_air_date_lte": "today" } },
+              { endpoint: "discover/movie", mediaType: "movie", params: { with_genres: "16", sort_by: "primary_release_date.desc", "primary_release_date_gte": "today-120", "primary_release_date_lte": "today" } }
             ]
           },
           {
@@ -16671,6 +16670,26 @@ utils.encode = function encode(arr, enc) {
     function latestReleaseDate(item) {
       if (!item) return "";
       return latestDateOnly(item.releaseDate || item.release_date || item.first_air_date || "");
+    }
+
+    function isReleasedAsOfToday(item) {
+      if (!item) return true;
+      const values = [item.releaseDate, item.release_date, item.first_air_date, item.firstAirDate];
+      let releaseDate = "";
+      for (let index = 0; index < values.length; index++) {
+        const parsed = latestDateOnly(values[index]);
+        if (parsed) { releaseDate = parsed; break; }
+      }
+      return !releaseDate || releaseDate <= today();
+    }
+
+    function isReleaseFilteredCatalogId(id) {
+      return ["all", "tv", "movie", "anime"].includes(String(id || ""));
+    }
+
+    function filterReleasedCatalogItems(id, items) {
+      const source = Array.isArray(items) ? items : [];
+      return isReleaseFilteredCatalogId(id) ? source.filter(isReleasedAsOfToday) : source;
     }
 
     function latestIdentity(item) {
@@ -21030,7 +21049,7 @@ utils.encode = function encode(arr, enc) {
           const fetches = list.sources.map((src) => {
             const srcList = Object.assign({}, list, { endpoint: src.endpoint, params: src.params, mediaType: src.mediaType || list.mediaType });
             return requestJson(tmdbUrl(srcList, 1), 18)
-              .then((body) => ({ items: (body.results || []).map((item, i) => normalizeTmdb(item, srcList, i)).filter(hasPoster), total: body.total_pages || 1 }))
+              .then((body) => ({ items: filterReleasedCatalogItems(id, (body.results || []).map((item, i) => normalizeTmdb(item, srcList, i)).filter(hasPoster)), total: body.total_pages || 1 }))
               .catch(() => ({ items: [], total: 1 }));
           });
           const results = await Promise.all(fetches);
@@ -21060,7 +21079,7 @@ utils.encode = function encode(arr, enc) {
       try {
         const body = await requestJson(tmdbUrl(list, 1), 18);
         const results = body.results || [];
-        state.catalog[id] = uniqueMedia(results.map((item, index) => normalizeTmdb(item, list, index)).filter(hasPoster));
+        state.catalog[id] = uniqueMedia(filterReleasedCatalogItems(id, results.map((item, index) => normalizeTmdb(item, list, index)).filter(hasPoster)));
         state.catalogPage[id] = { page: 1, total: body.total_pages || 1, loading: false, loaded: true };
         setStatus("tmdb", `${list.title} 已加载 ${state.catalog[id].length} 条`);
       } catch (e) {
@@ -21091,7 +21110,8 @@ utils.encode = function encode(arr, enc) {
           const items = (body.results || [])
             .filter((item) => item.poster_path && (item.media_type === "movie" || item.media_type === "tv" || source.mediaType))
             .map((item, index) => normalizeTmdb(item, source, index))
-            .filter(hasPoster);
+            .filter(hasPoster)
+            .filter(isReleasedAsOfToday);
           if (preferenceItems().length) {
             useNostrRecommendationsIfReady();
             return;
@@ -21127,7 +21147,7 @@ utils.encode = function encode(arr, enc) {
           const fetches = list.sources.map((src) => {
             const srcList = Object.assign({}, list, { endpoint: src.endpoint, params: src.params, mediaType: src.mediaType || list.mediaType });
             return requestJson(tmdbUrl(srcList, next), 18)
-              .then((body) => ({ items: (body.results || []).map((item, i) => normalizeTmdb(item, srcList, (next - 1) * 20 + i)).filter(hasPoster), total: body.total_pages || page.total }))
+              .then((body) => ({ items: filterReleasedCatalogItems(id, (body.results || []).map((item, i) => normalizeTmdb(item, srcList, (next - 1) * 20 + i)).filter(hasPoster)), total: body.total_pages || page.total }))
               .catch(() => ({ items: [], total: page.total }));
           });
           const results = await Promise.all(fetches);
@@ -21142,13 +21162,13 @@ utils.encode = function encode(arr, enc) {
             }
           }
           const maxTotal = Math.max(...results.map((r) => r.total));
-          state.catalog[id] = uniqueMedia((state.catalog[id] || []).concat(mixed));
+          state.catalog[id] = uniqueMedia((state.catalog[id] || []).concat(filterReleasedCatalogItems(id, mixed)));
           state.catalogPage[id] = { page: next, total: maxTotal, loading: false, loaded: true, multiSrc: true };
           renderActiveGrid();
           return;
         }
         const body = await requestJson(tmdbUrl(list, next), 18);
-        const items = (body.results || []).map((item, index) => normalizeTmdb(item, list, (next - 1) * 20 + index)).filter(hasPoster);
+        const items = filterReleasedCatalogItems(id, (body.results || []).map((item, index) => normalizeTmdb(item, list, (next - 1) * 20 + index)).filter(hasPoster));
         state.catalog[id] = uniqueMedia((state.catalog[id] || []).concat(items));
         state.catalogPage[id] = { page: next, total: body.total_pages || page.total || next, loading: false, loaded: true };
         renderActiveGrid();
@@ -21180,7 +21200,8 @@ utils.encode = function encode(arr, enc) {
         const items = (body.results || [])
           .filter((item) => item.poster_path && (item.media_type === "movie" || item.media_type === "tv" || source.mediaType))
           .map((item, index) => normalizeTmdb(item, source, (next - 1) * 20 + index))
-          .filter(hasPoster);
+          .filter(hasPoster)
+          .filter(isReleasedAsOfToday);
         state.fallback = uniqueMedia(state.fallback.concat(items));
         state.fallbackPage = { sourceIndex: page.sourceIndex, page: next, total: body.total_pages || page.total || next, loading: false, loaded: true, done: !items.length };
         renderActiveGrid();
@@ -23207,10 +23228,12 @@ utils.encode = function encode(arr, enc) {
       const identity = homeHeroIdentity(item);
       const title = String(item && item.title || "").trim();
       const backdrop = homeHeroBackdrop(item);
+      const isWeeklyFeed = Array.isArray(item && item.heroSourceKinds) && item.heroSourceKinds.includes("weekly-feed");
       const popularity = Math.max(0, Number(item && item.popularity || 0));
       const voteCount = Math.max(0, Number(item && (item.voteCount || item.vote_count) || 0));
       const fresh = homeHeroFreshnessScore(item) > 0;
       if (!identity || !title || !backdrop || !hasPoster(item)) return false;
+      if (!isWeeklyFeed && !isReleasedAsOfToday(item)) return false;
       if (popularity < 1.2 && voteCount < 20 && !fresh) return false;
       if (popularity < 0.45 && voteCount < 80 && !fresh) return false;
       return true;
@@ -23255,8 +23278,10 @@ utils.encode = function encode(arr, enc) {
 
     function homeHeroFallbackCandidates() {
       const sources = [];
+      if (Array.isArray(state.homeLatest && state.homeLatest.items)) {
+        sources.push(...state.homeLatest.items.map((item) => Object.assign({}, item, { heroSourceKinds: ["weekly-feed"] })));
+      }
       if (Array.isArray(state.fallback)) sources.push(...state.fallback);
-      if (Array.isArray(state.homeLatest && state.homeLatest.items)) sources.push(...state.homeLatest.items);
       if (Array.isArray(state.searchHot && state.searchHot.items)) sources.push(...state.searchHot.items);
       sources.push(...allItems());
       return homeHeroSelect(uniqueMedia(filterBlocked(sources)), HOME_HERO_FINAL_LIMIT, homeHeroNostrSignals());
@@ -23976,7 +24001,7 @@ utils.encode = function encode(arr, enc) {
       if (!rail) return;
       rail.dataset.homeVariant = config.variant;
       const page = state.catalogPage[config.listId];
-      const items = page && page.loaded ? (state.catalog[config.listId] || []) : [];
+      const items = page && page.loaded ? filterReleasedCatalogItems(config.listId, state.catalog[config.listId] || []) : [];
       if (page && page.loading) {
         showHomeRailStatus(rail, "加载中...", { variant: config.variant });
       } else if (page && page.error) {
@@ -24543,7 +24568,7 @@ utils.encode = function encode(arr, enc) {
       // now-playing is the finite Weekly Feed route.  It is populated from
       // state.homeLatest by loadSecondaryPage instead of the catalog cache.
       if (normalizeLegacyCategoryId(id) === "now-playing") return [];
-      return filterBlocked(state.catalog && state.catalog[id] || []);
+      return filterBlocked(filterReleasedCatalogItems(id, state.catalog && state.catalog[id] || []));
     }
     function secondaryItemValues(item, keys) { const key = keys.find((name) => item && item[name] != null), value = key && item[key]; return Array.isArray(value) ? value.map(String).filter(Boolean) : String(value || "").split(/[|,\s]+/).filter(Boolean); }
     function secondaryItemMediaType(item) { const value = String(item && (item.mediaType || item.media_type || item.type) || "").toLowerCase(); return value === "movie" || value === "tv" ? value : ""; }
@@ -24844,7 +24869,7 @@ utils.encode = function encode(arr, enc) {
       const filters = secondaryFilterState(id);
       const query = secondaryActiveQuery(id);
       const serverFilters = new Set(query && query.listId === id ? query.serverSideFilters || [] : []);
-      const result = (Array.isArray(baseItems) ? baseItems : []).filter((item) =>
+      const result = filterReleasedCatalogItems(id, Array.isArray(baseItems) ? baseItems : []).filter((item) =>
         (filters.mediaType === "all" || serverFilters.has("mediaType") || secondaryItemMediaType(item) === filters.mediaType)
         && (filters.genre === "all" || serverFilters.has("genre") || secondaryItemGenreIds(item).includes(filters.genre))
         && (filters.region === "all" || serverFilters.has("region") || secondaryItemRegions(item).includes(filters.region))
@@ -25014,7 +25039,7 @@ utils.encode = function encode(arr, enc) {
         sourceState.done = page >= sourceState.totalPages;
         (Array.isArray(body.results) ? body.results : []).forEach((item, index) => {
           const normalized = normalizeTmdb(item, result.source, (page - 1) * 20 + index);
-          if (hasPoster(normalized)) incoming.push(normalized);
+          if (hasPoster(normalized) && (!isReleaseFilteredCatalogId(id) || isReleasedAsOfToday(normalized))) incoming.push(normalized);
         });
       });
       if (!goodCount) {
@@ -25548,7 +25573,7 @@ utils.encode = function encode(arr, enc) {
       } else if (!page || !page.loaded) {
         showGridStatus(grid, "点击后加载片单");
       } else {
-        fillGrid(grid, state.catalog[list.id] || []);
+        fillGrid(grid, filterReleasedCatalogItems(list.id, state.catalog[list.id] || []));
       }
     }
 
@@ -25841,7 +25866,11 @@ utils.encode = function encode(arr, enc) {
 
     function itemsForGrid(gridId) {
       if (gridId === "recommendRail" || gridId === "all") {
-        const source = preferenceItems().length ? preferenceItems() : state.fallback.length ? state.fallback : ranked(allItems());
+        const source = preferenceItems().length
+          ? preferenceItems()
+          : state.fallback.length
+          ? filterReleasedCatalogItems("all", state.fallback)
+          : ranked(allItems());
         return uniqueMedia(filterBlocked(source)).filter(hasPoster);
       }
       if (gridId === "recent" || gridId === "secondary:recent") return uniqueRecentWatchingMedia(state.recent.items || []);
