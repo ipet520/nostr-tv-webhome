@@ -31031,6 +31031,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return t === "quark" || t === "baidu";
     }
 
+    function isPanDirectAutoPlayable(candidate) {
+      return isQuarkOrBaidu(candidate);
+    }
+
     function panAutoIdentityVerdict(item, candidate) {
       const title = String(candidate && (candidate.title || candidate.fileName || candidate.file_name || candidate.filename) || "").trim();
       const metadata = {
@@ -31138,6 +31142,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         identityRejectCount: 0
       };
       (candidates || []).forEach((candidate) => {
+        if (!isPanDirectAutoPlayable(candidate)) {
+          tiers.rejected.push(candidate);
+          return;
+        }
         const selectionType = episodeSelectionTypeFor(candidate, target);
         if (!selectionType) {
           tiers.rejected.push(candidate);
