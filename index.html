@@ -32564,7 +32564,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return { candidate: curatedCandidateOrder(healthyCandidates)[0] || null, sourceTimeout: false, stale: false };
     }
 
-    async function curatedCentralHealthCandidate(sourceStates, item, run, startedAt, discoveryDeadline) {
+    async function curatedCentralHealthCandidate(sourceStates, item, run, startedAt) {
       const sourcePools = (sourceStates || [])
         .filter((state) => state && state.kind === "CANDIDATES" && Array.isArray(state.candidates) && state.candidates.length)
         .map((state) => ({
@@ -32587,9 +32587,11 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         return { candidate: null, sourceId: "", sourceName: "", stale: true, timedOut: false, checkError: false };
       }
 
+      const preflightStartedAt = Date.now();
       recordCuratedRaceDiag("CURATED_PREFLIGHT_START", {
-        elapsedMs: Math.max(0, Date.now() - startedAt),
-        preflightStartMs: Math.max(0, Date.now() - startedAt),
+        elapsedMs: Math.max(0, preflightStartedAt - startedAt),
+        preflightStartMs: Math.max(0, preflightStartedAt - startedAt),
+        allowedMs: CURATED_PREFLIGHT_BUDGET_MS,
         itemCount: preflightItems.length,
         sourceCount: sourcePools.length
       });
@@ -32597,12 +32599,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       let freshHealth = {};
       let timedOut = false;
       let checkError = false;
-      const chainRemainingMs = Math.max(0, Number(discoveryDeadline) - Date.now());
       const checkable = preflightItems.filter((candidate) => isPanCheckSupported(candidate));
-      if (checkable.length && panCheckAvailable() && chainRemainingMs > 0) {
+      if (checkable.length && panCheckAvailable()) {
         const context = { token: state.pan.viewToken, item };
-        const preflightAllowedMs = Math.min(CURATED_PREFLIGHT_BUDGET_MS, chainRemainingMs);
-        const checked = await playbackPanHealthPreflight(preflightItems, context, preflightAllowedMs);
+        const checked = await playbackPanHealthPreflight(preflightItems, context, CURATED_PREFLIGHT_BUDGET_MS);
         if (!detailPlaybackIsCurrent(run) || !panContextIsCurrent(context)) {
           return { candidate: null, sourceId: "", sourceName: "", stale: true, timedOut: false, checkError: false };
         }
@@ -32611,9 +32611,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         checkError = !!(checked && checked.checkError);
       }
 
+      const preflightDoneAt = Date.now();
       recordCuratedRaceDiag("CURATED_PREFLIGHT_DONE", {
-        elapsedMs: Math.max(0, Date.now() - startedAt),
-        preflightDoneMs: Math.max(0, Date.now() - startedAt),
+        elapsedMs: Math.max(0, preflightDoneAt - startedAt),
+        preflightDoneMs: Math.max(0, preflightDoneAt - startedAt),
+        preflightDurationMs: Math.max(0, preflightDoneAt - preflightStartedAt),
+        allowedMs: CURATED_PREFLIGHT_BUDGET_MS,
         timedOut,
         checkError,
         freshStateCount: Object.keys(freshHealth).length
@@ -32635,12 +32638,18 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         }
       }
 
+      const allFreshBad = preflightItems.length > 0 && preflightItems.every((candidate) => {
+        const key = panHealthKey(candidate);
+        return Object.prototype.hasOwnProperty.call(freshHealth || {}, key)
+          && String(freshHealth[key] || "").toLowerCase() === "bad"
+          && isPanHealthBad(candidate);
+      });
       recordPanPreflightResult(
         preflightItems,
         freshHealth,
         panPreflightCheckErrorCount(checkable, freshHealth),
         selected,
-        !selected && preflightItems.length > 0
+        allFreshBad
       );
       return {
         candidate: selected,
@@ -32734,7 +32743,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         }
         const available = sourceStates.filter((sourceState) => sourceState.terminal && sourceState.candidates.length);
         if (!available.length) {
-          if (sourceStates.every((sourceState) => sourceState.terminal)) finishCollection("DISCOVERY_DEADLINE");
+          if (sourceStates.every((sourceState) => sourceState.terminal)) finishCollection("ALL_SOURCES_TERMINAL_NO_CANDIDATE");
           return;
         }
         const best = available.reduce((current, next) => next.index < current.index ? next : current);
@@ -32834,8 +32843,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         collection.sourceStates,
         item,
         run,
-        startedAt,
-        discoveryDeadline
+        startedAt
       );
       if (!detailPlaybackIsCurrent(run) || !healthResult || healthResult.stale) {
         recordCuratedRaceDiag("CURATED_NO_SELECTION", {
