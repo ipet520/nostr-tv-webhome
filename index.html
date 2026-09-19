@@ -16754,11 +16754,11 @@ utils.encode = function encode(arr, enc) {
       "/search.html?wd={kw}"
     ];
     const CURATED_SOURCE_DEFINITIONS = [
-      { id: "wanou", name: "玩偶", domains: ["https://www.wogg.net", "http://woggpan.xxooo.cf", "https://wogg.xxooo.cf"], searchUrl: "/vodsearch/-------------.html?wd={kw}&page={p}" },
-      { id: "muou", name: "木偶", domains: ["https://www.muou.site", "https://www.muou.asia", "https://666.666291.xyz"] },
-      { id: "duoduo", name: "多多", domains: ["https://tv.yydsys.cc", "https://yydsys.de5.net", "https://tv.214521.xyz", "https://tv.yydsys.top"] },
-      { id: "huban", name: "虎斑", domains: ["http://xhban.xyz", "http://38.76.197.172:16969"] },
-      { id: "shandian", name: "闪电", domains: ["http://shandian.blog", "http://sd.sduc.site"] }
+      { id: "wanou", name: "玩偶", domains: ["https://www.wogg.net"], searchUrl: "/vodsearch/-------------.html?wd={kw}&page={p}" },
+      { id: "muou", name: "木偶", domains: ["https://666.666291.xyz"] },
+      { id: "duoduo", name: "多多", domains: ["https://tv.yydsys.cc"] },
+      { id: "huban", name: "虎斑", domains: ["http://xhban.xyz"] },
+      { id: "shandian", name: "闪电", domains: ["http://shandian.blog"] }
     ];
     const CURATED_SOURCE_BUDGET_MS = 3000;
     const CURATED_CHAIN_BUDGET_MS = 15000;
@@ -16891,7 +16891,9 @@ utils.encode = function encode(arr, enc) {
         sidebarFocusId: "",
         initialHomeFocusPending: false,
         coldHomeFocusPending: false,
+        coldHomeFocusEpoch: 0,
         coldHomeFallbackTarget: null,
+        focusUserEpoch: 0,
         homeSectionEntryTarget: null,
         snapshotBound: {}
       },
@@ -18028,13 +18030,9 @@ utils.encode = function encode(arr, enc) {
 
     function sanitizeSourceDomains(value) {
       const defaults = curatedSourceDefaults();
-      const raw = value && typeof value === "object" ? value : {};
       const result = {};
       CURATED_SOURCE_ORDER.forEach((id) => {
-        const list = Array.isArray(raw[id])
-          ? raw[id].map(normalizeSourceDomain).filter(Boolean)
-          : [];
-        result[id] = Array.from(new Set(list.length ? list : (defaults[id] || [])));
+        result[id] = (defaults[id] || []).slice(0, 1);
       });
       return result;
     }
@@ -20998,6 +20996,7 @@ utils.encode = function encode(arr, enc) {
         phase: "PREPARING",
         settledResult: "",
         finalFailureNotified: false,
+        curatedSummarySent: false,
         cancelled: false,
         cancelReason: "",
         staleLogged: false,
@@ -23488,7 +23487,9 @@ utils.encode = function encode(arr, enc) {
 
     function restoreSidebarHomeFocus(context) {
       const saved = context || {};
+      const focusEpoch = homeFocusUserEpoch();
       const restore = () => {
+        if (homeFocusUserEpoch() !== focusEpoch) return;
         if (!isHomeRouteActive()) return;
         applyHomeScrollTop(Math.max(0, Number(saved.scrollY || 0)));
         let target = isVisibleFocusable(saved.target) ? saved.target : null;
@@ -24502,6 +24503,11 @@ utils.encode = function encode(arr, enc) {
     function focusColdHomeHeroIfReady() {
       const home = state.homeV14;
       if (!home || !home.coldHomeFocusPending || !isTvLikeDevice() || !isHomeRouteActive()) return false;
+      if (Number(home.coldHomeFocusEpoch || 0) !== homeFocusUserEpoch()) {
+        home.coldHomeFocusPending = false;
+        home.coldHomeFallbackTarget = null;
+        return false;
+      }
       const target = $("homeHero");
       if (!isVisibleFocusable(target)) return false;
       const active = document.activeElement;
@@ -26516,13 +26522,23 @@ utils.encode = function encode(arr, enc) {
       return isVisibleFocusable(target) ? target : null;
     }
 
+    function homeFocusUserEpoch() {
+      return Number(state.homeV14 && state.homeV14.focusUserEpoch || 0);
+    }
+
+    function markHomeUserNavigation() {
+      const home = state.homeV14;
+      if (!home) return 0;
+      home.focusUserEpoch = Number(home.focusUserEpoch || 0) + 1;
+      home.coldHomeFocusPending = false;
+      home.coldHomeFallbackTarget = null;
+      return home.focusUserEpoch;
+    }
+
     function cancelColdHomeFocusOnUserNavigation(key) {
       if (!isTvLikeDevice() || !isHomeRouteActive() || focusScopeRoot() !== document
         || !["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(key)) return false;
-      const home = state.homeV14;
-      if (!home || !home.coldHomeFocusPending) return false;
-      home.coldHomeFocusPending = false;
-      home.coldHomeFallbackTarget = null;
+      markHomeUserNavigation();
       return true;
     }
 
@@ -26544,8 +26560,12 @@ utils.encode = function encode(arr, enc) {
         if (!target) return;
         state.remoteInitialFocused = true;
         state.homeV14.initialHomeFocusPending = true;
+        const focusEpoch = homeFocusUserEpoch();
         requestAnimationFrame(() => {
-          try { if (!isVisibleFocusable(document.activeElement)) focusRemoteTarget(target); }
+          try {
+            if (homeFocusUserEpoch() !== focusEpoch) return;
+            if (!isVisibleFocusable(document.activeElement)) focusRemoteTarget(target);
+          }
           finally { state.homeV14.initialHomeFocusPending = false; }
         });
         return;
@@ -26563,8 +26583,10 @@ utils.encode = function encode(arr, enc) {
       if (!target) return;
       state.remoteInitialFocused = true;
       state.homeV14.initialHomeFocusPending = true;
+      const focusEpoch = homeFocusUserEpoch();
       requestAnimationFrame(() => {
         try {
+          if (homeFocusUserEpoch() !== focusEpoch) return;
           // The launcher may have become ready between the fallback timer and
           // this frame.  Never let the queued fallback overwrite it.
           if (wantsColdHome && document.activeElement === $("homeSearchLauncher")) return;
@@ -26578,6 +26600,12 @@ utils.encode = function encode(arr, enc) {
       const active = document.activeElement;
       if (isVisibleFocusable(active)) return false;
       if (restoreConnectionPanelFocus()) return true;
+      if (isTvLikeDevice() && isHomeRouteActive() && state.homeV14.coldHomeFocusPending) {
+        if (homeFocusUserEpoch() !== Number(state.homeV14.coldHomeFocusEpoch || 0)) {
+          state.homeV14.coldHomeFocusPending = false;
+          state.homeV14.coldHomeFallbackTarget = null;
+        }
+      }
       if (isTvLikeDevice() && isHomeRouteActive() && state.homeV14.coldHomeFocusPending) {
         const coldTarget = coldHomeInitialFocus();
         if (coldTarget) {
@@ -28181,6 +28209,50 @@ utils.encode = function encode(arr, enc) {
       return item;
     }
 
+    function canonicalExactDetailFor(item) {
+      const mediaType = normalizeHistoryMediaType(item && (item.mediaType || item.media_type));
+      const tmdbId = String(item && (item.tmdbId || item.tmdb_id) || "").trim();
+      if (!mediaType || !tmdbId) return null;
+      const matches = (detail) => {
+        if (!detail || String(detail.id || detail.tmdbId || "").trim() !== tmdbId) return null;
+        const detailType = normalizeHistoryMediaType(detail.mediaType || detail.media_type);
+        return detailType && detailType !== mediaType ? null : detail;
+      };
+      const current = matches(state.detail);
+      if (current) return current;
+      if (mediaType === "tv") return matches(tvDetailCacheValue(item));
+      return null;
+    }
+
+    function canonicalExactDetailUrl(item) {
+      const url = new URL(tmdbDetailUrl(item));
+      url.searchParams.set("language", "zh-CN");
+      return url.toString();
+    }
+
+    function canonicalIdentityFromDetail(item, detail) {
+      const mediaType = normalizeHistoryMediaType(item && (item.mediaType || item.media_type));
+      const localizedTitle = String((mediaType === "tv" ? detail && detail.name : detail && detail.title) || "").trim();
+      if (!localizedTitle) return null;
+      const detailOriginalTitle = String((mediaType === "tv" ? detail && detail.original_name : detail && detail.original_title) || "").trim();
+      return {
+        title: item.title,
+        originalTitle: item.originalTitle || detailOriginalTitle,
+        resourceSearchTitle: localizedTitle,
+        aliases: mergeTitleAliases(
+          item.aliases,
+          item.title,
+          item.originalTitle,
+          localizedTitle,
+          detail && detail.name,
+          detail && detail.title,
+          detail && detail.original_name,
+          detail && detail.original_title
+        ),
+        canonicalResolved: true
+      };
+    }
+
     async function resolveCanonicalResourceTitle(item) {
       if (!item || typeof item !== "object") return item;
       const key = canonicalResourceKey(item);
@@ -28203,19 +28275,44 @@ utils.encode = function encode(arr, enc) {
         const mediaType = String(item.mediaType || item.media_type || "").toLowerCase();
         const tmdbId = String(item.tmdbId || item.tmdb_id || "").trim();
         const query = String(item.originalTitle || item.title || "").trim();
-        if (query && (mediaType === "tv" || mediaType === "movie") && tmdbId) {
+        if ((mediaType === "tv" || mediaType === "movie") && tmdbId) {
+          let exactDetail = canonicalExactDetailFor(item);
+          if (!exactDetail) {
+            try {
+              exactDetail = mediaType === "tv"
+                ? await requestTvDetailShared(item)
+                : await requestJson(canonicalExactDetailUrl(item), 18);
+            } catch (e) {}
+          }
+          const exactIdentity = canonicalIdentityFromDetail(item, exactDetail);
+          if (exactIdentity) return exactIdentity;
+          if (!query) {
+            return {
+              title: item.title,
+              originalTitle: item.originalTitle,
+              resourceSearchTitle: item.resourceSearchTitle || item.title || item.originalTitle || "",
+              aliases: mergeTitleAliases(item.aliases, item.title, item.originalTitle)
+            };
+          }
           try {
             const body = await requestJson(tmdbSearchUrl(query), 18);
             const results = Array.isArray(body && body.results) ? body.results : [];
             const matched = results.find((result) => String(result && result.id || "") === tmdbId
               && String(result && result.media_type || "").toLowerCase() === mediaType);
             if (matched) {
-              const canonical = normalizeTmdb(matched, { id: "canonical", title: "canonical", mediaType }, 0);
+              const localizedTitle = String((mediaType === "tv" ? matched.name : matched.title) || "").trim();
+              const originalTitle = String((mediaType === "tv" ? matched.original_name : matched.original_title) || "").trim();
               return {
-                title: canonical.title,
-                originalTitle: canonical.originalTitle,
-                resourceSearchTitle: canonical.resourceSearchTitle || canonical.title || "",
-                aliases: canonical.aliases,
+                title: item.title,
+                originalTitle: item.originalTitle || originalTitle,
+                resourceSearchTitle: localizedTitle || originalTitle || item.title || "",
+                aliases: mergeTitleAliases(
+                  item.aliases,
+                  item.title,
+                  item.originalTitle,
+                  localizedTitle,
+                  originalTitle
+                ),
                 canonicalResolved: true
               };
             }
@@ -28901,6 +28998,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         return false;
       }
       state.homeReturn = null;
+      const focusEpoch = homeFocusUserEpoch();
       const restoreSecondary = saved.route === "secondary" && saved.secondaryListId;
       if (restoreSecondary) {
         state.activeList = "all";
@@ -28916,6 +29014,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const y = Math.max(0, Number(saved.scrollY || 0));
       const mediaReturn = !!(saved.focus && saved.focus.type === "media");
       const apply = (withFocus, allowMissingSectionFallback) => {
+        if (homeFocusUserEpoch() !== focusEpoch) return false;
         if ($("detailSheet") && $("detailSheet").classList.contains("active")) return;
         applyHomeScrollTop(y);
         const heroReturn = !!(saved.focus && saved.focus.type === "id" && (saved.focus.key === "homeHero" || saved.focus.key === "homeHeroAction"));
@@ -28936,13 +29035,13 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           $("secondaryCatalogGrid").scrollTop = Math.max(0, Number(saved.secondaryGridScrollTop || 0));
           $("secondaryCatalogGrid").scrollLeft = Math.max(0, Number(saved.secondaryGridScrollLeft || 0));
         }
+        return true;
       };
       requestAnimationFrame(() => apply(true, false));
       setTimeout(() => apply(true, false), 80);
       setTimeout(() => apply(true, false), 240);
       setTimeout(() => {
-        apply(true, true);
-        scheduleUiSnapshotSave();
+        if (apply(true, true)) scheduleUiSnapshotSave();
       }, 520);
       return true;
     }
@@ -32187,6 +32286,13 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return Math.max(0, Math.min(sourceRemaining, chainRemaining));
     }
 
+    function curatedNativeTimeoutSec(remainingMs) {
+      return Math.min(
+        CURATED_REQUEST_TIMEOUT_SEC,
+        Math.max(1, Math.ceil(Math.max(0, Number(remainingMs) || 0) / 1000))
+      );
+    }
+
     function curatedAttemptState(context, run) {
       if (!detailPlaybackIsCurrent(run)) return "STALE";
       if (!context || !context.active || curatedRemainingMs(context) <= 0) return "SOURCE_TIMEOUT";
@@ -32216,6 +32322,50 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         }
       } catch (e) {}
       return payload;
+    }
+
+    function recordCuratedRaceSummary(run, detail) {
+      if (run && run.curatedSummarySent) return false;
+      if (run) run.curatedSummarySent = true;
+      const payload = Object.assign({
+        event: "CURATED_RACE_SUMMARY",
+        runId: run && (run.id || run.runId || run.itemKey) || "",
+        runReason: String(run && (run.reason || run.playbackReason) || ""),
+        keyword: "",
+        resourceSearchTitle: "",
+        discoveryWindowMs: CURATED_DISCOVERY_WINDOW_MS,
+        qualityGraceMs: CURATED_QUALITY_GRACE_MS,
+        preflightBudgetMs: CURATED_PREFLIGHT_BUDGET_MS,
+        sources: [],
+        firstCandidateMs: null,
+        firstCandidateSource: "",
+        collectionDoneMs: null,
+        collectionReason: "",
+        preflightStartMs: null,
+        preflightDurationMs: null,
+        preflightTimedOut: false,
+        preflightFreshStateCount: 0,
+        selectedSource: "",
+        selectedDiskType: "",
+        totalCuratedMs: 0
+      }, detail || {});
+      recordCuratedRaceDiag("CURATED_RACE_SUMMARY", payload);
+      const message = "CURATED_RACE_SUMMARY " + JSON.stringify(payload);
+      try {
+        const api = sdk();
+        const candidates = [
+          { owner: api && api.ext, method: api && api.ext && api.ext.log },
+          { owner: window.fm && window.fm.ext, method: window.fm && window.fm.ext && window.fm.ext.log },
+          { owner: api, method: api && api.log },
+          { owner: window.fm, method: window.fm && window.fm.log }
+        ];
+        const target = candidates.find((entry) => entry.owner && typeof entry.method === "function");
+        if (target) {
+          const result = target.method.call(target.owner, message);
+          if (result && typeof result.catch === "function") result.catch(() => {});
+        }
+      } catch (e) {}
+      return true;
     }
 
     // Native 请求本身无法可靠取消；将迟到的 resolve/reject 都包进已消费的 Promise，
@@ -32473,7 +32623,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           let response;
           try {
             response = await curatedRequestWithDeadline(
-              () => requestCuratedHtml(url, Math.min(CURATED_REQUEST_TIMEOUT_SEC, Math.max(1, remainingSearchMs / 1000)), { referer: String(domain).replace(/\/+$/, "") + "/" }),
+              () => requestCuratedHtml(url, curatedNativeTimeoutSec(remainingSearchMs), { referer: String(domain).replace(/\/+$/, "") + "/" }),
               context,
               "SOURCE_TIMEOUT"
             );
@@ -32496,7 +32646,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             const remainingDetailMs = curatedRemainingMs(context);
             try {
               const detail = await curatedRequestWithDeadline(
-                () => requestCuratedHtml(entry.href, Math.min(CURATED_REQUEST_TIMEOUT_SEC, Math.max(1, remainingDetailMs / 1000)), { referer: url }),
+                () => requestCuratedHtml(entry.href, curatedNativeTimeoutSec(remainingDetailMs), { referer: url }),
                 context,
                 "SOURCE_TIMEOUT"
               );
@@ -32581,10 +32731,30 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         });
       });
       if (!preflightItems.length) {
-        return { candidate: null, sourceId: "", sourceName: "", stale: false, timedOut: false, checkError: false };
+        return {
+          candidate: null,
+          sourceId: "",
+          sourceName: "",
+          stale: false,
+          timedOut: false,
+          checkError: false,
+          preflightStartedAt: 0,
+          preflightDurationMs: 0,
+          freshStateCount: 0
+        };
       }
       if (!detailPlaybackIsCurrent(run)) {
-        return { candidate: null, sourceId: "", sourceName: "", stale: true, timedOut: false, checkError: false };
+        return {
+          candidate: null,
+          sourceId: "",
+          sourceName: "",
+          stale: true,
+          timedOut: false,
+          checkError: false,
+          preflightStartedAt: 0,
+          preflightDurationMs: 0,
+          freshStateCount: 0
+        };
       }
 
       const preflightStartedAt = Date.now();
@@ -32604,7 +32774,17 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         const context = { token: state.pan.viewToken, item };
         const checked = await playbackPanHealthPreflight(preflightItems, context, CURATED_PREFLIGHT_BUDGET_MS);
         if (!detailPlaybackIsCurrent(run) || !panContextIsCurrent(context)) {
-          return { candidate: null, sourceId: "", sourceName: "", stale: true, timedOut: false, checkError: false };
+          return {
+            candidate: null,
+            sourceId: "",
+            sourceName: "",
+            stale: true,
+            timedOut: false,
+            checkError: false,
+            preflightStartedAt,
+            preflightDurationMs: Math.max(0, Date.now() - preflightStartedAt),
+            freshStateCount: 0
+          };
         }
         freshHealth = checked && checked.states || {};
         timedOut = !!(checked && checked.timedOut);
@@ -32657,14 +32837,26 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         sourceName: selectedSource ? selectedSource.sourceName : "",
         stale: false,
         timedOut,
-        checkError
+        checkError,
+        preflightStartedAt,
+        preflightDurationMs: Math.max(0, preflightDoneAt - preflightStartedAt),
+        freshStateCount: Object.keys(freshHealth).length
       };
     }
 
     async function resolveCuratedPlaybackCandidate(item, run) {
-      if (!detailPlaybackIsCurrent(run)) return null;
       const sources = curatedSourceDefinitions();
       const startedAt = Date.now();
+      if (!detailPlaybackIsCurrent(run)) {
+        recordCuratedRaceSummary(run, {
+          keyword: resourceSearchKeyword(item),
+          resourceSearchTitle: String(item && item.resourceSearchTitle || ""),
+          sources: sources.map((source) => ({ id: source.id, startMs: null, doneMs: null, kind: "STALE", candidateCount: 0 })),
+          collectionReason: "STALE",
+          totalCuratedMs: Math.max(0, Date.now() - startedAt)
+        });
+        return null;
+      }
       const discoveryDeadline = startedAt + CURATED_DISCOVERY_WINDOW_MS;
       const chainContext = {
         chainDeadline: discoveryDeadline,
@@ -32679,6 +32871,36 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         sourceCount: sources.length
       });
 
+      let summarySent = false;
+      const emitSummary = (detail) => {
+        if (summarySent) return;
+        summarySent = true;
+        const health = detail && detail.healthResult || {};
+        const collection = detail && detail.collection || {};
+        recordCuratedRaceSummary(run, {
+          keyword: resourceSearchKeyword(item),
+          resourceSearchTitle: String(item && item.resourceSearchTitle || ""),
+          sources: sourceStates.map((sourceState) => ({
+            id: sourceState.source.id,
+            startMs: Number.isFinite(sourceState.startedAt) ? Math.max(0, sourceState.startedAt - startedAt) : null,
+            doneMs: sourceState.doneAt ? Math.max(0, sourceState.doneAt - startedAt) : null,
+            kind: sourceState.kind || "",
+            candidateCount: sourceState.candidates.length
+          })),
+          firstCandidateMs: firstCandidateAt ? Math.max(0, firstCandidateAt - startedAt) : null,
+          firstCandidateSource,
+          collectionDoneMs: collection.doneAt ? Math.max(0, collection.doneAt - startedAt) : null,
+          collectionReason: String(detail && detail.collectionReason || collection.reason || ""),
+          preflightStartMs: health.preflightStartedAt ? Math.max(0, health.preflightStartedAt - startedAt) : null,
+          preflightDurationMs: health.preflightDurationMs || 0,
+          preflightTimedOut: !!health.timedOut,
+          preflightFreshStateCount: Number(health.freshStateCount || 0),
+          selectedSource: String(health.sourceId || ""),
+          selectedDiskType: String(health.candidate && health.candidate.diskType || ""),
+          totalCuratedMs: Math.max(0, Date.now() - startedAt)
+        });
+      };
+
       const sourceStates = sources.map((source, index) => ({
         source,
         index,
@@ -32692,7 +32914,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         },
         terminal: false,
         kind: "",
-        candidates: []
+        candidates: [],
+        doneAt: 0
       }));
 
       sourceStates.forEach((sourceState) => {
@@ -32706,6 +32929,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       let resolveCollection;
       let collectionDone = false;
       let firstCandidateAt = 0;
+      let firstCandidateSource = "";
       let candidateDeadline = 0;
       let discoveryTimer = 0;
       let qualityTimer = 0;
@@ -32717,11 +32941,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         clearTimeout(discoveryTimer);
         clearTimeout(qualityTimer);
         sourceStates.forEach((sourceState) => { sourceState.context.active = false; });
+        const doneAt = Date.now();
         const candidateSources = sourceStates
           .filter((sourceState) => sourceState.candidates.length)
           .map((sourceState) => sourceState.source.id);
         recordCuratedRaceDiag("CURATED_COLLECTION_DONE", {
-          elapsedMs: Math.max(0, Date.now() - startedAt),
+          elapsedMs: Math.max(0, doneAt - startedAt),
           reason,
           availableSourceCount: candidateSources.length,
           availableCandidateSourceIds: candidateSources,
@@ -32731,6 +32956,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         resolveCollection({
           reason,
           stale: reason === "STALE",
+          doneAt,
           sourceStates
         });
       };
@@ -32775,6 +33001,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         }
         const sourceResult = result && typeof result === "object" ? result : { kind: "TRANSPORT_FAILURE" };
         const kind = String(sourceResult.kind || "TRANSPORT_FAILURE").toUpperCase();
+        sourceState.doneAt = Date.now();
         sourceState.terminal = true;
         sourceState.kind = kind;
         sourceState.context.active = false;
@@ -32785,12 +33012,13 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         recordCuratedRaceDiag("CURATED_SOURCE_DONE", {
           sourceId: sourceState.source.id,
           kind,
-          elapsedMs: Math.max(0, Date.now() - startedAt),
-          sourceDoneMs: Math.max(0, Date.now() - startedAt),
+          elapsedMs: Math.max(0, sourceState.doneAt - startedAt),
+          sourceDoneMs: Math.max(0, sourceState.doneAt - startedAt),
           candidateCount: sourceState.candidates.length
         });
         if (sourceState.candidates.length && !firstCandidateAt) {
-          firstCandidateAt = Date.now();
+          firstCandidateAt = sourceState.doneAt;
+          firstCandidateSource = sourceState.source.id;
           candidateDeadline = Math.min(firstCandidateAt + CURATED_QUALITY_GRACE_MS, discoveryDeadline);
           recordCuratedRaceDiag("CURATED_FIRST_CANDIDATE", {
             sourceId: sourceState.source.id,
@@ -32828,6 +33056,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           elapsedMs: Math.max(0, Date.now() - startedAt),
           reason: collection.stale ? "STALE" : collection.reason
         });
+        emitSummary({ collection, collectionReason: collection.stale ? "STALE" : collection.reason });
         return null;
       }
       const availableSourceCount = collection.sourceStates.filter((sourceState) => sourceState.candidates.length).length;
@@ -32836,23 +33065,32 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           elapsedMs: Math.max(0, Date.now() - startedAt),
           reason: collection.reason
         });
+        emitSummary({ collection, collectionReason: collection.reason });
         return null;
       }
 
-      const healthResult = await curatedCentralHealthCandidate(
-        collection.sourceStates,
-        item,
-        run,
-        startedAt
-      );
+      let healthResult;
+      try {
+        healthResult = await curatedCentralHealthCandidate(
+          collection.sourceStates,
+          item,
+          run,
+          startedAt
+        );
+      } catch (error) {
+        emitSummary({ collection, collectionReason: "PREFLIGHT_ERROR" });
+        throw error;
+      }
       if (!detailPlaybackIsCurrent(run) || !healthResult || healthResult.stale) {
         recordCuratedRaceDiag("CURATED_NO_SELECTION", {
           elapsedMs: Math.max(0, Date.now() - startedAt),
           reason: "STALE"
         });
+        emitSummary({ collection, healthResult: healthResult || {}, collectionReason: "STALE" });
         return null;
       }
       if (healthResult.candidate) {
+        emitSummary({ collection, healthResult, collectionReason: collection.reason });
         recordCuratedRaceDiag("CURATED_SELECTED", {
           elapsedMs: Math.max(0, Date.now() - startedAt),
           totalCuratedMs: Math.max(0, Date.now() - startedAt),
@@ -32876,6 +33114,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         elapsedMs: Math.max(0, Date.now() - startedAt),
         reason: "FRESH_BAD_OR_NO_ACCEPTABLE_CANDIDATE"
       });
+      emitSummary({ collection, healthResult, collectionReason: "FRESH_BAD_OR_NO_ACCEPTABLE_CANDIDATE" });
       return null;
     }
 
@@ -36061,7 +36300,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           updateTvDiagnostic();
         }
         const el = document.activeElement;
-        cancelColdHomeFocusOnUserNavigation(key);
+        if (isTvLikeDevice() && isHomeRouteActive() && focusScopeRoot() === document
+          && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(key)) {
+          markHomeUserNavigation();
+        }
         if (key === "Menu" && handleSidebarMenuKey(event)) return;
         const editing = isTextEditingElement(el);
         if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(key) && state.recentDelete && (state.recentDelete.armedKey || state.recentDelete.pendingKey || state.recentDelete.remotePressLocked)) cancelRecentDeleteArm();
@@ -38241,6 +38483,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (legacyHomeRoute) state.activeList = "all";
       else if (snapshot.activeList) state.activeList = normalizeLegacyCategoryId(snapshot.activeList);
       normalizeActiveListForViewport();
+      const snapshotFocusEpoch = homeFocusUserEpoch();
       renderAll({ deferContent: snapshot.route === "home" });
       if (snapshot.connectionOpen && $("connectionDock") && $("connectionBody")) {
         $("connectionDock").classList.add("open");
@@ -38268,6 +38511,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         openSync({ restore: true, skipHistory: true });
       } else {
         requestAnimationFrame(() => {
+          if (homeFocusUserEpoch() !== snapshotFocusEpoch) return;
           window.scrollTo(0, Number(snapshot.scrollY || 0));
           if (snapshot.homeFocus) {
             const savedHome = {
@@ -38280,6 +38524,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           }
         });
         setTimeout(() => {
+          if (homeFocusUserEpoch() !== snapshotFocusEpoch) return;
           if (snapshot.homeFocus && ["home", "search", "secondary"].includes(uiSnapshotRoute())) {
             const savedHome = {
               activeList: snapshot.activeList || state.activeList,
@@ -38773,6 +39018,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (!restored) {
         if (isHomeRouteActive() && isTvLikeDevice()) {
           state.homeV14.coldHomeFocusPending = true;
+          state.homeV14.coldHomeFocusEpoch = homeFocusUserEpoch();
           state.homeV14.coldHomeFallbackTarget = null;
           focusColdHomeHeroIfReady();
         } else {
