@@ -19644,7 +19644,7 @@ utils.encode = function encode(arr, enc) {
       if (status === 401 || status === 403 || /\b(?:401|403)\b|unauthori[sz]ed|forbidden/i.test(message)) return "auth";
       if ([408, 425, 429, 500, 502, 503, 504].includes(status)) return "http_transient";
       if (error && (error.panBusiness === true || error.code === "PAN_BUSINESS_ERROR")) return "business";
-      if (/failed to fetch|networkerror|network request failed|load failed|connection reset|econnreset|econnrefused|etimedout|timeout|timed out/i.test(message)) return "network";
+      if (/failed to fetch|networkerror|network request failed|load failed|connection reset|connection closed|socket closed|unexpected end of stream|eofexception|econnreset|econnrefused|etimedout|timeout|timed out/i.test(message)) return "network";
       return status ? "request" : "request";
     }
 
