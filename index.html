@@ -16961,7 +16961,7 @@ utils.encode = function encode(arr, enc) {
       tmdb: { config: null, configDirty: false },
       uiPrefs: { loaded: false, homeFullscreenEnabled: true, homeHotSource: "tmdb" },
       blocked: { loaded: false, items: {}, selecting: false, holdTimer: 0, holdTarget: null, longPressFired: false, pointer: null, suppressClickUntil: 0 },
-      pan: { config: null, configDirty: false, loading: false, keyword: "", activeType: "", results: [], health: {}, pending: {}, queued: new Map(), inFlight: new Set(), observer: null, flushTimer: 0, pollTimers: [], pollRound: 0, pollRoundStarted: {}, requestSeq: 0, actualRequestAttempts: 0, lifecycleSeq: 0, sessionId: 0, sessionOrigin: "", sessionItemKey: "", sessionStartedAt: 0, sessionTerminal: false, sessionTerminalReason: "", sessionEndRecorded: false, sessionStartCount: 0, sessionEndCount: 0, sessionTimer: 0, initialAttempts: 0, pollRoundsStarted: 0, pollRoundsCompleted: 0, foregroundRecoveryCount: 0, preloadKey: "", viewToken: "", searchMode: "", initialSucceeded: false, initialResultState: "", lastFailureKind: "", retryRemaining: 0, finalFailure: false, directTransportExhausted: false, renderKeys: "", tabKeys: "", checkEnabled: false, focusKey: "", focusMode: "", playbackReturn: null, progress: { active: false, phase: "", round: 0, totalRounds: 0 }, preflight: null, directReady: null, directFailure: null, sessionDiag: null, isPlaying: false },
+      pan: { config: null, configDirty: false, loading: false, keyword: "", activeType: "", results: [], health: {}, pending: {}, queued: new Map(), inFlight: new Set(), observer: null, flushTimer: 0, pollTimers: [], pollRound: 0, pollRoundStarted: {}, panSnapshotSeq: 0, requestSeq: 0, actualRequestAttempts: 0, lifecycleSeq: 0, sessionId: 0, sessionOrigin: "", sessionItemKey: "", sessionStartedAt: 0, sessionTerminal: false, sessionTerminalReason: "", sessionEndRecorded: false, sessionStartCount: 0, sessionEndCount: 0, sessionTimer: 0, initialAttempts: 0, pollRoundsStarted: 0, pollRoundsCompleted: 0, foregroundRecoveryCount: 0, preloadKey: "", viewToken: "", searchMode: "", initialSucceeded: false, initialResultState: "", lastFailureKind: "", retryRemaining: 0, finalFailure: false, directTransportExhausted: false, renderKeys: "", tabKeys: "", checkEnabled: false, focusKey: "", focusMode: "", playbackReturn: null, progress: { active: false, phase: "", round: 0, totalRounds: 0 }, preflight: null, directReady: null, directFailure: null, sessionDiag: null, isPlaying: false },
       directPlayStatus: { active: false, actionId: 0, phase: "", text: "", startedAt: 0, clearTimer: 0 },
       watch: { item: null, timer: 0, bestMs: 0, durationMs: 0, lastAt: 0, published: false, intentAction: "", playbackTarget: null, playbackOrigin: "", nativeHistoryIdentity: null },
       historyContexts: { loaded: false, loading: false, promise: null, entries: [], diag: null },
@@ -20996,9 +20996,10 @@ utils.encode = function encode(arr, enc) {
       const candidate = run && detailPlaybackIsCurrent(run) && run.candidate;
       if (!candidate) return null;
       // Curated/direct candidates只有在本次详情生命周期内通过自动健康准入后才可 Ready。
-      if (isPanHealthBad(candidate)) {
+      const admission = panAutoHealthAdmission(candidate, {});
+      if (!admission.accepted) {
         run.candidate = null;
-        run.error = "fresh_bad_candidate";
+        run.error = admission.state === "bad" ? "fresh_bad_candidate" : "health_unconfirmed_candidate";
         updateDetailContinueButton();
         return null;
       }
@@ -21027,14 +21028,15 @@ utils.encode = function encode(arr, enc) {
         : currentPlaybackTargetForItem(item));
       if (episodeTarget) setDetailPlaybackTarget(item, episodeTarget);
       // 预检可能在等待 Native History 的期间晚到；handoff 前必须再读一次当前鲜活状态。
-      if (isPanHealthBad(candidate)) {
-        run.error = "fresh_bad_at_native_handoff";
+      const handoffAdmission = panAutoHealthAdmission(candidate, {});
+      if (!handoffAdmission.accepted) {
+        run.error = handoffAdmission.state === "bad" ? "fresh_bad_at_native_handoff" : "health_unconfirmed_at_native_handoff";
         run.active = false;
         run.handoffStarted = false;
-        showDirectPlayStatus(run.token, "FINAL_ERROR", DIRECT_PLAY_STATUS_TEXT.FINAL_ERROR, "fresh_bad_at_native_handoff");
+        showDirectPlayStatus(run.token, "FINAL_ERROR", DIRECT_PLAY_STATUS_TEXT.FINAL_ERROR, run.error);
         updateDetailContinueButton();
         // 让现有详情准备入口继续做下一站/Direct fallback，不把已失效资源送进播放器。
-        const retryOptions = { reason: "curated_late_bad", playRequested: true };
+        const retryOptions = { reason: handoffAdmission.state === "bad" ? "curated_late_bad" : "curated_health_unconfirmed", playRequested: true };
         if (explicitTarget) {
           retryOptions.episodeTarget = explicitTarget;
           retryOptions.explicitEpisodeTarget = true;
@@ -21304,7 +21306,10 @@ utils.encode = function encode(arr, enc) {
         || !ready.candidateKey) return false;
       const candidate = (pan.results || []).find((entry) => isQuarkOrBaidu(entry)
         && detailDirectPlayCandidateKey(entry) === ready.candidateKey);
-      return !!candidate && !isPanHealthBad(candidate);
+      if (!candidate) return false;
+      const identity = panAutoIdentityVerdict(item, candidate);
+      if (identity.verdict === "REJECT") return false;
+      return panAutoHealthAdmission(candidate, {}).accepted;
     }
 
     function detailDirectPlayCandidateFor(item) {
@@ -21348,12 +21353,14 @@ utils.encode = function encode(arr, enc) {
       }
       // 自动选择的 Direct 候选在最终交接前仍需同步复核缓存健康状态；
       // 手动盘搜入口继续由 playPanResult() 保留“警告后强制播放”语义。
-      if (isPanHealthBad(candidate)) {
+      const admission = panAutoHealthAdmission(candidate, {});
+      if (!admission.accepted) {
         state.pan.directReady = null;
         updateDetailContinueButton();
         toast(detailDirectFailureMessage("NO_RESOURCE"));
         return false;
       }
+      recordDirectReadyEvent("DIRECT_READY_CONSUMED", item, candidate, "ready_click", admission.state, null);
       await playPanResult(candidate, {
         prechecked: true,
         episodeTarget,
@@ -30913,6 +30920,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           const st = r.state || "uncertain";
           out[it.key] = st;
           state.pan.health[it.key] = { state: st, summary: r.summary || "", checkedAt: r.checked_at || Date.now(), expiresAt: r.expires_at || Date.now() + 300000 };
+          invalidateAutomaticReadyForHealth(it, st, context);
         });
         return out;
       } catch (e) {
@@ -30975,9 +30983,65 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const t = normalizePanDiskType(it && it.diskType);
       return t === "quark" || t === "baidu";
     }
-    // 从盘搜结果里挑「夸克或百度」候选，按画质+关键字排序后取前 5：
-    // randomize=false → 取第 1（最优）；randomize=true → 在前 5 里随机取一个。
-    async function pickQuarkBaiduTop5(item, randomize, handoffAction) {
+
+    function panAutoIdentityVerdict(item, candidate) {
+      const title = String(candidate && (candidate.title || candidate.fileName || candidate.file_name || candidate.filename) || "").trim();
+      const metadata = {
+        remark: String(candidate && candidate.remark || "").trim(),
+        year: String(candidate && candidate.year || "").trim(),
+        yearTrusted: candidate && candidate.yearTrusted === true
+      };
+      const verdict = mediaIdentityVerdict(item, title, metadata);
+      if (candidate) {
+        candidate.identityVerdict = String(verdict && verdict.verdict || "REJECT");
+        candidate.identityReason = String(verdict && verdict.reason || "");
+        candidate.identityMatchedAlias = String(verdict && verdict.matchedAlias || "");
+      }
+      return verdict;
+    }
+
+    function panAutoCandidateTiers(item, candidates) {
+      const tiers = { strong: [], tentative: [], reject: [], identityStrongCount: 0, identityTentativeCount: 0, identityRejectCount: 0 };
+      (candidates || []).forEach((candidate) => {
+        const verdict = panAutoIdentityVerdict(item, candidate);
+        if (verdict.verdict === "STRONG") {
+          tiers.strong.push(candidate);
+          tiers.identityStrongCount++;
+        } else if (verdict.verdict === "TENTATIVE") {
+          tiers.tentative.push(candidate);
+          tiers.identityTentativeCount++;
+        } else {
+          tiers.reject.push(candidate);
+          tiers.identityRejectCount++;
+        }
+      });
+      return tiers;
+    }
+
+    function panAutoQBCandidateTiers(item, candidates) {
+      return panAutoCandidateTiers(item, (candidates || []).filter(isQuarkOrBaidu));
+    }
+
+    function panAutoCandidateOrder(items) {
+      const positions = new Map((state.pan.results || []).map((candidate, index) => [candidate.key, index]));
+      const currentSnapshotSeq = Number(state.pan.panSnapshotSeq || 0);
+      return (items || []).slice().sort((a, b) => {
+        const disk = panDiskOrder(a) - panDiskOrder(b);
+        if (disk) return disk;
+        const aFresh = Number(a && a.panSnapshotSeq || 0) === currentSnapshotSeq ? 0 : 1;
+        const bFresh = Number(b && b.panSnapshotSeq || 0) === currentSnapshotSeq ? 0 : 1;
+        if (aFresh !== bFresh) return aFresh - bFresh;
+        const aRank = Number.isFinite(Number(a && a.panServerDiskRank)) ? Number(a.panServerDiskRank) : Number.MAX_SAFE_INTEGER;
+        const bRank = Number.isFinite(Number(b && b.panServerDiskRank)) ? Number(b.panServerDiskRank) : Number.MAX_SAFE_INTEGER;
+        if (aRank !== bRank) return aRank - bRank;
+        return (positions.get(a && a.key) == null ? Number.MAX_SAFE_INTEGER : positions.get(a.key))
+          - (positions.get(b && b.key) == null ? Number.MAX_SAFE_INTEGER : positions.get(b.key));
+      });
+    }
+
+    // 自动播放只消费身份合格且健康已确认的前 5 条；手动盘搜仍保留完整结果。
+    async function pickQuarkBaiduTop5(item, randomize, handoffAction, options) {
+      const opts = options || {};
       let pool = (state.pan.results || []).filter(isQuarkOrBaidu);
       if (!pool.length) return null;
       // 剧集：优先整季/全集包（和"点单集"区分开，互不冲突）；没有包再用任意单条
@@ -30985,8 +31049,13 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         const packs = pool.filter((it) => panItemIsRangePack(String(it.title || "")));
         if (packs.length) pool = packs;
       }
-      pool = rankQuarkPacks(pool);            // 画质优先 + 关键字命中（夸克/百度通用）
-      const top5 = pool.slice(0, 5);
+      const identityTiers = panAutoCandidateTiers(item, pool);
+      const tier = opts.tentativeOnly
+        ? "TENTATIVE"
+        : identityTiers.strong.length ? "STRONG"
+        : opts.allowTentative && identityTiers.tentative.length ? "TENTATIVE" : "";
+      const eligible = tier === "STRONG" ? identityTiers.strong : tier === "TENTATIVE" ? identityTiers.tentative : [];
+      const top5 = panAutoCandidateOrder(eligible).slice(0, 5);
       if (!top5.length) return null;
       const previousHealth = panHealthSnapshot(top5);
       const healthCheckAvailable = panCheckAvailable();
@@ -31013,13 +31082,38 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         recordPanDirectHandoffStage("HEALTH_CHECK_OK", item, handoffAction, { healthCheckSkipped: true, healthCheckAvailable: false });
       }
       const decision = panPreflightCandidates(top5, freshHealth, previousHealth, { rejectAllBad: true });
-      const finalPool = decision.candidates.filter((candidate) => !isPanHealthBad(candidate));
+      let healthAcceptedCount = 0;
+      let healthRejectedCount = 0;
+      let healthUnconfirmedCount = 0;
+      const accepted = [];
+      const decisionCandidates = new Set(decision.candidates || []);
+      top5.forEach((candidate) => {
+        const admission = panAutoHealthAdmission(candidate, freshHealth);
+        candidate.healthAdmission = admission.state;
+        if (admission.accepted && decisionCandidates.has(candidate)) {
+          healthAcceptedCount++;
+          accepted.push(candidate);
+        } else if (["bad", "locked", "unavailable"].includes(admission.state) || !decisionCandidates.has(candidate)) {
+          healthRejectedCount++;
+        } else {
+          healthUnconfirmedCount++;
+        }
+      });
+      const finalPool = panAutoCandidateOrder(accepted);
       const pick = finalPool.length ? (randomize ? finalPool[Math.floor(Math.random() * finalPool.length)] : finalPool[0]) : null;
       recordPanPreflightResult(top5, freshHealth, panPreflightCheckErrorCount(checkable, freshHealth), pick, decision.allBadBatch);
       if (handoffAction) recordPanDirectHandoffStage("PICK_DONE", item, handoffAction, {
         selectedCandidate: panDirectPlayCandidateLabel(pick),
         allBadBatch: !!decision.allBadBatch,
-        confirmedBadCount: Number(decision.confirmedBadCount || 0)
+        confirmedBadCount: Number(decision.confirmedBadCount || 0),
+        identityStrongCount: identityTiers.identityStrongCount,
+        identityTentativeCount: identityTiers.identityTentativeCount,
+        identityRejectCount: identityTiers.identityRejectCount,
+        healthAcceptedCount,
+        healthRejectedCount,
+        healthUnconfirmedCount,
+        selectionTier: tier,
+        selectedServerDiskRank: pick && Number.isFinite(Number(pick.panServerDiskRank)) ? Number(pick.panServerDiskRank) : null
       });
       return pick;
     }
@@ -31583,6 +31677,28 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       };
     }
 
+    function recordDirectReadyEvent(event, item, candidate, reason, healthState, action) {
+      const result = {
+        event: String(event || ""),
+        itemKey: item ? panSearchItemKey(item) : "",
+        sessionId: Number(state.pan && state.pan.sessionId || 0),
+        candidateKey: detailDirectPlayCandidateKey(candidate),
+        identityVerdict: String(candidate && candidate.identityVerdict || ""),
+        healthState: String(healthState || ""),
+        reason: String(reason || ""),
+        diskType: normalizePanDiskType(candidate && candidate.diskType),
+        serverDiskRank: candidate && Number.isFinite(Number(candidate.panServerDiskRank))
+          ? Number(candidate.panServerDiskRank) : null,
+        actionId: Number(action && action.token || 0)
+      };
+      if (state.tvDiag) state.tvDiag.directReady = result;
+      if (isTvDiagnosticEnabled()) {
+        try { console.debug("[Nostr TV] " + String(event || "DIRECT_READY"), result); } catch (e) {}
+        updateTvDiagnostic();
+      }
+      return result;
+    }
+
     function recordPanDirectPlayDiag(stage, item, lifecycle, startedAt, extra, action) {
       syncDirectPlayStatusFromStage(stage, item, action);
       if (!isTvDiagnosticEnabled()) return null;
@@ -31666,8 +31782,11 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return result;
     }
 
-    async function waitForPanDirectPlay(action) {
+    async function waitForPanDirectPlay(action, options) {
+      const opts = options || {};
       const waitStartedAt = Number(action && (action.waitStartedAt || action.startedAt) || Date.now());
+      const baselineSnapshotSeq = Number(opts.afterSnapshotSeq || 0);
+      const waitForNewSnapshot = !!opts.waitForNewSnapshot;
       let lastMarker = "";
       while (true) {
         bindPanDirectPlayView(action);
@@ -31680,11 +31799,18 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         }
         const lifecycle = getPanSearchLifecycleFor(action.item);
         const counts = panDirectPlayResultCounts(state.pan.results);
-        const hasQuarkOrBaidu = lifecycle.sameSession && (counts.quarkCount > 0 || counts.baiduCount > 0);
-        if (hasQuarkOrBaidu) {
+        const identityTiers = panAutoQBCandidateTiers(action.item, state.pan.results);
+        const hasStrongCandidate = lifecycle.sameSession && identityTiers.strong.length > 0;
+        const snapshotAdvanced = Number(state.pan.panSnapshotSeq || 0) > baselineSnapshotSeq;
+        if (hasStrongCandidate && (!waitForNewSnapshot || snapshotAdvanced || lifecycle.terminal)) {
           if (lastMarker !== "FOUND_QB") {
             action.waitResult = "FOUND_QB";
-            recordPanDirectPlayDiag("FOUND_QB", action.item, lifecycle, action.startedAt, null, action);
+            recordPanDirectPlayDiag("FOUND_QB", action.item, lifecycle, action.startedAt, {
+              identityStrongCount: identityTiers.identityStrongCount,
+              identityTentativeCount: identityTiers.identityTentativeCount,
+              identityRejectCount: identityTiers.identityRejectCount,
+              snapshotSeq: Number(state.pan.panSnapshotSeq || 0)
+            }, action);
             action.handoffStageStartedAt = Date.now();
             lastMarker = "FOUND_QB";
           }
@@ -31693,7 +31819,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         if (lifecycle.active) {
           const stage = panDirectPlayStage(lifecycle);
           const progress = state.pan.progress || {};
-          const marker = `${stage}|${lifecycle.phase}|${Number(progress.round || 0)}|${counts.total}`;
+          const marker = `${stage}|${lifecycle.phase}|${Number(progress.round || 0)}|${counts.total}|${Number(state.pan.panSnapshotSeq || 0)}`;
           if (marker !== lastMarker) {
             recordPanDirectPlayDiag(stage, action.item, lifecycle, action.startedAt, null, action);
             lastMarker = marker;
@@ -31940,10 +32066,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         }
         const connectionFailureNeedsFresh = action.detailPrimary && !prepareOnly
           && currentDirectFailureType === "CONNECTION_FAILED";
-        const currentCounts = panDirectPlayResultCounts(state.pan.results);
         const currentIsDetailDirect = !action.detailPrimary || lifecycle.origin === "direct";
+        const currentIdentityTiers = panAutoQBCandidateTiers(item, state.pan.results);
         let hasCurrentQuarkOrBaidu = !connectionFailureNeedsFresh && currentIsDetailDirect && lifecycle.sameSession
-          && (currentCounts.quarkCount > 0 || currentCounts.baiduCount > 0);
+          && (currentIdentityTiers.strong.length > 0 || lifecycle.terminal && currentIdentityTiers.tentative.length > 0);
         if (hasCurrentQuarkOrBaidu) {
           action.sessionReuseDecision = "USE_EXISTING_QB";
           recordDirectPlaySessionDiag(action, action.sessionReuseDecision, lifecycle);
@@ -32009,8 +32135,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           }
           if (waited.result !== "FOUND_QB" && waited.result !== "TERMINAL_NO_QB") return;
           lifecycle = waited.lifecycle || getPanSearchLifecycleFor(item);
-          const waitedCounts = panDirectPlayResultCounts(state.pan.results);
-          const foundAfterWait = lifecycle.sameSession && (waitedCounts.quarkCount > 0 || waitedCounts.baiduCount > 0);
+          const waitedIdentityTiers = panAutoQBCandidateTiers(item, state.pan.results);
+          const foundAfterWait = lifecycle.sameSession
+            && (waitedIdentityTiers.strong.length > 0
+              || lifecycle.terminal && waitedIdentityTiers.tentative.length > 0);
           hasCurrentQuarkOrBaidu = foundAfterWait;
           if (!foundAfterWait) {
             const failureType = detailDirectFailureTypeAfterPrepare();
@@ -32039,13 +32167,39 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         // 自动 prepareOnly 不是用户点击，不能污染手动播放的重复点击窗口。
         const isRepeat = action.prepareOnly ? false : isRepeatClickWithinWindow(clickKey);
         recordPanDirectHandoffStage("PICK_START", item, action, { repeatClick: !!isRepeat });
-        const pick = await pickQuarkBaiduTop5(item, isRepeat, action);
+        let pick = null;
+        let selectionTier = "";
+        let pickLifecycle = getPanSearchLifecycleFor(item);
+        while (panDirectPlayActionIsCurrent(action)) {
+          pickLifecycle = getPanSearchLifecycleFor(item);
+          const identityTiers = panAutoQBCandidateTiers(item, state.pan.results);
+          pick = await pickQuarkBaiduTop5(item, isRepeat, action, { allowTentative: false });
+          selectionTier = pick ? String(pick.identityVerdict || "STRONG") : "";
+          if (!pick && pickLifecycle.terminal && identityTiers.tentative.length) {
+            pick = await pickQuarkBaiduTop5(item, isRepeat, action, { allowTentative: true, tentativeOnly: true });
+            selectionTier = pick ? String(pick.identityVerdict || "TENTATIVE") : "";
+          }
+          if (pick || !pickLifecycle.active) break;
+          const snapshotSeq = Number(state.pan.panSnapshotSeq || 0);
+          const continued = await waitForPanDirectPlay(action, {
+            waitForNewSnapshot: true,
+            afterSnapshotSeq: snapshotSeq
+          });
+          if (continued.result === "CANCELLED" || continued.cancelled || !panDirectPlayActionIsCurrent(action)) {
+            action.playRequested = false;
+            return;
+          }
+          if (["WAIT_BUDGET_EXPIRED", "DIRECT_TRANSPORT_EXHAUSTED"].includes(continued.result)) break;
+        }
         if (!panDirectPlayActionIsCurrent(action)) {
           action.playRequested = false;
           return;
         }
         const after = panDirectPlayCandidateSummary(item);
-        recordPanDirectPlayDiag("CANDIDATE_AFTER", item, getPanSearchLifecycleFor(item), action.startedAt, Object.assign(after, { selectedCandidate: panDirectPlayCandidateLabel(pick) }), action);
+        recordPanDirectPlayDiag("CANDIDATE_AFTER", item, getPanSearchLifecycleFor(item), action.startedAt, Object.assign(after, {
+          selectedCandidate: panDirectPlayCandidateLabel(pick),
+          selectionTier
+        }), action);
         if (!pick) {
           const failureType = detailDirectFailureTypeAfterPrepare();
           setDetailDirectFailureType(item, failureType, getPanSearchLifecycleFor(item));
@@ -32059,11 +32213,16 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         const readyCandidateKey = detailDirectPlayCandidateKey(pick);
         state.pan.directFailure = null;
         if (readyLifecycle.sameSession && readyLifecycle.origin === "direct" && readyCandidateKey) {
+          const readyAdmission = panAutoHealthAdmission(pick, {});
           state.pan.directReady = {
             itemKey: panSearchItemKey(item),
             sessionId: Number(readyLifecycle.sessionId || 0),
-            candidateKey: readyCandidateKey
+            candidateKey: readyCandidateKey,
+            identityVerdict: String(pick.identityVerdict || ""),
+            healthState: String(readyAdmission.state || ""),
+            serverDiskRank: Number.isFinite(Number(pick.panServerDiskRank)) ? Number(pick.panServerDiskRank) : null
           };
+          recordDirectReadyEvent("DIRECT_READY_PUBLISHED", item, pick, "health_accepted", readyAdmission.state, action);
         } else {
           state.pan.directReady = null;
         }
@@ -32103,6 +32262,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           suppressDirectPlayPanFallback(action, detailDirectFailureMessage("NO_RESOURCE"));
           return;
         }
+        recordDirectReadyEvent("DIRECT_READY_CONSUMED", item, pick, "direct_play", panAutoHealthAdmission(pick, {}).state, action);
         action.playRequested = false;
         updateDirectPlayStatus(action.token, "STARTING_PLAYER", "正在启动播放器…", "native_handoff");
         await playPanResult(pick, {
@@ -32255,12 +32415,30 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const data = body && body.data ? body.data : body;
       const incoming = normalizePanResults(data && data.merged_by_type || {}, keyword);
       const map = new Map(state.pan.results.map((item) => [item.key, item]));
-      incoming.forEach((item) => {
+      const snapshotSeq = Math.max(0, Number(state.pan.panSnapshotSeq || 0)) + 1;
+      const incomingKeys = new Set();
+      const ordered = [];
+      incoming.forEach((item, incomingIndex) => {
         const existing = map.get(item.key);
-        if (existing) Object.assign(existing, item);
-        else map.set(item.key, item);
+        const target = existing ? Object.assign(existing, item) : item;
+        target.panSnapshotSeq = snapshotSeq;
+        target.panSnapshotIndex = incomingIndex;
+        incomingKeys.add(target.key);
+        ordered.push(target);
       });
-      state.pan.results = Array.from(map.values());
+      const carried = state.pan.results.filter((item) => !incomingKeys.has(item.key));
+      state.pan.panSnapshotSeq = snapshotSeq;
+      state.pan.results = ordered.concat(carried);
+      const snapshotDiag = {
+        snapshotSeq,
+        incomingCount: incoming.length,
+        carriedCount: carried.length
+      };
+      if (state.tvDiag) state.tvDiag.panSnapshot = snapshotDiag;
+      if (isTvDiagnosticEnabled()) {
+        try { console.debug("[Nostr TV] PAN_SNAPSHOT", snapshotDiag); } catch (e) {}
+        updateTvDiagnostic();
+      }
       ensureActivePanType();
       if (state.selected && $("detailSheet") && $("detailSheet").classList.contains("active")) {
         updateDetailContinueButton();
@@ -32403,6 +32581,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             resourceId: String(link.resourceId || link.resource_id || link.resourceID || "").trim(),
             datetime: String(link.datetime || link.time || link.created_at || "").trim(),
             normalizedUrl: String(link.normalized_url || link.normalizedUrl || "").trim(),
+            remark: String(link.remark || link.remarks || link.description || "").trim(),
+            year: String(link.year || link.releaseYear || link.release_year || "").trim(),
+            yearTrusted: link.yearTrusted === true || link.year_trusted === true,
+            panServerDiskRank: Math.max(0, Number(index || 0)),
+            panSnapshotSeq: 0,
+            panSnapshotIndex: index,
             index: items.length + index / 1000
           });
         });
@@ -32553,6 +32737,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         preflightDurationMs: null,
         preflightTimedOut: false,
         preflightFreshStateCount: 0,
+        healthAcceptedCount: 0,
+        healthRejectedCount: 0,
+        healthUnconfirmedCount: 0,
         selectedSource: "",
         selectedDiskType: "",
         plannedSearchKeywords: [],
@@ -33593,11 +33780,25 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
       let selected = null;
       let selectedSource = null;
+      let healthAcceptedCount = 0;
+      let healthRejectedCount = 0;
+      let healthUnconfirmedCount = 0;
       for (const pool of sourcePools.sort((a, b) => a.index - b.index)) {
         const decision = panPreflightCandidates(pool.candidates, freshHealth, {}, { rejectAllBad: true });
-        const healthyCandidates = (decision.candidates || []).filter((candidate) => {
-          const freshState = freshHealth && freshHealth[panHealthKey(candidate)];
-          return String(freshState || "").toLowerCase() !== "bad" && !isPanHealthBad(candidate);
+        const decisionCandidates = new Set(decision.candidates || []);
+        const healthyCandidates = pool.candidates.filter((candidate) => {
+          const admission = panAutoHealthAdmission(candidate, freshHealth);
+          candidate.healthAdmission = admission.state;
+          if (admission.accepted && decisionCandidates.has(candidate)) {
+            healthAcceptedCount++;
+            return true;
+          }
+          if (["bad", "locked", "unavailable"].includes(admission.state) || !decisionCandidates.has(candidate)) {
+            healthRejectedCount++;
+          } else {
+            healthUnconfirmedCount++;
+          }
+          return false;
         });
         const candidate = curatedCandidateOrder(healthyCandidates)[0] || null;
         if (candidate) {
@@ -33629,7 +33830,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         checkError,
         preflightStartedAt,
         preflightDurationMs: Math.max(0, preflightDoneAt - preflightStartedAt),
-        freshStateCount: Object.keys(freshHealth).length
+        freshStateCount: Object.keys(freshHealth).length,
+        healthAcceptedCount,
+        healthRejectedCount,
+        healthUnconfirmedCount
       };
     }
 
@@ -33704,6 +33908,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           preflightDurationMs: health.preflightDurationMs || 0,
           preflightTimedOut: !!health.timedOut,
           preflightFreshStateCount: Number(health.freshStateCount || 0),
+          healthAcceptedCount: Number(health.healthAcceptedCount || 0),
+          healthRejectedCount: Number(health.healthRejectedCount || 0),
+          healthUnconfirmedCount: Number(health.healthUnconfirmedCount || 0),
           selectedSource: String(health.sourceId || ""),
           selectedDiskType: String(health.candidate && health.candidate.diskType || ""),
           plannedSearchKeywords: curatedSearchKeywords(item),
@@ -34018,6 +34225,35 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return !context || (state.pan.viewToken === context.token && state.selected === context.item);
     }
 
+    function invalidateAutomaticReadyForHealth(candidate, stateValue, context) {
+      if (!candidate || String(stateValue || "").toLowerCase() !== "bad") return false;
+      if (context && !panContextIsCurrent(context)) return false;
+      const item = context && context.item || state.selected;
+      if (!item) return false;
+      const candidateKey = detailDirectPlayCandidateKey(candidate);
+      let invalidated = false;
+      const ready = state.pan.directReady;
+      if (ready
+        && ready.itemKey === panSearchItemKey(item)
+        && Number(ready.sessionId || 0) === Number(state.pan.sessionId || 0)
+        && ready.candidateKey
+        && ready.candidateKey === candidateKey) {
+        state.pan.directReady = null;
+        invalidated = true;
+      }
+      const run = state.detailPlayback;
+      if (run && detailPlaybackIsCurrent(run) && run.candidate
+        && detailDirectPlayCandidateKey(run.candidate) === candidateKey) {
+        run.candidate = null;
+        run.error = "late_health_bad";
+        invalidated = true;
+      }
+      if (!invalidated) return false;
+      recordDirectReadyEvent("DIRECT_READY_INVALIDATED", item, candidate, "LATE_HEALTH_BAD", "bad");
+      if (state.selected === item) updateDetailContinueButton();
+      return true;
+    }
+
     function isPanHealthFresh(item) {
       const key = panHealthKey(item);
       const health = state.pan.health[key];
@@ -34030,6 +34266,29 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     function isPanHealthBad(item) {
       const health = getPanHealth(item);
       return health && health.state === "bad" && isPanHealthFresh(item);
+    }
+
+    function panAutoHealthAdmission(item, freshHealth) {
+      if (!item) return { accepted: false, state: "unconfirmed", reason: "NO_CANDIDATE" };
+      const key = panHealthKey(item);
+      const hasFreshResult = !!(freshHealth && Object.prototype.hasOwnProperty.call(freshHealth, key));
+      const cached = state.pan.health[key] || null;
+      const cachedFresh = !!(cached && isPanHealthFresh(item));
+      const cachedState = cachedFresh ? String(cached.state || "").toLowerCase() : "";
+      const explicitState = hasFreshResult
+        ? String(freshHealth[key] || "").toLowerCase()
+        : cachedState;
+      if (["bad", "locked", "unavailable"].includes(explicitState)) {
+        return { accepted: false, state: explicitState, reason: hasFreshResult ? "FRESH_REJECTED" : "CACHED_REJECTED" };
+      }
+      // 盘类型或当前 Bridge 不支持检测时保持既有兼容：不能因不可检测而永久禁止自动播放。
+      if (!isPanCheckSupported(item) || !panCheckAvailable()) {
+        return { accepted: true, state: "unsupported", reason: "UNSUPPORTED" };
+      }
+      if (explicitState === "ok") {
+        return { accepted: true, state: "ok", reason: hasFreshResult ? "FRESH_OK" : "CACHED_OK" };
+      }
+      return { accepted: false, state: explicitState || "unconfirmed", reason: hasFreshResult ? "FRESH_UNCONFIRMED" : "NO_FRESH_OK" };
     }
 
     function panHealthSnapshot(items) {
@@ -34061,8 +34320,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       }).length;
     }
 
-    // 自动播放的 fresh bad 是硬拒绝；timeout/error/uncertain/unsupported 不会进入 bad 集合，
-    // 因而仍可继续排序。手动盘搜不经过此自动候选选择器，保留用户明确强制播放行为。
+    // 这是通用的 preflight 淘汰工具；自动播放随后还必须经过 panAutoHealthAdmission，
+    // 因此 timeout/error/uncertain 不会因为“不是 bad”而直接成为 Ready。手动盘搜不经过自动选择器。
     function panPreflightCandidates(items, freshHealth, previousHealth, options) {
       const opts = options || {};
       const list = (items || []).filter(Boolean);
@@ -34798,8 +35057,15 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             expiresAt: result.expires_at || Date.now() + 300000
           };
           state.pan.health[originalKey] = health;
+          invalidateAutomaticReadyForHealth(fallback, health.state, context);
           const resultKey = panHealthKey({ diskType: normalizePanDiskType(result.type || fallback.diskType), url: result.url || fallback.url });
-          if (resultKey && resultKey !== originalKey) state.pan.health[resultKey] = health;
+          if (resultKey && resultKey !== originalKey) {
+            state.pan.health[resultKey] = health;
+            invalidateAutomaticReadyForHealth({
+              diskType: normalizePanDiskType(result.type || fallback.diskType),
+              url: result.url || fallback.url
+            }, health.state, context);
+          }
         });
         setPanStatus(`已检测 ${checkedPanCount()}/${checkablePanCount()}`);
       } catch (e) {
