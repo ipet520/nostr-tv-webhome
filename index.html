@@ -6062,18 +6062,6 @@
       background: rgba(191, 233, 255, .16) !important;
     }
 
-    /* Detail playback entry: only the existing play triangle communicates
-       that the current detail lifecycle has a directly consumable source. */
-    #detailContinueBtn[data-ready="true"] > .icon {
-      color: #55e58a !important;
-    }
-
-    /* Continue is a stable business mode; its white triangle must not imply
-       that Direct preparation is already Ready. */
-    #detailContinueBtn[data-mode="CONTINUE"] > .icon {
-      color: currentColor !important;
-    }
-
     html.tv-mode .secondary-page button:focus:not(.card):not(.person-card),
     html.tv-preview .secondary-page button:focus:not(.card):not(.person-card) {
       background: rgba(255, 255, 255, .18);
@@ -6502,6 +6490,43 @@
     html.no-css-functions .back-top {
       right: 18px;
       bottom: 18px;
+    }
+  </style>
+  <style id="detail-action-colors-v1">
+    /* 详情页三个操作按钮只收口颜色，不改变尺寸、间距或焦点几何。 */
+    html.tv-mode #detailSheet.detail-large > .actions > #detailContinueBtn,
+    html.tv-mode #detailSheet.detail-large > .actions > #detailSearchBtn,
+    html.tv-mode #detailSheet.detail-large > .actions > #panSearchBtn,
+    html.tv-preview #detailSheet.detail-large > .actions > #detailContinueBtn,
+    html.tv-preview #detailSheet.detail-large > .actions > #detailSearchBtn,
+    html.tv-preview #detailSheet.detail-large > .actions > #panSearchBtn {
+      background: rgba(52, 52, 54, .58) !important;
+      border-color: rgba(255, 255, 255, .20) !important;
+      color: rgba(255, 255, 255, .94) !important;
+    }
+
+    html.tv-mode #detailSheet.detail-large > .actions > #detailContinueBtn:focus,
+    html.tv-mode #detailSheet.detail-large > .actions > #detailSearchBtn:focus,
+    html.tv-mode #detailSheet.detail-large > .actions > #panSearchBtn:focus,
+    html.tv-preview #detailSheet.detail-large > .actions > #detailContinueBtn:focus,
+    html.tv-preview #detailSheet.detail-large > .actions > #detailSearchBtn:focus,
+    html.tv-preview #detailSheet.detail-large > .actions > #panSearchBtn:focus {
+      background: #F7F7F7 !important;
+      border-color: rgba(255, 255, 255, .95) !important;
+      color: #171717 !important;
+    }
+
+    #detailContinueBtn > .icon {
+      fill: #35E07A !important;
+      stroke: none !important;
+      color: #35E07A !important;
+    }
+
+    #detailSearchBtn > .icon,
+    #panSearchBtn > .icon {
+      fill: none !important;
+      stroke: currentColor !important;
+      color: inherit !important;
     }
   </style>
 </head>
