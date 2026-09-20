@@ -36865,6 +36865,39 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return section ? Array.from(section.querySelectorAll(".home-rail > .card")).filter((card) => !card.classList.contains("home-more-card") && canFastHomeFocus(card)) : [];
     }
 
+    function rememberBackTopFocusOrigin(target) {
+      const button = visibleBackTopTarget();
+      if (!button || !target) return null;
+      button.__focusOrigin = {
+        route: homeUiRoute(),
+        listId: state.homeV14 && state.homeV14.secondaryListId || "",
+        target,
+        mediaKey: String(target.dataset && target.dataset.mediaKey || target.__mediaItem && mediaDomKey(target.__mediaItem) || "")
+      };
+      return button;
+    }
+
+    function resolveBackTopFocusOrigin(button) {
+      const origin = button && button.__focusOrigin;
+      if (!origin || origin.route !== homeUiRoute()) return null;
+      if (origin.route === "secondary" && origin.listId !== String(state.homeV14 && state.homeV14.secondaryListId || "")) return null;
+      if (origin.target && document.contains(origin.target) && isVisibleFocusable(origin.target)) return origin.target;
+      if (!origin.mediaKey) return null;
+      if (origin.route === "secondary") {
+        const grid = $("secondaryCatalogGrid");
+        const weekly = !!(grid && grid.classList.contains("weekly-secondary-rail"));
+        const cards = weekly ? weeklySecondaryFocusableCards(grid) : grid ? Array.from(grid.querySelectorAll(".card")).filter(canFastHomeFocus) : [];
+        return cards.find((card) => String(card.dataset && card.dataset.mediaKey || card.__mediaItem && mediaDomKey(card.__mediaItem) || "") === origin.mediaKey) || null;
+      }
+      const sections = homeRailSections();
+      for (const section of sections) {
+        const cards = homeSectionCards(section);
+        const target = cards.find((card) => String(card.dataset && card.dataset.mediaKey || card.__mediaItem && mediaDomKey(card.__mediaItem) || "") === origin.mediaKey);
+        if (target) return target;
+      }
+      return null;
+    }
+
     function homeFirstTarget() {
       for (const section of homeRailSections()) {
         const cards = homeSectionCards(section);
@@ -36883,7 +36916,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const hero = $("homeHero");
       const backTop = $("backTopBtn");
       if (active === backTop) {
-        if (key === "ArrowUp") {
+        if (key === "ArrowUp" || key === "ArrowLeft") {
+          const origin = resolveBackTopFocusOrigin(backTop);
+          if (origin) return origin;
           const sections = homeRailSections();
           for (let index = sections.length - 1; index >= 0; index--) {
             const cards = homeSectionCards(sections[index]);
@@ -36929,7 +36964,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             const nextCards = homeSectionCards(sections[next]);
             if (nextCards.length) return nextCards[0];
           }
-          return visibleBackTopTarget() || more;
+          return rememberBackTopFocusOrigin(more) || more;
         }
         if (key === "ArrowLeft") return isVisibleFocusable(railMore) ? railMore : currentCards[currentCards.length - 1] || more;
         if (key === "ArrowRight") return more;
@@ -36944,7 +36979,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (key === "ArrowRight") {
         if (cards[index + 1]) return cards[index + 1];
         if (isVisibleFocusable(ownMore)) return ownMore;
-        return visibleBackTopTarget() || active;
+        return rememberBackTopFocusOrigin(active) || active;
       }
       if (key === "ArrowDown") {
         for (let next = sectionIndex + 1; next < sections.length; next++) {
@@ -36953,7 +36988,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           const nextMore = sections[next].querySelector(".home-section-more");
           if (isVisibleFocusable(nextMore)) return nextMore;
         }
-        return visibleBackTopTarget() || active;
+        return rememberBackTopFocusOrigin(active) || active;
       }
       if (key === "ArrowUp") {
         for (let previous = sectionIndex - 1; previous >= 0; previous--) {
@@ -36978,7 +37013,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const firstCard = cards[0] || null;
       const backTop = visibleBackTopTarget();
       if (active === backTop) {
-        if (key === "ArrowUp") return cards[cards.length - 1] || back || active;
+        if (key === "ArrowUp" || key === "ArrowLeft") return resolveBackTopFocusOrigin(backTop) || cards[cards.length - 1] || back || active;
         return active;
       }
       if (active === back) {
@@ -37006,7 +37041,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         if (weeklySecondary && active.classList.contains("weekly-card")) {
           const index = cards.indexOf(active);
           if (key === "ArrowLeft") return cards[index - 1] || active;
-          if (key === "ArrowRight") return cards[index + 1] || (index === cards.length - 1 ? backTop || active : active);
+          if (key === "ArrowRight") return cards[index + 1] || (index === cards.length - 1 ? rememberBackTopFocusOrigin(active) || active : active);
           if (key === "ArrowUp") return back || active;
           return active;
         }
@@ -37016,7 +37051,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         if (key === "ArrowRight") {
           const next = cards[index + 1];
           if (index % columns < columns - 1 && next) return next;
-          return backTop || active;
+          return rememberBackTopFocusOrigin(active) || active;
         }
         if (key === "ArrowUp") {
           if (rowIndex > 0) return cards[index - columns] || cards[Math.max(0, index - 1)] || active;
@@ -37031,7 +37066,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             secondaryLoadNextPage();
             return active;
           }
-          return backTop || active;
+          return rememberBackTopFocusOrigin(active) || active;
         }
       }
       return null;
