@@ -6423,6 +6423,87 @@
     }
 
   </style>
+  <style id="home-utility-controls-v1">
+    /* 返回顶部与提示均脱离文档流，避免动态内容把控件推到页面底部或产生空白栏。 */
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 18px;
+      z-index: 130;
+      max-width: calc(100vw - 32px);
+      padding: 9px 14px;
+      border: 1px solid rgba(255, 255, 255, .18);
+      border-radius: 8px;
+      background: rgba(10, 15, 22, .88);
+      color: rgba(255, 255, 255, .94);
+      box-shadow: 0 10px 28px rgba(0, 0, 0, .3);
+      font-size: 14px;
+      line-height: 1.35;
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transform: translate(-50%, 8px);
+      transition: opacity .18s ease, visibility .18s ease, transform .18s ease;
+    }
+
+    .toast.show {
+      opacity: 1;
+      visibility: visible;
+      transform: translate(-50%, 0);
+    }
+
+    .back-top {
+      position: fixed;
+      top: auto;
+      right: 18px;
+      bottom: 18px;
+      left: auto;
+      z-index: 80;
+      display: grid;
+      place-items: center;
+      width: 44px;
+      height: 44px;
+      padding: 0;
+      border: 1px solid rgba(255, 255, 255, .22);
+      border-radius: 50%;
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transform: translateY(8px);
+      transition: opacity .18s ease, visibility .18s ease, transform .18s ease;
+    }
+
+    .back-top.show {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+      transform: translateY(0);
+    }
+
+    .back-top:focus {
+      position: fixed;
+      top: auto;
+      right: 18px;
+      bottom: 18px;
+      left: auto;
+      z-index: 80;
+    }
+
+    body.detail-active .back-top {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    html.no-css-functions .toast {
+      bottom: 18px;
+    }
+
+    html.no-css-functions .back-top {
+      right: 18px;
+      bottom: 18px;
+    }
+  </style>
 </head>
 <body>
   <main class="app home-root" id="home">
@@ -35748,13 +35829,22 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
     function scrollHomeToTop() {
       try {
-        window.scrollTo({ top: 0, behavior: "smooth" });
+        if (isTvLikeDevice()) window.scrollTo(0, 0);
+        else window.scrollTo({ top: 0, behavior: "smooth" });
       } catch (e) {
         window.scrollTo(0, 0);
         document.documentElement.scrollTop = 0;
         document.body.scrollTop = 0;
       }
-      setTimeout(updateBackTopButton, 260);
+      setTimeout(() => {
+        updateBackTopButton();
+        const button = $("backTopBtn");
+        if (button && document.activeElement === button && !isVisibleFocusable(button)) {
+          const target = homeUiRoute() === "secondary" ? $("secondaryCatalogBack") : homeFirstTarget();
+          if (target) focusRemoteTarget(target);
+          else if (button.blur) button.blur();
+        }
+      }, 260);
     }
 
     function visibleChipItems(root) {
@@ -36760,6 +36850,11 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return false;
     }
 
+    function visibleBackTopTarget() {
+      const target = $("backTopBtn");
+      return isVisibleFocusable(target) ? target : null;
+    }
+
     function homeRailSections() {
       const home = $("home");
       if (!home || !isHomeRouteActive()) return [];
@@ -36786,6 +36881,18 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (!home || !active) return null;
       const searchLauncher = $("homeSearchLauncher");
       const hero = $("homeHero");
+      const backTop = $("backTopBtn");
+      if (active === backTop) {
+        if (key === "ArrowUp") {
+          const sections = homeRailSections();
+          for (let index = sections.length - 1; index >= 0; index--) {
+            const cards = homeSectionCards(sections[index]);
+            if (cards.length) return cards[cards.length - 1];
+          }
+          return isVisibleFocusable(hero) ? hero : active;
+        }
+        return active;
+      }
       if (active === searchLauncher) {
         if (key === "ArrowDown") return isVisibleFocusable(hero) ? hero : homeFirstTarget() || active;
         if (key === "ArrowUp" || key === "ArrowLeft" || key === "ArrowRight") return active;
@@ -36842,7 +36949,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           const nextMore = sections[next].querySelector(".home-section-more");
           if (isVisibleFocusable(nextMore)) return nextMore;
         }
-        return active;
+        return visibleBackTopTarget() || active;
       }
       if (key === "ArrowUp") {
         for (let previous = sectionIndex - 1; previous >= 0; previous--) {
@@ -36865,6 +36972,11 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         ? weeklySecondaryFocusableCards(grid)
         : grid ? Array.from(grid.querySelectorAll(".card")).filter(canFastHomeFocus) : [];
       const firstCard = cards[0] || null;
+      const backTop = visibleBackTopTarget();
+      if (active === backTop) {
+        if (key === "ArrowUp") return cards[cards.length - 1] || back || active;
+        return active;
+      }
       if (active === back) {
         if (weeklySecondary) return key === "ArrowDown" ? firstCard || active : active;
         if (key === "ArrowDown") return rows.length ? secondaryFilterFocusTarget(rows[0], back.getBoundingClientRect().left) || firstCard || active : firstCard || active;
@@ -36892,7 +37004,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           if (key === "ArrowLeft") return cards[index - 1] || active;
           if (key === "ArrowRight") return cards[index + 1] || active;
           if (key === "ArrowUp") return back || active;
-          return active;
+          return key === "ArrowDown" ? backTop || active : active;
         }
         const index = cards.indexOf(active), columns = Math.max(1, gridColumns(grid)), rowIndex = index >= 0 ? Math.floor(index / columns) : 0;
         if (index < 0) return active;
@@ -36906,8 +37018,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         if (key === "ArrowDown") {
           const next = cards[index + columns];
           if (next) return next;
-          if (secondaryCanLoadMore()) secondaryLoadNextPage();
-          return active;
+          const canLoadMore = secondaryCanLoadMore();
+          if (canLoadMore) secondaryLoadNextPage();
+          return canLoadMore ? active : backTop || active;
         }
       }
       return null;
@@ -38184,7 +38297,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       el.textContent = message || "";
       el.classList.add("show");
       clearTimeout(toast.timer);
-      toast.timer = setTimeout(() => el.classList.remove("show"), 2200);
+      toast.timer = setTimeout(() => {
+        el.classList.remove("show");
+        el.textContent = "";
+      }, 2200);
     }
 
     function updateBackTopButton() {
