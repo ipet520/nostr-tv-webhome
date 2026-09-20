@@ -37002,14 +37002,17 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         if (weeklySecondary && active.classList.contains("weekly-card")) {
           const index = cards.indexOf(active);
           if (key === "ArrowLeft") return cards[index - 1] || active;
-          if (key === "ArrowRight") return cards[index + 1] || active;
+          if (key === "ArrowRight") return cards[index + 1] || (index === cards.length - 1 ? backTop || active : active);
           if (key === "ArrowUp") return back || active;
-          return key === "ArrowDown" ? backTop || active : active;
+          return active;
         }
         const index = cards.indexOf(active), columns = Math.max(1, gridColumns(grid)), rowIndex = index >= 0 ? Math.floor(index / columns) : 0;
         if (index < 0) return active;
         if (key === "ArrowLeft") return index % columns > 0 ? cards[index - 1] : active;
-        if (key === "ArrowRight") return index % columns < columns - 1 && cards[index + 1] ? cards[index + 1] : active;
+        if (key === "ArrowRight") {
+          if (index % columns < columns - 1 && cards[index + 1]) return cards[index + 1];
+          return index === cards.length - 1 ? backTop || active : active;
+        }
         if (key === "ArrowUp") {
           if (rowIndex > 0) return cards[index - columns] || cards[Math.max(0, index - 1)] || active;
           const lastRow = rows[rows.length - 1];
@@ -37018,10 +37021,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         if (key === "ArrowDown") {
           const next = cards[index + columns];
           if (next) return next;
-          if (backTop) return backTop;
           const canLoadMore = secondaryCanLoadMore();
-          if (canLoadMore) secondaryLoadNextPage();
-          return active;
+          if (canLoadMore) {
+            secondaryLoadNextPage();
+            return active;
+          }
+          return backTop || active;
         }
       }
       return null;
