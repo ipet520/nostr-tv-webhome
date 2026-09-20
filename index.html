@@ -36929,7 +36929,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             const nextCards = homeSectionCards(sections[next]);
             if (nextCards.length) return nextCards[0];
           }
-          return more;
+          return visibleBackTopTarget() || more;
         }
         if (key === "ArrowLeft") return isVisibleFocusable(railMore) ? railMore : currentCards[currentCards.length - 1] || more;
         if (key === "ArrowRight") return more;
@@ -36941,7 +36941,11 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const index = cards.indexOf(active);
       if (index < 0) return active;
       if (key === "ArrowLeft") return cards[index - 1] || active;
-      if (key === "ArrowRight") return cards[index + 1] || (isVisibleFocusable(ownMore) ? ownMore : active);
+      if (key === "ArrowRight") {
+        if (cards[index + 1]) return cards[index + 1];
+        if (isVisibleFocusable(ownMore)) return ownMore;
+        return visibleBackTopTarget() || active;
+      }
       if (key === "ArrowDown") {
         for (let next = sectionIndex + 1; next < sections.length; next++) {
           const nextCards = homeSectionCards(sections[next]);
@@ -37010,8 +37014,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         if (index < 0) return active;
         if (key === "ArrowLeft") return index % columns > 0 ? cards[index - 1] : active;
         if (key === "ArrowRight") {
-          if (index % columns < columns - 1 && cards[index + 1]) return cards[index + 1];
-          return index === cards.length - 1 ? backTop || active : active;
+          const next = cards[index + 1];
+          if (index % columns < columns - 1 && next) return next;
+          return backTop || active;
         }
         if (key === "ArrowUp") {
           if (rowIndex > 0) return cards[index - columns] || cards[Math.max(0, index - 1)] || active;
