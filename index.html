@@ -16371,6 +16371,7 @@ utils.encode = function encode(arr, enc) {
       watch: { item: null, timer: 0, bestMs: 0, durationMs: 0, lastAt: 0, published: false, intentAction: "", playbackTarget: null, playbackOrigin: "", nativeHistoryIdentity: null },
       historyContexts: { loaded: false, loading: false, promise: null, entries: [], diag: null },
       continueIndex: { loaded: false, loading: false, promise: null, entries: [], diag: null },
+      nativeSearchContinueOverride: { loaded: false, loading: false, promise: null, value: null, error: false },
       recentDelete: { armedKey: "", armedCard: null, pendingKey: "", pendingCard: null, pendingTimer: 0, remotePressLocked: false, remotePressCard: null, remotePressKey: "" },
       detailCover: { images: [], index: 0, timer: 0, token: 0, swipe: null },
       deviceMode: "unknown",
@@ -16684,6 +16685,7 @@ utils.encode = function encode(arr, enc) {
       if (type === "tmdb") return "fish2018_home_v1_tmdb_config";
       if (type === "historyContext") return "fish2018_home_v1_history_context";
       if (type === "continueIndex") return "fish2018_home_v1_continue_index";
+      if (type === "nativeSearchContinueOverride") return "fish2018_home_v1_native_search_continue_override";
       if (type === "homeWeekly") return "fish2018_home_v1_home_weekly";
       return type;
     }
@@ -20816,6 +20818,55 @@ utils.encode = function encode(arr, enc) {
       return handoff.promise;
     }
 
+    async function playNativeSearchContinueOverride(item, history, button, overrideInfo) {
+      const info = overrideInfo || await currentNativeSearchContinueHistoryFor(item);
+      if (!info || !info.override || !info.history) return false;
+      const override = info.override;
+      const nativeHistory = info.history;
+      const context = Object.assign({}, historyPlaybackContext(nativeHistory) || {}, {
+        siteKey: override.siteKey,
+        vodId: override.vodId,
+        title: override.title || nativeHistory.title || item.title || "",
+        poster: override.poster || nativeHistory.pic || item.pic || ""
+      });
+      const target = detailContinuePlaybackTargetFor(item, nativeHistory);
+      const nativeIdentity = {
+        siteKey: override.siteKey,
+        vodId: override.vodId,
+        episodeUrl: override.vodId,
+        episodeName: context.episodeTitle || context.title || item.title || "",
+        flag: context.flag || "",
+        playbackOrigin: "native-vod"
+      };
+      if (target) setDetailPlaybackTarget(item, target);
+      if (button) rememberDetailReturn(button);
+      // 聚搜人工选择已经产生了权威 Native VOD History；清掉旧的自动准备态，
+      // 但不重置 Pan 搜索结果、健康缓存或 Pan playbackReturn。
+      invalidateAutomaticDetailForNativeSearch(item);
+      state.historyResume = null;
+      rememberWatchIntent(item, "view", context, nativeIdentity);
+      try {
+        localStorage.setItem("fm_pan_playing", "1");
+        if (state.pan) state.pan.isPlaying = true;
+        try {
+          console.debug("NATIVE_SEARCH_CONTINUE_OVERRIDE_USED", {
+            itemKey: panSearchItemKey(item),
+            siteKey: override.siteKey,
+            vodId: override.vodId,
+            nativeHistoryKey: override.nativeHistoryKey
+          });
+        } catch (e) {}
+        await sdk().vod(override.siteKey, override.vodId, context.title, context.poster);
+        await saveHistoryPlaybackContext(item, context);
+        startWatchTracking(item, context, nativeIdentity);
+      } catch (e) {
+        localStorage.removeItem("fm_pan_playing");
+        if (state.pan) state.pan.isPlaying = false;
+        toast("恢复原生播放失败：" + (e.message || "unknown"));
+      }
+      return true;
+    }
+
     async function playDetailContinueHistoryFirst(item, history, button) {
       const existing = state.detailHistoryHandoff;
       if (existing && existing.item === item) {
@@ -20826,6 +20877,11 @@ utils.encode = function encode(arr, enc) {
           return true;
         }
         if (existing.status === "playing" && !(state.pan && state.pan.isPlaying)) state.detailHistoryHandoff = null;
+      }
+      const nativeSearchOverride = await currentNativeSearchContinueHistoryFor(item);
+      if (nativeSearchOverride && nativeSearchOverride.history) {
+        syncDetailMode(item, nativeSearchOverride.history, { freshNative: true });
+        return playNativeSearchContinueOverride(item, nativeSearchOverride.history, button, nativeSearchOverride);
       }
       const progressTarget = detailContinuePlaybackTargetFor(item, history);
       const currentRun = state.detailPlayback;
@@ -20911,6 +20967,14 @@ utils.encode = function encode(arr, enc) {
       }
       const button = $("detailContinueBtn");
       if (state.detailModeItemKey !== panSearchItemKey(item)) syncDetailMode(item);
+      const nativeSearchOverride = await currentNativeSearchContinueHistoryFor(item);
+      if (nativeSearchOverride && nativeSearchOverride.history) {
+        syncDetailMode(item, nativeSearchOverride.history, { freshNative: true });
+      } else if (state.recent.loaded && !state.recent.error) {
+        // cache 中的 override 已失效时，重新以当前成功刷新的 Native History
+        // 计算一次模式，允许已删除的 History 正常回到 FIRST_PLAY。
+        syncDetailMode(item);
+      }
       const mode = state.detailMode === "CONTINUE" ? "CONTINUE" : "FIRST_PLAY";
       const history = mode === "CONTINUE" ? state.detailHistory : null;
       const directOptions = { detailPrimary: true, suppressAutoPan: true };
@@ -34022,13 +34086,282 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (!fromPopState && location.hash === "#sync") history.back();
     }
 
-    function setDetailNativeSearchReturnMarker(item) {
+    function nativeSearchHistoryUpdatedAtValue(history) {
+      const raw = history && history.nativeHistoryRaw && history.nativeHistoryRaw !== history
+        ? history.nativeHistoryRaw : null;
+      const values = [
+        history && history.updatedAt,
+        history && history.updated_at,
+        history && history.createTime,
+        history && history.create_time,
+        raw && raw.updatedAt,
+        raw && raw.updated_at,
+        raw && raw.createTime,
+        raw && raw.create_time,
+        historyNestedValue(history, ["updatedAt", "updated_at", "createTime", "create_time"])
+      ];
+      return values.reduce((latest, value) => {
+        const number = Number(value || 0);
+        return Number.isFinite(number) && number > latest ? number : latest;
+      }, 0);
+    }
+
+    function nativeSearchHistoryIdentitySnapshot(history) {
+      if (!history) return null;
+      const parts = historyKeyParts(history);
+      const nativeHistoryKey = String(history.nativeHistoryKey || history.historyKey || parts.key || "").trim();
+      const siteKey = String(history.siteKey || history.nativeSiteKey || parts.siteKey || "").trim();
+      const vodId = String(history.vodId || history.nativeVodId || parts.vodId || "").trim();
+      if (!siteKey || !vodId) return null;
+      return {
+        nativeHistoryKey,
+        siteKey,
+        vodId,
+        identity: nativeHistoryKey || `${siteKey}@@${vodId}`,
+        position: historyPlaybackPositionValue(history),
+        updatedAt: nativeSearchHistoryUpdatedAtValue(history)
+      };
+    }
+
+    function nativeSearchMediaKey(item) {
+      return item ? (mediaDomKey(item) || panSearchItemKey(item)) : "";
+    }
+
+    function nativeSearchHistoryIdentityEqual(left, right) {
+      const a = left && left.siteKey ? left : nativeSearchHistoryIdentitySnapshot(left);
+      const b = right && right.siteKey ? right : nativeSearchHistoryIdentitySnapshot(right);
+      if (!a || !b || !a.siteKey || !a.vodId || !b.siteKey || !b.vodId) return false;
+      if (a.nativeHistoryKey && b.nativeHistoryKey) return a.nativeHistoryKey === b.nativeHistoryKey;
+      return a.siteKey === b.siteKey && a.vodId === b.vodId;
+    }
+
+    function nativeSearchOverrideMatchesHistory(override, history) {
+      const current = nativeSearchHistoryIdentitySnapshot(history);
+      if (!override || !current) return false;
+      const overrideKey = String(override.nativeHistoryKey || "").trim();
+      if (overrideKey && current.nativeHistoryKey) return overrideKey === current.nativeHistoryKey;
+      return String(override.siteKey || "").trim() === current.siteKey
+        && String(override.vodId || "").trim() === current.vodId;
+    }
+
+    function nativeSearchVodHistoryListFor(item) {
+      if (!item) return [];
+      return (state.recent.items || [])
+        .filter((history) => historyCanUseVodReplay(history)
+          && detailHasAuthoritativeNativeHistory(history)
+          && detailHistoryMatches(item, history))
+        .slice()
+        .sort((a, b) => nativeSearchHistoryUpdatedAtValue(b) - nativeSearchHistoryUpdatedAtValue(a)
+          || historyPlaybackPositionValue(b) - historyPlaybackPositionValue(a));
+    }
+
+    function nativeSearchBaselineFor(item) {
+      const historyReadOk = !!(state.recent && state.recent.loaded && !state.recent.error);
+      const histories = historyReadOk ? nativeSearchVodHistoryListFor(item) : [];
+      return {
+        historyReadOk,
+        histories: histories.map(nativeSearchHistoryIdentitySnapshot).filter(Boolean)
+      };
+    }
+
+    function normalizeNativeSearchContinueOverride(value) {
+      if (!value || typeof value !== "object") return null;
+      const mediaKey = String(value.mediaKey || "").trim();
+      const siteKey = String(value.siteKey || "").trim();
+      const vodId = String(value.vodId || "").trim();
+      if (!mediaKey || !siteKey || !vodId) return null;
+      return {
+        version: 1,
+        mediaKey,
+        tmdbId: String(value.tmdbId || "").trim(),
+        mediaType: String(value.mediaType || "").trim(),
+        siteKey,
+        vodId,
+        nativeHistoryKey: String(value.nativeHistoryKey || "").trim(),
+        title: String(value.title || "").trim(),
+        poster: String(value.poster || "").trim(),
+        selectedAt: Number(value.selectedAt || 0) || 0,
+        markerToken: String(value.markerToken || "").trim()
+      };
+    }
+
+    async function loadNativeSearchContinueOverride() {
+      const store = state.nativeSearchContinueOverride;
+      if (store.loaded) return store.value;
+      if (store.loading && store.promise) return store.promise;
+      store.loading = true;
+      store.error = false;
+      const task = (async () => {
+        try {
+          const saved = await sdk().cache.get(cacheKey("nativeSearchContinueOverride"));
+          const value = typeof saved === "string" ? safeJson(saved, null) : saved;
+          store.value = normalizeNativeSearchContinueOverride(value);
+          store.loaded = true;
+          return store.value;
+        } catch (e) {
+          store.error = true;
+          store.loaded = true;
+          return store.value || null;
+        } finally {
+          store.loading = false;
+          store.promise = null;
+        }
+      })();
+      store.promise = task;
+      return task;
+    }
+
+    async function persistNativeSearchContinueOverride(value) {
+      const store = state.nativeSearchContinueOverride;
+      const normalized = normalizeNativeSearchContinueOverride(value);
+      store.loaded = true;
+      store.error = false;
+      store.value = normalized;
       try {
-        localStorage.setItem("fm_detail_native_search_return", JSON.stringify({
-          itemKey: item ? panSearchItemKey(item) : "",
-          at: Date.now()
-        }));
+        if (normalized) await sdk().cache.set(cacheKey("nativeSearchContinueOverride"), JSON.stringify(normalized));
+        else await sdk().cache.del(cacheKey("nativeSearchContinueOverride"));
       } catch (e) {}
+      return normalized;
+    }
+
+    async function clearNativeSearchContinueOverride(item, reason) {
+      const current = await loadNativeSearchContinueOverride();
+      if (!current || item && current.mediaKey !== nativeSearchMediaKey(item)) return false;
+      await persistNativeSearchContinueOverride(null);
+      try {
+        console.debug("NATIVE_SEARCH_CONTINUE_OVERRIDE_CLEARED", {
+          itemKey: item ? panSearchItemKey(item) : current.mediaKey,
+          reason: String(reason || "history_missing")
+        });
+      } catch (e) {}
+      return true;
+    }
+
+    function nativeSearchOverrideHistoryFor(item, override, latestHistory) {
+      if (!item || !override || override.mediaKey !== nativeSearchMediaKey(item)) return null;
+      if (!latestHistory || !detailHasAuthoritativeNativeHistory(latestHistory)
+        || !detailHistoryMatches(item, latestHistory)) return null;
+      return historyCanUseVodReplay(latestHistory)
+        && nativeSearchOverrideMatchesHistory(override, latestHistory) ? latestHistory : null;
+    }
+
+    async function currentNativeSearchContinueHistoryFor(item, options) {
+      const opts = options || {};
+      const override = await loadNativeSearchContinueOverride();
+      if (!override || !item || override.mediaKey !== nativeSearchMediaKey(item)) return null;
+      if (!state.recent.loaded && opts.loadRecent !== false) {
+        await loadRecentList({ silent: true }).catch(() => {});
+      }
+      const latestHistory = findDetailContinueHistory(item);
+      const history = nativeSearchOverrideHistoryFor(item, override, latestHistory);
+      if (!history && state.recent.loaded && !state.recent.error) {
+        await clearNativeSearchContinueOverride(item, "authoritative_history_missing");
+      }
+      return history ? { override, history } : null;
+    }
+
+    function nativeSearchOverrideFromHistory(item, history, marker) {
+      const identity = nativeSearchHistoryIdentitySnapshot(history);
+      if (!item || !identity) return null;
+      const context = historyPlaybackContext(history) || {};
+      return normalizeNativeSearchContinueOverride({
+        version: 1,
+        mediaKey: nativeSearchMediaKey(item),
+        tmdbId: item.tmdbId,
+        mediaType: item.mediaType,
+        siteKey: identity.siteKey,
+        vodId: identity.vodId,
+        nativeHistoryKey: identity.nativeHistoryKey,
+        title: context.title || history.title || item.title,
+        poster: context.poster || history.pic || item.pic || "",
+        selectedAt: Date.now(),
+        markerToken: marker && marker.token || ""
+      });
+    }
+
+    function invalidateAutomaticDetailForNativeSearch(item) {
+      if (!item || state.selected !== item) return;
+      const pending = typeof _directPlayPending !== "undefined" ? _directPlayPending : null;
+      cancelDetailPlaybackPreparation("native_search_continue_override");
+      cancelPendingDirectPlay("native_search_continue_override");
+      clearDirectPlayStatus(0, "native_search_continue_override");
+      if (pending && pending.item === item && (pending.detailPrimary || pending.prepareOnly)) {
+        pending.cancelReason = "native_search_continue_override";
+        _directPlayPending = null;
+      }
+      if (state.pan) {
+        state.pan.directReady = null;
+        state.pan.directFailure = null;
+      }
+      state.detailHistoryHandoff = null;
+    }
+
+    function nativeSearchPlaybackDetectionFor(item, marker) {
+      if (!item || !marker || marker.baselineReadOk !== true) {
+        return { played: false, history: null, reason: "baseline-unavailable" };
+      }
+      const before = Array.isArray(marker.baselineHistories)
+        ? marker.baselineHistories
+        : marker.baseline ? [marker.baseline] : [];
+      const after = nativeSearchVodHistoryListFor(item);
+      const newHistory = after.find((history) => {
+        const current = nativeSearchHistoryIdentitySnapshot(history);
+        return current && !before.some((snapshot) => nativeSearchHistoryIdentityEqual(current, snapshot));
+      }) || null;
+      let advancedHistory = null;
+      if (!newHistory) {
+        advancedHistory = after.find((history) => {
+          const current = nativeSearchHistoryIdentitySnapshot(history);
+          const previous = before.find((snapshot) => nativeSearchHistoryIdentityEqual(current, snapshot));
+          if (!current || !previous) return false;
+          return current.position > Number(previous.position || 0)
+            || current.updatedAt > Number(previous.updatedAt || 0);
+        }) || null;
+      }
+      const detected = newHistory || advancedHistory;
+      if (detected) {
+        const current = nativeSearchHistoryIdentitySnapshot(detected);
+        const previous = before.find((snapshot) => nativeSearchHistoryIdentityEqual(current, snapshot)) || null;
+        const reason = newHistory ? "new-identity" : "progress-advanced";
+        try {
+          console.debug("NATIVE_SEARCH_PLAYBACK_DETECTED", {
+            itemKey: panSearchItemKey(item),
+            beforeIdentity: previous && previous.identity || "",
+            afterIdentity: current && current.identity || "",
+            beforePosition: previous && previous.position || 0,
+            afterPosition: current && current.position || 0,
+            reason
+          });
+        } catch (e) {}
+        return { played: true, history: detected, reason };
+      }
+      return { played: false, history: null, reason: "no-playback" };
+    }
+
+    function setDetailNativeSearchReturnMarker(item, options) {
+      const opts = options || {};
+      const baseline = nativeSearchBaselineFor(item);
+      const marker = {
+        version: 1,
+        token: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        itemKey: item ? panSearchItemKey(item) : "",
+        mediaKey: item ? nativeSearchMediaKey(item) : "",
+        tmdbId: item && item.tmdbId || "",
+        mediaType: item && item.mediaType || "",
+        at: Date.now(),
+        baselineReadOk: opts.baselineReadOk === false ? false : baseline.historyReadOk,
+        baseline: baseline.histories[0] || null,
+        baselineHistories: baseline.histories
+      };
+      try {
+        localStorage.setItem("fm_detail_native_search_return", JSON.stringify(marker));
+        console.debug("NATIVE_SEARCH_BASELINE_CAPTURED", {
+          itemKey: marker.itemKey,
+          baselineIdentity: baseline.histories[0] && baseline.histories[0].identity || "",
+          baselineCount: baseline.histories.length
+        });
+      } catch (e) {}
+      return marker;
     }
 
     function getDetailNativeSearchReturnMarker() {
@@ -34038,27 +34371,41 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           localStorage.removeItem("fm_detail_native_search_return");
           return null;
         }
+        if (!marker.token) marker.token = String(marker.at || "");
         return marker;
       } catch (e) {
         return null;
       }
     }
 
-    function clearDetailNativeSearchReturnMarker() {
-      try { localStorage.removeItem("fm_detail_native_search_return"); } catch (e) {}
+    function clearDetailNativeSearchReturnMarker(token) {
+      try {
+        if (!token) {
+          localStorage.removeItem("fm_detail_native_search_return");
+          return;
+        }
+        const current = getDetailNativeSearchReturnMarker();
+        if (current && String(current.token || current.at || "") === String(token)) {
+          localStorage.removeItem("fm_detail_native_search_return");
+        }
+      } catch (e) {}
     }
 
     async function nativeSearch(title) {
       if (!title) return;
       const item = state.selected;
       rememberDetailReturn($("detailSearchBtn"));
-      // 这只表示“从详情进入了原生搜索”，不表示已经产生播放历史。
-      setDetailNativeSearchReturnMarker(item);
+      // 进入原生搜索前尽量取得一份已规范化的 Native History 基线；
+      // 基线读取失败时，返回后不会把不确定状态误判成“本次已播放”。
+      if (!state.recent.loaded) await loadRecentList({ silent: true }).catch(() => {});
+      const marker = setDetailNativeSearchReturnMarker(item, {
+        baselineReadOk: !!(state.recent && state.recent.loaded && !state.recent.error)
+      });
       try {
         await sdk().search(title, { direct: true });
         toast("已发起原生搜索");
       } catch (e) {
-        clearDetailNativeSearchReturnMarker();
+        clearDetailNativeSearchReturnMarker(marker && marker.token);
         throw e;
       }
     }
@@ -38192,7 +38539,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return true;
     }
 
-    function reconcileDetailAfterNativeReturn(options) {
+    async function reconcileDetailAfterNativeReturn(options) {
       const opts = options || {};
       const detail = $("detailSheet");
       const item = opts.item || state.selected;
@@ -38200,7 +38547,48 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (!detail || !detail.classList.contains("active") || !item || state.selected !== item) return false;
       if (expectedItemKey && panSearchItemKey(item) !== expectedItemKey) return false;
 
-      const history = findDetailContinueHistory(item);
+      const historyRefreshSucceeded = opts.historyRefreshSucceeded !== false;
+      const origin = String(opts.origin || "main-play");
+      const marker = opts.returnMarker || null;
+      let detection = null;
+      if (origin === "native-search" && marker && historyRefreshSucceeded) {
+        const currentMarker = getDetailNativeSearchReturnMarker();
+        const markerToken = String(marker.token || marker.at || "");
+        const currentToken = String(currentMarker && (currentMarker.token || currentMarker.at) || "");
+        // 旧的 native-search 返回任务不能把后来一次聚搜的选择覆盖掉。
+        if (currentMarker && markerToken && markerToken === currentToken) {
+          detection = nativeSearchPlaybackDetectionFor(item, marker);
+          if (detection.played && detection.history) {
+            const override = nativeSearchOverrideFromHistory(item, detection.history, marker);
+            if (override) {
+              await persistNativeSearchContinueOverride(override);
+              invalidateAutomaticDetailForNativeSearch(item);
+              try {
+                console.debug("NATIVE_SEARCH_CONTINUE_OVERRIDE_SET", {
+                  itemKey: override.mediaKey,
+                  siteKey: override.siteKey,
+                  vodId: override.vodId,
+                  nativeHistoryKey: override.nativeHistoryKey
+                });
+              } catch (e) {}
+            }
+          }
+        }
+      }
+
+      // 检测到本次聚搜实际产生的新/推进的 VOD History 时，它就是这次返回
+      // 的 authoritative history；否则继续使用现有 generic latest History。
+      const latestHistory = detection && detection.history || findDetailContinueHistory(item);
+      const override = await loadNativeSearchContinueOverride();
+      const overrideHistory = nativeSearchOverrideHistoryFor(item, override, latestHistory);
+      if (historyRefreshSucceeded && override && override.mediaKey === nativeSearchMediaKey(item) && !overrideHistory) {
+        await clearNativeSearchContinueOverride(item, "authoritative_history_missing");
+      }
+      const retainedHistory = state.detailHistory && detailHasAuthoritativeNativeHistory(state.detailHistory)
+        && detailHistoryMatches(item, state.detailHistory) ? state.detailHistory : null;
+      const history = historyRefreshSucceeded
+        ? overrideHistory || latestHistory
+        : overrideHistory || retainedHistory || latestHistory;
       const historyFound = detailContinueHistoryIsValid(history);
       if (historyFound) syncDetailMode(item, history, { freshNative: true });
       else syncDetailMode(item, null);
@@ -38211,7 +38599,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           historyFound,
           nativeProgress: historyFound ? historyPlaybackPositionValue(history) : 0,
           finalMode: state.detailMode,
-          origin: String(opts.origin || "main-play")
+          origin,
+          nativeSearchOverride: !!overrideHistory,
+          historyRefreshSucceeded
         });
       } catch (e) {}
       return true;
@@ -38252,17 +38642,20 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
               restorePanPlaybackReturn({});
               await settlePlayerReturnHistory();
               await loadRecentList({ refresh: true, silent: true, reconcileDetail: false, returnOrigin: "pan-play" });
-              reconcileDetailAfterNativeReturn({
+              await reconcileDetailAfterNativeReturn({
                 item: state.selected,
                 itemKey: returnItemKey,
-                origin: "pan-play"
+                origin: "pan-play",
+                historyRefreshSucceeded: !!(state.recent.loaded && !state.recent.error)
               });
             } else if (origin === "native-search") {
               await loadRecentList({ refresh: true, silent: true, reconcileDetail: false, returnOrigin: "native-search" });
-              reconcileDetailAfterNativeReturn({
+              await reconcileDetailAfterNativeReturn({
                 item: state.selected,
                 itemKey: returnItemKey,
-                origin: "native-search"
+                origin: "native-search",
+                returnMarker: marker,
+                historyRefreshSucceeded: !!(state.recent.loaded && !state.recent.error)
               });
               restoreDetailReturn();
             } else {
@@ -38270,7 +38663,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
                 force: true,
                 playerReturn: true,
                 returnOrigin: origin,
-                returnItemKey
+                returnItemKey,
+                returnMarker: marker
               });
             }
             return;
@@ -38304,7 +38698,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
                 playerReturn: origin !== "native-search",
                 nativeSearchReturn: origin === "native-search",
                 returnOrigin: origin,
-                returnItemKey
+                returnItemKey,
+                returnMarker: marker
               });
               return;
             }
@@ -38319,10 +38714,14 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             playerReturn: origin !== "native-search",
             nativeSearchReturn: origin === "native-search",
             returnOrigin: origin,
-            returnItemKey
+            returnItemKey,
+            returnMarker: marker
           });
         } finally {
-          if (origin === "native-search") clearDetailNativeSearchReturnMarker();
+          if (origin === "native-search"
+            && state.recent && state.recent.loaded && !state.recent.error) {
+            clearDetailNativeSearchReturnMarker(marker && marker.token);
+          }
           // 事务完成后立即释放；下一次独立的原生返回仍可正常触发。
           schedulePlayerReturn._running = false;
           schedulePlayerReturn._pending = false;
@@ -38480,10 +38879,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             returnOrigin: opts.returnOrigin || (isNativeSearchReturn ? "native-search" : "main-play")
           });
         }
-        reconcileDetailAfterNativeReturn({
+        await reconcileDetailAfterNativeReturn({
           item: state.selected,
           itemKey: opts.returnItemKey,
-          origin: opts.returnOrigin || (isNativeSearchReturn ? "native-search" : isPanPlaybackReturn ? "pan-play" : "main-play")
+          origin: opts.returnOrigin || (isNativeSearchReturn ? "native-search" : isPanPlaybackReturn ? "pan-play" : "main-play"),
+          returnMarker: opts.returnMarker || null,
+          historyRefreshSucceeded: !!(state.recent.loaded && !state.recent.error)
         });
       } else {
         loadRecentList({ refresh: true, silent: true }).catch(() => {});
