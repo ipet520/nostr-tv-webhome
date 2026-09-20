@@ -37018,9 +37018,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         if (key === "ArrowDown") {
           const next = cards[index + columns];
           if (next) return next;
+          if (backTop) return backTop;
           const canLoadMore = secondaryCanLoadMore();
           if (canLoadMore) secondaryLoadNextPage();
-          return canLoadMore ? active : backTop || active;
+          return active;
         }
       }
       return null;
