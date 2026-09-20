@@ -16249,7 +16249,7 @@ utils.encode = function encode(arr, enc) {
       activeList: "all",
       catalog: {},
       catalogPage: {},
-      recent: { items: [], loading: false, loadingPromise: null, loaded: false, error: "", refreshedAt: 0, diag: null, nativeItems: [], nativeLoaded: false, nativeLoading: false, nativeRefreshedAt: 0, nativeKeyFlow: {}, runSeq: 0, activeRun: null, pendingRefresh: false, pendingRefreshSilent: true },
+      recent: { items: [], loading: false, loadingPromise: null, loaded: false, error: "", refreshedAt: 0, diag: null, nativeItems: [], nativeLoaded: false, nativeLoading: false, nativeRefreshedAt: 0, nativeKeyFlow: {}, runSeq: 0, activeRun: null, pendingRefresh: false, pendingRefreshSilent: true, pendingRefreshReconcileDetail: true },
       tvDetail: { cache: {}, cardTasks: {}, cardQueue: [], cardActive: 0, observer: null, scrollBound: false, scanTimer: 0, generation: 0 },
       homeLatest: { items: [], loading: false, loaded: false, error: "", loadedAt: 0, lastRefreshAt: 0, requestSeq: 0, diag: null, promise: null, cacheChecked: false, cacheHydrated: false, cacheWeekStart: "", cacheSavedAt: 0, cacheItemCount: 0, cacheHydratedAt: 0, networkRefreshReason: "", networkRefreshSucceeded: false, refreshStartedAt: 0, firstRenderableAt: 0 },
       gridRender: {},
@@ -21007,9 +21007,11 @@ utils.encode = function encode(arr, enc) {
           if (!recent.pendingRefresh) {
             recent.pendingRefresh = true;
             recent.pendingRefreshSilent = !!opts.silent;
+            recent.pendingRefreshReconcileDetail = opts.reconcileDetail !== false;
             try { console.debug("RECENT_REFRESH_QUEUED"); } catch (e) {}
           } else {
             recent.pendingRefreshSilent = recent.pendingRefreshSilent && !!opts.silent;
+            recent.pendingRefreshReconcileDetail = recent.pendingRefreshReconcileDetail && opts.reconcileDetail !== false;
           }
         }
         return recent.loadingPromise || Promise.resolve();
@@ -21020,6 +21022,7 @@ utils.encode = function encode(arr, enc) {
       if (state.activeList === "recent") renderActiveGrid();
       const task = (async () => {
         let runSilent = !!opts.silent;
+        let runReconcileDetail = opts.reconcileDetail !== false;
         let trailing = false;
         try {
           while (true) {
@@ -21044,7 +21047,9 @@ utils.encode = function encode(arr, enc) {
             }
             if (!run.invalidated) {
               if (error) {
-                recent.items = [];
+                // Player Return 的刷新失败只代表本次读取不确定，不能用空列表
+                // 覆盖仍可用的上一份权威快照，更不能把详情临时降级成 FIRST_PLAY。
+                if (runReconcileDetail) recent.items = [];
                 recent.loaded = true;
                 recent.error = error.message || "unknown";
                 if (!runSilent) setStatus("tmdb", "最近观看读取失败");
@@ -21056,23 +21061,37 @@ utils.encode = function encode(arr, enc) {
                 if (!runSilent) setStatus("tmdb", "最近观看 " + recent.items.length + " 条");
               }
               try { console.debug("RECENT_LOAD_COMMIT", run.id); } catch (e) {}
+              if (!error && !runReconcileDetail && opts.refresh) {
+                try {
+                  console.debug("DETAIL_RETURN_HISTORY_REFRESHED", {
+                    runId: run.id,
+                    itemKey: state.selected ? panSearchItemKey(state.selected) : "",
+                    count: Array.isArray(recent.items) ? recent.items.length : 0,
+                    origin: String(opts.returnOrigin || "")
+                  });
+                } catch (e) {}
+              }
               if (state.activeList === "recent") renderActiveGrid();
               if (state.activeList === "all") renderHome();
-              if ($("detailSheet") && $("detailSheet").classList.contains("active")) {
-                const detailPlayback = state.detailPlayback;
-                if (detailPlayback && detailPlayback.itemKey === panSearchItemKey(state.selected) && detailPlayback.historyVerified) {
-                  syncDetailMode(state.selected, detailPlayback.history, { freshNative: true });
-                } else {
-                  syncDetailMode(state.selected, null);
-                }
+              // Recent 的职责是提交最新 Native History。只有成功刷新后，且调用方
+              // 明确允许时，才把权威结果同步到详情页；Player Return 会在完整事务
+              // 结束时统一 reconcile，避免中途把 CONTINUE 降级成 FIRST_PLAY。
+              if (!error && runReconcileDetail
+                && $("detailSheet") && $("detailSheet").classList.contains("active")
+                && state.selected) {
+                const detailItem = state.selected;
+                const nativeHistory = findDetailContinueHistory(detailItem);
+                syncDetailMode(detailItem, nativeHistory, nativeHistory ? { freshNative: true } : undefined);
                 updateDetailContinueButton();
               }
             }
             if (recent.activeRun === run) recent.activeRun = null;
             if (!recent.pendingRefresh) break;
             runSilent = recent.pendingRefreshSilent;
+            runReconcileDetail = recent.pendingRefreshReconcileDetail;
             recent.pendingRefresh = false;
             recent.pendingRefreshSilent = true;
+            recent.pendingRefreshReconcileDetail = true;
             trailing = true;
           }
         } finally {
@@ -21080,6 +21099,7 @@ utils.encode = function encode(arr, enc) {
           recent.activeRun = null;
           recent.pendingRefresh = false;
           recent.pendingRefreshSilent = true;
+          recent.pendingRefreshReconcileDetail = true;
         }
       })();
       recent.loadingPromise = task;
@@ -34002,11 +34022,45 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (!fromPopState && location.hash === "#sync") history.back();
     }
 
+    function setDetailNativeSearchReturnMarker(item) {
+      try {
+        localStorage.setItem("fm_detail_native_search_return", JSON.stringify({
+          itemKey: item ? panSearchItemKey(item) : "",
+          at: Date.now()
+        }));
+      } catch (e) {}
+    }
+
+    function getDetailNativeSearchReturnMarker() {
+      try {
+        const marker = JSON.parse(localStorage.getItem("fm_detail_native_search_return") || "null");
+        if (!marker || Date.now() - Number(marker.at || 0) > 30 * 60 * 1000) {
+          localStorage.removeItem("fm_detail_native_search_return");
+          return null;
+        }
+        return marker;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function clearDetailNativeSearchReturnMarker() {
+      try { localStorage.removeItem("fm_detail_native_search_return"); } catch (e) {}
+    }
+
     async function nativeSearch(title) {
       if (!title) return;
+      const item = state.selected;
       rememberDetailReturn($("detailSearchBtn"));
-      await sdk().search(title, { direct: true });
-      toast("已发起原生搜索");
+      // 这只表示“从详情进入了原生搜索”，不表示已经产生播放历史。
+      setDetailNativeSearchReturnMarker(item);
+      try {
+        await sdk().search(title, { direct: true });
+        toast("已发起原生搜索");
+      } catch (e) {
+        clearDetailNativeSearchReturnMarker();
+        throw e;
+      }
     }
 
     async function nativeHomeSearch(keyword) {
@@ -38138,19 +38192,58 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return true;
     }
 
+    function reconcileDetailAfterNativeReturn(options) {
+      const opts = options || {};
+      const detail = $("detailSheet");
+      const item = opts.item || state.selected;
+      const expectedItemKey = String(opts.itemKey || "").trim();
+      if (!detail || !detail.classList.contains("active") || !item || state.selected !== item) return false;
+      if (expectedItemKey && panSearchItemKey(item) !== expectedItemKey) return false;
+
+      const history = findDetailContinueHistory(item);
+      const historyFound = detailContinueHistoryIsValid(history);
+      if (historyFound) syncDetailMode(item, history, { freshNative: true });
+      else syncDetailMode(item, null);
+      updateDetailContinueButton();
+      try {
+        console.debug("DETAIL_RETURN_RECONCILE", {
+          itemKey: panSearchItemKey(item),
+          historyFound,
+          nativeProgress: historyFound ? historyPlaybackPositionValue(history) : 0,
+          finalMode: state.detailMode,
+          origin: String(opts.origin || "main-play")
+        });
+      } catch (e) {}
+      return true;
+    }
+
     // 从 Emby/vod 播放器返回后恢复详情页。
     // 两种情况：
     //   1. WebView 挂起后恢复（内存存活）：detailSheet 仍有 .active，state.selected 存在
     //      → 直接走 handleWebHomeResume 刷新即可
     //   2. WebView 被系统回收后重建（内存丢失）：DOM 重置，state.selected = null
     //      → 从 sdk.cache 读 snapshot，找到 selected 后 openDetail 重新打开
-    function schedulePlayerReturn() {
+    function schedulePlayerReturn(options) {
+      const opts = options || {};
+      const marker = getDetailNativeSearchReturnMarker();
+      const origin = String(opts.origin || (marker ? "native-search" : "main-play"));
+      const returnItemKey = String(opts.itemKey || marker && marker.itemKey || "").trim();
+      // pending 在调用瞬间建立，避免 pageshow/fmresume/visibilitychange 在 80ms
+      // 延迟窗口内另起一套普通 Resume 生命周期。
+      if (schedulePlayerReturn._pending || schedulePlayerReturn._running) {
+        try { console.debug("PLAYER_RETURN_DUPLICATE_IGNORED", { origin }); } catch (e) {}
+        return false;
+      }
       clearTimeout(schedulePlayerReturn._timer);
-      // 防重入锁：visibilitychange 和 fmresume 可能同时触发，只让先执行的那次生效
-      if (schedulePlayerReturn._running) return;
+      clearTimeout(state.resume.timer);
+      state.resume.timer = 0;
+      schedulePlayerReturn._pending = true;
       schedulePlayerReturn._timer = setTimeout(async () => {
+        schedulePlayerReturn._timer = 0;
         if (schedulePlayerReturn._running) return;
+        schedulePlayerReturn._pending = false;
         schedulePlayerReturn._running = true;
+        try { console.debug("PLAYER_RETURN_TRANSACTION_START", { origin }); } catch (e) {}
         try {
           // 情况1：detail 仍然打开且 state 完好（WebView 内存存活）
           if ($("detailSheet") && $("detailSheet").classList.contains("active") && state.selected) {
@@ -38158,14 +38251,32 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             if (state.pan.playbackReturn && $("panSearchBlock") && $("panSearchBlock").classList.contains("active")) {
               restorePanPlaybackReturn({});
               await settlePlayerReturnHistory();
-              await loadRecentList({ refresh: true, silent: true });
+              await loadRecentList({ refresh: true, silent: true, reconcileDetail: false, returnOrigin: "pan-play" });
+              reconcileDetailAfterNativeReturn({
+                item: state.selected,
+                itemKey: returnItemKey,
+                origin: "pan-play"
+              });
+            } else if (origin === "native-search") {
+              await loadRecentList({ refresh: true, silent: true, reconcileDetail: false, returnOrigin: "native-search" });
+              reconcileDetailAfterNativeReturn({
+                item: state.selected,
+                itemKey: returnItemKey,
+                origin: "native-search"
+              });
+              restoreDetailReturn();
             } else {
-              await handleWebHomeResume({ force: true, playerReturn: true });
+              await handleWebHomeResume({
+                force: true,
+                playerReturn: true,
+                returnOrigin: origin,
+                returnItemKey
+              });
             }
             return;
           }
           if (isRecentNativeHomeReturn()) {
-            await handleWebHomeResume({ force: true, playerReturn: true, restoreRecentNativeHome: true });
+            await handleWebHomeResume({ force: true, playerReturn: true, restoreRecentNativeHome: true, returnOrigin: origin, returnItemKey });
             return;
           }
           // 情况2：尝试从 snapshot 恢复（WebView 被系统回收后重建）
@@ -38188,29 +38299,58 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
               });
               // 恢复后刷新内容
               await new Promise((resolve) => setTimeout(resolve, 120));
-              await handleWebHomeResume({ force: true, playerReturn: true });
+              await handleWebHomeResume({
+                force: true,
+                playerReturn: origin !== "native-search",
+                nativeSearchReturn: origin === "native-search",
+                returnOrigin: origin,
+                returnItemKey
+              });
               return;
             }
           } catch (e) {}
           if (isRecentNativeHomeReturn()) {
-            await handleWebHomeResume({ force: true, playerReturn: true, restoreRecentNativeHome: true });
+            await handleWebHomeResume({ force: true, playerReturn: true, restoreRecentNativeHome: true, returnOrigin: origin, returnItemKey });
             return;
           }
           // 兜底：走正常首页恢复
-          await handleWebHomeResume({ force: true, playerReturn: true });
+          await handleWebHomeResume({
+            force: true,
+            playerReturn: origin !== "native-search",
+            nativeSearchReturn: origin === "native-search",
+            returnOrigin: origin,
+            returnItemKey
+          });
         } finally {
-          // 释放锁，允许下次（如手动刷新）再次触发
-          setTimeout(() => { schedulePlayerReturn._running = false; }, 2000);
+          if (origin === "native-search") clearDetailNativeSearchReturnMarker();
+          // 事务完成后立即释放；下一次独立的原生返回仍可正常触发。
+          schedulePlayerReturn._running = false;
+          schedulePlayerReturn._pending = false;
         }
       }, 80);
+      return true;
     }
     schedulePlayerReturn._timer = 0;
+    schedulePlayerReturn._pending = false;
     schedulePlayerReturn._running = false;
 
     function scheduleWebHomeResume(options) {
       const opts = options || {};
+      if (schedulePlayerReturn._pending || schedulePlayerReturn._running) {
+        try { console.debug("PLAYER_RETURN_DUPLICATE_IGNORED", { origin: "web-resume" }); } catch (e) {}
+        return false;
+      }
+      if (getDetailNativeSearchReturnMarker()) {
+        schedulePlayerReturn({ origin: "native-search" });
+        return false;
+      }
       clearTimeout(state.resume.timer);
-      state.resume.timer = setTimeout(() => handleWebHomeResume(opts), opts.delay == null ? 80 : opts.delay);
+      state.resume.timer = setTimeout(() => {
+        state.resume.timer = 0;
+        if (schedulePlayerReturn._pending || schedulePlayerReturn._running) return;
+        handleWebHomeResume(opts);
+      }, opts.delay == null ? 80 : opts.delay);
+      return true;
     }
 
     async function rearmDetailPlaybackAfterPlayerReturn(options) {
@@ -38223,7 +38363,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         || state.detailPlayback && state.detailPlayback.history
         || null;
       const playbackReturn = state.pan && state.pan.playbackReturn;
-      await loadRecentList({ refresh: true, silent: true }).catch(() => {});
+      await loadRecentList({
+        refresh: true,
+        silent: true,
+        reconcileDetail: false,
+        returnOrigin: opts.returnOrigin || "main-play"
+      }).catch(() => {});
       await Promise.all([
         loadHistoryContextIndex(),
         loadContinueIndex()
@@ -38265,7 +38410,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           decision: "REARM_HISTORY_ONLY",
           curatedStarted: false
         });
-        updateDetailContinueButton();
+        if (opts.deferDetailReconcile !== true) updateDetailContinueButton();
         return true;
       }
 
@@ -38283,7 +38428,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         decision: "REARM_FALLBACK_PREPARE",
         curatedStarted: true
       });
-      updateDetailContinueButton();
+      if (opts.deferDetailReconcile !== true) updateDetailContinueButton();
       prepareDetailPlayback(item, { reason: "player_return_rearm_fallback" }).catch(() => {});
       return true;
     }
@@ -38298,13 +38443,19 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const restoreRecentNativeHome = opts.restoreRecentNativeHome === true && !($("detailSheet") && $("detailSheet").classList.contains("active")) && isRecentNativeHomeReturn();
       const isPanPlaybackReturn = !!(state.pan.playbackReturn && $("detailSheet") && $("detailSheet").classList.contains("active") && $("panSearchBlock") && $("panSearchBlock").classList.contains("active"));
       const isPlayerReturn = opts.playerReturn === true;
+      const isNativeSearchReturn = opts.nativeSearchReturn === true;
+      const isExternalReturn = isPlayerReturn || isNativeSearchReturn;
       lockViewportWidth();
       fitConnectionPanel();
       renderConnection();
       if (isPlayerReturn) await settlePlayerReturnHistory();
       let detailRearmed = false;
-      if (isPlayerReturn && !isPanPlaybackReturn) {
-        detailRearmed = await rearmDetailPlaybackAfterPlayerReturn({ playerReturn: true });
+      if (isPlayerReturn && !isPanPlaybackReturn && !isNativeSearchReturn) {
+        detailRearmed = await rearmDetailPlaybackAfterPlayerReturn({
+          playerReturn: true,
+          deferDetailReconcile: true,
+          returnOrigin: opts.returnOrigin || "main-play"
+        });
       }
       if (restoreRecentNativeHome) await loadRecentList({ refresh: true, silent: true });
       if (!isPanPlaybackReturn) {
@@ -38320,8 +38471,20 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (restoreRecentNativeHome) {
         // The awaited refresh above rendered the new Recent list before the
         // saved Home target was restored.  Do not start a competing sampler.
-      } else if (isPlayerReturn) {
-        if (!detailRearmed) await loadRecentList({ refresh: true, silent: true });
+      } else if (isExternalReturn) {
+        if (!detailRearmed) {
+          await loadRecentList({
+            refresh: true,
+            silent: true,
+            reconcileDetail: false,
+            returnOrigin: opts.returnOrigin || (isNativeSearchReturn ? "native-search" : "main-play")
+          });
+        }
+        reconcileDetailAfterNativeReturn({
+          item: state.selected,
+          itemKey: opts.returnItemKey,
+          origin: opts.returnOrigin || (isNativeSearchReturn ? "native-search" : isPanPlaybackReturn ? "pan-play" : "main-play")
+        });
       } else {
         loadRecentList({ refresh: true, silent: true }).catch(() => {});
         sampleWatchStatus();
@@ -38512,7 +38675,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         localStorage.removeItem("fm_pan_playing");
         state.pan.isPlaying = false;
         // 从播放器返回：主动恢复详情页（内存存活则刷新，WebView 重建则从 snapshot 重开）
-        schedulePlayerReturn();
+        schedulePlayerReturn({ origin: "main-play" });
+        return;
+      }
+      const nativeSearchMarker = getDetailNativeSearchReturnMarker();
+      if (nativeSearchMarker) {
+        schedulePlayerReturn({ origin: "native-search", itemKey: nativeSearchMarker.itemKey });
         return;
       }
       scheduleWebHomeResume();
@@ -38535,7 +38703,13 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         localStorage.removeItem("fm_pan_playing");
         state.pan.isPlaying = false;
         // 从播放器返回：先立即恢复 UI，loadInfo 在后台静默刷新
-        schedulePlayerReturn();
+        schedulePlayerReturn({ origin: "main-play" });
+        loadInfo().catch(() => {});
+        return;
+      }
+      const nativeSearchMarker = getDetailNativeSearchReturnMarker();
+      if (nativeSearchMarker) {
+        schedulePlayerReturn({ origin: "native-search", itemKey: nativeSearchMarker.itemKey });
         loadInfo().catch(() => {});
         return;
       }
@@ -38561,7 +38735,13 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           localStorage.removeItem("fm_pan_playing");
           state.pan.isPlaying = false;
           // 从播放器返回：主动恢复详情页
-          schedulePlayerReturn();
+          schedulePlayerReturn({ origin: "main-play" });
+          return;
+        }
+
+        const nativeSearchMarker = getDetailNativeSearchReturnMarker();
+        if (nativeSearchMarker) {
+          schedulePlayerReturn({ origin: "native-search", itemKey: nativeSearchMarker.itemKey });
           return;
         }
 
