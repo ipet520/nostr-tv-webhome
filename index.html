@@ -20181,10 +20181,23 @@ utils.encode = function encode(arr, enc) {
       return detailHasAuthoritativeNativeHistory(history);
     }
 
+    function recentNativeHistoryWinnerFor(item, list) {
+      const source = Array.isArray(list) ? list : (state.recent.items || []);
+      const mediaKey = recentWatchingMediaKey(item);
+      let candidates = mediaKey
+        ? source.filter((history) => history && recentWatchingMediaKey(history) === mediaKey)
+        : [];
+      if (!candidates.length) {
+        candidates = source.filter((history) => history && detailHistoryMatches(item, history));
+      }
+      return uniqueRecentWatchingMedia(candidates)[0] || null;
+    }
+
     function findDetailContinueHistory(item) {
-      return (state.recent.items || []).find((history) => (
-        detailHasAuthoritativeNativeHistory(history) && detailHistoryMatches(item, history)
-      )) || null;
+      const winner = recentNativeHistoryWinnerFor(item);
+      return winner && detailHasAuthoritativeNativeHistory(winner) && detailHistoryMatches(item, winner)
+        ? winner
+        : null;
     }
 
     function recordDetailPlaybackDecision(name, item, detail) {
@@ -20229,7 +20242,16 @@ utils.encode = function encode(arr, enc) {
         });
       };
 
-      // Continue Index / History Context 是续播线路的第一权威来源。
+      // Native History winner 与 HTML Recent 使用同一媒体级选择规则，
+      // 先尝试当前展示的精确线路；缓存上下文只作为续播资源 fallback。
+      const history = nativeHistory || findDetailContinueHistory(item);
+      if (detailContinueHistoryIsValid(history)) {
+        const historyTarget = detailContinuePlaybackTargetFor(item, history);
+        const found = add("native-history", historyTarget, false, history);
+        if (found) return found;
+      }
+
+      // Continue Index / History Context 仅作为续播线路的 fallback。
       const primaryContext = findContinueWatchingContext(item);
       const localContexts = [primaryContext]
         .concat(recentWatchingContextCandidates().filter((candidate) => (
@@ -20255,14 +20277,6 @@ utils.encode = function encode(arr, enc) {
         if (found) return found;
       }
 
-      // Native History 只负责确认这次观看仍有有效进度；资源字段来自其
-      // 已加载的 playback context / playbackReturn，而不是重新搜源。
-      const history = nativeHistory || findDetailContinueHistory(item);
-      if (detailContinueHistoryIsValid(history)) {
-        const historyTarget = detailContinuePlaybackTargetFor(item, history);
-        const found = add("native-history", historyTarget, false, history);
-        if (found) return found;
-      }
       return null;
     }
 
@@ -20369,8 +20383,9 @@ utils.encode = function encode(arr, enc) {
         await loadContinueIndex();
         const rawList = await sdk().history();
         const normalized = normalizeHistoryList(rawList);
-        history = normalized.find((candidate) => detailHasAuthoritativeNativeHistory(candidate)
-          && detailHistoryMatches(item, candidate)) || null;
+        const winner = recentNativeHistoryWinnerFor(item, normalized);
+        history = winner && detailHasAuthoritativeNativeHistory(winner)
+          && detailHistoryMatches(item, winner) ? winner : null;
       } catch (e) {
         history = null;
       }
@@ -20828,6 +20843,19 @@ utils.encode = function encode(arr, enc) {
         if (existing.status === "playing" && !(state.pan && state.pan.isPlaying)) state.detailHistoryHandoff = null;
       }
       const progressTarget = detailContinuePlaybackTargetFor(item, history);
+      if (progressTarget) setDetailPlaybackTarget(item, progressTarget);
+      if (history && detailContinueHistoryIsValid(history)) {
+        try {
+          if (await playNativeHistoryExact(history, {
+            detail: true,
+            button,
+            watchItem: item
+          })) {
+            state.historyResume = null;
+            return true;
+          }
+        } catch (e) {}
+      }
       const currentRun = state.detailPlayback;
       const runResource = currentRun
         && detailPlaybackIsCurrent(currentRun)
@@ -20835,9 +20863,9 @@ utils.encode = function encode(arr, enc) {
         && currentRun.continueResource
         ? currentRun.continueResource
         : null;
-      const resource = runResource
-        || detailContinueResourceContextFor(item, history)
-        || detailHistoryDirectResourceFor(item, history);
+      const resource = detailHistoryDirectResourceFor(item, history)
+        || runResource
+        || detailContinueResourceContextFor(item, history);
       if (!resource) {
         await startDetailContinueFallback(item, progressTarget, "continue_history_resource_unavailable");
         return true;
@@ -26489,6 +26517,40 @@ utils.encode = function encode(arr, enc) {
       return resumePanHistoryFromSearch(item, target, preloadTask);
     }
 
+    async function playNativeHistoryExact(item, options) {
+      const opts = options || {};
+      if (!item) return false;
+      const context = historyPlaybackContext(item) || {};
+      const nativeSiteKey = String(item.siteKey || context.siteKey || "").trim();
+      const nativeVodId = String(item.vodId || context.vodId || "").trim();
+      if (!nativeSiteKey || !nativeVodId) return false;
+      const nativeIdentity = {
+        siteKey: nativeSiteKey,
+        vodId: nativeVodId,
+        episodeUrl: nativeVodId,
+        episodeName: context.episodeTitle || context.panTitle || context.title || item.title,
+        flag: context.flag || item.flag || "",
+        playbackOrigin: playbackOriginForNativeIdentity(item, { siteKey: nativeSiteKey, vodId: nativeVodId })
+      };
+      const watchItem = opts.watchItem || item;
+      if (opts.detail) rememberDetailReturn(opts.button || $("detailContinueBtn"));
+      else rememberHomeReturn(item, opts.returnTarget || document.activeElement, { origin: "recent_native_player" });
+      saveUiSnapshotNow();
+      rememberWatchIntent(watchItem, "view", context, nativeIdentity);
+      // 用 localStorage 持久化标记，WebView 被挂起后 JS 内存会丢失
+      // visibilitychange/pageshow/fmresume 恢复时读到此标记，保持当前页面不重置
+      localStorage.setItem("fm_pan_playing", "1");
+      try {
+        await sdk().vod(nativeSiteKey, nativeVodId, item.title || context.title, item.pic || context.poster);
+        await saveHistoryPlaybackContext(watchItem, context);
+        startWatchTracking(watchItem, context, nativeIdentity);
+        return true;
+      } catch (e) {
+        localStorage.removeItem("fm_pan_playing");
+        throw e;
+      }
+    }
+
     async function openRecentItem(item, options) {
       const opts = options || {};
       const returnTarget = opts.returnTarget || document.activeElement;
@@ -26512,25 +26574,8 @@ utils.encode = function encode(arr, enc) {
         return;
       }
       try {
-        const nativeIdentity = {
-          siteKey: nativeSiteKey,
-          vodId: nativeVodId,
-          episodeUrl: nativeVodId,
-          episodeName: context.episodeTitle || context.panTitle || context.title || item.title,
-          flag: context.flag || item.flag || "",
-          playbackOrigin: playbackOriginForNativeIdentity(item, { siteKey: nativeSiteKey, vodId: nativeVodId })
-        };
-        rememberHomeReturn(item, returnTarget, { origin: "recent_native_player" });
-        saveUiSnapshotNow();
-        rememberWatchIntent(item, "view", context, nativeIdentity);
-        // 用 localStorage 持久化标记，WebView 被挂起后 JS 内存会丢失
-        // visibilitychange/pageshow/fmresume 恢复时读到此标记，保持当前页面不重置
-        localStorage.setItem("fm_pan_playing", "1");
-        await sdk().vod(nativeSiteKey, nativeVodId, item.title || context.title, item.pic || context.poster);
-        await saveHistoryPlaybackContext(item, context);
-        startWatchTracking(item, context, nativeIdentity);
+        await playNativeHistoryExact(item, { returnTarget });
       } catch (e) {
-        localStorage.removeItem("fm_pan_playing");
         toast("打开最近观看失败：" + (e.message || "unknown"));
       }
     }
