@@ -34782,6 +34782,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       };
     }
 
+    function nativeHistoryIdentitySnapshot(history) {
+      return nativeSearchHistoryIdentitySnapshot(history);
+    }
+
     function nativeSearchMediaKey(item) {
       if (!item) return "";
       const mediaType = normalizeHistoryMediaType(item.mediaType || item.media_type);
