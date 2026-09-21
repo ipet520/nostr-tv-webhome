@@ -38623,7 +38623,11 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       } else if (isPlayerReturn) {
         if (!detailRearmed) await loadRecentList({ refresh: true, silent: true, reconcileDetail: false });
       } else {
-        loadRecentList({ refresh: true, silent: true }).catch(() => {});
+        loadRecentList({ refresh: true, silent: true, reconcileDetail: false })
+          .then(() => {
+            reconcileDetailAfterNativeReturn(state.selected, "app-resume");
+          })
+          .catch(() => {});
         sampleWatchStatus();
       }
       if (isPlayerReturn) {
