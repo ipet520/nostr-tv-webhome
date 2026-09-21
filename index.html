@@ -6344,6 +6344,11 @@
       height: 10px;
       flex-basis: 10px;
     }
+
+    /* 播放准备状态保留在内部诊断状态机，不再占用详情页操作区的可见空间。 */
+    #directPlayStatus {
+      display: none !important;
+    }
   </style>
   <style id="unified-return-controls-v1">
     /* 所有页面返回入口统一为左上角的小型箭头按钮；“返回顶部”仍是独立的滚动控制。 */
@@ -6520,10 +6525,29 @@
       box-shadow: none !important;
     }
 
-    #detailContinueBtn > .icon {
+    #detailContinueBtn > .icon,
+    #detailContinueBtn[data-play-state="idle"] > .icon {
+      fill: #AAB4C0 !important;
+      stroke: none !important;
+      color: #AAB4C0 !important;
+    }
+
+    #detailContinueBtn[data-play-state="preparing"] > .icon {
+      fill: #F2B84B !important;
+      stroke: none !important;
+      color: #F2B84B !important;
+    }
+
+    #detailContinueBtn[data-play-state="ready"] > .icon {
       fill: #35E07A !important;
       stroke: none !important;
       color: #35E07A !important;
+    }
+
+    #detailContinueBtn[data-play-state="failed"] > .icon {
+      fill: #FF6B6B !important;
+      stroke: none !important;
+      color: #FF6B6B !important;
     }
 
     #detailSearchBtn > .icon,
@@ -18983,6 +19007,7 @@ utils.encode = function encode(arr, enc) {
         clearTimer: 0
       };
       renderDirectPlayStatus();
+      if (state.selected && $("detailSheet") && $("detailSheet").classList.contains("active")) updateDetailContinueButton();
       if (wasVisible || requestedId) recordDirectPlayStatusDiag(currentId, "CLEARED", "CLEARED", false, reason);
       return true;
     }
@@ -19003,6 +19028,7 @@ utils.encode = function encode(arr, enc) {
         clearTimer: 0
       };
       renderDirectPlayStatus();
+      if (state.selected && $("detailSheet") && $("detailSheet").classList.contains("active")) updateDetailContinueButton();
       recordDirectPlayStatusDiag(id, state.directPlayStatus.phase, textKey, true, reason || "start");
       return true;
     }
@@ -20513,6 +20539,7 @@ utils.encode = function encode(arr, enc) {
         continuePending: opts.continueGate === true,
         continueDecisionPromise: null,
         continueResource: null,
+        continueResourcePromise: null,
         continueHistoryGateTimedOut: false,
         continueHistoryGateResolved: false
       };
@@ -20522,31 +20549,56 @@ utils.encode = function encode(arr, enc) {
         let continueDecision = null;
         if (run.continuePending) {
           run.continueDecisionPromise = (async () => {
+            const historyDecision = await verifyDetailNativeHistoryWithDeadline(item, run);
+            const verifiedHistory = historyDecision && historyDecision.history;
+            if (!detailPlaybackCurrentOrRecord(run)) return null;
+
+            // Native History 独立决定 CONTINUE/FIRST_PLAY；续播资源上下文只负责
+            // 判断旧线路能否直接复用，不能因为没有 lastPlayUrl/provider 就跳过历史核验。
+            const timedOutHistory = !verifiedHistory
+              && historyDecision
+              && historyDecision.timedOut
+              && state.detailMode === "CONTINUE"
+              && state.detailModeItemKey === panSearchItemKey(item)
+              && detailContinueHistoryIsValid(state.detailHistory)
+              && detailHistoryMatches(item, state.detailHistory)
+              ? state.detailHistory
+              : null;
+            const history = verifiedHistory || timedOutHistory;
+            if (history && detailContinueHistoryIsValid(history)) {
+              const resourcePromise = resolveDetailContinueResource(item, run).catch(() => null);
+              return {
+                attempted: true,
+                resource: null,
+                resourcePromise,
+                history,
+                timedOut: !!(historyDecision && historyDecision.timedOut)
+              };
+            }
+
             const localResource = await resolveDetailContinueResource(item, run);
             if (!localResource) return { attempted: false, resource: null, history: null };
-            const historyDecision = await verifyDetailNativeHistoryWithDeadline(item, run);
-            const history = historyDecision && historyDecision.history;
-            if (!detailPlaybackCurrentOrRecord(run)) return null;
             return {
               attempted: true,
-              resource: detailContinueResourceContextFor(item, history) || localResource,
-              history,
+              resource: detailContinueResourceContextFor(item, verifiedHistory) || localResource,
+              history: verifiedHistory,
               timedOut: !!(historyDecision && historyDecision.timedOut)
             };
           })();
           continueDecision = await run.continueDecisionPromise.catch(() => null);
           run.continuePending = false;
           if (!detailPlaybackCurrentOrRecord(run)) return null;
-          if (continueDecision && continueDecision.resource && detailContinueHistoryIsValid(continueDecision.history)) {
-            run.continueResource = continueDecision.resource;
+          if (continueDecision && detailContinueHistoryIsValid(continueDecision.history)) {
+            run.continueResource = continueDecision.resource || null;
+            run.continueResourcePromise = continueDecision.resourcePromise || null;
             run.history = continueDecision.history;
             run.historyVerified = true;
             const progressTarget = detailContinuePlaybackTargetFor(item, continueDecision.history);
             if (progressTarget) setDetailPlaybackTarget(item, progressTarget);
             syncDetailMode(item, continueDecision.history, { freshNative: true });
             recordDetailPlaybackDecision("DETAIL_OPEN_PLAYBACK_DECISION", item, {
-              continueContextFound: !!continueDecision.resource.contextFound,
-              continueUrlFound: true,
+              continueContextFound: !!(continueDecision.resource && continueDecision.resource.contextFound),
+              continueUrlFound: !!continueDecision.resource,
               nativeHistoryKnown: true,
               nativeProgress: historyPlaybackPositionValue(continueDecision.history),
               decision: "CONTINUE_READY",
@@ -20554,6 +20606,10 @@ utils.encode = function encode(arr, enc) {
             });
             settleDetailPlayback(run, "CONTINUE_READY", "continue_ready");
             updateDetailContinueButton();
+            if (run.continueResourcePromise) run.continueResourcePromise.then((resource) => {
+              if (!detailPlaybackCurrentOrRecord(run) || run.history !== continueDecision.history) return;
+              run.continueResource = resource || null;
+            }).catch(() => {});
             return null;
           }
         }
@@ -20613,7 +20669,7 @@ utils.encode = function encode(arr, enc) {
         if (detailPlaybackCurrentOrRecord(run)) {
           run.error = String(error && error.message || error || "detail_prepare_failed");
           settleDetailPlayback(run, "CONNECTION_FAILED", "detail_prepare_failed");
-          notifyCurrentDetailFinalFailure(run, "CONNECTION_FAILED");
+          if (run.playRequested) notifyCurrentDetailFinalFailure(run, "CONNECTION_FAILED");
           updateDetailContinueButton();
         }
         return null;
@@ -20857,6 +20913,13 @@ utils.encode = function encode(arr, enc) {
         } catch (e) {}
       }
       const currentRun = state.detailPlayback;
+      if (currentRun
+        && detailPlaybackIsCurrent(currentRun)
+        && currentRun.phase === "CONTINUE_READY"
+        && currentRun.continueResourcePromise) {
+        await currentRun.continueResourcePromise.catch(() => null);
+        if (!detailPlaybackIsCurrent(currentRun)) return true;
+      }
       const runResource = currentRun
         && detailPlaybackIsCurrent(currentRun)
         && currentRun.phase === "CONTINUE_READY"
@@ -20993,6 +21056,41 @@ utils.encode = function encode(arr, enc) {
       return requestDetailPlayback(state.selected);
     }
 
+    function detailContinuePlayStateFor(item) {
+      if (!item) return "idle";
+      const itemKey = panSearchItemKey(item);
+      const history = state.detailMode === "CONTINUE"
+        && state.detailModeItemKey === itemKey
+        && detailContinueHistoryIsValid(state.detailHistory)
+        && detailHistoryMatches(item, state.detailHistory)
+        ? state.detailHistory
+        : null;
+      if (history) return "ready";
+
+      const run = state.detailPlayback && detailPlaybackIsCurrent(state.detailPlayback)
+        && state.detailPlayback.item === item ? state.detailPlayback : null;
+      const directReady = detailDirectPlayReadyFor(item);
+      if (directReady) return "ready";
+
+      const runPhase = String(run && run.phase || "");
+      if (run && (run.handoffStarted || ["READY", "STARTING_PLAYER", "PAN_PLAY_CALLED"].includes(runPhase))) {
+        return "ready";
+      }
+
+      const pending = typeof _directPlayPending !== "undefined" ? _directPlayPending : null;
+      const action = pending && pending.item === item && panDirectPlayActionIsCurrent(pending) ? pending : null;
+      const status = state.directPlayStatus || {};
+      if (action && ["READY", "STARTING_PLAYER"].includes(String(status.textKey || status.phase || ""))) {
+        return "ready";
+      }
+      if (run && run.active) return "preparing";
+      if (action && (action.prepareOnly || action.playRequested || action.searchStarted)) return "preparing";
+
+      const failurePhase = ["NO_RESOURCE", "CONNECTION_FAILED", "FINAL_ERROR"].includes(runPhase);
+      if (failurePhase || !!detailDirectFailureTypeFor(item)) return "failed";
+      return "idle";
+    }
+
     function updateDetailContinueButton() {
       const button = $("detailContinueBtn");
       const continueText = $("detailContinueText");
@@ -21008,11 +21106,13 @@ utils.encode = function encode(arr, enc) {
       if (continueText) continueText.textContent = match ? "续播" : "播放";
       if (actions) actions.classList.toggle("has-continue", !!match);
       const directReady = detailDirectPlayReadyFor(state.selected);
-      // “续播”文字由权威 Native History 决定；绿色 Ready 只表示当前详情生命周期
-      // 已有真正可交给播放器的资源，不能被 History-only 状态提前染绿。
-      const ready = directReady;
+      // 文字由权威 Native History 决定；图标状态同样优先尊重有效历史，
+      // 再反映当前详情生命周期中的可交接资源、准备中和终态失败。
+      const playState = detailContinuePlayStateFor(state.selected);
+      const ready = playState === "ready";
       button.classList.toggle("is-ready", ready);
       button.dataset.ready = ready ? "true" : "false";
+      button.dataset.playState = playState;
       button.dataset.mode = mode;
       button.dataset.directReady = directReady ? "true" : "false";
       if (searchText) searchText.textContent = "聚搜";
@@ -30602,19 +30702,15 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     function suppressDirectPlayPanFallback(action, message) {
       if (!action || !action.suppressAutoPan) return false;
       clearDirectPlayStatus(action.token, "detail_primary_no_source");
-      // 当前详情的后台准备达到最终失败时也要明确告知用户；旧 run、关闭详情
-      // 或切换影片后的异步失败不得提示。人工点击仍沿用原有提示语义。
+      // 旧 run、关闭详情或切换影片后的异步失败不得提示；后台 prepareOnly
+      // 的失败由按钮三角状态表达，人工点击仍沿用原有提示语义。
       const detailRun = currentDetailFailureRunFor(action);
       const userRequested = !action.prepareOnly || !!action.playRequested;
-      const automaticDetailFailure = !!detailRun
-        && action.detailPrimary
-        && action.prepareOnly
-        && !action.playRequested;
       const failureType = detailDirectFailureTypeFor(action.item);
       const failureMessage = failureType ? detailDirectFailureMessage(failureType) : message;
       const alreadyNotified = !!action.finalFailureNotified
-        || !!(automaticDetailFailure && detailRun.finalFailureNotified);
-      if ((userRequested || automaticDetailFailure) && failureMessage && !alreadyNotified) {
+        || !!(detailRun && detailRun.finalFailureNotified);
+      if (userRequested && failureMessage && !alreadyNotified) {
         toast(failureMessage);
         action.finalFailureNotified = true;
         if (detailRun) detailRun.finalFailureNotified = true;
