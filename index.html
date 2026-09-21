@@ -16372,7 +16372,6 @@ utils.encode = function encode(arr, enc) {
       historyContexts: { loaded: false, loading: false, promise: null, entries: [], diag: null },
       continueIndex: { loaded: false, loading: false, promise: null, entries: [], diag: null },
       nativeSearchContinueOverride: { loaded: false, loading: false, promise: null, value: null, error: false },
-      detailCurrentPlaybackTarget: { loaded: false, loading: false, promise: null, value: null, error: false, writePromise: null },
       recentDelete: { armedKey: "", armedCard: null, pendingKey: "", pendingCard: null, pendingTimer: 0, remotePressLocked: false, remotePressCard: null, remotePressKey: "" },
       detailCover: { images: [], index: 0, timer: 0, token: 0, swipe: null },
       deviceMode: "unknown",
@@ -16687,7 +16686,6 @@ utils.encode = function encode(arr, enc) {
       if (type === "historyContext") return "fish2018_home_v1_history_context";
       if (type === "continueIndex") return "fish2018_home_v1_continue_index";
       if (type === "nativeSearchContinueOverride") return "fish2018_home_v1_native_search_continue_override";
-      if (type === "detailCurrentPlaybackTarget") return "fish2018_home_v1_detail_current_playback_target";
       if (type === "homeWeekly") return "fish2018_home_v1_home_weekly";
       return type;
     }
@@ -20336,14 +20334,7 @@ utils.encode = function encode(arr, enc) {
     }
 
     function syncDetailMode(item, historyOverride, options) {
-      let candidate = historyOverride === undefined ? findDetailContinueHistory(item) : historyOverride;
-      const storedTarget = state.detailCurrentPlaybackTarget && state.detailCurrentPlaybackTarget.loaded
-        ? state.detailCurrentPlaybackTarget.value : null;
-      if (historyOverride === undefined && storedTarget
-        && storedTarget.mediaKey === detailPlaybackMediaKeyFor(item)
-        && state.recent && state.recent.loaded && !state.recent.error) {
-        candidate = detailCurrentPlaybackTargetHistoryFor(item, storedTarget);
-      }
+      const candidate = historyOverride === undefined ? findDetailContinueHistory(item) : historyOverride;
       const history = detailAuthoritativeNativeHistoryFor(item, candidate, options);
       state.detailMode = history ? "CONTINUE" : "FIRST_PLAY";
       state.detailModeItemKey = item ? panSearchItemKey(item) : "";
@@ -20886,12 +20877,6 @@ utils.encode = function encode(arr, enc) {
         playbackOrigin: "native-vod"
       };
       if (target) setDetailPlaybackTarget(item, target);
-      setDetailCurrentPlaybackTarget(item, target || context, nativeIdentity, {
-        sourceType: "native-vod",
-        playbackOrigin: "native-vod",
-        nativeHistoryKey: override.nativeHistoryKey
-      });
-      await flushDetailCurrentPlaybackTarget();
       if (button) rememberDetailReturn(button);
       // 聚搜人工选择已经产生了权威 Native VOD History；清掉旧的自动准备态，
       // 但不重置 Pan 搜索结果、健康缓存或 Pan playbackReturn。
@@ -20922,74 +20907,7 @@ utils.encode = function encode(arr, enc) {
       return true;
     }
 
-    async function playDetailNativeVodTarget(item, history, target, button) {
-      if (!item || !target || !target.siteKey || !target.vodId) return false;
-      const context = Object.assign({}, history ? historyPlaybackContext(history) || {} : {}, target, {
-        siteKey: target.siteKey,
-        vodId: target.vodId,
-        title: target.title || history && history.title || item.title || "",
-        poster: target.poster || history && history.pic || item.pic || ""
-      });
-      const nativeIdentity = {
-        siteKey: target.siteKey,
-        vodId: target.vodId,
-        episodeUrl: target.vodId,
-        episodeName: context.episodeTitle || context.title || item.title || "",
-        flag: context.flag || "",
-        playbackOrigin: "native-vod"
-      };
-      setDetailCurrentPlaybackTarget(item, target, nativeIdentity, {
-        sourceType: "native-vod",
-        playbackOrigin: "native-vod",
-        nativeHistoryKey: target.nativeHistoryKey
-      });
-      await flushDetailCurrentPlaybackTarget();
-      if (button) rememberDetailReturn(button);
-      invalidateAutomaticDetailForNativeSearch(item);
-      state.historyResume = null;
-      rememberWatchIntent(item, "view", context, nativeIdentity);
-      try {
-        localStorage.setItem("fm_pan_playing", "1");
-        if (state.pan) state.pan.isPlaying = true;
-        await sdk().vod(target.siteKey, target.vodId, context.title, context.poster);
-        await saveHistoryPlaybackContext(item, context);
-        startWatchTracking(item, context, nativeIdentity);
-      } catch (e) {
-        localStorage.removeItem("fm_pan_playing");
-        if (state.pan) state.pan.isPlaying = false;
-        toast("恢复原生播放失败：" + (e.message || "unknown"));
-      }
-      return true;
-    }
-
-    async function playDetailCurrentPlaybackTarget(item, targetInfo, button) {
-      if (!item || !targetInfo || !targetInfo.target) return false;
-      const target = targetInfo.target;
-      const history = targetInfo.history || null;
-      const isNativeVod = target.sourceType === "native-vod" || target.playbackOrigin === "native-vod";
-      if (isNativeVod && target.siteKey && target.vodId) {
-        const nativeSearchOverride = await currentNativeSearchContinueHistoryFor(item);
-        if (nativeSearchOverride && nativeSearchOverride.history
-          && nativeSearchOverride.override.siteKey === target.siteKey
-          && nativeSearchOverride.override.vodId === target.vodId) {
-          return playNativeSearchContinueOverride(item, nativeSearchOverride.history, button, nativeSearchOverride);
-        }
-        if (nativeSearchOverride) {
-          await clearNativeSearchContinueOverride(item, "unified_target_wins");
-        }
-        return playDetailNativeVodTarget(item, history, target, button);
-      }
-      const resource = detailContinueResourceCandidateFor(item, target);
-      if (!resource) return false;
-      return playDetailContinueHistoryFirst(item, history, button, {
-        skipNativeSearchOverride: true,
-        forcedResource: resource,
-        historyResume: !!history
-      });
-    }
-
-    async function playDetailContinueHistoryFirst(item, history, button, options) {
-      const selectorOpts = options || {};
+    async function playDetailContinueHistoryFirst(item, history, button) {
       const existing = state.detailHistoryHandoff;
       if (existing && existing.item === item) {
         if (existing.status === "fallback") return false;
@@ -21000,13 +20918,12 @@ utils.encode = function encode(arr, enc) {
         }
         if (existing.status === "playing" && !(state.pan && state.pan.isPlaying)) state.detailHistoryHandoff = null;
       }
-      const nativeSearchOverride = selectorOpts.skipNativeSearchOverride ? null : await currentNativeSearchContinueHistoryFor(item);
+      const nativeSearchOverride = await currentNativeSearchContinueHistoryFor(item);
       if (nativeSearchOverride && nativeSearchOverride.history) {
         syncDetailMode(item, nativeSearchOverride.history, { freshNative: true });
         return playNativeSearchContinueOverride(item, nativeSearchOverride.history, button, nativeSearchOverride);
       }
-      const progressTarget = selectorOpts.forcedResource && selectorOpts.forcedResource.target
-        || detailContinuePlaybackTargetFor(item, history);
+      const progressTarget = detailContinuePlaybackTargetFor(item, history);
       const currentRun = state.detailPlayback;
       const runResource = currentRun
         && detailPlaybackIsCurrent(currentRun)
@@ -21014,8 +20931,7 @@ utils.encode = function encode(arr, enc) {
         && currentRun.continueResource
         ? currentRun.continueResource
         : null;
-      const resource = selectorOpts.forcedResource
-        || runResource
+      const resource = runResource
         || detailContinueResourceContextFor(item, history)
         || detailHistoryDirectResourceFor(item, history);
       if (!resource) {
@@ -21062,7 +20978,7 @@ utils.encode = function encode(arr, enc) {
         await playPanResult(resource.candidate, {
           prechecked: true,
           episodeTarget: progressTarget,
-          historyResume: selectorOpts.historyResume == null ? true : !!selectorOpts.historyResume,
+          historyResume: true,
           onPlayFailure
         });
         if (fallbackPromise) await fallbackPromise;
@@ -21090,14 +21006,6 @@ utils.encode = function encode(arr, enc) {
         if (state.selected !== item) return;
       }
       const button = $("detailContinueBtn");
-      const currentTarget = await currentDetailPlaybackTargetFor(item);
-      if (currentTarget) {
-        if (currentTarget.history) syncDetailMode(item, currentTarget.history, { freshNative: true });
-        // 当前目标是详情续播唯一 authority；旧的 runResource / Continue
-        // Context / 聚搜 override 只能在没有统一目标时作为兼容回退。
-        await playDetailCurrentPlaybackTarget(item, currentTarget, button);
-        return;
-      }
       if (state.detailModeItemKey !== panSearchItemKey(item)) syncDetailMode(item);
       const nativeSearchOverride = await currentNativeSearchContinueHistoryFor(item);
       if (nativeSearchOverride && nativeSearchOverride.history) {
@@ -21276,8 +21184,7 @@ utils.encode = function encode(arr, enc) {
                 && $("detailSheet") && $("detailSheet").classList.contains("active")
                 && state.selected) {
                 const detailItem = state.selected;
-                const detailTarget = await currentDetailPlaybackTargetFor(detailItem, { loadRecent: false });
-                const nativeHistory = detailTarget && detailTarget.history || findDetailContinueHistory(detailItem);
+                const nativeHistory = findDetailContinueHistory(detailItem);
                 syncDetailMode(detailItem, nativeHistory, nativeHistory ? { freshNative: true } : undefined);
                 updateDetailContinueButton();
               }
@@ -26737,12 +26644,6 @@ utils.encode = function encode(arr, enc) {
           flag: context.flag || item.flag || "",
           playbackOrigin: playbackOriginForNativeIdentity(item, { siteKey: nativeSiteKey, vodId: nativeVodId })
         };
-        setDetailCurrentPlaybackTarget(item, context, nativeIdentity, {
-          sourceType: nativeIdentity.playbackOrigin === "native-vod" ? "native-vod" : "pan",
-          playbackOrigin: nativeIdentity.playbackOrigin,
-          nativeHistoryKey: item.nativeHistoryKey || item.historyKey || ""
-        });
-        await flushDetailCurrentPlaybackTarget();
         rememberHomeReturn(item, returnTarget, { origin: "recent_native_player" });
         saveUiSnapshotNow();
         rememberWatchIntent(item, "view", context, nativeIdentity);
@@ -34071,13 +33972,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           flag: item && (item.flag || item.diskType || item.provider) || "",
           playbackOrigin: "pan-push"
         };
-        setDetailCurrentPlaybackTarget(selectedItem, episodeTarget, nativeIdentity, {
-          sourceType: "pan",
-          playbackOrigin: "pan-push",
-          candidate: item,
-          lastPlayUrl: payload.url
-        });
-        await flushDetailCurrentPlaybackTarget();
         rememberWatchIntent(selectedItem, "search", episodeTarget, nativeIdentity);
         startWatchTracking(selectedItem, episodeTarget, nativeIdentity);
       }
@@ -34271,302 +34165,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
     function nativeSearchMediaKey(item) {
       return item ? (mediaDomKey(item) || panSearchItemKey(item)) : "";
-    }
-
-    // 详情页只有一个续播按钮，因此必须有一个跨 WebView 生命周期的、
-    // 与当前作品绑定的最终播放目标。Continue Index / History Context /
-    // playbackReturn 仍然保留作恢复上下文，但不再各自独立争夺最终线路。
-    function detailPlaybackMediaKeyFor(item) {
-      const mediaType = normalizeHistoryMediaType(item && (item.mediaType || item.media_type));
-      const tmdbId = String(item && (item.tmdbId || item.tmdb_id) || "").trim();
-      if (mediaType && tmdbId) return `tmdb:${mediaType}:${tmdbId}`;
-      return nativeSearchMediaKey(item);
-    }
-
-    function normalizeDetailCurrentPlaybackTarget(value) {
-      if (!value || typeof value !== "object") return null;
-      const mediaKey = String(value.mediaKey || "").trim();
-      const siteKey = String(value.siteKey || value.nativeSiteKey || "").trim();
-      const vodId = String(value.vodId || value.nativeVodId || "").trim();
-      const lastPlayUrl = String(value.lastPlayUrl || value.last_play_url || value.playUrl || value.play_url || "").trim();
-      if (!mediaKey || (!siteKey && !vodId && !lastPlayUrl)) return null;
-      const playbackOrigin = String(value.playbackOrigin || value.origin || "").trim().toLowerCase();
-      const sourceType = String(value.sourceType || value.source_type || (
-        playbackOrigin === "native-vod" ? "native-vod" : siteKey === "push_agent" || playbackOrigin === "pan-push" ? "pan" : ""
-      )).trim();
-      return {
-        version: 1,
-        mediaKey,
-        tmdbId: String(value.tmdbId || "").trim(),
-        mediaType: normalizeHistoryMediaType(value.mediaType) || String(value.mediaType || "").trim(),
-        title: String(value.title || "").trim(),
-        originalTitle: String(value.originalTitle || "").trim(),
-        resourceSearchTitle: String(value.resourceSearchTitle || "").trim(),
-        siteKey,
-        vodId,
-        nativeHistoryKey: String(value.nativeHistoryKey || value.historyKey || "").trim(),
-        sourceType,
-        playbackOrigin,
-        panProvider: resolvePanProviderForHistory({
-          diskType: value.diskType || value.disk_type,
-          panProvider: value.panProvider || value.pan_provider,
-          provider: value.provider,
-          lastPlayUrl
-        }),
-        panPassword: String(value.panPassword || value.pan_password || value.password || value.pwd || "").trim(),
-        panTitle: String(value.panTitle || value.pan_title || value.playTitle || value.resourceTitle || "").trim(),
-        panFileName: String(value.panFileName || value.pan_file_name || value.fileName || value.file_name || "").trim(),
-        panFileId: String(value.panFileId || value.pan_file_id || value.fileId || value.file_id || "").trim(),
-        resourceId: String(value.resourceId || value.resource_id || "").trim(),
-        panSearchKeyword: String(value.panSearchKeyword || value.pan_search_keyword || "").trim(),
-        lastPlayUrl,
-        seasonNumber: Math.max(0, Number(value.seasonNumber || value.season_number || value.season || 0) || 0),
-        episodeNumber: Math.max(0, Number(value.episodeNumber || value.episode_number || value.episode || 0) || 0),
-        episodeTitle: String(value.episodeTitle || value.episode_title || "").trim(),
-        playbackPosition: Math.max(0, Number(value.playbackPosition || value.playback_position || value.position || 0) || 0),
-        duration: Math.max(0, Number(value.duration || value.durationMs || value.duration_ms || 0) || 0),
-        updatedAt: Number(value.updatedAt || value.updated_at || 0) || 0,
-        confirmedAt: Number(value.confirmedAt || value.confirmed_at || value.selectedAt || 0) || 0
-      };
-    }
-
-    function detailCurrentPlaybackTargetFrom(item, playbackTarget, nativeIdentity, options) {
-      const opts = options || {};
-      if (!item) return null;
-      const base = playbackTarget && typeof playbackTarget === "object"
-        ? playbackTarget
-        : currentPlaybackTargetForItem(item) || {};
-      const candidate = opts.candidate && typeof opts.candidate === "object" ? opts.candidate : {};
-      const lastPlayUrl = String(
-        opts.lastPlayUrl
-          || candidate.normalizedUrl || candidate.normalized_url || candidate.url
-          || base.lastPlayUrl || base.last_play_url || ""
-      ).trim();
-      const explicitOrigin = String(opts.playbackOrigin || nativeIdentity && (nativeIdentity.playbackOrigin || nativeIdentity.origin) || "").trim().toLowerCase();
-      const origin = explicitOrigin || (String(nativeIdentity && nativeIdentity.siteKey || "").trim() === "push_agent" ? "pan-push" : "");
-      const sourceType = String(opts.sourceType || (origin === "native-vod" ? "native-vod" : origin === "pan-push" ? "pan" : base.sourceType || "")).trim();
-      const identitySiteKey = String(opts.siteKey || nativeIdentity && nativeIdentity.siteKey || "").trim();
-      const identityVodId = String(opts.vodId || nativeIdentity && nativeIdentity.vodId || "").trim();
-      const baseIdentityChanged = identitySiteKey && identityVodId
-        && (identitySiteKey !== String(base.siteKey || "").trim() || identityVodId !== String(base.vodId || "").trim());
-      return normalizeDetailCurrentPlaybackTarget(Object.assign({}, base, {
-        mediaKey: detailPlaybackMediaKeyFor(item),
-        tmdbId: item.tmdbId || base.tmdbId || "",
-        mediaType: item.mediaType || base.mediaType || "",
-        title: item.title || base.title || "",
-        originalTitle: item.originalTitle || base.originalTitle || "",
-        resourceSearchTitle: item.resourceSearchTitle || base.resourceSearchTitle || "",
-        siteKey: identitySiteKey || String(base.siteKey || "").trim(),
-        vodId: identityVodId || String(base.vodId || "").trim(),
-        nativeHistoryKey: String(opts.nativeHistoryKey || (baseIdentityChanged ? "" : base.nativeHistoryKey) || "").trim(),
-        sourceType,
-        playbackOrigin: origin,
-        diskType: candidate.diskType || candidate.disk_type || base.diskType || "",
-        panProvider: candidate.panProvider || candidate.pan_provider || base.panProvider || "",
-        panPassword: candidate.password || candidate.pwd || candidate.passcode || base.panPassword || "",
-        panTitle: candidate.title || candidate.note || base.panTitle || "",
-        panFileName: candidate.fileName || candidate.file_name || candidate.filename || base.panFileName || "",
-        panFileId: candidate.fileId || candidate.file_id || base.panFileId || "",
-        resourceId: candidate.resourceId || candidate.resource_id || base.resourceId || "",
-        lastPlayUrl,
-        updatedAt: Date.now(),
-        confirmedAt: Date.now()
-      }));
-    }
-
-    function detailCurrentPlaybackTargetFromHistory(item, history, options) {
-      if (!item || !detailHasAuthoritativeNativeHistory(history) || !detailHistoryMatches(item, history)) return null;
-      const identity = nativeSearchHistoryIdentitySnapshot(history);
-      if (!identity) return null;
-      const origin = playbackOriginForNativeIdentity(item, identity);
-      const target = detailContinuePlaybackTargetFor(item, history) || historyPlaybackContext(history);
-      return detailCurrentPlaybackTargetFrom(item, target, identity, Object.assign({}, options || {}, {
-        sourceType: origin === "native-vod" ? "native-vod" : "pan",
-        playbackOrigin: origin,
-        nativeHistoryKey: identity.nativeHistoryKey
-      }));
-    }
-
-    async function loadDetailCurrentPlaybackTarget() {
-      const store = state.detailCurrentPlaybackTarget;
-      if (store.loaded) return store.value;
-      if (store.loading && store.promise) return store.promise;
-      store.loading = true;
-      store.error = false;
-      const task = (async () => {
-        try {
-          const saved = await sdk().cache.get(cacheKey("detailCurrentPlaybackTarget"));
-          const value = typeof saved === "string" ? safeJson(saved, null) : saved;
-          // 实际 handoff 可能在 cache 读取期间发生；新写入的内存目标
-          // 优先于这次较早发起的旧 cache 读取结果。
-          if (!store.loaded) store.value = normalizeDetailCurrentPlaybackTarget(value);
-          store.loaded = true;
-          return store.value;
-        } catch (e) {
-          store.error = true;
-          store.loaded = true;
-          return store.value || null;
-        } finally {
-          store.loading = false;
-          store.promise = null;
-        }
-      })();
-      store.promise = task;
-      return task;
-    }
-
-    function persistDetailCurrentPlaybackTarget(value) {
-      const store = state.detailCurrentPlaybackTarget;
-      const normalized = normalizeDetailCurrentPlaybackTarget(value);
-      store.loaded = true;
-      store.error = false;
-      store.value = normalized;
-      const write = (store.writePromise || Promise.resolve()).catch(() => {}).then(async () => {
-        // 只允许最后一次同步写入 cache，避免旧 handoff 的慢写覆盖新线路。
-        if (store.value !== normalized) return store.value;
-        try {
-          if (normalized) await sdk().cache.set(cacheKey("detailCurrentPlaybackTarget"), JSON.stringify(normalized));
-          else await sdk().cache.del(cacheKey("detailCurrentPlaybackTarget"));
-        } catch (e) {}
-        return normalized;
-      });
-      store.writePromise = write;
-      return write;
-    }
-
-    async function flushDetailCurrentPlaybackTarget() {
-      const store = state.detailCurrentPlaybackTarget;
-      if (store && store.writePromise) await store.writePromise.catch(() => {});
-    }
-
-    function setDetailCurrentPlaybackTarget(item, playbackTarget, nativeIdentity, options) {
-      const target = detailCurrentPlaybackTargetFrom(item, playbackTarget, nativeIdentity, options);
-      if (!target) return null;
-      persistDetailCurrentPlaybackTarget(target);
-      return target;
-    }
-
-    async function clearDetailCurrentPlaybackTarget(item, reason) {
-      const current = await loadDetailCurrentPlaybackTarget();
-      if (!current || item && current.mediaKey !== detailPlaybackMediaKeyFor(item)) return false;
-      persistDetailCurrentPlaybackTarget(null);
-      try {
-        console.debug("DETAIL_CURRENT_PLAYBACK_TARGET_CLEARED", {
-          itemKey: item ? panSearchItemKey(item) : current.mediaKey,
-          reason: String(reason || "history_missing")
-        });
-      } catch (e) {}
-      return true;
-    }
-
-    function detailCurrentPlaybackTargetMatchesHistory(item, target, history) {
-      if (!item || !target || !detailHasAuthoritativeNativeHistory(history) || !detailHistoryMatches(item, history)) return false;
-      const targetKey = String(target.nativeHistoryKey || "").trim();
-      const targetSite = String(target.siteKey || "").trim();
-      const targetVod = String(target.vodId || "").trim();
-      const identity = nativeSearchHistoryIdentitySnapshot(history);
-      if (!identity) return false;
-      if (targetKey) return !!identity.nativeHistoryKey && identity.nativeHistoryKey === targetKey;
-      return !!targetSite && !!targetVod && identity.siteKey === targetSite && identity.vodId === targetVod;
-    }
-
-    function detailCurrentPlaybackTargetHistoryFor(item, target, options) {
-      const opts = options || {};
-      if (!item || !target || !state.recent || !state.recent.loaded || state.recent.error && opts.allowError !== true) return null;
-      return (state.recent.items || []).find((history) => detailCurrentPlaybackTargetMatchesHistory(item, target, history)) || null;
-    }
-
-    async function clearDetailContinueContextsFor(item, reason) {
-      if (!item) return false;
-      const mediaKey = detailPlaybackMediaKeyFor(item);
-      if (!mediaKey) return false;
-      if (state.continueIndex && state.continueIndex.loaded) {
-        const entries = (state.continueIndex.entries || []).filter((entry) => String(entry && (entry.mediaKey || recentContextMediaKey(entry)) || "") !== mediaKey);
-        if (entries.length !== state.continueIndex.entries.length) {
-          state.continueIndex.entries = entries;
-          await persistContinueIndexEntries(entries).catch(() => {});
-        }
-      }
-      if (state.historyContexts && state.historyContexts.loaded) {
-        const entries = (state.historyContexts.entries || []).filter((entry) => String(recentContextMediaKey(entry) || "") !== mediaKey);
-        if (entries.length !== state.historyContexts.entries.length) {
-          state.historyContexts.entries = entries;
-          await persistHistoryContextEntries(entries).catch(() => {});
-        }
-      }
-      await clearDetailCurrentPlaybackTarget(item, reason || "history_missing");
-      await clearNativeSearchContinueOverride(item, reason || "history_missing").catch(() => {});
-      state.detailHistory = null;
-      state.historyResume = null;
-      state.detailHistoryHandoff = null;
-      if (state.detailEpisodeTarget && playbackTargetMatchesItem(state.detailEpisodeTarget, item)) state.detailEpisodeTarget = null;
-      if (state.pan) {
-        const returnTarget = state.pan.playbackReturn && normalizePlaybackTarget(item, state.pan.playbackReturn);
-        if (returnTarget && playbackTargetMatchesItem(returnTarget, item)) state.pan.playbackReturn = null;
-        state.pan.directReady = null;
-        state.pan.directFailure = null;
-      }
-      cancelPendingDirectPlay("detail_current_target_history_missing");
-      cancelDetailPlaybackPreparation("detail_current_target_history_missing");
-      return true;
-    }
-
-    async function currentDetailPlaybackTargetFor(item, options) {
-      const opts = options || {};
-      if (!item) return null;
-      let target = await loadDetailCurrentPlaybackTarget();
-      if (target && target.mediaKey !== detailPlaybackMediaKeyFor(item)) return null;
-      if (!state.recent.loaded && opts.loadRecent !== false) {
-        await loadRecentList({ silent: true }).catch(() => {});
-      }
-      if (!target) {
-        let history = null;
-        if (state.recent.loaded && !state.recent.error) {
-          const override = await loadNativeSearchContinueOverride();
-          if (override && override.mediaKey === nativeSearchMediaKey(item)) {
-            history = nativeSearchVodHistoryListFor(item).find((candidate) => nativeSearchOverrideMatchesHistory(override, candidate)) || null;
-          }
-          history = history || findDetailContinueHistory(item);
-        }
-        if (!history) return null;
-        target = detailCurrentPlaybackTargetFromHistory(item, history, { playbackOrigin: playbackOriginForNativeIdentity(item, history) });
-        if (!target) return null;
-        persistDetailCurrentPlaybackTarget(target);
-        return { target, history, historyConfirmed: true };
-      }
-      if (state.recent.loaded && !state.recent.error) {
-        const history = detailCurrentPlaybackTargetHistoryFor(item, target);
-        if (history) {
-          const override = await loadNativeSearchContinueOverride();
-          if (override && override.mediaKey === nativeSearchMediaKey(item)
-            && !nativeSearchOverrideMatchesHistory(override, history)) {
-            await clearNativeSearchContinueOverride(item, "unified_target_wins");
-          }
-          return { target, history, historyConfirmed: true };
-        }
-        // 当前目标已删除，但同一作品仍有一条明确有效的 Native History；
-        // 用它重建唯一详情目标，避免旧 A/C context 继续复活。
-        const replacement = findDetailContinueHistory(item);
-        if (replacement) {
-          const rebuilt = detailCurrentPlaybackTargetFromHistory(item, replacement, { playbackOrigin: playbackOriginForNativeIdentity(item, replacement) });
-          if (rebuilt) {
-            persistDetailCurrentPlaybackTarget(rebuilt);
-            const override = await loadNativeSearchContinueOverride();
-            if (override && override.mediaKey === nativeSearchMediaKey(item)
-              && !nativeSearchOverrideMatchesHistory(override, replacement)) {
-              await clearNativeSearchContinueOverride(item, "unified_target_wins");
-            }
-            return { target: rebuilt, history: replacement, historyConfirmed: true };
-          }
-        }
-        await clearDetailContinueContextsFor(item, "authoritative_history_missing");
-        return null;
-      }
-      // History 本轮读取失败时保留最后确认的目标，不把不确定误判成删除。
-      const retainedHistory = detailCurrentPlaybackTargetHistoryFor(item, target, { allowError: true })
-        || detailCurrentPlaybackTargetMatchesHistory(item, target, state.detailHistory) && state.detailHistory
-        || null;
-      return { target, history: retainedHistory, historyConfirmed: false };
     }
 
     function nativeSearchHistoryIdentityEqual(left, right) {
@@ -39069,15 +38667,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             const override = nativeSearchOverrideFromHistory(item, detection.history, marker);
             if (override) {
               await persistNativeSearchContinueOverride(override);
-              setDetailCurrentPlaybackTarget(item, detailContinuePlaybackTargetFor(item, detection.history), {
-                siteKey: override.siteKey,
-                vodId: override.vodId,
-                playbackOrigin: "native-vod"
-              }, {
-                sourceType: "native-vod",
-                playbackOrigin: "native-vod",
-                nativeHistoryKey: override.nativeHistoryKey
-              });
               invalidateAutomaticDetailForNativeSearch(item);
               try {
                 console.debug("NATIVE_SEARCH_CONTINUE_OVERRIDE_SET", {
@@ -39094,31 +38683,19 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
       // 检测到本次聚搜实际产生的新/推进的 VOD History 时，它就是这次返回
       // 的 authoritative history；否则继续使用现有 generic latest History。
-      const detailTarget = await currentDetailPlaybackTargetFor(item, { loadRecent: false });
-      const targetHistory = detailTarget && detailTarget.history || null;
-      const latestHistory = detection && detection.history || targetHistory || findDetailContinueHistory(item);
+      const latestHistory = detection && detection.history || findDetailContinueHistory(item);
       const override = await loadNativeSearchContinueOverride();
       const overrideHistory = nativeSearchOverrideHistoryFor(item, override, latestHistory);
-      const targetOwnsAnotherHistory = !!(targetHistory && override
-        && override.mediaKey === nativeSearchMediaKey(item)
-        && !nativeSearchOverrideMatchesHistory(override, targetHistory));
-      if (historyRefreshSucceeded && override && override.mediaKey === nativeSearchMediaKey(item)
-        && (targetOwnsAnotherHistory || !overrideHistory)) {
+      if (historyRefreshSucceeded && override && override.mediaKey === nativeSearchMediaKey(item) && !overrideHistory) {
         await clearNativeSearchContinueOverride(item, "authoritative_history_missing");
       }
       const retainedHistory = state.detailHistory && detailHasAuthoritativeNativeHistory(state.detailHistory)
         && detailHistoryMatches(item, state.detailHistory) ? state.detailHistory : null;
       const history = historyRefreshSucceeded
-        ? targetHistory || overrideHistory || latestHistory
-        : targetHistory || overrideHistory || retainedHistory || latestHistory;
+        ? overrideHistory || latestHistory
+        : overrideHistory || retainedHistory || latestHistory;
       const historyFound = detailContinueHistoryIsValid(history);
       if (historyFound) syncDetailMode(item, history, { freshNative: true });
-      else if (!historyRefreshSucceeded && detailTarget && detailTarget.target) {
-        // 本次 History 读取失败只代表结果不确定；保留已经确认过的
-        // 当前播放目标，避免短暂的 SDK/网络失败把详情按钮降成 FIRST_PLAY。
-        state.detailMode = "CONTINUE";
-        state.detailModeItemKey = panSearchItemKey(item);
-      }
       else syncDetailMode(item, null);
       updateDetailContinueButton();
       try {
@@ -39340,31 +38917,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         loadContinueIndex()
       ]).catch(() => {});
       if (state.selected !== item || !$("detailSheet") || !$("detailSheet").classList.contains("active")) return false;
-
-      const detailTarget = await currentDetailPlaybackTargetFor(item, { loadRecent: false });
-      if (detailTarget) {
-        cancelDetailPlaybackPreparation("player_return_current_target");
-        cancelPendingDirectPlay("player_return_current_target");
-        state.detailHistoryHandoff = null;
-        state.historyResume = null;
-        if (detailTarget.history) {
-          syncDetailMode(item, detailTarget.history, { freshNative: true });
-        } else if (detailContinueHistoryIsValid(previousHistory)) {
-          syncDetailMode(item, previousHistory, { freshNative: true });
-        } else {
-          state.detailMode = "CONTINUE";
-          state.detailModeItemKey = panSearchItemKey(item);
-        }
-        recordDetailPlaybackDecision("PLAYER_RETURN_PLAYBACK_DECISION", item, {
-          playbackReturnFound: !!playbackReturn,
-          nativeHistoryFound: !!detailTarget.history,
-          nativeProgress: detailTarget.history ? historyPlaybackPositionValue(detailTarget.history) : 0,
-          decision: "REARM_CURRENT_TARGET",
-          curatedStarted: false
-        });
-        if (opts.deferDetailReconcile !== true) updateDetailContinueButton();
-        return true;
-      }
 
       const nativeHistory = findDetailContinueHistory(item);
       const resource = detailContinueResourceContextFor(item, nativeHistory);
