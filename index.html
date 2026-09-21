@@ -21089,13 +21089,18 @@ utils.encode = function encode(arr, enc) {
               try { console.debug("RECENT_LOAD_COMMIT", run.id); } catch (e) {}
               if (state.activeList === "recent") renderActiveGrid();
               if (state.activeList === "all") renderHome();
-              if (run.reconcileDetail !== false && $("detailSheet") && $("detailSheet").classList.contains("active")) {
-                const detailPlayback = state.detailPlayback;
-                if (detailPlayback && detailPlayback.itemKey === panSearchItemKey(state.selected) && detailPlayback.historyVerified) {
-                  syncDetailMode(state.selected, detailPlayback.history, { freshNative: true });
-                } else {
-                  syncDetailMode(state.selected, null);
-                }
+              if (run.reconcileDetail !== false
+                && !error
+                && $("detailSheet")
+                && $("detailSheet").classList.contains("active")
+                && state.selected) {
+                const winner = recentNativeHistoryWinnerFor(state.selected);
+                const history = winner
+                  && detailHasAuthoritativeNativeHistory(winner)
+                  && detailHistoryMatches(state.selected, winner)
+                  ? winner
+                  : null;
+                syncDetailMode(state.selected, history, { freshNative: true });
                 updateDetailContinueButton();
               }
             }
@@ -34777,8 +34782,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (origin === "native-search") {
         const historyChanged = nativeSearchHistoryChanged(item, marker, history);
         nativeSearchChangeReason = historyChanged ? nativeSearchHistoryChangeReason(item, marker, history) : "";
-        if (nativeSearchChangeReason) {
-          retireDetailPreparedPlaybackAfterNativeSearch(item, marker, nativeSearchChangeReason);
+        if (history) {
+          retireDetailPreparedPlaybackAfterNativeSearch(
+            item,
+            marker,
+            nativeSearchChangeReason || "native_search_authoritative_history"
+          );
         }
         try {
           console.debug("NATIVE_SEARCH_HISTORY_CHANGED", JSON.stringify({
@@ -38631,12 +38640,19 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         sampleWatchStatus();
       }
       if (isPlayerReturn) {
-        reconcileDetailAfterNativeReturn(
+        const reconciled = reconcileDetailAfterNativeReturn(
           state.selected,
           opts.nativeSearchReturn === true ? "native-search" : (isPanPlaybackReturn ? "pan-play" : "main-play")
         );
         if (opts.nativeSearchReturn === true && !(state.recent && state.recent.error)) {
-          clearNativeSearchReturnMarker();
+          const marker = nativeSearchReturnMarkerFor();
+          const detail = $("detailSheet");
+          const detailContextGone = !detail
+            || !detail.classList.contains("active")
+            || !state.selected
+            || !marker
+            || marker.itemKey !== panSearchItemKey(state.selected);
+          if (reconciled || detailContextGone) clearNativeSearchReturnMarker();
         }
       }
       if (!isPanPlaybackReturn) {
