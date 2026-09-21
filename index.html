@@ -16371,8 +16371,6 @@ utils.encode = function encode(arr, enc) {
       watch: { item: null, timer: 0, bestMs: 0, durationMs: 0, lastAt: 0, published: false, intentAction: "", playbackTarget: null, playbackOrigin: "", nativeHistoryIdentity: null },
       historyContexts: { loaded: false, loading: false, promise: null, entries: [], diag: null },
       continueIndex: { loaded: false, loading: false, promise: null, entries: [], diag: null },
-      detailPlaybackChains: { loaded: false, loading: false, promise: null, value: null, runtime: {}, error: false },
-      nativeSearchContinueOverride: { loaded: false, loading: false, promise: null, value: null, error: false },
       recentDelete: { armedKey: "", armedCard: null, pendingKey: "", pendingCard: null, pendingTimer: 0, remotePressLocked: false, remotePressCard: null, remotePressKey: "" },
       detailCover: { images: [], index: 0, timer: 0, token: 0, swipe: null },
       deviceMode: "unknown",
@@ -16686,8 +16684,6 @@ utils.encode = function encode(arr, enc) {
       if (type === "tmdb") return "fish2018_home_v1_tmdb_config";
       if (type === "historyContext") return "fish2018_home_v1_history_context";
       if (type === "continueIndex") return "fish2018_home_v1_continue_index";
-      if (type === "detailPlaybackChains") return "fish2018_home_v1_detail_playback_chains";
-      if (type === "nativeSearchContinueOverride") return "fish2018_home_v1_native_search_continue_override";
       if (type === "homeWeekly") return "fish2018_home_v1_home_weekly";
       return type;
     }
@@ -19953,7 +19949,6 @@ utils.encode = function encode(arr, enc) {
         id: "history:" + stableKey.replace(/[\r\n]+/g, " "),
         source: "history",
         nativeHistoryRaw: history,
-        nativeHistorySourceIndex: index,
         nativeHistoryKey: parts.key,
         nativeCid: parts.cid,
         nativeSiteKey: parts.siteKey,
@@ -20076,7 +20071,6 @@ utils.encode = function encode(arr, enc) {
           return;
         }
         seen.add(key);
-        item.nativeHistoryNormalizedIndex = normalized.length;
         normalized.push(item);
       });
       const restorableCount = normalized.filter((item) => item.historyRestorable === true).length;
@@ -20187,554 +20181,10 @@ utils.encode = function encode(arr, enc) {
       return detailHasAuthoritativeNativeHistory(history);
     }
 
-    function nativeHistoryDiagnosticValue(history, key) {
-      const raw = history && history.nativeHistoryRaw && history.nativeHistoryRaw !== history
-        ? history.nativeHistoryRaw : history;
-      if (raw && raw[key] != null) return raw[key];
-      return historyNestedValue(raw, [key]);
-    }
-
-    function recordRecentHistorySelectionForDetail(item, matches, selected) {
-      if (!item || !Array.isArray(matches) || matches.length < 2) return selected;
-      const histories = matches.map((history) => ({
-        siteKey: String(history && (history.siteKey || history.nativeSiteKey) || ""),
-        vodId: String(history && (history.vodId || history.nativeVodId) || ""),
-        nativeHistoryKey: String(history && (history.nativeHistoryKey || history.historyKey) || ""),
-        createTime: nativeHistoryDiagnosticValue(history, "createTime"),
-        create_time: nativeHistoryDiagnosticValue(history, "create_time"),
-        updatedAt: nativeHistoryDiagnosticValue(history, "updatedAt"),
-        updated_at: nativeHistoryDiagnosticValue(history, "updated_at"),
-        position: historyPlaybackPositionValue(history),
-        rawIndex: Number(history && history.nativeHistorySourceIndex),
-        normalizedIndex: Number(history && history.nativeHistoryNormalizedIndex)
-      }));
-      const selectedEntry = selected ? histories[matches.indexOf(selected)] || null : null;
-      const payload = {
-        itemKey: panSearchItemKey(item),
-        histories,
-        selected: selectedEntry
-      };
-      const signature = JSON.stringify(payload);
-      if (recordRecentHistorySelectionForDetail._lastSignature === signature) return selected;
-      recordRecentHistorySelectionForDetail._lastSignature = signature;
-      if (state.tvDiag) state.tvDiag.recentHistorySelection = payload;
-      try { console.debug("RECENT_HISTORY_SELECTED_FOR_DETAIL_CONTINUE", payload); } catch (e) {}
-      return selected;
-    }
-
-    function detailPlaybackChainMediaKeyFor(item) {
-      if (!item) return "";
-      const mediaType = normalizeHistoryMediaType(item.mediaType || item.media_type);
-      const tmdbId = String(item.tmdbId || item.tmdb_id || "").trim();
-      if (mediaType && tmdbId) return `tmdb:${mediaType}:${tmdbId}`;
-      return String(mediaDomKey(item) || panSearchItemKey(item) || "").trim();
-    }
-
-    function normalizeDetailPlaybackChain(value) {
-      if (!value || typeof value !== "object") return null;
-      const mediaKey = String(value.mediaKey || "").trim();
-      const status = ["ACTIVE", "PREPARING", "ENDED"].includes(String(value.status || "").toUpperCase())
-        ? String(value.status).toUpperCase() : "";
-      if (!mediaKey || !status) return null;
-      return {
-        version: 1,
-        status,
-        mediaKey,
-        tmdbId: String(value.tmdbId || "").trim(),
-        mediaType: normalizeHistoryMediaType(value.mediaType),
-        title: String(value.title || "").trim(),
-        poster: String(value.poster || "").trim(),
-        sourceType: String(value.sourceType || "").trim(),
-        playbackOrigin: String(value.playbackOrigin || "").trim(),
-        siteKey: String(value.siteKey || "").trim(),
-        vodId: String(value.vodId || "").trim(),
-        nativeHistoryKey: String(value.nativeHistoryKey || "").trim(),
-        playbackTarget: value.playbackTarget && typeof value.playbackTarget === "object"
-          ? Object.assign({}, value.playbackTarget) : null,
-        item: value.item && typeof value.item === "object" ? value.item : null,
-        position: Math.max(0, Number(value.position || 0) || 0),
-        startedAt: Number(value.startedAt || 0) || 0,
-        confirmedAt: Number(value.confirmedAt || 0) || 0,
-        endedAt: Number(value.endedAt || 0) || 0,
-        reason: String(value.reason || "").trim()
-      };
-    }
-
-    function normalizeDetailPlaybackChains(value) {
-      const rawEntries = value && typeof value === "object" && value.entries && typeof value.entries === "object"
-        ? value.entries : {};
-      const rawPending = value && typeof value === "object" && value.pending && typeof value.pending === "object"
-        ? value.pending : {};
-      const entries = {};
-      const pending = {};
-      Object.keys(rawEntries).forEach((key) => {
-        const chain = normalizeDetailPlaybackChain(rawEntries[key]);
-        if (chain) entries[chain.mediaKey || key] = chain;
-      });
-      Object.keys(rawPending).forEach((key) => {
-        const candidate = rawPending[key];
-        if (!candidate || typeof candidate !== "object" || !String(candidate.mediaKey || key).trim()) return;
-        pending[String(candidate.mediaKey || key).trim()] = {
-          version: 1,
-          mediaKey: String(candidate.mediaKey || key).trim(),
-          tmdbId: String(candidate.tmdbId || "").trim(),
-          mediaType: normalizeHistoryMediaType(candidate.mediaType),
-          title: String(candidate.title || "").trim(),
-          poster: String(candidate.poster || "").trim(),
-          sourceType: String(candidate.sourceType || "").trim(),
-          playbackOrigin: String(candidate.playbackOrigin || "").trim(),
-          siteKey: String(candidate.siteKey || "").trim(),
-          vodId: String(candidate.vodId || "").trim(),
-          nativeHistoryKey: String(candidate.nativeHistoryKey || "").trim(),
-          playbackTarget: candidate.playbackTarget && typeof candidate.playbackTarget === "object"
-            ? Object.assign({}, candidate.playbackTarget) : null,
-          item: candidate.item && typeof candidate.item === "object" ? candidate.item : null,
-          positionBefore: Math.max(0, Number(candidate.positionBefore || 0) || 0),
-          updatedAtBefore: Math.max(0, Number(candidate.updatedAtBefore || 0) || 0),
-          existedBefore: candidate.existedBefore === true,
-          baselineReadOk: candidate.baselineReadOk === true,
-          createdAt: Number(candidate.createdAt || 0) || 0,
-          reason: String(candidate.reason || "").trim()
-        };
-      });
-      return { version: 1, entries, pending };
-    }
-
-    async function loadDetailPlaybackChains() {
-      const store = state.detailPlaybackChains;
-      if (store.loaded) return store.value;
-      if (store.loading && store.promise) return store.promise;
-      store.loading = true;
-      store.error = false;
-      store.promise = (async () => {
-        try {
-          const saved = await sdk().cache.get(cacheKey("detailPlaybackChains"));
-          const value = typeof saved === "string" ? safeJson(saved, null) : saved;
-          store.value = normalizeDetailPlaybackChains(value);
-          Object.keys(store.value.entries || {}).forEach((key) => {
-            if (store.value.entries[key] && store.value.entries[key].status === "PREPARING") {
-              delete store.value.entries[key];
-            }
-          });
-          store.runtime = store.runtime || {};
-          store.loaded = true;
-          return store.value;
-        } catch (e) {
-          store.error = true;
-          store.value = store.value || { version: 1, entries: {}, pending: {} };
-          store.value.entries = store.value.entries || {};
-          store.value.pending = store.value.pending || {};
-          store.runtime = store.runtime || {};
-          store.loaded = true;
-          return store.value;
-        } finally {
-          store.loading = false;
-          store.promise = null;
-        }
-      })();
-      return store.promise;
-    }
-
-    async function persistDetailPlaybackChains() {
-      const store = state.detailPlaybackChains;
-      const value = store.value || { version: 1, entries: {}, pending: {} };
-      store.loaded = true;
-      store.value = normalizeDetailPlaybackChains(value);
-      store.value.pending = store.value.pending || {};
-      const persistedEntries = {};
-      Object.keys(store.value.entries || {}).forEach((key) => {
-        const chain = store.value.entries[key];
-        if (chain && (chain.status === "ACTIVE" || chain.status === "ENDED")) {
-          persistedEntries[key] = chain;
-        }
-      });
-      const persisted = {
-        version: 1,
-        entries: persistedEntries,
-        pending: store.value.pending
-      };
-      try {
-        await sdk().cache.set(cacheKey("detailPlaybackChains"), JSON.stringify(persisted));
-      } catch (e) {}
-      return store.value;
-    }
-
-    function detailPlaybackChainFor(item) {
-      const store = state.detailPlaybackChains;
-      const mediaKey = detailPlaybackChainMediaKeyFor(item);
-      if (!store || !store.loaded || !mediaKey) return null;
-      if (store.runtime && store.runtime[mediaKey]) return store.runtime[mediaKey];
-      return store.value && store.value.entries ? store.value.entries[mediaKey] || null : null;
-    }
-
-    function detailPlaybackChainMatchesHistory(chain, history) {
-      if (!chain || chain.status !== "ACTIVE" || !detailHasAuthoritativeNativeHistory(history)) return false;
-      const identity = nativeHistoryIdentitySnapshot(history);
-      if (!identity || !identity.siteKey || !identity.vodId) return false;
-      const chainKey = String(chain.nativeHistoryKey || "").trim();
-      const historyKey = String(identity.nativeHistoryKey || "").trim();
-      if (chainKey && historyKey !== chainKey) return false;
-      const siteKey = String(chain.siteKey || "").trim();
-      const vodId = String(chain.vodId || "").trim();
-      return !!(siteKey && vodId && siteKey === identity.siteKey && vodId === identity.vodId);
-    }
-
-    function detailPlaybackChainHistoryFor(item, chain, sourceItems) {
-      if (!item || !chain || chain.status !== "ACTIVE") return null;
-      const items = Array.isArray(sourceItems) ? sourceItems : state.recent.items || [];
-      return items.find((history) => detailHistoryMatches(item, history)
-        && detailPlaybackChainMatchesHistory(chain, history)) || null;
-    }
-
-    function detailPlaybackPendingFor(item) {
-      const store = state.detailPlaybackChains;
-      const mediaKey = detailPlaybackChainMediaKeyFor(item);
-      return store && store.loaded && store.value && store.value.pending && mediaKey
-        ? store.value.pending[mediaKey] || null : null;
-    }
-
-    function detailPlaybackPendingMatchesHistory(pending, history) {
-      if (!pending || !history || !detailHasAuthoritativeNativeHistory(history)) return false;
-      const identity = nativeHistoryIdentitySnapshot(history);
-      if (!identity) return false;
-      const pendingKey = String(pending.nativeHistoryKey || "").trim();
-      const currentKey = String(identity.nativeHistoryKey || "").trim();
-      if (pendingKey && currentKey !== pendingKey) return false;
-      if (pendingKey && !currentKey) return false;
-      return String(pending.siteKey || "").trim() === identity.siteKey
-        && String(pending.vodId || "").trim() === identity.vodId;
-    }
-
-    function detailPlaybackPendingConfirmed(pending, history) {
-      if (!detailPlaybackPendingMatchesHistory(pending, history)) return false;
-      if (pending.baselineReadOk !== true) return false;
-      const position = historyPlaybackPositionValue(history);
-      if (position <= 0) return false;
-      const beforePosition = Math.max(0, Number(pending.positionBefore || 0) || 0);
-      if (pending.existedBefore !== true) return true;
-      if (position > beforePosition) return true;
-      const updatedAt = nativeSearchHistoryUpdatedAtValue(history);
-      const beforeUpdatedAt = Math.max(0, Number(pending.updatedAtBefore || 0) || 0);
-      return updatedAt > beforeUpdatedAt && position > 0;
-    }
-
-    function detailPlaybackIdentityMatchesHistory(identity, history) {
-      const expected = identity || {};
-      const current = nativeHistoryIdentitySnapshot(history);
-      if (!current || !expected.siteKey || !expected.vodId) return false;
-      const expectedKey = String(expected.nativeHistoryKey || "").trim();
-      const currentKey = String(current.nativeHistoryKey || "").trim();
-      if (expectedKey && currentKey !== expectedKey) return false;
-      return String(expected.siteKey).trim() === current.siteKey
-        && String(expected.vodId).trim() === current.vodId;
-    }
-
-    function detailPlaybackHistoryForExactIdentity(item, identity, sourceItems) {
-      if (!item || !identity || !identity.siteKey || !identity.vodId) return null;
-      const items = Array.isArray(sourceItems) ? sourceItems : state.recent && state.recent.items || [];
-      return items.find((history) => detailHistoryMatches(item, history)
-        && detailPlaybackIdentityMatchesHistory(identity, history)) || null;
-    }
-
-    async function setDetailPlaybackPendingHandoff(item, playbackTarget, nativeIdentity, history, panItem, reason) {
-      if (!item) return null;
-      const store = await loadDetailPlaybackChains();
-      const mediaKey = detailPlaybackChainMediaKeyFor(item);
-      if (!mediaKey) return null;
-      let baselineReadOk = !!(state.recent && state.recent.loaded && !state.recent.error);
-      if (!baselineReadOk) {
-        try { await loadRecentList({ silent: true }); } catch (e) {}
-        baselineReadOk = !!(state.recent && state.recent.loaded && !state.recent.error);
-      }
-      const requestedIdentity = nativeIdentity || history && nativeHistoryIdentitySnapshot(history) || {};
-      const baselineHistory = baselineReadOk
-        ? detailPlaybackHistoryForExactIdentity(item, requestedIdentity, state.recent.items || [])
-          || (history && detailPlaybackIdentityMatchesHistory(requestedIdentity, history) ? history : null)
-        : null;
-      const historyIdentity = baselineHistory && nativeHistoryIdentitySnapshot(baselineHistory);
-      const identity = nativeIdentity || historyIdentity || requestedIdentity;
-      const target = detailPlaybackChainTargetFor(item, playbackTarget, identity, panItem);
-      const pending = {
-        version: 1,
-        mediaKey,
-        tmdbId: String(item.tmdbId || "").trim(),
-        mediaType: normalizeHistoryMediaType(item.mediaType),
-        title: String(item.title || "").trim(),
-        poster: String(item.pic || item.image || "").trim(),
-        sourceType: String(identity.playbackOrigin || "").toLowerCase() === "native-vod" ? "native-vod" : "pan",
-        playbackOrigin: String(identity.playbackOrigin || "").trim(),
-        siteKey: String(identity.siteKey || "").trim(),
-        vodId: String(identity.vodId || "").trim(),
-        nativeHistoryKey: String(identity.nativeHistoryKey || historyIdentity && historyIdentity.nativeHistoryKey || "").trim(),
-        playbackTarget: target,
-        item: normalizeSnapshot(item),
-        positionBefore: baselineHistory ? historyPlaybackPositionValue(baselineHistory) : 0,
-        updatedAtBefore: baselineHistory ? nativeSearchHistoryUpdatedAtValue(baselineHistory) : 0,
-        existedBefore: !!baselineHistory,
-        baselineReadOk,
-        createdAt: Date.now(),
-        reason: String(reason || "handoff_pending")
-      };
-      store.pending = store.pending || {};
-      store.pending[mediaKey] = pending;
-      await persistDetailPlaybackChains();
-      return pending;
-    }
-
-    async function clearDetailPlaybackPending(item, reason) {
-      if (!item) return false;
-      const store = await loadDetailPlaybackChains();
-      const mediaKey = detailPlaybackChainMediaKeyFor(item);
-      if (!mediaKey || !store.pending || !store.pending[mediaKey]) return false;
-      delete store.pending[mediaKey];
-      await persistDetailPlaybackChains();
-      return true;
-    }
-
-    async function clearDetailPlaybackChainContextsByMediaKey(mediaKey, item, reason, options) {
-      const key = String(mediaKey || "").trim();
-      if (!key) return;
-      const opts = options || {};
-      await Promise.all([loadHistoryContextIndex(), loadContinueIndex()]).catch(() => {});
-      const contexts = state.historyContexts && Array.isArray(state.historyContexts.entries)
-        ? state.historyContexts.entries : [];
-      const contextEntries = contexts.filter((entry) => String(entry && (entry.mediaKey || recentContextMediaKey(entry)) || "") !== key);
-      if (contextEntries.length !== contexts.length) {
-        state.historyContexts.entries = contextEntries;
-        await persistHistoryContextEntries(contextEntries).catch(() => {});
-      }
-      const indexEntries = state.continueIndex && Array.isArray(state.continueIndex.entries)
-        ? state.continueIndex.entries : [];
-      const nextIndexEntries = indexEntries.filter((entry) => String(entry && (entry.mediaKey || recentContextMediaKey(entry)) || "") !== key);
-      if (nextIndexEntries.length !== indexEntries.length) {
-        state.continueIndex.entries = nextIndexEntries;
-        await persistContinueIndexEntries(nextIndexEntries).catch(() => {});
-      }
-
-      const selectedMatches = state.selected && detailPlaybackChainMediaKeyFor(state.selected) === key;
-      if (!selectedMatches) return;
-      if (!opts.preserveCurrentHandoff) {
-        cancelDetailPlaybackPreparation(reason || "detail_playback_chain_replaced");
-        cancelPendingDirectPlay(reason || "detail_playback_chain_replaced");
-      } else if (state.detailPlayback) {
-        state.detailPlayback.continueResource = null;
-        state.detailPlayback.candidate = null;
-        state.detailPlayback.history = null;
-        state.detailPlayback.historyVerified = false;
-      }
-      if (!opts.preserveHandoff) state.detailHistoryHandoff = null;
-      state.historyResume = null;
-      state.detailHistory = null;
-      state.detailEpisodeTarget = null;
-      state.detailMode = "FIRST_PLAY";
-      state.detailModeItemKey = state.selected ? panSearchItemKey(state.selected) : "";
-      state.detailPreload = null;
-      if (state.pan) {
-        state.pan.directReady = null;
-        state.pan.directFailure = null;
-        if (!opts.preservePlaybackReturn) state.pan.playbackReturn = null;
-      }
-      if (state.watch && state.watch.item && detailPlaybackChainMediaKeyFor(state.watch.item) === key) {
-        state.watch = { item: null, timer: state.watch.timer, bestMs: 0, durationMs: 0, lastAt: 0, published: false, intentAction: "", playbackTarget: null, playbackOrigin: "", nativeHistoryIdentity: null };
-        await clearPendingWatch();
-      }
-    }
-
-    function detailPlaybackChainTargetFor(item, playbackTarget, nativeIdentity, panItem) {
-      const identity = nativeIdentity || {};
-      const raw = Object.assign({}, playbackTarget || {});
-      const panUrl = panItem && (panItem.normalizedUrl || panItem.normalized_url || panItem.url);
-      if (panUrl && !raw.lastPlayUrl) raw.lastPlayUrl = panUrl;
-      if (panItem) {
-        raw.diskType = raw.diskType || panItem.diskType || panItem.disk_type || "";
-        raw.panProvider = raw.panProvider || panItem.panProvider || panItem.pan_provider || panItem.provider || "";
-        raw.panPassword = raw.panPassword || panItem.password || panItem.pwd || panItem.passcode || "";
-        raw.panTitle = raw.panTitle || panItem.title || panItem.note || "";
-        raw.panFileName = raw.panFileName || panItem.fileName || panItem.file_name || panItem.filename || "";
-        raw.panFileId = raw.panFileId || panItem.fileId || panItem.file_id || "";
-        raw.resourceId = raw.resourceId || panItem.resourceId || panItem.resource_id || "";
-      }
-      if (String(identity.playbackOrigin || "").toLowerCase() === "pan-push" && identity.vodId && !raw.lastPlayUrl) {
-        raw.lastPlayUrl = identity.vodId;
-      }
-      return normalizePlaybackTarget(item, raw) || null;
-    }
-
-    async function activateDetailPlaybackChain(item, playbackTarget, nativeIdentity, panItem, options) {
-      if (!item) return null;
-      const opts = options || {};
-      const store = await loadDetailPlaybackChains();
-      const mediaKey = detailPlaybackChainMediaKeyFor(item);
-      if (!mediaKey) return null;
-      await clearDetailPlaybackChainContextsByMediaKey(mediaKey, item, opts.reason || "detail_playback_chain_replaced", {
-        preserveCurrentHandoff: opts.preserveCurrentHandoff === true,
-        preserveHandoff: opts.preserveHandoff === true,
-        preservePlaybackReturn: opts.preservePlaybackReturn === true
-      });
-      if (!opts.preserveNativeSearchOverride) {
-        await clearNativeSearchContinueOverride(item, opts.reason || "detail_playback_chain_replaced");
-      }
-      const history = opts.history || null;
-      const historyIdentity = history ? nativeHistoryIdentitySnapshot(history) : null;
-      const identity = nativeIdentity || historyIdentity || {};
-      const target = detailPlaybackChainTargetFor(item, playbackTarget, identity, panItem);
-      const playbackOrigin = String(identity.playbackOrigin || opts.playbackOrigin || playbackOriginForNativeIdentity(item, identity)).trim();
-      const chain = normalizeDetailPlaybackChain({
-        version: 1,
-        status: "ACTIVE",
-        mediaKey,
-        tmdbId: item.tmdbId,
-        mediaType: item.mediaType,
-        title: item.title,
-        poster: item.pic || item.image,
-        sourceType: playbackOrigin === "native-vod" ? "native-vod" : "pan",
-        playbackOrigin,
-        siteKey: identity.siteKey || historyIdentity && historyIdentity.siteKey,
-        vodId: identity.vodId || historyIdentity && historyIdentity.vodId,
-        nativeHistoryKey: identity.nativeHistoryKey || historyIdentity && historyIdentity.nativeHistoryKey,
-        playbackTarget: target,
-        item: normalizeSnapshot(item),
-        position: history ? historyPlaybackPositionValue(history) : 0,
-        startedAt: Date.now(),
-        confirmedAt: Date.now(),
-        reason: String(opts.reason || "actual_playback")
-      });
-      if (!chain) return null;
-      if (state.detailPlaybackChains.runtime) delete state.detailPlaybackChains.runtime[mediaKey];
-      if (store.pending) delete store.pending[mediaKey];
-      store.entries[mediaKey] = chain;
-      await persistDetailPlaybackChains();
-      if (state.selected === item && target) setDetailPlaybackTarget(item, target);
-      return chain;
-    }
-
-    async function beginDetailPlaybackChainForDetail(item) {
-      if (!item) return null;
-      const store = await loadDetailPlaybackChains();
-      const mediaKey = detailPlaybackChainMediaKeyFor(item);
-      if (!mediaKey) return null;
-      const current = state.detailPlaybackChains.runtime && state.detailPlaybackChains.runtime[mediaKey]
-        || store.entries && store.entries[mediaKey] || null;
-      if (current && current.status === "ACTIVE") return current;
-      if (current && current.status === "PREPARING") return current;
-      // 旧版本没有 chain registry 时，保留已有 Native History 的兼容 Continue；
-      // 只有没有当前历史，或明确存在 ENDED tombstone，才建立新的准备生命周期。
-      if (!current && state.recent && state.recent.loaded && findDetailContinueHistory(item)) return null;
-      await clearDetailPlaybackChainContextsByMediaKey(mediaKey, item, "new_detail_preparing");
-      const chain = normalizeDetailPlaybackChain({
-        version: 1,
-        status: "PREPARING",
-        mediaKey,
-        tmdbId: item.tmdbId,
-        mediaType: item.mediaType,
-        title: item.title,
-        poster: item.pic || item.image,
-        item: normalizeSnapshot(item),
-        startedAt: Date.now(),
-        reason: "detail_entry"
-      });
-      if (!chain) return null;
-      if (store.pending) delete store.pending[mediaKey];
-      state.detailPlaybackChains.runtime = state.detailPlaybackChains.runtime || {};
-      state.detailPlaybackChains.runtime[mediaKey] = chain;
-      await persistDetailPlaybackChains();
-      return chain;
-    }
-
-    async function endDetailPlaybackChainForItem(item, reason) {
-      if (!item) return false;
-      const store = await loadDetailPlaybackChains();
-      const mediaKey = detailPlaybackChainMediaKeyFor(item);
-      const chain = mediaKey && store.entries && store.entries[mediaKey];
-      if (!chain || chain.status !== "ACTIVE") return false;
-      const deletedIdentity = nativeHistoryIdentitySnapshot(item);
-      if (!deletedIdentity || !detailPlaybackIdentityMatchesHistory(deletedIdentity, item)
-        || !detailPlaybackChainMatchesHistory(chain, item)) return false;
-      chain.status = "ENDED";
-      chain.endedAt = Date.now();
-      chain.reason = String(reason || "chain_ended");
-      if (state.detailPlaybackChains.runtime) delete state.detailPlaybackChains.runtime[mediaKey];
-      if (store.pending) delete store.pending[mediaKey];
-      await clearDetailPlaybackChainContextsByMediaKey(mediaKey, item, chain.reason);
-      await clearNativeSearchContinueOverride(item, chain.reason);
-      await persistDetailPlaybackChains();
-      return true;
-    }
-
-    async function reconcileDetailPlaybackChainsWithHistory(items, options) {
-      const source = Array.isArray(items) ? items : [];
-      const opts = options || {};
-      const store = await loadDetailPlaybackChains();
-      const entries = store && store.entries || {};
-      const confirmedPending = [];
-      let changed = false;
-      Object.keys(store.pending || {}).forEach((mediaKey) => {
-        const pending = store.pending[mediaKey];
-        const item = pending && pending.item || { id: mediaKey, tmdbId: pending && pending.tmdbId, mediaType: pending && pending.mediaType, title: pending && pending.title };
-        const history = source.find((candidate) => detailHistoryMatches(item, candidate)
-          && detailPlaybackPendingMatchesHistory(pending, candidate)) || null;
-        if (history && detailPlaybackPendingConfirmed(pending, history)) {
-          confirmedPending.push({ mediaKey, pending, item, history });
-        } else if (opts.finalizePending === true) {
-          delete store.pending[mediaKey];
-          changed = true;
-        }
-      });
-      for (const pendingEntry of confirmedPending) {
-        await activateDetailPlaybackChain(pendingEntry.item, pendingEntry.pending.playbackTarget, {
-          siteKey: pendingEntry.pending.siteKey,
-          vodId: pendingEntry.pending.vodId,
-          nativeHistoryKey: pendingEntry.pending.nativeHistoryKey,
-          playbackOrigin: pendingEntry.pending.playbackOrigin
-        }, null, {
-          history: pendingEntry.history,
-          reason: "handoff_history_confirmed"
-        });
-        changed = true;
-      }
-      Object.keys(entries).forEach((mediaKey) => {
-        const chain = entries[mediaKey];
-        if (!chain || chain.status !== "ACTIVE") return;
-        const item = chain.item || { id: mediaKey, tmdbId: chain.tmdbId, mediaType: chain.mediaType, title: chain.title };
-        const history = detailPlaybackChainHistoryFor(item, chain, source);
-        if (history) {
-          const identity = nativeHistoryIdentitySnapshot(history);
-          if (identity && (chain.nativeHistoryKey !== identity.nativeHistoryKey || chain.siteKey !== identity.siteKey || chain.vodId !== identity.vodId || chain.position !== historyPlaybackPositionValue(history))) {
-            chain.nativeHistoryKey = identity.nativeHistoryKey || chain.nativeHistoryKey;
-            chain.siteKey = identity.siteKey || chain.siteKey;
-            chain.vodId = identity.vodId || chain.vodId;
-            chain.position = historyPlaybackPositionValue(history);
-            changed = true;
-          }
-          return;
-        }
-        // 一次成功 refresh 暂时缺少当前 identity 不能证明用户删除了它。
-        // ENDED 只由 exact current Recent delete confirmation 产生。
-      });
-      if (changed) await persistDetailPlaybackChains();
-      // Recent 保留同一影片的全部 Native History；只有详情页唯一续播
-      // authority 由 chain 决定，用户仍可从 Recent 明确选择旧线路。
-      return source;
-    }
-
-    async function currentDetailPlaybackChainInfoFor(item, options) {
-      const opts = options || {};
-      await loadDetailPlaybackChains();
-      const chain = detailPlaybackChainFor(item);
-      if (!chain) return { chain: null, history: null };
-      const history = detailPlaybackChainHistoryFor(item, chain, opts.sourceItems || state.recent.items || []);
-      return { chain, history };
-    }
-
     function findDetailContinueHistory(item) {
-      const matches = (state.recent.items || []).filter((history) => (
+      return (state.recent.items || []).find((history) => (
         detailHasAuthoritativeNativeHistory(history) && detailHistoryMatches(item, history)
-      ));
-      const chain = detailPlaybackChainFor(item);
-      const selected = chain
-        ? chain.status === "ACTIVE" ? detailPlaybackChainHistoryFor(item, chain, matches) : null
-        : matches[0] || null;
-      return recordRecentHistorySelectionForDetail(item, matches, selected) || null;
+      )) || null;
     }
 
     function recordDetailPlaybackDecision(name, item, detail) {
@@ -20778,15 +20228,6 @@ utils.encode = function encode(arr, enc) {
           history: history || null
         });
       };
-
-      // Continue Index / History Context 只能承载已经确定的当前 chain；
-      // 当前 chain 是 Pan 资源时，先使用它，不能让旧线路重新抢占。
-      const playbackChain = detailPlaybackChainFor(item);
-      if (playbackChain) {
-        if (playbackChain.status !== "ACTIVE") return null;
-        if (playbackChain.sourceType === "native-vod") return null;
-        return add("playback-chain", playbackChain.playbackTarget, true, nativeHistory);
-      }
 
       // Continue Index / History Context 是续播线路的第一权威来源。
       const primaryContext = findContinueWatchingContext(item);
@@ -20853,15 +20294,7 @@ utils.encode = function encode(arr, enc) {
     }
 
     function syncDetailMode(item, historyOverride, options) {
-      const playbackChain = detailPlaybackChainFor(item);
-      let candidate = historyOverride === undefined ? findDetailContinueHistory(item) : historyOverride;
-      if (playbackChain) {
-        if (playbackChain.status !== "ACTIVE") {
-          candidate = null;
-        } else if (candidate && !detailPlaybackChainMatchesHistory(playbackChain, candidate)) {
-          candidate = detailPlaybackChainHistoryFor(item, playbackChain);
-        }
-      }
+      const candidate = historyOverride === undefined ? findDetailContinueHistory(item) : historyOverride;
       const history = detailAuthoritativeNativeHistoryFor(item, candidate, options);
       state.detailMode = history ? "CONTINUE" : "FIRST_PLAY";
       state.detailModeItemKey = item ? panSearchItemKey(item) : "";
@@ -21071,23 +20504,6 @@ utils.encode = function encode(arr, enc) {
       state.detailPlayback = run;
       recordDetailPlaybackLifecycle(run, "START");
       run.promise = (async () => {
-        await loadDetailPlaybackChains().catch(() => {});
-        const currentChain = detailPlaybackChainFor(item);
-        if (currentChain && currentChain.status === "ACTIVE" && currentChain.sourceType === "native-vod") {
-          const chainHistory = detailPlaybackChainHistoryFor(item, currentChain);
-          run.history = chainHistory;
-          run.historyVerified = !!chainHistory;
-          if (chainHistory) {
-            syncDetailMode(item, chainHistory, { freshNative: true });
-          } else {
-            state.detailMode = "CONTINUE";
-            state.detailModeItemKey = panSearchItemKey(item);
-            state.detailHistory = null;
-          }
-          settleDetailPlayback(run, "CONTINUE_READY", "current_chain_ready");
-          updateDetailContinueButton();
-          return null;
-        }
         let continueDecision = null;
         if (run.continuePending) {
           run.continueDecisionPromise = (async () => {
@@ -21400,100 +20816,6 @@ utils.encode = function encode(arr, enc) {
       return handoff.promise;
     }
 
-    async function playDetailNativeVodChain(item, chain, history, button) {
-      if (!item || !chain || chain.status !== "ACTIVE") return false;
-      const siteKey = String(chain.siteKey || "").trim();
-      const vodId = String(chain.vodId || "").trim();
-      if (!siteKey || !vodId) return false;
-      const context = Object.assign({}, chain.playbackTarget || {}, historyPlaybackContext(history) || {}, {
-        siteKey,
-        vodId,
-        title: history && (history.title || history.vodName) || chain.title || item.title || "",
-        poster: history && (history.pic || history.vodPic) || chain.poster || item.pic || ""
-      });
-      const target = history ? detailContinuePlaybackTargetFor(item, history) : chain.playbackTarget;
-      const nativeIdentity = {
-        siteKey,
-        vodId,
-        episodeUrl: vodId,
-        episodeName: context.episodeTitle || context.title || item.title || "",
-        flag: context.flag || "",
-        playbackOrigin: "native-vod"
-      };
-      if (target) setDetailPlaybackTarget(item, target);
-      if (button) rememberDetailReturn(button);
-      invalidateAutomaticDetailForNativeSearch(item);
-      state.historyResume = null;
-      rememberWatchIntent(item, "view", context, nativeIdentity);
-      try {
-        localStorage.setItem("fm_pan_playing", "1");
-        if (state.pan) state.pan.isPlaying = true;
-        await sdk().vod(siteKey, vodId, context.title, context.poster);
-        await saveHistoryPlaybackContext(item, context);
-        startWatchTracking(item, context, nativeIdentity);
-      } catch (e) {
-        localStorage.removeItem("fm_pan_playing");
-        if (state.pan) state.pan.isPlaying = false;
-        toast("恢复原生播放失败：" + (e.message || "unknown"));
-      }
-      return true;
-    }
-
-    async function playNativeSearchContinueOverride(item, history, button, overrideInfo) {
-      const info = overrideInfo || await currentNativeSearchContinueHistoryFor(item);
-      if (!info || !info.override || !info.history) return false;
-      const currentChain = detailPlaybackChainFor(item);
-      if (currentChain && currentChain.status !== "ACTIVE") return false;
-      if (currentChain && !detailPlaybackChainMatchesHistory(currentChain, info.history)) return false;
-      const override = info.override;
-      const nativeHistory = info.history;
-      const context = Object.assign({}, historyPlaybackContext(nativeHistory) || {}, {
-        siteKey: override.siteKey,
-        vodId: override.vodId,
-        title: override.title || nativeHistory.title || item.title || "",
-        poster: override.poster || nativeHistory.pic || item.pic || ""
-      });
-      const target = detailContinuePlaybackTargetFor(item, nativeHistory);
-      const nativeIdentity = {
-        siteKey: override.siteKey,
-        vodId: override.vodId,
-        episodeUrl: override.vodId,
-        episodeName: context.episodeTitle || context.title || item.title || "",
-        flag: context.flag || "",
-        playbackOrigin: "native-vod"
-      };
-      if (target) setDetailPlaybackTarget(item, target);
-      if (button) rememberDetailReturn(button);
-      // 聚搜人工选择已经产生了权威 Native VOD History；清掉旧的自动准备态，
-      // 但不重置 Pan 搜索结果、健康缓存或 Pan playbackReturn。
-      invalidateAutomaticDetailForNativeSearch(item);
-      await setDetailPlaybackPendingHandoff(item, target, nativeIdentity, nativeHistory, null, "native_search_continue");
-      state.historyResume = null;
-      rememberWatchIntent(item, "view", context, nativeIdentity);
-      const returnMarker = setNativeSearchContinueReturnMarker(item, override, nativeHistory);
-      try {
-        localStorage.setItem("fm_pan_playing", "1");
-        if (state.pan) state.pan.isPlaying = true;
-        try {
-          console.debug("NATIVE_SEARCH_CONTINUE_OVERRIDE_USED", {
-            itemKey: panSearchItemKey(item),
-            siteKey: override.siteKey,
-            vodId: override.vodId,
-            nativeHistoryKey: override.nativeHistoryKey
-          });
-        } catch (e) {}
-        await sdk().vod(override.siteKey, override.vodId, context.title, context.poster);
-        await saveHistoryPlaybackContext(item, context);
-        startWatchTracking(item, context, nativeIdentity);
-      } catch (e) {
-        localStorage.removeItem("fm_pan_playing");
-        clearNativeSearchContinueReturnMarker(returnMarker && returnMarker.token);
-        if (state.pan) state.pan.isPlaying = false;
-        toast("恢复原生播放失败：" + (e.message || "unknown"));
-      }
-      return true;
-    }
-
     async function playDetailContinueHistoryFirst(item, history, button) {
       const existing = state.detailHistoryHandoff;
       if (existing && existing.item === item) {
@@ -21505,20 +20827,10 @@ utils.encode = function encode(arr, enc) {
         }
         if (existing.status === "playing" && !(state.pan && state.pan.isPlaying)) state.detailHistoryHandoff = null;
       }
-      const nativeSearchOverride = await currentNativeSearchContinueHistoryFor(item);
-      if (nativeSearchOverride && nativeSearchOverride.history) {
-        syncDetailMode(item, nativeSearchOverride.history, { freshNative: true });
-        return playNativeSearchContinueOverride(item, nativeSearchOverride.history, button, nativeSearchOverride);
-      }
-      const chainInfo = await currentDetailPlaybackChainInfoFor(item);
-      if (chainInfo.chain && chainInfo.chain.status === "ACTIVE" && chainInfo.chain.sourceType === "native-vod") {
-        return playDetailNativeVodChain(item, chainInfo.chain, chainInfo.history || history, button);
-      }
       const progressTarget = detailContinuePlaybackTargetFor(item, history);
       const currentRun = state.detailPlayback;
       const runResource = currentRun
         && detailPlaybackIsCurrent(currentRun)
-        && !(chainInfo.chain && chainInfo.chain.status === "ACTIVE")
         && currentRun.phase === "CONTINUE_READY"
         && currentRun.continueResource
         ? currentRun.continueResource
@@ -21599,20 +20911,6 @@ utils.encode = function encode(arr, enc) {
       }
       const button = $("detailContinueBtn");
       if (state.detailModeItemKey !== panSearchItemKey(item)) syncDetailMode(item);
-      const nativeSearchOverride = await currentNativeSearchContinueHistoryFor(item);
-      const chainInfo = await currentDetailPlaybackChainInfoFor(item);
-      if (nativeSearchOverride && nativeSearchOverride.history) {
-        syncDetailMode(item, nativeSearchOverride.history, { freshNative: true });
-      } else if (state.recent.loaded && !state.recent.error) {
-        // cache 中的 override 已失效时，重新以当前成功刷新的 Native History
-        // 计算一次模式，允许已删除的 History 正常回到 FIRST_PLAY。
-        syncDetailMode(item);
-      }
-      if (chainInfo.chain && chainInfo.chain.status === "ACTIVE" && chainInfo.chain.playbackTarget
-        && !state.detailHistory) {
-        state.detailMode = "CONTINUE";
-        state.detailModeItemKey = panSearchItemKey(item);
-      }
       const mode = state.detailMode === "CONTINUE" ? "CONTINUE" : "FIRST_PLAY";
       const history = mode === "CONTINUE" ? state.detailHistory : null;
       const directOptions = { detailPrimary: true, suppressAutoPan: true };
@@ -21742,11 +21040,6 @@ utils.encode = function encode(arr, enc) {
               if (!state.watch || !state.watch.item) await loadPendingWatch();
               const list = await sdk().history();
               normalized = normalizeHistoryList(list);
-              try {
-                normalized = await reconcileDetailPlaybackChainsWithHistory(normalized, {
-                  finalizePending: !!(opts.finalizePending || opts.returnOrigin)
-                });
-              } catch (e) {}
               normalized.forEach((item) => recordRecentNativeKeyFlow("RECENT_NATIVE_KEY_AT_LOAD", item));
               normalized.forEach((item) => { item.recentWatching = true; });
             } catch (e) {
@@ -22955,7 +22248,6 @@ utils.encode = function encode(arr, enc) {
       if (continueIndexReady && indexEntries.length !== previousIndex.length) await persistContinueIndexEntries(indexEntries);
       if (historyContextReady && state.historyContexts) state.historyContexts.entries = entries;
       if (continueIndexReady && state.continueIndex) state.continueIndex.entries = indexEntries;
-      await endDetailPlaybackChainForItem(item, "recent_history_deleted");
       if (hasNativeHistory) {
         try {
           await loadRecentList({ refresh: true, silent: true });
@@ -27250,7 +26542,6 @@ utils.encode = function encode(arr, enc) {
         };
         rememberHomeReturn(item, returnTarget, { origin: "recent_native_player" });
         saveUiSnapshotNow();
-        await setDetailPlaybackPendingHandoff(item, context, nativeIdentity, item, null, "recent_native_handoff");
         rememberWatchIntent(item, "view", context, nativeIdentity);
         // 用 localStorage 持久化标记，WebView 被挂起后 JS 内存会丢失
         // visibilitychange/pageshow/fmresume 恢复时读到此标记，保持当前页面不重置
@@ -27259,7 +26550,6 @@ utils.encode = function encode(arr, enc) {
         await saveHistoryPlaybackContext(item, context);
         startWatchTracking(item, context, nativeIdentity);
       } catch (e) {
-        await clearDetailPlaybackPending(item, "recent_native_handoff_failed");
         localStorage.removeItem("fm_pan_playing");
         toast("打开最近观看失败：" + (e.message || "unknown"));
       }
@@ -29361,7 +28651,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     }
 
     async function prepareDetailPlaybackForDetail(item, options) {
-      await loadDetailPlaybackChains().catch(() => {});
       if (canonicalResourceKey(item)) {
         try { await resolveCanonicalResourceTitle(item); } catch (e) {}
       }
@@ -29391,14 +28680,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (!opts.restore && !detailWasActive) rememberHomeReturn(item, opts.returnTarget);
       state.selected = item;
       state.detail = null;
-      if (!opts.restore && (!detailWasActive || !sameSelected) && !opts.playerReturnRestore) {
-        beginDetailPlaybackChainForDetail(item).then(() => {
-          if (state.selected === item && $("detailSheet") && $("detailSheet").classList.contains("active")) {
-            syncDetailMode(item);
-            updateDetailContinueButton();
-          }
-        }).catch(() => {});
-      }
       // 先按当前已知 Native History 同步按钮；真正的资源准备由
       // prepareDetailPlayback 的 Continue gate 决定，避免有效续播先启动 Curated。
       syncDetailMode(item);
@@ -34587,8 +33868,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           flag: item && (item.flag || item.diskType || item.provider) || "",
           playbackOrigin: "pan-push"
         };
-        const exactTargetHistory = detailPlaybackHistoryForExactIdentity(selectedItem, nativeIdentity);
-        await setDetailPlaybackPendingHandoff(selectedItem, episodeTarget, nativeIdentity, exactTargetHistory, item, "pan_handoff");
         rememberWatchIntent(selectedItem, "search", episodeTarget, nativeIdentity);
         startWatchTracking(selectedItem, episodeTarget, nativeIdentity);
       }
@@ -34612,14 +33891,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           });
         }
       } catch (e) {
-        if (selectedItem) clearDetailPlaybackPending(selectedItem, "pan_handoff_failed").catch(() => {});
         if (typeof opts.onPlayFailure === "function") opts.onPlayFailure(e);
         else handlePanPlayFailure(selectedItem, e, opts.handoffAction && opts.handoffAction.token);
       }
     }
 
     function handlePanPlayFailure(item, error, actionId) {
-      if (item) clearDetailPlaybackPending(item, "pan_play_failed").catch(() => {});
       localStorage.removeItem("fm_pan_playing");
       state.pan.isPlaying = false;
       state.pan.playbackReturn = null;
@@ -34745,368 +34022,13 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (!fromPopState && location.hash === "#sync") history.back();
     }
 
-    function nativeSearchHistoryUpdatedAtValue(history) {
-      const raw = history && history.nativeHistoryRaw && history.nativeHistoryRaw !== history
-        ? history.nativeHistoryRaw : null;
-      const values = [
-        history && history.updatedAt,
-        history && history.updated_at,
-        history && history.createTime,
-        history && history.create_time,
-        raw && raw.updatedAt,
-        raw && raw.updated_at,
-        raw && raw.createTime,
-        raw && raw.create_time,
-        historyNestedValue(history, ["updatedAt", "updated_at", "createTime", "create_time"])
-      ];
-      return values.reduce((latest, value) => {
-        const number = Number(value || 0);
-        return Number.isFinite(number) && number > latest ? number : latest;
-      }, 0);
-    }
-
-    function nativeSearchHistoryIdentitySnapshot(history) {
-      if (!history) return null;
-      const parts = historyKeyParts(history);
-      const nativeHistoryKey = String(history.nativeHistoryKey || history.historyKey || parts.key || "").trim();
-      const siteKey = String(history.siteKey || history.nativeSiteKey || parts.siteKey || "").trim();
-      const vodId = String(history.vodId || history.nativeVodId || parts.vodId || "").trim();
-      if (!siteKey || !vodId) return null;
-      return {
-        nativeHistoryKey,
-        siteKey,
-        vodId,
-        identity: nativeHistoryKey || `${siteKey}@@${vodId}`,
-        position: historyPlaybackPositionValue(history),
-        updatedAt: nativeSearchHistoryUpdatedAtValue(history)
-      };
-    }
-
-    function nativeHistoryIdentitySnapshot(history) {
-      return nativeSearchHistoryIdentitySnapshot(history);
-    }
-
-    function nativeSearchMediaKey(item) {
-      if (!item) return "";
-      const mediaType = normalizeHistoryMediaType(item.mediaType || item.media_type);
-      const tmdbId = String(item.tmdbId || item.tmdb_id || "").trim();
-      if (mediaType && tmdbId) return `tmdb:${mediaType}:${tmdbId}`;
-      return mediaDomKey(item) || panSearchItemKey(item);
-    }
-
-    function nativeSearchHistoryIdentityEqual(left, right) {
-      const a = left && left.siteKey ? left : nativeSearchHistoryIdentitySnapshot(left);
-      const b = right && right.siteKey ? right : nativeSearchHistoryIdentitySnapshot(right);
-      if (!a || !b || !a.siteKey || !a.vodId || !b.siteKey || !b.vodId) return false;
-      if (a.nativeHistoryKey && b.nativeHistoryKey) return a.nativeHistoryKey === b.nativeHistoryKey;
-      return a.siteKey === b.siteKey && a.vodId === b.vodId;
-    }
-
-    function nativeSearchOverrideMatchesHistory(override, history) {
-      const current = nativeSearchHistoryIdentitySnapshot(history);
-      if (!override || !current) return false;
-      if (String(override.siteKey || "").trim() !== current.siteKey) return false;
-      if (String(override.vodId || "").trim() !== current.vodId) return false;
-      const overrideKey = String(override.nativeHistoryKey || "").trim();
-      const currentKey = String(current.nativeHistoryKey || "").trim();
-      if (overrideKey && currentKey) return overrideKey === currentKey;
-      return true;
-    }
-
-    function nativeSearchVodHistoryListFor(item) {
-      if (!item) return [];
-      return (state.recent.items || [])
-        .filter((history) => historyCanUseVodReplay(history)
-          && detailHasAuthoritativeNativeHistory(history)
-          && detailHistoryMatches(item, history))
-        .slice()
-        .sort((a, b) => nativeSearchHistoryUpdatedAtValue(b) - nativeSearchHistoryUpdatedAtValue(a)
-          || historyPlaybackPositionValue(b) - historyPlaybackPositionValue(a));
-    }
-
-    function nativeSearchBaselineFor(item) {
-      const historyReadOk = !!(state.recent && state.recent.loaded && !state.recent.error);
-      const histories = historyReadOk ? nativeSearchVodHistoryListFor(item) : [];
-      return {
-        historyReadOk,
-        histories: histories.map(nativeSearchHistoryIdentitySnapshot).filter(Boolean)
-      };
-    }
-
-    function normalizeNativeSearchContinueOverride(value) {
-      if (!value || typeof value !== "object") return null;
-      const savedMediaKey = String(value.mediaKey || "").trim();
-      const siteKey = String(value.siteKey || "").trim();
-      const vodId = String(value.vodId || "").trim();
-      const tmdbId = String(value.tmdbId || "").trim();
-      const mediaType = normalizeHistoryMediaType(value.mediaType);
-      const mediaKey = mediaType && tmdbId ? `tmdb:${mediaType}:${tmdbId}` : savedMediaKey;
-      if (!mediaKey || !siteKey || !vodId) return null;
-      return {
-        version: 1,
-        mediaKey,
-        tmdbId,
-        mediaType,
-        siteKey,
-        vodId,
-        nativeHistoryKey: String(value.nativeHistoryKey || "").trim(),
-        title: String(value.title || "").trim(),
-        poster: String(value.poster || "").trim(),
-        selectedAt: Number(value.selectedAt || 0) || 0,
-        markerToken: String(value.markerToken || "").trim()
-      };
-    }
-
-    async function loadNativeSearchContinueOverride() {
-      const store = state.nativeSearchContinueOverride;
-      if (store.loaded) return store.value;
-      if (store.loading && store.promise) return store.promise;
-      store.loading = true;
-      store.error = false;
-      const task = (async () => {
-        try {
-          const saved = await sdk().cache.get(cacheKey("nativeSearchContinueOverride"));
-          const value = typeof saved === "string" ? safeJson(saved, null) : saved;
-          store.value = normalizeNativeSearchContinueOverride(value);
-          store.loaded = true;
-          return store.value;
-        } catch (e) {
-          store.error = true;
-          store.loaded = true;
-          return store.value || null;
-        } finally {
-          store.loading = false;
-          store.promise = null;
-        }
-      })();
-      store.promise = task;
-      return task;
-    }
-
-    async function persistNativeSearchContinueOverride(value) {
-      const store = state.nativeSearchContinueOverride;
-      const normalized = normalizeNativeSearchContinueOverride(value);
-      store.loaded = true;
-      store.error = false;
-      store.value = normalized;
+    function setDetailNativeSearchReturnMarker(item) {
       try {
-        if (normalized) await sdk().cache.set(cacheKey("nativeSearchContinueOverride"), JSON.stringify(normalized));
-        else await sdk().cache.del(cacheKey("nativeSearchContinueOverride"));
+        localStorage.setItem("fm_detail_native_search_return", JSON.stringify({
+          itemKey: item ? panSearchItemKey(item) : "",
+          at: Date.now()
+        }));
       } catch (e) {}
-      return normalized;
-    }
-
-    async function clearNativeSearchContinueOverride(item, reason) {
-      const current = await loadNativeSearchContinueOverride();
-      if (!current || item && current.mediaKey !== nativeSearchMediaKey(item)) return false;
-      await persistNativeSearchContinueOverride(null);
-      try {
-        console.debug("NATIVE_SEARCH_CONTINUE_OVERRIDE_CLEARED", {
-          itemKey: item ? panSearchItemKey(item) : current.mediaKey,
-          reason: String(reason || "history_missing")
-        });
-      } catch (e) {}
-      return true;
-    }
-
-    function nativeSearchOverrideHistoryFor(item, override, latestHistory) {
-      if (!item || !override || override.mediaKey !== nativeSearchMediaKey(item)) return null;
-      const candidates = nativeSearchVodHistoryListFor(item).slice();
-      if (latestHistory && !candidates.includes(latestHistory)) candidates.push(latestHistory);
-      return candidates.find((history) => detailHasAuthoritativeNativeHistory(history)
-        && detailHistoryMatches(item, history)
-        && historyCanUseVodReplay(history)
-        && nativeSearchOverrideMatchesHistory(override, history)) || null;
-    }
-
-    async function currentNativeSearchContinueHistoryFor(item, options) {
-      const opts = options || {};
-      const override = await loadNativeSearchContinueOverride();
-      if (!override || !item || override.mediaKey !== nativeSearchMediaKey(item)) return null;
-      await loadDetailPlaybackChains().catch(() => {});
-      const chain = detailPlaybackChainFor(item);
-      if (chain && chain.status !== "ACTIVE") return null;
-      if (!state.recent.loaded && opts.loadRecent !== false) {
-        await loadRecentList({ silent: true }).catch(() => {});
-      }
-      const latestHistory = findDetailContinueHistory(item);
-      const history = nativeSearchOverrideHistoryFor(item, override, latestHistory);
-      if (history && chain && chain.status === "ACTIVE"
-        && !detailPlaybackChainMatchesHistory(chain, history)) return null;
-      if (!history && state.recent.loaded && !state.recent.error
-        && (!chain || chain.status !== "ACTIVE")) {
-        await clearNativeSearchContinueOverride(item, "authoritative_history_missing");
-      }
-      return history ? { override, history } : null;
-    }
-
-    function nativeSearchOverrideFromHistory(item, history, marker) {
-      const identity = nativeSearchHistoryIdentitySnapshot(history);
-      if (!item || !identity) return null;
-      const context = historyPlaybackContext(history) || {};
-      return normalizeNativeSearchContinueOverride({
-        version: 1,
-        mediaKey: nativeSearchMediaKey(item),
-        tmdbId: item.tmdbId,
-        mediaType: item.mediaType,
-        siteKey: identity.siteKey,
-        vodId: identity.vodId,
-        nativeHistoryKey: identity.nativeHistoryKey,
-        title: context.title || history.title || item.title,
-        poster: context.poster || history.pic || item.pic || "",
-        selectedAt: Date.now(),
-        markerToken: marker && marker.token || ""
-      });
-    }
-
-    function invalidateAutomaticDetailForNativeSearch(item) {
-      if (!item || state.selected !== item) return;
-      const pending = typeof _directPlayPending !== "undefined" ? _directPlayPending : null;
-      cancelDetailPlaybackPreparation("native_search_continue_override");
-      cancelPendingDirectPlay("native_search_continue_override");
-      clearDirectPlayStatus(0, "native_search_continue_override");
-      if (pending && pending.item === item && (pending.detailPrimary || pending.prepareOnly)) {
-        pending.cancelReason = "native_search_continue_override";
-        _directPlayPending = null;
-      }
-      if (state.pan) {
-        state.pan.directReady = null;
-        state.pan.directFailure = null;
-      }
-      state.detailHistoryHandoff = null;
-    }
-
-    function nativeSearchPlaybackDetectionFor(item, marker) {
-      if (!item || !marker || marker.baselineReadOk !== true) {
-        return { played: false, history: null, reason: "baseline-unavailable" };
-      }
-      const before = Array.isArray(marker.baselineHistories)
-        ? marker.baselineHistories
-        : marker.baseline ? [marker.baseline] : [];
-      const after = nativeSearchVodHistoryListFor(item);
-      const newHistory = after.find((history) => {
-        const current = nativeSearchHistoryIdentitySnapshot(history);
-        return current && !before.some((snapshot) => nativeSearchHistoryIdentityEqual(current, snapshot));
-      }) || null;
-      let advancedHistory = null;
-      if (!newHistory) {
-        advancedHistory = after.find((history) => {
-          const current = nativeSearchHistoryIdentitySnapshot(history);
-          const previous = before.find((snapshot) => nativeSearchHistoryIdentityEqual(current, snapshot));
-          if (!current || !previous) return false;
-          return current.position > Number(previous.position || 0)
-            || current.updatedAt > Number(previous.updatedAt || 0);
-        }) || null;
-      }
-      const detected = newHistory || advancedHistory;
-      if (detected) {
-        const current = nativeSearchHistoryIdentitySnapshot(detected);
-        const previous = before.find((snapshot) => nativeSearchHistoryIdentityEqual(current, snapshot)) || null;
-        const reason = newHistory ? "new-identity" : "progress-advanced";
-        try {
-          console.debug("NATIVE_SEARCH_PLAYBACK_DETECTED", {
-            itemKey: panSearchItemKey(item),
-            beforeIdentity: previous && previous.identity || "",
-            afterIdentity: current && current.identity || "",
-            beforePosition: previous && previous.position || 0,
-            afterPosition: current && current.position || 0,
-            reason
-          });
-        } catch (e) {}
-        return { played: true, history: detected, reason };
-      }
-      return { played: false, history: null, reason: "no-playback" };
-    }
-
-    function setDetailNativeSearchReturnMarker(item, options) {
-      const opts = options || {};
-      const baseline = nativeSearchBaselineFor(item);
-      const marker = {
-        version: 1,
-        token: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        itemKey: item ? panSearchItemKey(item) : "",
-        mediaKey: item ? nativeSearchMediaKey(item) : "",
-        tmdbId: item && item.tmdbId || "",
-        mediaType: item && item.mediaType || "",
-        at: Date.now(),
-        baselineReadOk: opts.baselineReadOk === false ? false : baseline.historyReadOk,
-        baseline: baseline.histories[0] || null,
-        baselineHistories: baseline.histories
-      };
-      try {
-        localStorage.setItem("fm_detail_native_search_return", JSON.stringify(marker));
-        console.debug("NATIVE_SEARCH_BASELINE_CAPTURED", {
-          itemKey: marker.itemKey,
-          baselineIdentity: baseline.histories[0] && baseline.histories[0].identity || "",
-          baselineCount: baseline.histories.length
-        });
-      } catch (e) {}
-      return marker;
-    }
-
-    function setNativeSearchContinueReturnMarker(item, override, history) {
-      const identity = nativeSearchHistoryIdentitySnapshot(history);
-      const marker = {
-        version: 1,
-        token: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        itemKey: item ? panSearchItemKey(item) : "",
-        mediaKey: item ? nativeSearchMediaKey(item) : "",
-        tmdbId: item && item.tmdbId || "",
-        mediaType: item && item.mediaType || "",
-        siteKey: String(override && override.siteKey || identity && identity.siteKey || ""),
-        vodId: String(override && override.vodId || identity && identity.vodId || ""),
-        nativeHistoryKey: String(override && override.nativeHistoryKey || identity && identity.nativeHistoryKey || ""),
-        at: Date.now()
-      };
-      try {
-        localStorage.setItem("fm_detail_native_search_continue_return", JSON.stringify(marker));
-      } catch (e) {}
-      return marker;
-    }
-
-    function getNativeSearchContinueReturnMarker() {
-      try {
-        const marker = JSON.parse(localStorage.getItem("fm_detail_native_search_continue_return") || "null");
-        if (!marker || Date.now() - Number(marker.at || 0) > 30 * 60 * 1000
-          || !marker.itemKey || !marker.mediaKey || !marker.siteKey || !marker.vodId) {
-          localStorage.removeItem("fm_detail_native_search_continue_return");
-          return null;
-        }
-        if (!marker.token) marker.token = String(marker.at || "");
-        return marker;
-      } catch (e) {
-        return null;
-      }
-    }
-
-    function clearNativeSearchContinueReturnMarker(token) {
-      try {
-        if (!token) {
-          localStorage.removeItem("fm_detail_native_search_continue_return");
-          return;
-        }
-        const current = getNativeSearchContinueReturnMarker();
-        if (current && String(current.token || current.at || "") === String(token)) {
-          localStorage.removeItem("fm_detail_native_search_continue_return");
-        }
-      } catch (e) {}
-    }
-
-    function nativeSearchContinueReturnMarkerMatches(item, marker, info) {
-      if (!item || !marker || !info || !info.override || !info.history) return false;
-      if (marker.itemKey && marker.itemKey !== panSearchItemKey(item)) return false;
-      if (marker.mediaKey && marker.mediaKey !== nativeSearchMediaKey(item)) return false;
-      if (String(marker.siteKey || "") !== String(info.override.siteKey || "")) return false;
-      if (String(marker.vodId || "") !== String(info.override.vodId || "")) return false;
-      if (marker.nativeHistoryKey && info.override.nativeHistoryKey
-        && String(marker.nativeHistoryKey) !== String(info.override.nativeHistoryKey)) return false;
-      return true;
-    }
-
-    async function nativeSearchContinueReturnInfoFor(item, marker) {
-      if (!item || !marker || !state.recent.loaded || state.recent.error) return null;
-      const info = await currentNativeSearchContinueHistoryFor(item, { loadRecent: false });
-      return nativeSearchContinueReturnMarkerMatches(item, marker, info) ? info : null;
     }
 
     function getDetailNativeSearchReturnMarker() {
@@ -35116,41 +34038,27 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           localStorage.removeItem("fm_detail_native_search_return");
           return null;
         }
-        if (!marker.token) marker.token = String(marker.at || "");
         return marker;
       } catch (e) {
         return null;
       }
     }
 
-    function clearDetailNativeSearchReturnMarker(token) {
-      try {
-        if (!token) {
-          localStorage.removeItem("fm_detail_native_search_return");
-          return;
-        }
-        const current = getDetailNativeSearchReturnMarker();
-        if (current && String(current.token || current.at || "") === String(token)) {
-          localStorage.removeItem("fm_detail_native_search_return");
-        }
-      } catch (e) {}
+    function clearDetailNativeSearchReturnMarker() {
+      try { localStorage.removeItem("fm_detail_native_search_return"); } catch (e) {}
     }
 
     async function nativeSearch(title) {
       if (!title) return;
       const item = state.selected;
       rememberDetailReturn($("detailSearchBtn"));
-      // 进入原生搜索前尽量取得一份已规范化的 Native History 基线；
-      // 基线读取失败时，返回后不会把不确定状态误判成“本次已播放”。
-      if (!state.recent.loaded) await loadRecentList({ silent: true }).catch(() => {});
-      const marker = setDetailNativeSearchReturnMarker(item, {
-        baselineReadOk: !!(state.recent && state.recent.loaded && !state.recent.error)
-      });
+      // 这只表示“从详情进入了原生搜索”，不表示已经产生播放历史。
+      setDetailNativeSearchReturnMarker(item);
       try {
         await sdk().search(title, { direct: true });
         toast("已发起原生搜索");
       } catch (e) {
-        clearDetailNativeSearchReturnMarker(marker && marker.token);
+        clearDetailNativeSearchReturnMarker();
         throw e;
       }
     }
@@ -39284,7 +38192,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return true;
     }
 
-    async function reconcileDetailAfterNativeReturn(options) {
+    function reconcileDetailAfterNativeReturn(options) {
       const opts = options || {};
       const detail = $("detailSheet");
       const item = opts.item || state.selected;
@@ -39292,66 +38200,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (!detail || !detail.classList.contains("active") || !item || state.selected !== item) return false;
       if (expectedItemKey && panSearchItemKey(item) !== expectedItemKey) return false;
 
-      const historyRefreshSucceeded = opts.historyRefreshSucceeded !== false;
-      const origin = String(opts.origin || "main-play");
-      const marker = opts.returnMarker || null;
-      let detection = null;
-      if (origin === "native-search" && marker && historyRefreshSucceeded) {
-        const currentMarker = getDetailNativeSearchReturnMarker();
-        const markerToken = String(marker.token || marker.at || "");
-        const currentToken = String(currentMarker && (currentMarker.token || currentMarker.at) || "");
-        // 旧的 native-search 返回任务不能把后来一次聚搜的选择覆盖掉。
-        if (currentMarker && markerToken && markerToken === currentToken) {
-          detection = nativeSearchPlaybackDetectionFor(item, marker);
-          if (detection.played && detection.history) {
-            const override = nativeSearchOverrideFromHistory(item, detection.history, marker);
-            if (override) {
-              await persistNativeSearchContinueOverride(override);
-              invalidateAutomaticDetailForNativeSearch(item);
-              try {
-                console.debug("NATIVE_SEARCH_CONTINUE_OVERRIDE_SET", {
-                  itemKey: override.mediaKey,
-                  siteKey: override.siteKey,
-                  vodId: override.vodId,
-                  nativeHistoryKey: override.nativeHistoryKey
-                });
-              } catch (e) {}
-              const detectedIdentity = nativeSearchHistoryIdentitySnapshot(detection.history);
-              await activateDetailPlaybackChain(item, detailContinuePlaybackTargetFor(item, detection.history), detectedIdentity, null, {
-                history: detection.history,
-                preserveNativeSearchOverride: true,
-                reason: "native_search_history_confirmed"
-              });
-            }
-          }
-        }
-      }
-
-      // 检测到本次聚搜实际产生的新/推进的 VOD History 时，它就是这次返回
-      // 的 authoritative history；否则继续使用现有 generic latest History。
-      const latestHistory = detection && detection.history || findDetailContinueHistory(item);
-      const override = await loadNativeSearchContinueOverride();
-      const overrideHistory = nativeSearchOverrideHistoryFor(item, override, latestHistory);
-      const currentChain = detailPlaybackChainFor(item);
-      if (historyRefreshSucceeded && override && override.mediaKey === nativeSearchMediaKey(item) && !overrideHistory
-        && (!currentChain || currentChain.status !== "ACTIVE")) {
-        await clearNativeSearchContinueOverride(item, "authoritative_history_missing");
-      }
-      const retainedHistory = state.detailHistory && detailHasAuthoritativeNativeHistory(state.detailHistory)
-        && detailHistoryMatches(item, state.detailHistory) ? state.detailHistory : null;
-      const history = historyRefreshSucceeded
-        ? overrideHistory || latestHistory
-        : overrideHistory || retainedHistory || latestHistory;
+      const history = findDetailContinueHistory(item);
       const historyFound = detailContinueHistoryIsValid(history);
-      if (historyFound) {
-        syncDetailMode(item, history, { freshNative: true });
-      } else if (currentChain && currentChain.status === "ACTIVE") {
-        state.detailMode = "CONTINUE";
-        state.detailModeItemKey = panSearchItemKey(item);
-        state.detailHistory = null;
-      } else {
-        syncDetailMode(item, null);
-      }
+      if (historyFound) syncDetailMode(item, history, { freshNative: true });
+      else syncDetailMode(item, null);
       updateDetailContinueButton();
       try {
         console.debug("DETAIL_RETURN_RECONCILE", {
@@ -39359,9 +38211,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           historyFound,
           nativeProgress: historyFound ? historyPlaybackPositionValue(history) : 0,
           finalMode: state.detailMode,
-          origin,
-          nativeSearchOverride: !!overrideHistory,
-          historyRefreshSucceeded
+          origin: String(opts.origin || "main-play")
         });
       } catch (e) {}
       return true;
@@ -39375,10 +38225,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     //      → 从 sdk.cache 读 snapshot，找到 selected 后 openDetail 重新打开
     function schedulePlayerReturn(options) {
       const opts = options || {};
-      const continueReturnMarker = opts.nativeSearchContinueReturnMarker || getNativeSearchContinueReturnMarker();
       const marker = getDetailNativeSearchReturnMarker();
-      const origin = String(opts.origin || (continueReturnMarker ? "native-search-continue" : marker ? "native-search" : "main-play"));
-      const returnItemKey = String(opts.itemKey || continueReturnMarker && continueReturnMarker.itemKey || marker && marker.itemKey || "").trim();
+      const origin = String(opts.origin || (marker ? "native-search" : "main-play"));
+      const returnItemKey = String(opts.itemKey || marker && marker.itemKey || "").trim();
       // pending 在调用瞬间建立，避免 pageshow/fmresume/visibilitychange 在 80ms
       // 延迟窗口内另起一套普通 Resume 生命周期。
       if (schedulePlayerReturn._pending || schedulePlayerReturn._running) {
@@ -39403,52 +38252,17 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
               restorePanPlaybackReturn({});
               await settlePlayerReturnHistory();
               await loadRecentList({ refresh: true, silent: true, reconcileDetail: false, returnOrigin: "pan-play" });
-              await reconcileDetailAfterNativeReturn({
+              reconcileDetailAfterNativeReturn({
                 item: state.selected,
                 itemKey: returnItemKey,
-                origin: "pan-play",
-                historyRefreshSucceeded: !!(state.recent.loaded && !state.recent.error)
+                origin: "pan-play"
               });
-            } else if (origin === "native-search-continue") {
-              await loadRecentList({ refresh: true, silent: true, reconcileDetail: false, returnOrigin: "native-search-continue" });
-              const continueInfo = await nativeSearchContinueReturnInfoFor(state.selected, continueReturnMarker);
-              if (continueInfo) {
-                await reconcileDetailAfterNativeReturn({
-                  item: state.selected,
-                  itemKey: returnItemKey,
-                  origin: "native-search-continue",
-                  historyRefreshSucceeded: !!(state.recent.loaded && !state.recent.error)
-                });
-                restoreDetailReturn();
-              } else {
-                const currentChain = detailPlaybackChainFor(state.selected);
-                if (currentChain && currentChain.status !== "ACTIVE") {
-                  await reconcileDetailAfterNativeReturn({
-                    item: state.selected,
-                    itemKey: returnItemKey,
-                    origin: "native-search-continue",
-                    historyRefreshSucceeded: !!(state.recent.loaded && !state.recent.error)
-                  });
-                  restoreDetailReturn();
-                  return;
-                }
-                // 只有本次 Native Search Continue 的来源与 History 仍能对上时，
-                // 才跳过自动 rearm；失效时回到原有普通播放器返回路径。
-                await handleWebHomeResume({
-                  force: true,
-                  playerReturn: true,
-                  returnOrigin: "main-play",
-                  returnItemKey
-                });
-              }
             } else if (origin === "native-search") {
               await loadRecentList({ refresh: true, silent: true, reconcileDetail: false, returnOrigin: "native-search" });
-              await reconcileDetailAfterNativeReturn({
+              reconcileDetailAfterNativeReturn({
                 item: state.selected,
                 itemKey: returnItemKey,
-                origin: "native-search",
-                returnMarker: marker,
-                historyRefreshSucceeded: !!(state.recent.loaded && !state.recent.error)
+                origin: "native-search"
               });
               restoreDetailReturn();
             } else {
@@ -39456,8 +38270,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
                 force: true,
                 playerReturn: true,
                 returnOrigin: origin,
-                returnItemKey,
-                returnMarker: marker
+                returnItemKey
               });
             }
             return;
@@ -39488,13 +38301,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
               await new Promise((resolve) => setTimeout(resolve, 120));
               await handleWebHomeResume({
                 force: true,
-                playerReturn: origin !== "native-search" && origin !== "native-search-continue",
+                playerReturn: origin !== "native-search",
                 nativeSearchReturn: origin === "native-search",
-                nativeSearchContinueReturn: origin === "native-search-continue",
-                nativeSearchContinueReturnMarker: continueReturnMarker,
                 returnOrigin: origin,
-                returnItemKey,
-                returnMarker: marker
+                returnItemKey
               });
               return;
             }
@@ -39506,23 +38316,13 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           // 兜底：走正常首页恢复
           await handleWebHomeResume({
             force: true,
-            playerReturn: origin !== "native-search" && origin !== "native-search-continue",
+            playerReturn: origin !== "native-search",
             nativeSearchReturn: origin === "native-search",
-            nativeSearchContinueReturn: origin === "native-search-continue",
-            nativeSearchContinueReturnMarker: continueReturnMarker,
             returnOrigin: origin,
-            returnItemKey,
-            returnMarker: marker
+            returnItemKey
           });
         } finally {
-          if (origin === "native-search"
-            && state.recent && state.recent.loaded && !state.recent.error) {
-            clearDetailNativeSearchReturnMarker(marker && marker.token);
-          }
-          if (origin === "native-search-continue"
-            && state.recent && state.recent.loaded && !state.recent.error) {
-            clearNativeSearchContinueReturnMarker(continueReturnMarker && continueReturnMarker.token);
-          }
+          if (origin === "native-search") clearDetailNativeSearchReturnMarker();
           // 事务完成后立即释放；下一次独立的原生返回仍可正常触发。
           schedulePlayerReturn._running = false;
           schedulePlayerReturn._pending = false;
@@ -39538,15 +38338,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const opts = options || {};
       if (schedulePlayerReturn._pending || schedulePlayerReturn._running) {
         try { console.debug("PLAYER_RETURN_DUPLICATE_IGNORED", { origin: "web-resume" }); } catch (e) {}
-        return false;
-      }
-      const nativeSearchContinueMarker = getNativeSearchContinueReturnMarker();
-      if (nativeSearchContinueMarker) {
-        schedulePlayerReturn({
-          origin: "native-search-continue",
-          itemKey: nativeSearchContinueMarker.itemKey,
-          nativeSearchContinueReturnMarker: nativeSearchContinueMarker
-        });
         return false;
       }
       if (getDetailNativeSearchReturnMarker()) {
@@ -39583,40 +38374,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         loadContinueIndex()
       ]).catch(() => {});
       if (state.selected !== item || !$("detailSheet") || !$("detailSheet").classList.contains("active")) return false;
-
-      const chainInfo = await currentDetailPlaybackChainInfoFor(item);
-      if (chainInfo.chain && chainInfo.chain.status === "ACTIVE") {
-        cancelDetailPlaybackPreparation("player_return_current_chain");
-        cancelPendingDirectPlay("player_return_current_chain");
-        state.detailHistoryHandoff = null;
-        state.historyResume = null;
-        if (chainInfo.history) {
-          syncDetailMode(item, chainInfo.history, { freshNative: true });
-        } else {
-          state.detailMode = "CONTINUE";
-          state.detailModeItemKey = panSearchItemKey(item);
-          state.detailHistory = null;
-        }
-        updateDetailContinueButton();
-        recordDetailPlaybackDecision("PLAYER_RETURN_PLAYBACK_DECISION", item, {
-          playbackReturnFound: !!playbackReturn,
-          nativeHistoryFound: !!chainInfo.history,
-          nativeProgress: chainInfo.history ? historyPlaybackPositionValue(chainInfo.history) : 0,
-          decision: "CURRENT_CHAIN_REARM_SKIPPED",
-          curatedStarted: false
-        });
-        return true;
-      }
-      if (chainInfo.chain && chainInfo.chain.status !== "ACTIVE") {
-        cancelDetailPlaybackPreparation("player_return_non_active_chain");
-        cancelPendingDirectPlay("player_return_non_active_chain");
-        state.detailHistoryHandoff = null;
-        state.historyResume = null;
-        syncDetailMode(item, null);
-        updateDetailContinueButton();
-        return true;
-      }
-      if (detailPlaybackPendingFor(item) && state.recent && state.recent.error) return true;
 
       const nativeHistory = findDetailContinueHistory(item);
       const resource = detailContinueResourceContextFor(item, nativeHistory);
@@ -39687,32 +38444,13 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const isPanPlaybackReturn = !!(state.pan.playbackReturn && $("detailSheet") && $("detailSheet").classList.contains("active") && $("panSearchBlock") && $("panSearchBlock").classList.contains("active"));
       const isPlayerReturn = opts.playerReturn === true;
       const isNativeSearchReturn = opts.nativeSearchReturn === true;
-      const isNativeSearchContinueReturn = opts.nativeSearchContinueReturn === true;
-      const isExternalReturn = isPlayerReturn || isNativeSearchReturn || isNativeSearchContinueReturn;
+      const isExternalReturn = isPlayerReturn || isNativeSearchReturn;
       lockViewportWidth();
       fitConnectionPanel();
       renderConnection();
       if (isPlayerReturn) await settlePlayerReturnHistory();
       let detailRearmed = false;
-      let detailHistoryRefreshed = false;
-      let nativeSearchContinueValid = false;
-      if (isNativeSearchContinueReturn
-        && $("detailSheet") && $("detailSheet").classList.contains("active") && state.selected) {
-        await loadRecentList({
-          refresh: true,
-          silent: true,
-          reconcileDetail: false,
-          returnOrigin: "native-search-continue"
-        });
-        detailHistoryRefreshed = true;
-        nativeSearchContinueValid = !!await nativeSearchContinueReturnInfoFor(
-          state.selected,
-          opts.nativeSearchContinueReturnMarker || getNativeSearchContinueReturnMarker()
-        );
-      }
-      const shouldRearmPlayerReturn = isPlayerReturn
-        || isNativeSearchContinueReturn && !nativeSearchContinueValid;
-      if (shouldRearmPlayerReturn && !isPanPlaybackReturn && !isNativeSearchReturn && !nativeSearchContinueValid) {
+      if (isPlayerReturn && !isPanPlaybackReturn && !isNativeSearchReturn) {
         detailRearmed = await rearmDetailPlaybackAfterPlayerReturn({
           playerReturn: true,
           deferDetailReconcile: true,
@@ -39734,7 +38472,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         // The awaited refresh above rendered the new Recent list before the
         // saved Home target was restored.  Do not start a competing sampler.
       } else if (isExternalReturn) {
-        if (!detailRearmed && !detailHistoryRefreshed) {
+        if (!detailRearmed) {
           await loadRecentList({
             refresh: true,
             silent: true,
@@ -39742,12 +38480,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             returnOrigin: opts.returnOrigin || (isNativeSearchReturn ? "native-search" : "main-play")
           });
         }
-        await reconcileDetailAfterNativeReturn({
+        reconcileDetailAfterNativeReturn({
           item: state.selected,
           itemKey: opts.returnItemKey,
-          origin: opts.returnOrigin || (isNativeSearchContinueReturn ? "native-search-continue" : isNativeSearchReturn ? "native-search" : isPanPlaybackReturn ? "pan-play" : "main-play"),
-          returnMarker: opts.returnMarker || null,
-          historyRefreshSucceeded: !!(state.recent.loaded && !state.recent.error)
+          origin: opts.returnOrigin || (isNativeSearchReturn ? "native-search" : isPanPlaybackReturn ? "pan-play" : "main-play")
         });
       } else {
         loadRecentList({ refresh: true, silent: true }).catch(() => {});
@@ -39934,19 +38670,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     });
     window.addEventListener("pageshow", () => {
       const panWasPlaying = localStorage.getItem("fm_pan_playing") === "1";
-      const nativeSearchContinueMarker = getNativeSearchContinueReturnMarker();
-      if (panWasPlaying || nativeSearchContinueMarker) {
+      if (panWasPlaying) {
         clearDirectPlayStatus(0, "player_return");
-        if (panWasPlaying) {
-          localStorage.removeItem("fm_pan_playing");
-          state.pan.isPlaying = false;
-        }
+        localStorage.removeItem("fm_pan_playing");
+        state.pan.isPlaying = false;
         // 从播放器返回：主动恢复详情页（内存存活则刷新，WebView 重建则从 snapshot 重开）
-        schedulePlayerReturn(nativeSearchContinueMarker ? {
-          origin: "native-search-continue",
-          itemKey: nativeSearchContinueMarker.itemKey,
-          nativeSearchContinueReturnMarker: nativeSearchContinueMarker
-        } : { origin: "main-play" });
+        schedulePlayerReturn({ origin: "main-play" });
         return;
       }
       const nativeSearchMarker = getDetailNativeSearchReturnMarker();
@@ -39969,19 +38698,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     });
     window.addEventListener("fmresume", () => {
       const panWasPlaying = localStorage.getItem("fm_pan_playing") === "1";
-      const nativeSearchContinueMarker = getNativeSearchContinueReturnMarker();
-      if (panWasPlaying || nativeSearchContinueMarker) {
+      if (panWasPlaying) {
         clearDirectPlayStatus(0, "player_return");
-        if (panWasPlaying) {
-          localStorage.removeItem("fm_pan_playing");
-          state.pan.isPlaying = false;
-        }
+        localStorage.removeItem("fm_pan_playing");
+        state.pan.isPlaying = false;
         // 从播放器返回：先立即恢复 UI，loadInfo 在后台静默刷新
-        schedulePlayerReturn(nativeSearchContinueMarker ? {
-          origin: "native-search-continue",
-          itemKey: nativeSearchContinueMarker.itemKey,
-          nativeSearchContinueReturnMarker: nativeSearchContinueMarker
-        } : { origin: "main-play" });
+        schedulePlayerReturn({ origin: "main-play" });
         loadInfo().catch(() => {});
         return;
       }
@@ -40008,19 +38730,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
         // 从播放器返回检测：用 localStorage 而非内存（WebView 挂起后内存丢失）
         const panWasPlaying = localStorage.getItem("fm_pan_playing") === "1";
-        const nativeSearchContinueMarker = getNativeSearchContinueReturnMarker();
-        if (panWasPlaying || nativeSearchContinueMarker) {
+        if (panWasPlaying) {
           clearDirectPlayStatus(0, "player_return");
-          if (panWasPlaying) {
-            localStorage.removeItem("fm_pan_playing");
-            state.pan.isPlaying = false;
-          }
+          localStorage.removeItem("fm_pan_playing");
+          state.pan.isPlaying = false;
           // 从播放器返回：主动恢复详情页
-          schedulePlayerReturn(nativeSearchContinueMarker ? {
-            origin: "native-search-continue",
-            itemKey: nativeSearchContinueMarker.itemKey,
-            nativeSearchContinueReturnMarker: nativeSearchContinueMarker
-          } : { origin: "main-play" });
+          schedulePlayerReturn({ origin: "main-play" });
           return;
         }
 
