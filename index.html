@@ -34019,11 +34019,16 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           blurEl.style.opacity = "";
           blurEl.classList.remove("active");
         }
+        const savedHomeScrollY = state.homeReturn && Number.isFinite(Number(state.homeReturn.scrollY))
+          ? Math.max(0, Number(state.homeReturn.scrollY))
+          : null;
         restoreHomeReturn();
         scheduleUiSnapshotSave();
         if (needBack) {
           // 保存当前主页滚动位置，history.back() 后 popstate 会重置它
-          _pendingHomeScrollY = Math.round(window.scrollY || document.documentElement.scrollTop || 0);
+          _pendingHomeScrollY = savedHomeScrollY != null
+            ? Math.round(savedHomeScrollY)
+            : Math.round(homeScrollTop());
           history.back();
         } else {
           // 系统返回键路径：popstate 里保存的位置，动画结束后还原
