@@ -5652,23 +5652,29 @@
 
     @media (pointer: coarse), (max-width: 719px) {
       html:not(.tv-mode):not(.tv-preview) #connectionOverlayHost #connectionBody {
-        width: min(calc(100vw - 24px), 420px);
-        min-width: 0;
-        max-width: calc(100vw - 24px);
-        max-height: calc(100vh - 24px);
-        max-height: calc(100dvh - 24px);
         border-radius: 20px;
+      }
+    }
+
+    @media (orientation: portrait) and (pointer: coarse),
+           (orientation: portrait) and (max-width: 719px) {
+      html:not(.tv-mode):not(.tv-preview) #connectionOverlayHost #connectionBody {
+        width: min(calc(100vw - 32px), 420px);
+        min-width: 0;
+        max-width: calc(100vw - 32px);
+        max-height: calc(100vh - 80px);
+        max-height: calc(100dvh - 80px);
       }
     }
 
     @media (orientation: landscape) and (pointer: coarse),
            (orientation: landscape) and (max-width: 719px) {
       html:not(.tv-mode):not(.tv-preview) #connectionOverlayHost #connectionBody {
-        width: min(520px, 70vw, calc(100vw - 24px));
+        width: min(480px, 64vw, calc(100vw - 40px));
         min-width: 0;
-        max-width: calc(100vw - 24px);
-        max-height: calc(100vh - 24px);
-        max-height: calc(100dvh - 24px);
+        max-width: calc(100vw - 40px);
+        max-height: calc(100vh - 32px);
+        max-height: calc(100dvh - 32px);
       }
     }
 
@@ -19123,6 +19129,7 @@ utils.encode = function encode(arr, enc) {
       const overlayBackdrop = $("connectionOverlayBackdrop");
       if (!dock || !body) return;
       const isOpen = !!open;
+      if (isOpen) ensureConnectionHistoryEntry();
       dock.classList.toggle("open", isOpen);
       body.classList.toggle("open", isOpen);
       if (host) {
@@ -19191,7 +19198,61 @@ utils.encode = function encode(arr, enc) {
       return ++state.relay.subscribeToken;
     }
 
-    function closeConnectionPanel() {
+    function connectionHistoryEntryActive() {
+      const current = history.state;
+      return isTvLikeDevice()
+        && location.hash === "#connection"
+        && !!(current && current.sheet === "connection" && current.connectionTransient === true);
+    }
+
+    function ensureConnectionHistoryEntry() {
+      if (!isTvLikeDevice() || connectionHistoryEntryActive()) return false;
+      const current = history.state && typeof history.state === "object" ? history.state : {};
+      const returnState = Object.assign({}, current);
+      if (returnState.sheet === "connection") returnState.sheet = "home";
+      delete returnState.connectionTransient;
+      delete returnState.connectionReturnUrl;
+      delete returnState.connectionReturnState;
+      if (!returnState.sheet) returnState.sheet = "home";
+      const returnHash = location.hash === "#connection" ? "" : location.hash;
+      const returnUrl = location.pathname + location.search + returnHash;
+      const nextState = Object.assign({}, current, {
+        sheet: "connection",
+        connectionTransient: true,
+        connectionReturnUrl: returnUrl,
+        connectionReturnState: returnState
+      });
+      try {
+        if (location.hash === "#connection") history.replaceState(nextState, "", "#connection");
+        else history.pushState(nextState, "", "#connection");
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function clearConnectionHistoryEntry() {
+      if (!isTvLikeDevice() || location.hash !== "#connection") return false;
+      const current = history.state && typeof history.state === "object" ? history.state : {};
+      const nextState = current.connectionReturnState && typeof current.connectionReturnState === "object"
+        ? Object.assign({}, current.connectionReturnState)
+        : Object.assign({}, current);
+      delete nextState.connectionTransient;
+      delete nextState.connectionReturnUrl;
+      delete nextState.connectionReturnState;
+      if (nextState.sheet === "connection" || !nextState.sheet) nextState.sheet = "home";
+      const returnUrl = current.connectionReturnUrl || (location.pathname + location.search);
+      try {
+        history.replaceState(nextState, "", returnUrl);
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function closeConnectionPanel(options) {
+      const opts = options || {};
+      if (opts.fromPopState !== true) clearConnectionHistoryEntry();
       setConnectionPanelOpen(false);
     }
 
@@ -37708,7 +37769,11 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       event.preventDefault();
       event.stopPropagation();
       if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-      closeConnectionPanel();
+      if (isTvLikeDevice() && connectionHistoryEntryActive()) {
+        try { history.back(); } catch (e) { closeConnectionPanel(); }
+      } else {
+        closeConnectionPanel();
+      }
       return true;
     }
 
@@ -39708,6 +39773,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           return;
         }
         closeSidebar({ restore: false, fromPopState: true });
+        return;
+      }
+      if (isTvLikeDevice() && isConnectionPanelOpen() && location.hash !== "#connection") {
+        closeConnectionPanel({ fromPopState: true });
         return;
       }
       // 正在关闭动画中，忽略重复触发
