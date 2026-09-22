@@ -23524,6 +23524,7 @@ utils.encode = function encode(arr, enc) {
     function performSidebarNavigation(action) {
       if (!action || !action.type) return false;
       if (action.type === "live") return !!openLiveHome();
+      if (action.type === "keep") return !!openKeepHome();
       if (action.type === "settings") return !!openSettingHome();
       if (action.type === "secondary") {
         const context = action.context || {};
@@ -23572,6 +23573,7 @@ utils.encode = function encode(arr, enc) {
         tv: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m8 3 4 2 4-2"/><path d="M8 19v2h8v-2"/>',
         anime: '<circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4V8Z"/><path d="M5 5 3 3"/><path d="m19 5 2-2"/>',
         documentary: '<path d="M5 4h10a4 4 0 0 1 4 4v12H9a4 4 0 0 0-4 0V4Z"/><path d="M5 4v16"/><path d="M9 8h6"/><path d="M9 12h6"/>',
+        keep: '<path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1Z"/>',
         settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>'
       };
       return '<svg class="icon home-sidebar-icon" viewBox="0 0 24 24" aria-hidden="true">' + (shapes[key] || shapes.latest) + "</svg>";
@@ -23580,6 +23582,7 @@ utils.encode = function encode(arr, enc) {
     function sidebarNavigationItems() {
       const items = [
         { key: "live", label: "直播", action: "live" },
+        { key: "keep", label: "收藏", action: "keep" },
         { key: "recent", label: "最近观看", action: "secondary", listId: "recent" },
         { key: "latest", label: "本周更新", action: "secondary", listId: "now-playing" },
         { key: "movie", label: "电影", action: "secondary", listId: "movie" },
@@ -23728,6 +23731,9 @@ utils.encode = function encode(arr, enc) {
       }
       if (action === "settings") {
         return requestSidebarNavigation({ type: "settings" });
+      }
+      if (action === "keep") {
+        return requestSidebarNavigation({ type: "keep" });
       }
       if (action === "secondary") {
         const listId = normalizeLegacyCategoryId(button.dataset.sidebarListId || "");
@@ -35220,6 +35226,25 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       }
     }
 
+    async function openKeepHome() {
+      try {
+        const api = sdk();
+        if (window.fm && api.openKeep) {
+          await api.openKeep();
+          toast("已打开收藏");
+        } else if (api.openKeep) {
+          await api.openKeep();
+        } else if (window.fongmi && window.fongmi.app && window.fongmi.app.openKeep) {
+          await window.fongmi.app.openKeep();
+          toast("已打开收藏");
+        } else {
+          toast("当前环境不支持打开收藏");
+        }
+      } catch (e) {
+        toast("打开收藏失败：" + (e.message || "unknown"));
+      }
+    }
+
     async function openSettingHome() {
       rememberFocusReturn();
       try {
@@ -39120,6 +39145,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const sidebarSource = String(renderSidebar) + String(openSidebar) + String(closeSidebar) + String(handleSidebarDirectionalKey) + String(handleSidebarMenuKey);
       check("PHASE3_SIDEBAR_SINGLE_DOM", document.querySelectorAll("#homeSidebar").length === 1 && document.querySelectorAll("#homeSidebarNav").length === 1 && document.querySelectorAll("#homeSidebarTools").length === 1, "one Sidebar overlay exists", "DOM_ASSERTION");
       check("PHASE3_SIDEBAR_REAL_NAVIGATION", sidebarSource.includes("openSecondaryCatalog") && sidebarSource.includes("openLiveHome") && sidebarSource.includes("openSettingHome"), "Sidebar uses existing navigation/actions", "STATIC_HOOK");
+      check("PHASE3_SIDEBAR_KEEP_NAVIGATION", typeof openKeepHome === "function" && String(performSidebarNavigation).includes('action.type === "keep"') && String(performSidebarNavigation).includes("openKeepHome") && String(activateSidebarItem).includes('requestSidebarNavigation({ type: "keep" })'), "Sidebar收藏使用Native Keep入口", "STATIC_HOOK");
       check("PHASE3_SIDEBAR_NOT_ROUTE", HOME_PRESENTATION_ROUTES.join(",") === "home,search,secondary" && !sidebarSource.includes('pushState'), "Sidebar does not create a presentation route", "STATIC_HOOK");
       check("PHASE3_SIDEBAR_MENU_KEY", String(normalizeRemoteKey).includes('82: "Menu"') && String(handleSidebarMenuKey).includes("openSidebar"), "Menu/keyCode 82 opens Sidebar", "STATIC_HOOK");
       check("PHASE3_SIDEBAR_FOCUS_SCOPE", String(focusScopeRoot).includes('isSidebarOpen()') && String(handleSidebarDirectionalKey).includes("closeSidebar"), "Sidebar owns directional focus while open", "STATIC_HOOK");
