@@ -6590,7 +6590,7 @@
                 <button class="detail-style-option focusable" id="homeFullscreenOnBtn" type="button" data-home-fullscreen="on">开启</button>
                 <button class="detail-style-option focusable" id="homeFullscreenOffBtn" type="button" data-home-fullscreen="off">关闭</button>
               </div></div>
-              <div class="connection-item"><b>首页热门来源</b><div class="detail-style-segmented" id="homeHotSourceSegmented" role="group" aria-label="首页热门来源">
+              <div class="connection-item"><b>热门来源</b><div class="detail-style-segmented" id="homeHotSourceSegmented" role="group" aria-label="热门来源">
                 <button class="detail-style-option focusable" id="homeHotSourceNostrBtn" type="button" data-home-hot-source="nostr">Nostr热榜</button>
                 <button class="detail-style-option focusable" id="homeHotSourceTmdbBtn" type="button" data-home-hot-source="tmdb">TMDB趋势</button>
               </div></div>
@@ -17467,6 +17467,17 @@ utils.encode = function encode(arr, enc) {
       renderUiPrefsControls();
       if (next === "tmdb") ensureSearchHotData();
       if (state.activeList === "all" && homeUiRoute() === "search") renderSearch();
+      if (homeUiRoute() === "home") renderHome();
+      if (homeUiRoute() === "secondary") {
+        const secondaryId = normalizeLegacyCategoryId(state.homeV14 && state.homeV14.secondaryListId);
+        const secondaryFilters = secondaryId ? secondaryFilterState(secondaryId) : null;
+        if (["movie", "tv", "anime"].includes(secondaryId) && secondaryFilters && secondaryFilters.sort === "hot") {
+          state.homeV14.secondaryActiveQueryKey = "";
+          const query = secondaryGetQuery(secondaryId);
+          renderSecondaryCatalog();
+          if (!query.loaded && !query.loading) loadSecondaryPage(secondaryId, query, 1).catch(() => {});
+        }
+      }
       try { await sdk().cache.set(cacheKey("uiPrefs"), JSON.stringify(sanitizeUiPrefs(state.uiPrefs))); } catch (e) {}
       scheduleUiSnapshotSave();
     }
@@ -18023,6 +18034,7 @@ utils.encode = function encode(arr, enc) {
         state.hot.ready = true;
       }
       useNostrRecommendationsIfReady();
+      refreshActiveNostrSecondaryQuery(true);
       scheduleRender();
     }
 
@@ -18461,6 +18473,7 @@ utils.encode = function encode(arr, enc) {
       state.hot.refreshTimer = 0;
       state.hot.items = buildHotItemsFromIndex();
       useNostrRecommendationsIfReady();
+      refreshActiveNostrSecondaryQuery(true);
       if (isNostrRefreshActive()) {
         updateNostrRefreshProgress({ indexed: state.hot.items.length });
         maybeFinishNostrRefresh();
@@ -24171,6 +24184,61 @@ utils.encode = function encode(arr, enc) {
       return preferredFront.concat(others, preferred.slice(preferredFront.length));
     }
 
+    function homeNostrSignalKey(item) {
+      const mediaType = String(item && (item.mediaType || item.media_type) || "").toLowerCase();
+      const tmdbId = String(item && (item.tmdbId || item.tmdb_id) || "").trim();
+      return (mediaType === "movie" || mediaType === "tv") && tmdbId ? `tmdb:${mediaType}:${tmdbId}` : "";
+    }
+
+    function prioritizeHomeNostrCandidates(items, mediaType) {
+      const source = Array.isArray(items) ? items : [];
+      if (homeHotSource() !== "nostr" || !["movie", "tv", "anime"].includes(String(mediaType || "")) || !state.hot || !state.hot.ready) return source;
+      const candidateKeys = new Set();
+      source.forEach((item) => {
+        const itemType = String(item && (item.mediaType || item.media_type) || "").toLowerCase();
+        const typeAllowed = mediaType === "anime"
+          ? itemType === "movie" || itemType === "tv"
+          : itemType === mediaType;
+        const key = homeNostrSignalKey(item);
+        if (key && typeAllowed) candidateKeys.add(key);
+      });
+      if (!candidateKeys.size) return source;
+      const matchedSignals = [];
+      const seen = new Set();
+      (Array.isArray(state.hot && state.hot.items) ? state.hot.items : []).forEach((signal, index) => {
+        const key = homeNostrSignalKey(signal);
+        if (!key || !candidateKeys.has(key) || seen.has(key)) return;
+        seen.add(key);
+        const latestRaw = signal && (signal.latest || signal.lastEventAt || signal.last_event_at || 0);
+        const latestNumber = Number(latestRaw);
+        const latest = Number.isFinite(latestNumber) ? latestNumber : (Date.parse(String(latestRaw || "")) || 0);
+        matchedSignals.push({
+          key,
+          index,
+          people: Math.max(0, Number(signal.people || signal.count || 0)),
+          latest: Number.isFinite(latest) ? latest : 0
+        });
+      });
+      matchedSignals.sort((a, b) => b.people - a.people || b.latest - a.latest || a.index - b.index);
+      const signals = new Map(matchedSignals.map((signal, index) => [signal.key, {
+        rank: index + 1,
+        people: signal.people
+      }]));
+      if (!signals.size) return source;
+      return source.map((item, index) => {
+        const itemType = String(item && (item.mediaType || item.media_type) || "").toLowerCase();
+        const key = homeNostrSignalKey(item);
+        const signal = key ? signals.get(key) : null;
+        const typeAllowed = mediaType === "anime"
+          ? itemType === "movie" || itemType === "tv"
+          : itemType === mediaType;
+        if (!signal || !typeAllowed) return { item, index, score: -index };
+        const rankBoost = Math.max(0, 3 - Math.min(3, signal.rank - 1));
+        const heatBoost = Math.min(1.5, Math.log1p(signal.people) / 8);
+        return { item, index, score: -index + Math.min(4, rankBoost + heatBoost) };
+      }).sort((a, b) => b.score - a.score || a.index - b.index).map((entry) => entry.item);
+    }
+
     function fillHomeRail(rail, items, options) {
       if (!rail) return;
       const opts = options || {};
@@ -24250,6 +24318,7 @@ utils.encode = function encode(arr, enc) {
       rail.dataset.homeVariant = config.variant;
       const page = state.catalogPage[config.listId];
       const items = page && page.loaded ? filterReleasedCatalogItems(config.listId, state.catalog[config.listId] || []) : [];
+      const rankedItems = prioritizeHomeNostrCandidates(items, config.listId);
       if (page && page.loading) {
         showHomeRailStatus(rail, "加载中...", { variant: config.variant });
       } else if (page && page.error) {
@@ -24271,7 +24340,7 @@ utils.encode = function encode(arr, enc) {
           replaceHomeRailChildren(rail, skeletons, captureHomeRailFocus(rail));
         }
       } else {
-        fillHomeRail(rail, items, {
+        fillHomeRail(rail, rankedItems, {
           variant: config.variant,
           limit: config.initialLimit,
           homeMore: true,
@@ -24799,7 +24868,7 @@ utils.encode = function encode(arr, enc) {
       documentary: ["year", "sort"]
     };
 
-    function secondaryFilterDefaults() { return { mediaType: "all", genre: "all", region: "all", year: "all", sort: "default", lastFocused: {} }; }
+    function secondaryFilterDefaults() { return { mediaType: "all", genre: "all", region: "all", year: "all", sort: "hot", lastFocused: {} }; }
     function secondaryFilterState(id) {
       id = normalizeLegacyCategoryId(id);
       const home = state.homeV14;
@@ -24807,6 +24876,8 @@ utils.encode = function encode(arr, enc) {
       const existing = home.secondaryFilters[id];
       const filters = home.secondaryFilters[id] = Object.assign(secondaryFilterDefaults(), home.secondaryFilters[id] || {});
       filters.lastFocused = Object.assign({}, filters.lastFocused || {});
+      if (filters.sort === "default" || !["hot", "latest", "rating"].includes(filters.sort)) filters.sort = "hot";
+      if (filters.lastFocused.sort === "default" || !["hot", "latest", "rating"].includes(filters.lastFocused.sort)) filters.lastFocused.sort = filters.sort;
       // Weekly Feed has no catalog filter rows; retain the state boundary so
       // older snapshots can still be read without reviving the old filters.
       return filters;
@@ -24899,7 +24970,7 @@ utils.encode = function encode(arr, enc) {
     }
 
     const SECONDARY_FULL_CATALOG_IDS = new Set(["movie", "tv", "anime", "documentary"]);
-    function secondaryFilterDefaultValue(key) { return key === "sort" ? "default" : "all"; }
+    function secondaryFilterDefaultValue(key) { return key === "sort" ? "hot" : "all"; }
     function secondaryNormalizeFilterValues(id, groups) {
       const filters = secondaryFilterState(id);
       const keys = new Set((groups || []).map((group) => group.key));
@@ -24922,7 +24993,8 @@ utils.encode = function encode(arr, enc) {
     }
     function secondaryFilterKey(id, filters) {
       id = normalizeLegacyCategoryId(id);
-      return JSON.stringify([id, id === "now-playing" ? "weekly-feed" : id === "recent" ? "local-history" : "tmdb", filters.mediaType, filters.genre, filters.region, filters.year, filters.sort]);
+      const hotSource = ["movie", "tv", "anime"].includes(id) && filters.sort === "hot" ? homeHotSource() : "";
+      return JSON.stringify([id, id === "now-playing" ? "weekly-feed" : id === "recent" ? "local-history" : "tmdb", hotSource, filters.mediaType, filters.genre, filters.region, filters.year, filters.sort]);
     }
     function secondaryGetQuery(id) {
       id = normalizeLegacyCategoryId(id);
@@ -24930,12 +25002,19 @@ utils.encode = function encode(arr, enc) {
       home.secondaryQueries = home.secondaryQueries && typeof home.secondaryQueries === "object" ? home.secondaryQueries : {};
       const filters = secondaryFilterState(id);
       const key = secondaryFilterKey(id, filters);
+      const hotSource = ["movie", "tv", "anime"].includes(id) && filters.sort === "hot" ? homeHotSource() : "";
       let query = home.secondaryQueries[key];
       if (!query) {
         query = home.secondaryQueries[key] = {
           key,
           listId: id,
-          source: id === "now-playing" ? "weekly-feed" : id === "recent" ? "local-history" : "tmdb",
+          source: id === "now-playing" ? "weekly-feed" : id === "recent" ? "local-history" : hotSource === "nostr" ? "nostr-hot" : "tmdb",
+          hotSource,
+          nostrHot: hotSource === "nostr",
+          nostrHotItems: [],
+          nostrHotLoading: false,
+          nostrHotLoaded: false,
+          nostrHotGeneration: 0,
           page: 0,
           totalPages: 0,
           totalResults: 0,
@@ -24955,6 +25034,10 @@ utils.encode = function encode(arr, enc) {
           snapshotSource: ""
         };
       }
+      query.hotSource = hotSource;
+      query.nostrHot = hotSource === "nostr";
+      query.source = id === "now-playing" ? "weekly-feed" : id === "recent" ? "local-history" : hotSource === "nostr" ? "nostr-hot" : "tmdb";
+      if (!Array.isArray(query.nostrHotItems)) query.nostrHotItems = [];
       home.secondaryActiveQueryKey = key;
       return query;
     }
@@ -24991,7 +25074,7 @@ utils.encode = function encode(arr, enc) {
           server.push("year");
         } else client.push("year");
       }
-      if (filters.sort !== "default") {
+      if (["hot", "latest", "rating"].includes(filters.sort)) {
         if (secondaryIsDiscoverSource(entry)) {
           const dateSort = (entry.mediaType || endpointType) === "tv" ? "first_air_date.desc" : "primary_release_date.desc";
           params.sort_by = filters.sort === "hot" ? "popularity.desc" : filters.sort === "rating" ? "vote_average.desc" : dateSort;
@@ -25106,24 +25189,291 @@ utils.encode = function encode(arr, enc) {
       if (schema.includes("sort")) {
         // All configured Secondary sources can use these metrics either on
         // TMDB (server-side discover) or on the already loaded local page.
-        const sorts = [{ value: "default", label: "默认" }, { value: "hot", label: "热门" }, { value: "latest", label: "最新" }, { value: "rating", label: "评分" }];
+        const sorts = [{ value: "hot", label: "热门" }, { value: "latest", label: "最新" }, { value: "rating", label: "评分" }];
         if (discover || source.length || id === "now-playing") groups.push({ key: "sort", label: "排序", options: sorts });
       }
       return groups;
     }
+
+    const SECONDARY_NOSTR_HOT_BATCH_SIZE = 18;
+    const SECONDARY_NOSTR_HOT_TARGET_MATCHES = 18;
+    const SECONDARY_NOSTR_HOT_MAX_SCAN_CANDIDATES = 72;
+    const SECONDARY_NOSTR_HOT_MAX_NEW_DETAIL_REQUESTS = 36;
+    const SECONDARY_NOSTR_HOT_DETAIL_CONCURRENCY = 4;
+
+    function secondaryNostrHotEnabled(id, filters) {
+      return ["movie", "tv", "anime"].includes(normalizeLegacyCategoryId(id))
+        && filters && filters.sort === "hot"
+        && homeHotSource() === "nostr";
+    }
+
+    function secondaryNostrHotCandidates(id) {
+      const allowed = normalizeLegacyCategoryId(id);
+      const seen = new Set();
+      return filterBlocked(Array.isArray(state.hot && state.hot.items) ? state.hot.items : [])
+        .filter((item) => {
+          const type = String(item && (item.mediaType || item.media_type) || "").toLowerCase();
+          const matches = allowed === "anime" ? type === "movie" || type === "tv" : type === allowed;
+          const key = homeNostrSignalKey(item);
+          if (!matches || !key || seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+        .slice(0, SECONDARY_NOSTR_HOT_MAX_SCAN_CANDIDATES);
+    }
+
+    function secondaryNostrMetaCache() {
+      const home = state.homeV14;
+      home.secondaryNostrMetaCache = home.secondaryNostrMetaCache && typeof home.secondaryNostrMetaCache === "object"
+        ? home.secondaryNostrMetaCache
+        : {};
+      return home.secondaryNostrMetaCache;
+    }
+
+    function secondaryNostrKnownItem(hotItem, query) {
+      const key = homeNostrSignalKey(hotItem);
+      if (!key) return null;
+      const pools = [];
+      if (query && Array.isArray(query.items)) pools.push(query.items);
+      if (state.recent && Array.isArray(state.recent.items)) pools.push(state.recent.items);
+      if (state.homeLatest && Array.isArray(state.homeLatest.items)) pools.push(state.homeLatest.items);
+      Object.keys(state.catalog || {}).forEach((id) => {
+        if (Array.isArray(state.catalog[id])) pools.push(state.catalog[id]);
+      });
+      for (const pool of pools) {
+        const found = pool.find((item) => homeNostrSignalKey(item) === key);
+        if (found) return found;
+      }
+      return null;
+    }
+
+    function secondaryNostrDetailUrl(item) {
+      const url = new URL(`${window.WEBHOME_CONFIG.tmdb.apiBase}/${item.mediaType}/${item.tmdbId}`);
+      url.searchParams.set("api_key", tmdbApiKey());
+      url.searchParams.set("language", window.WEBHOME_CONFIG.tmdb.language);
+      return url.toString();
+    }
+
+    function secondaryNostrItemFromDetail(hotItem, detail, listId, index) {
+      if (!detail || typeof detail !== "object") return null;
+      const genreIds = Array.isArray(detail.genre_ids)
+        ? detail.genre_ids
+        : Array.isArray(detail.genres) ? detail.genres.map((genre) => genre && genre.id).filter((value) => value != null) : [];
+      const raw = Object.assign({}, detail, {
+        id: hotItem.tmdbId,
+        media_type: hotItem.mediaType,
+        genre_ids: genreIds,
+        origin_country: detail.origin_country || (Array.isArray(detail.production_countries)
+          ? detail.production_countries.map((country) => country && country.iso_3166_1).filter(Boolean)
+          : [])
+      });
+      const item = normalizeTmdb(raw, { id: "secondary-nostr", title: listId, mediaType: hotItem.mediaType }, index);
+      item.source = "nostr-hot";
+      item.id = `tmdb:${hotItem.mediaType}:${hotItem.tmdbId}`;
+      item.tmdbId = String(hotItem.tmdbId || "");
+      item.mediaType = String(hotItem.mediaType || "").toLowerCase();
+      item.pic = item.pic || hotItem.pic || hotItem.image || "";
+      item.image = item.image || hotItem.image || item.pic || "";
+      item.title = item.title || hotItem.title || "未命名";
+      item.listId = listId;
+      item.listTitle = listId === "anime" ? "动画" : listId === "tv" ? "电视剧" : "电影";
+      return item;
+    }
+
+    function secondaryNostrItemAllowed(id, item) {
+      if (!item || !hasPoster(item)) return false;
+      const listId = normalizeLegacyCategoryId(id);
+      const type = secondaryItemMediaType(item);
+      if (listId === "movie" && type !== "movie") return false;
+      if (listId === "tv" && type !== "tv") return false;
+      if (listId === "anime" && !secondaryItemGenreIds(item).includes("16")) return false;
+      const regions = secondaryItemRegions(item);
+      if (listId === "anime" && regions.length && !regions.some((value) => SECONDARY_ANIMATION_REGION_IDS.includes(String(value).toUpperCase()))) return false;
+      if (listId === "tv" && regions.length && !regions.some((value) => SECONDARY_TV_REGION_IDS.includes(String(value).toUpperCase()))) return false;
+      if (listId === "tv" && secondaryItemGenreIds(item).some((value) => ["16", "99", "10763", "10764", "10766", "10767"].includes(value))) return false;
+      return true;
+    }
+
+    function secondaryNostrHotFilterMatches(id, filters, item) {
+      if (!secondaryNostrItemAllowed(id, item)) return false;
+      if (isReleaseFilteredCatalogId(id) && !isReleasedAsOfToday(item)) return false;
+      return (filters.mediaType === "all" || secondaryItemMediaType(item) === filters.mediaType)
+        && (filters.genre === "all" || secondaryItemGenreIds(item).includes(filters.genre))
+        && (filters.region === "all" || secondaryItemRegions(item).includes(filters.region))
+        && (filters.year === "all" || secondaryYearMatches(item, filters.year));
+    }
+
+    async function secondaryNostrEnrichCandidate(hotItem, listId, query, index) {
+      const known = secondaryNostrKnownItem(hotItem, query);
+      if (known && secondaryNostrItemAllowed(listId, known)) {
+        return Object.assign({}, known, { source: "nostr-hot", listId, listTitle: listId === "anime" ? "动画" : listId === "tv" ? "电视剧" : "电影" });
+      }
+      const key = homeNostrSignalKey(hotItem);
+      const cache = secondaryNostrMetaCache();
+      if (!key) return null;
+      if (!cache[key]) {
+        cache[key] = requestJson(secondaryNostrDetailUrl(hotItem), 18)
+          .then((body) => secondaryNostrItemFromDetail(hotItem, body, listId, index))
+          .catch(() => null);
+      }
+      const item = await Promise.resolve(cache[key]);
+      return secondaryNostrItemAllowed(listId, item)
+        ? Object.assign({}, item, { listId, listTitle: listId === "anime" ? "动画" : listId === "tv" ? "电视剧" : "电影" })
+        : null;
+    }
+
+    function secondaryNostrDetailRequestNeeded(hotItem, listId, query) {
+      const known = secondaryNostrKnownItem(hotItem, query);
+      if (known && secondaryNostrItemAllowed(listId, known)) return false;
+      const key = homeNostrSignalKey(hotItem);
+      const cache = secondaryNostrMetaCache();
+      return !!key && !cache[key];
+    }
+
+    function secondaryNostrTaskIsCurrent(id, filters, query, generation) {
+      if (!query || !query.nostrHot || homeHotSource() !== "nostr") return false;
+      if (homeUiRoute() !== "secondary" || state.homeV14.secondaryListId !== id) return false;
+      if (secondaryActiveQuery(id) !== query || Number(query.nostrHotGeneration || 0) !== Number(generation || 0)) return false;
+      return secondaryFilterKey(id, secondaryFilterState(id)) === query.key
+        && secondaryFilterKey(id, filters) === query.key;
+    }
+
+    function secondaryNostrGridFocusSnapshot() {
+      const grid = $("secondaryCatalogGrid");
+      const active = document.activeElement;
+      if (!grid || !active || !grid.contains(active)) return null;
+      const mediaKey = String(active.dataset && active.dataset.mediaKey || mediaDomKey(active.__mediaItem) || "");
+      return mediaKey ? { mediaKey, scrollTop: grid.scrollTop, scrollLeft: grid.scrollLeft } : null;
+    }
+
+    function restoreSecondaryNostrGridFocus(snapshot) {
+      if (!snapshot || homeUiRoute() !== "secondary") return;
+      const grid = $("secondaryCatalogGrid");
+      if (!grid) return;
+      let target = Array.from(grid.querySelectorAll(".card")).find((card) => String(card.dataset.mediaKey || mediaDomKey(card.__mediaItem) || "") === snapshot.mediaKey) || null;
+      const info = state.gridRender[gridRenderId(grid)];
+      if (!target && info && Array.isArray(info.items)) {
+        const index = info.items.findIndex((item) => String(mediaDomKey(item) || "") === snapshot.mediaKey);
+        if (index >= 0 && Number(info.rendered || 0) <= index) {
+          appendGridItems(grid, info.items, index + 1);
+          target = Array.from(grid.querySelectorAll(".card")).find((card) => String(card.dataset.mediaKey || mediaDomKey(card.__mediaItem) || "") === snapshot.mediaKey) || null;
+        }
+      }
+      if (target && isVisibleFocusable(target)) {
+        try { target.focus({ preventScroll: true }); } catch (e) { target.focus(); }
+        syncFocusedCardHalo(target);
+      }
+      grid.scrollTop = snapshot.scrollTop;
+      grid.scrollLeft = snapshot.scrollLeft;
+    }
+
+    function commitSecondaryNostrHotItems(id, filters, query, generation, items) {
+      if (!secondaryNostrTaskIsCurrent(id, filters, query, generation)) return false;
+      const focus = secondaryNostrGridFocusSnapshot();
+      query.nostrHotItems = uniqueMedia(Array.isArray(items) ? items : []);
+      const fallback = (query.items || []).filter((item) => item && item.source !== "nostr-hot");
+      query.items = uniqueMedia(query.nostrHotItems.concat(fallback));
+      if (query.nostrHotItems.length && !query.loaded && !query.loading) {
+        query.loaded = true;
+        query.error = "";
+      }
+      if (query.loaded) {
+        renderSecondaryCatalog();
+        restoreSecondaryNostrGridFocus(focus);
+      }
+      return true;
+    }
+
+    async function secondaryLoadNostrHotItems(id, filters, query) {
+      if (!secondaryNostrHotEnabled(id, filters) || !query || !query.nostrHot) return [];
+      if (query.nostrHotLoaded) return Array.isArray(query.nostrHotItems) ? query.nostrHotItems : [];
+      if (query.nostrHotLoading) return Array.isArray(query.nostrHotItems) ? query.nostrHotItems : [];
+      if (!state.hot || !state.hot.ready) return [];
+      const scanFilters = {
+        mediaType: filters.mediaType,
+        genre: filters.genre,
+        region: filters.region,
+        year: filters.year,
+        sort: filters.sort
+      };
+      const generation = Number(query.nostrHotGeneration || 0) + 1;
+      query.nostrHotGeneration = generation;
+      query.nostrHotLoading = true;
+      query.nostrHotItems = [];
+      const qualified = [];
+      let newDetailRequests = 0;
+      try {
+        const candidates = secondaryNostrHotCandidates(id);
+        for (let offset = 0; offset < candidates.length && qualified.length < SECONDARY_NOSTR_HOT_TARGET_MATCHES; offset += SECONDARY_NOSTR_HOT_BATCH_SIZE) {
+          if (!secondaryNostrTaskIsCurrent(id, scanFilters, query, generation)) return qualified;
+          const batch = candidates.slice(offset, offset + SECONDARY_NOSTR_HOT_BATCH_SIZE).filter((candidate) => {
+            const needsDetail = secondaryNostrDetailRequestNeeded(candidate, id, query);
+            if (needsDetail) {
+              if (newDetailRequests >= SECONDARY_NOSTR_HOT_MAX_NEW_DETAIL_REQUESTS) return false;
+              newDetailRequests += 1;
+            }
+            return true;
+          });
+          if (!batch.length) continue;
+          const results = await weeklyMapLimit(batch, SECONDARY_NOSTR_HOT_DETAIL_CONCURRENCY, (candidate, index) => secondaryNostrEnrichCandidate(candidate, id, query, index));
+          if (!secondaryNostrTaskIsCurrent(id, scanFilters, query, generation)) return qualified;
+          const matches = results
+            .filter((result) => result && result.ok && result.value && secondaryNostrHotFilterMatches(id, scanFilters, result.value))
+            .map((result) => result.value)
+            .slice(0, Math.max(0, SECONDARY_NOSTR_HOT_TARGET_MATCHES - qualified.length));
+          if (matches.length) qualified.push(...matches);
+          commitSecondaryNostrHotItems(id, scanFilters, query, generation, qualified);
+        }
+        if (secondaryNostrTaskIsCurrent(id, scanFilters, query, generation)) {
+          query.nostrHotItems = uniqueMedia(qualified);
+          query.nostrHotLoaded = true;
+        }
+        return qualified;
+      } finally {
+        if (Number(query.nostrHotGeneration || 0) === generation) query.nostrHotLoading = false;
+      }
+    }
+
+    function refreshActiveNostrSecondaryQuery(force) {
+      if (homeUiRoute() !== "secondary") return false;
+      const id = normalizeLegacyCategoryId(state.homeV14 && state.homeV14.secondaryListId);
+      const filters = id ? secondaryFilterState(id) : null;
+      const query = id ? secondaryActiveQuery(id) : null;
+      if (!query || !secondaryNostrHotEnabled(id, filters) || !state.hot || !state.hot.ready) return false;
+      if (query.nostrHotLoading) return false;
+      if (force) {
+        query.nostrHotLoaded = false;
+        query.nostrHotItems = [];
+        query.items = (query.items || []).filter((item) => item && item.source !== "nostr-hot");
+      }
+      if (query.nostrHotLoaded) return false;
+      secondaryLoadNostrHotItems(id, filters, query).catch(() => {});
+      return true;
+    }
+
     function secondaryFilterItems(id, baseItems) {
       id = normalizeLegacyCategoryId(id);
       if (id === "now-playing") return filterBlocked(Array.isArray(baseItems) ? baseItems : []);
       const filters = secondaryFilterState(id);
       const query = secondaryActiveQuery(id);
       const serverFilters = new Set(query && query.listId === id ? query.serverSideFilters || [] : []);
-      const result = filterReleasedCatalogItems(id, Array.isArray(baseItems) ? baseItems : []).filter((item) =>
-        (filters.mediaType === "all" || serverFilters.has("mediaType") || secondaryItemMediaType(item) === filters.mediaType)
-        && (filters.genre === "all" || serverFilters.has("genre") || secondaryItemGenreIds(item).includes(filters.genre))
-        && (filters.region === "all" || serverFilters.has("region") || secondaryItemRegions(item).includes(filters.region))
-        && (filters.year === "all" || serverFilters.has("year") || secondaryYearMatches(item, filters.year))
-      );
+      const base = query && query.nostrHot
+        ? uniqueMedia((query.nostrHotItems || []).concat(Array.isArray(baseItems) ? baseItems : []))
+        : (Array.isArray(baseItems) ? baseItems : []);
+      const result = filterReleasedCatalogItems(id, base).filter((item) => {
+        const nostrItem = item && item.source === "nostr-hot";
+        return (filters.mediaType === "all" || (!nostrItem && serverFilters.has("mediaType")) || secondaryItemMediaType(item) === filters.mediaType)
+        && (filters.genre === "all" || (!nostrItem && serverFilters.has("genre")) || secondaryItemGenreIds(item).includes(filters.genre))
+        && (filters.region === "all" || (!nostrItem && serverFilters.has("region")) || secondaryItemRegions(item).includes(filters.region))
+        && (filters.year === "all" || (!nostrItem && serverFilters.has("year")) || secondaryYearMatches(item, filters.year));
+      });
       const metric = (item, key) => Number(item && (key ? item[key] : item.popularity || item.people || item.count) || 0);
+      if (query && query.nostrHot && filters.sort === "hot") {
+        const nostrItems = result.filter((item) => item && item.source === "nostr-hot");
+        const fallbackItems = result.filter((item) => !item || item.source !== "nostr-hot");
+        if (!serverFilters.has("sort")) fallbackItems.sort((a, b) => metric(b) - metric(a));
+        return nostrItems.concat(fallbackItems);
+      }
       if (!serverFilters.has("sort") && filters.sort === "hot") return result.slice().sort((a, b) => metric(b) - metric(a));
       if (!serverFilters.has("sort") && filters.sort === "rating") return result.slice().sort((a, b) => metric(b, "voteAverage") - metric(a, "voteAverage"));
       if (!serverFilters.has("sort") && filters.sort === "latest") return result.slice().sort((a, b) => String(b.releaseDate || b.first_air_date || "").localeCompare(String(a.releaseDate || a.first_air_date || "")) || metric(b, "latest") - metric(a, "latest"));
@@ -25134,7 +25484,7 @@ utils.encode = function encode(arr, enc) {
       if (!options.length) return null;
       const group = row.dataset.secondaryFilterGroup || "";
       const filters = secondaryFilterState(state.homeV14.secondaryListId);
-      const preferred = filters.lastFocused[group] || filters[group] || (group === "sort" ? "default" : "all");
+      const preferred = filters.lastFocused[group] || filters[group] || (group === "sort" ? "hot" : "all");
       const exact = options.find((button) => button.dataset.secondaryFilterValue === preferred);
       if (exact) return exact;
       const x = Number(fromX);
@@ -25255,7 +25605,9 @@ utils.encode = function encode(arr, enc) {
       const plan = buildSecondaryQueryPlan(id, filters, query);
       const pending = plan.sources.map((source, index) => ({ source, state: plan.sourceStates[index] }))
         .filter((entry) => entry.state && !entry.state.done && !entry.state.error);
+      if (page === 1 && query.nostrHot) secondaryLoadNostrHotItems(id, filters, query).catch(() => {});
       if (!pending.length) {
+        query.items = uniqueMedia((query.nostrHotItems || []).concat(query.items || []));
         query.loading = false;
         query.loaded = true;
         query.hasMore = false;
@@ -25290,7 +25642,7 @@ utils.encode = function encode(arr, enc) {
           if (hasPoster(normalized) && (!isReleaseFilteredCatalogId(id) || isReleasedAsOfToday(normalized))) incoming.push(normalized);
         });
       });
-      if (!goodCount) {
+      if (!goodCount && !(Array.isArray(query.nostrHotItems) && query.nostrHotItems.length)) {
         query.loading = false;
         query.loaded = query.page > 0;
         query.error = "加载失败";
@@ -25299,7 +25651,7 @@ utils.encode = function encode(arr, enc) {
         if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
         return query;
       }
-      query.items = uniqueMedia((query.items || []).concat(incoming));
+      query.items = uniqueMedia((query.nostrHotItems || []).concat(query.items || [], incoming));
       query.page = Math.max(page, ...plan.sourceStates.map((sourceState) => Number(sourceState.page || 0)));
       query.totalPages = Math.max(page, ...plan.sourceStates.map((sourceState) => Number(sourceState.totalPages || 0)));
       const totals = plan.sourceStates.map((sourceState) => Number(sourceState.totalResults)).filter(Number.isFinite);
@@ -25340,7 +25692,7 @@ utils.encode = function encode(arr, enc) {
       id = normalizeLegacyCategoryId(id);
       if (homeUiRoute() !== "secondary" || state.homeV14.secondaryListId !== id) return false;
       const filters = secondaryFilterState(id), grid = $("secondaryCatalogGrid");
-      filters[group] = value || (group === "sort" ? "default" : "all");
+      filters[group] = value || (group === "sort" ? "hot" : "all");
       filters.lastFocused[group] = filters[group];
       state.homeV14.secondaryFocusRestore = { id, group, value: filters[group], frame: 0 };
       state.homeV14.secondaryPage = 1;
@@ -25653,7 +26005,7 @@ utils.encode = function encode(arr, enc) {
       const items = isRecent ? uniqueRecentWatchingMedia(baseItems) : secondaryFilterItems(listId, baseItems);
       const activeClientFilter = (query.clientSideFilters || []).some((key) => {
         const value = secondaryFilterState(listId)[key];
-        return value && value !== "all" && !(key === "sort" && value === "default");
+        return value && value !== "all";
       });
       if ($("secondaryCatalogTitle")) $("secondaryCatalogTitle").textContent = title;
       renderSecondaryFilters(listId, baseItems);
