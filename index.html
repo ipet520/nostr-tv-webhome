@@ -17818,6 +17818,69 @@ utils.encode = function encode(arr, enc) {
       scheduleUiSnapshotSave();
     }
 
+    function reassertConnectionSegmentedFocus(target) {
+      if (!isTvLikeDevice() || !isConnectionPanelOpen() || !target || !target.isConnected || !isVisibleFocusable(target)) return;
+      if (document.activeElement !== target) focusRemoteTarget(target);
+      requestAnimationFrame(() => {
+        if (!isTvLikeDevice() || !isConnectionPanelOpen() || !target.isConnected || !isVisibleFocusable(target)) return;
+        if (document.activeElement !== target) focusRemoteTarget(target);
+      });
+    }
+
+    function commitConnectionSegmentedTarget(target) {
+      if (!target) return Promise.resolve(false);
+      const fullscreenValue = target.dataset.homeFullscreen;
+      const hotSourceValue = target.dataset.homeHotSource;
+      let commit = null;
+      if (fullscreenValue === "on" || fullscreenValue === "off") {
+        const enabled = fullscreenValue === "on";
+        if (isHomeFullscreenEnabled() === enabled) {
+          reassertConnectionSegmentedFocus(target);
+          return Promise.resolve(false);
+        }
+        commit = setHomeFullscreenEnabled(enabled);
+      } else if (hotSourceValue === "nostr" || hotSourceValue === "tmdb") {
+        if (homeHotSource() === hotSourceValue) {
+          reassertConnectionSegmentedFocus(target);
+          return Promise.resolve(false);
+        }
+        commit = setHomeHotSource(hotSourceValue);
+      }
+      if (!commit || typeof commit.then !== "function") {
+        reassertConnectionSegmentedFocus(target);
+        return Promise.resolve(false);
+      }
+      return commit.then(() => {
+        reassertConnectionSegmentedFocus(target);
+        return true;
+      }, () => {
+        reassertConnectionSegmentedFocus(target);
+        return false;
+      });
+    }
+
+    function handleConnectionSegmentedDirectionalKey(button, event) {
+      if (!isTvLikeDevice() || !isConnectionPanelOpen() || !button) return false;
+      const key = normalizeRemoteKey(event);
+      if (key !== "ArrowLeft" && key !== "ArrowRight") return false;
+      const group = button.closest && button.closest(".detail-style-segmented");
+      if (!group) return false;
+      const field = button.dataset.homeFullscreen != null ? "homeFullscreen" : button.dataset.homeHotSource != null ? "homeHotSource" : "";
+      if (!field) return false;
+      const values = field === "homeFullscreen" ? ["on", "off"] : ["nostr", "tmdb"];
+      const currentValue = String(button.dataset[field] || "");
+      const currentIndex = values.indexOf(currentValue);
+      const targetValue = values[Math.max(0, Math.min(values.length - 1, currentIndex + (key === "ArrowRight" ? 1 : -1)))] || currentValue;
+      const target = Array.from(group.querySelectorAll("button[data-home-fullscreen],button[data-home-hot-source]"))
+        .find((candidate) => isVisibleFocusable(candidate) && candidate.dataset[field] === targetValue) || button;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+      focusRemoteTarget(target);
+      commitConnectionSegmentedTarget(target).catch(() => {});
+      return true;
+    }
+
     function sanitizeTmdbConfig(value) {
       const raw = value && typeof value === "object" ? value : {};
       return { apiKey: String(raw.apiKey || "").trim() || DEFAULT_TMDB_API_KEY };
@@ -36857,13 +36920,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           setHomeFullscreenEnabled(button.dataset.homeFullscreen !== "off").catch(() => {});
         });
         button.addEventListener("keydown", (event) => {
-          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-          event.preventDefault();
-          const next = event.key === "ArrowRight" ? "off" : "on";
-          setHomeFullscreenEnabled(next !== "off").then(() => {
-            const target = document.querySelector(`[data-home-fullscreen="${next}"]`);
-            if (target) focusRemoteTarget(target);
-          }).catch(() => {});
+          handleConnectionSegmentedDirectionalKey(button, event);
         });
       });
       const panConfig = document.querySelector(".pan-config");
@@ -37010,12 +37067,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         button.dataset.homeHotSourceBound = "1";
         button.addEventListener("click", () => setHomeHotSource(button.dataset.homeHotSource).catch(() => {}));
         button.addEventListener("keydown", (event) => {
-          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-          event.preventDefault();
-          event.stopPropagation();
-          if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-          const target = event.key === "ArrowRight" ? $("homeHotSourceTmdbBtn") : $("homeHotSourceNostrBtn");
-          if (target) focusRemoteTarget(target);
+          handleConnectionSegmentedDirectionalKey(button, event);
         });
       });
       (function () {
