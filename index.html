@@ -4647,6 +4647,16 @@
       background: linear-gradient(90deg, rgba(8, 11, 16, .82) 0%, rgba(8, 11, 16, .68) 72%, rgba(8, 11, 16, .34) 100%);
       -webkit-backdrop-filter: blur(18px) saturate(1.15);
       backdrop-filter: blur(18px) saturate(1.15);
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
+
+    .home-sidebar-backdrop {
+      display: none;
+    }
+
+    .home-sidebar-backdrop[hidden] {
+      display: none !important;
     }
 
     .home-sidebar[hidden] { display: none !important; }
@@ -4768,7 +4778,12 @@
     }
 
     .home-search-launcher-wrap[hidden],
-    .home-search-launcher[hidden] {
+    .home-search-launcher[hidden],
+    .home-menu-launcher[hidden] {
+      display: none !important;
+    }
+
+    .home-menu-launcher {
       display: none !important;
     }
 
@@ -5347,13 +5362,18 @@
         top: 16px;
         left: auto;
         right: 16px;
-        width: 46px;
+        width: auto;
+        display: flex;
+        align-items: center;
+        gap: 8px;
         transform: none;
       }
 
       html:not(.tv-mode):not(.tv-preview) #home.home-root .home-search-launcher {
+        flex: 0 0 46px;
         width: 46px;
         min-height: 46px;
+        height: 46px;
         justify-content: center;
         gap: 0;
         padding: 0;
@@ -5362,23 +5382,133 @@
       html:not(.tv-mode):not(.tv-preview) #home.home-root .home-search-launcher > span {
         display: none;
       }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-menu-launcher {
+        display: flex !important;
+        flex: 0 0 46px;
+        width: 46px;
+        min-height: 46px;
+        height: 46px;
+        justify-content: center;
+        gap: 0;
+        padding: 0;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-menu-launcher .icon {
+        width: 22px;
+        height: 22px;
+      }
     }
 
-    @media (orientation: landscape) and (pointer: coarse) {
+    @media (orientation: landscape) and (pointer: coarse),
+           (orientation: landscape) and (max-width: 719px) {
       html:not(.tv-mode):not(.tv-preview) #home.home-root .home-search-launcher-wrap {
         top: 16px;
         left: 50%;
         right: auto;
-        width: min(560px, calc(100% - 32px));
+        width: min(620px, calc(100% - 32px));
+        display: flex;
+        align-items: center;
+        gap: 8px;
         transform: translateX(-50%);
       }
 
       html:not(.tv-mode):not(.tv-preview) #home.home-root .home-search-launcher {
+        flex: 1 1 auto;
+        width: auto;
+        min-width: 0;
         min-height: 50px;
         gap: 12px;
         padding: 0 20px;
         font-size: 16px;
       }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-menu-launcher {
+        display: flex !important;
+        flex: 0 0 50px;
+        width: 50px;
+        min-height: 50px;
+        height: 50px;
+        justify-content: center;
+        gap: 0;
+        padding: 0;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-menu-launcher .icon {
+        width: 22px;
+        height: 22px;
+      }
+    }
+
+    @media (pointer: coarse), (max-width: 719px) {
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar {
+        width: 78vw;
+        max-width: 320px;
+        padding-top: 16px;
+        padding-top: max(16px, env(safe-area-inset-top, 0px));
+        padding-right: 12px;
+        padding-bottom: 16px;
+        padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+        padding-left: 12px;
+        justify-content: flex-start;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+        touch-action: pan-y;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar-nav,
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar-tools {
+        gap: 6px;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar-tools {
+        margin-top: 16px;
+        padding-top: 12px;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar-item {
+        min-height: 50px;
+        padding: 0 12px;
+        transition: background-color 140ms ease, color 140ms ease;
+        touch-action: manipulation;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar-item:focus,
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar-item:active,
+      html:not(.tv-mode):not(.tv-preview) #home.home-root #connectionToggle:focus,
+      html:not(.tv-mode):not(.tv-preview) #home.home-root #connectionToggle:active {
+        transform: none;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root #homeSidebarBackdrop:not([hidden]) {
+        position: fixed;
+        z-index: 119;
+        inset: 0;
+        display: block;
+        pointer-events: auto;
+        background: rgba(0, 0, 0, .44);
+        touch-action: none;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root.mobile-sidebar-open .home-search-launcher-wrap {
+        z-index: 122;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root.mobile-sidebar-open #homeSearchLauncher {
+        pointer-events: none;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root.mobile-sidebar-open #homeMenuLauncher {
+        pointer-events: auto;
+      }
+    }
+
+    html.tv-mode #home.home-root #homeMenuLauncher,
+    html.tv-preview #home.home-root #homeMenuLauncher,
+    html.tv-mode #home.home-root #homeSidebarBackdrop,
+    html.tv-preview #home.home-root #homeSidebarBackdrop {
+      display: none !important;
     }
 
   </style>
@@ -6555,6 +6685,7 @@
 </head>
 <body>
   <main class="app home-root" id="home">
+    <div id="homeSidebarBackdrop" class="home-sidebar-backdrop" hidden aria-hidden="true"></div>
     <aside class="home-sidebar" id="homeSidebar" hidden aria-hidden="true" aria-label="主导航">
       <nav class="home-sidebar-nav" id="homeSidebarNav" aria-label="内容导航"></nav>
       <div class="home-sidebar-tools" id="homeSidebarTools" aria-label="工具"></div>
@@ -6563,6 +6694,9 @@
       <button class="home-search-launcher focusable" id="homeSearchLauncher" type="button" aria-controls="searchPage" aria-label="打开搜索">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m16.5 16.5 4 4"></path></svg>
         <span>搜索电影、剧集…</span>
+      </button>
+      <button class="home-search-launcher home-menu-launcher focusable" id="homeMenuLauncher" type="button" aria-controls="homeSidebar" aria-expanded="false" aria-label="打开主菜单">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>
       </button>
     </div>
     <form class="search home-search" id="searchForm" autocomplete="off" hidden>
@@ -16333,6 +16467,9 @@ utils.encode = function encode(arr, enc) {
         secondaryHistoryBackPending: false,
         searchHistoryBackPending: false,
         sidebarOpen: false,
+        sidebarHistoryEntry: false,
+        sidebarHistoryBackPending: false,
+        sidebarDeferredAction: null,
         sidebarReturnTarget: null,
         sidebarReturnScrollY: 0,
         sidebarFocusId: "",
@@ -23003,6 +23140,114 @@ utils.encode = function encode(arr, enc) {
       return !!(sidebar && state.homeV14 && state.homeV14.sidebarOpen && !sidebar.hidden);
     }
 
+    function isMobileSidebarDevice() {
+      if (isTvLikeDevice()) return false;
+      const coarse = window.matchMedia ? window.matchMedia("(pointer: coarse)").matches : false;
+      return isNativeMobileClient() || coarse || isBrowserPhoneClient();
+    }
+
+    function syncSidebarMobilePresentation() {
+      const home = $("home");
+      const sidebar = $("homeSidebar");
+      const backdrop = $("homeSidebarBackdrop");
+      const menu = $("homeMenuLauncher");
+      const open = !!(sidebar && state.homeV14 && state.homeV14.sidebarOpen && !sidebar.hidden && isHomeRouteActive());
+      const mobileOpen = open && isMobileSidebarDevice();
+      if (home) home.classList.toggle("mobile-sidebar-open", mobileOpen);
+      if (backdrop) {
+        backdrop.hidden = !mobileOpen;
+        backdrop.setAttribute("aria-hidden", mobileOpen ? "false" : "true");
+      }
+      if (menu) menu.setAttribute("aria-expanded", open ? "true" : "false");
+    }
+
+    function beginMobileSidebarHistoryEntry() {
+      const home = state.homeV14;
+      if (!home || !isMobileSidebarDevice() || home.sidebarHistoryEntry || home.sidebarHistoryBackPending) return false;
+      try {
+        history.pushState(Object.assign({}, history.state || {}, { homeSidebar: true }), "", location.href);
+        home.sidebarHistoryEntry = true;
+        home.sidebarHistoryBackPending = false;
+        return true;
+      } catch (e) {
+        home.sidebarHistoryEntry = false;
+        return false;
+      }
+    }
+
+    function clearMobileSidebarHistoryEntry() {
+      const home = state.homeV14;
+      if (!home) return false;
+      const hadEntry = !!home.sidebarHistoryEntry;
+      home.sidebarHistoryEntry = false;
+      home.sidebarHistoryBackPending = false;
+      if (hadEntry && history.state && history.state.homeSidebar) {
+        try { history.replaceState(Object.assign({}, history.state, { homeSidebar: false }), "", location.href); } catch (e) {}
+      }
+      return hadEntry;
+    }
+
+    function settleMobileSidebarHistory(options) {
+      const home = state.homeV14;
+      if (!home || !home.sidebarHistoryEntry || home.sidebarHistoryBackPending) return false;
+      const opts = options || {};
+      home.sidebarHistoryEntry = false;
+      if (opts.fromPopState) {
+        home.sidebarHistoryBackPending = false;
+        if (history.state && history.state.homeSidebar) {
+          try { history.replaceState(Object.assign({}, history.state, { homeSidebar: false }), "", location.href); } catch (e) {}
+        }
+        return true;
+      }
+      home.sidebarHistoryBackPending = true;
+      try {
+        history.back();
+      } catch (e) {
+        home.sidebarHistoryBackPending = false;
+        if (history.state && history.state.homeSidebar) {
+          try { history.replaceState(Object.assign({}, history.state, { homeSidebar: false }), "", location.href); } catch (ignore) {}
+        }
+      }
+      return true;
+    }
+
+    function performSidebarNavigation(action) {
+      if (!action || !action.type) return false;
+      if (action.type === "live") return !!openLiveHome();
+      if (action.type === "settings") return !!openSettingHome();
+      if (action.type === "secondary") {
+        const context = action.context || {};
+        return openSecondaryCatalog(action.listId, {
+          originSection: action.listId,
+          originTarget: context.target || null,
+          returnTarget: context.target || null,
+          returnFocus: context.focus || null,
+          returnScrollY: context.scrollY || 0,
+          fromSidebar: true
+        });
+      }
+      return false;
+    }
+
+    function requestSidebarNavigation(action) {
+      const home = state.homeV14;
+      if (!action || !home) return false;
+      if (!isMobileSidebarDevice()) return performSidebarNavigation(action);
+      if (home.sidebarHistoryBackPending) return true;
+      if (!home.sidebarOpen) return false;
+      if (!home.sidebarHistoryEntry) {
+        closeSidebar({ restore: false });
+        return performSidebarNavigation(action);
+      }
+      home.sidebarDeferredAction = action;
+      const closed = closeSidebar({ restore: false });
+      if (!closed || !home.sidebarHistoryBackPending) {
+        if (home.sidebarDeferredAction === action) home.sidebarDeferredAction = null;
+        return false;
+      }
+      return true;
+    }
+
     function sidebarConfiguredList(preferredId) {
       const wanted = normalizeLegacyCategoryId(preferredId);
       return visibleTmdbLists().find((list) => normalizeLegacyCategoryId(list && list.id) === wanted) || null;
@@ -23071,8 +23316,8 @@ utils.encode = function encode(arr, enc) {
         button.addEventListener("focus", () => {
           if (state.homeV14) state.homeV14.sidebarFocusId = item.key;
         });
-        if (item.action === "live") button.addEventListener("click", openLiveHome);
-        else if (item.action === "settings") button.addEventListener("click", openSettingHome);
+        if (item.action === "live") button.addEventListener("click", () => requestSidebarNavigation({ type: "live" }));
+        else if (item.action === "settings") button.addEventListener("click", () => requestSidebarNavigation({ type: "settings" }));
         else button.addEventListener("click", () => activateSidebarItem(button));
         return button;
       };
@@ -23118,6 +23363,7 @@ utils.encode = function encode(arr, enc) {
     }
 
     function openSidebar() {
+      if (state.homeV14 && state.homeV14.sidebarHistoryBackPending) return false;
       if (!isHomeRouteActive() || isConnectionPanelOpen() || isSearchSuggestOpen()) return false;
       const sidebar = $("homeSidebar");
       if (!sidebar) return false;
@@ -23132,24 +23378,33 @@ utils.encode = function encode(arr, enc) {
       state.homeV14.sidebarOpen = true;
       sidebar.hidden = false;
       sidebar.setAttribute("aria-hidden", "false");
+      const mobile = isMobileSidebarDevice();
+      if (mobile) beginMobileSidebarHistoryEntry();
+      syncSidebarMobilePresentation();
       const remembered = state.homeV14.sidebarFocusId;
       const target = sidebarFocusableItems().find((item) => item.dataset.sidebarKey === remembered) || sidebarFocusableItems()[0];
-      if (target) requestAnimationFrame(() => focusRemoteTarget(target));
+      if (!mobile && target) requestAnimationFrame(() => focusRemoteTarget(target));
       return true;
     }
 
     function closeSidebar(options) {
       const opts = options || {};
+      if (state.homeV14 && state.homeV14.sidebarHistoryBackPending) return false;
       const sidebar = $("homeSidebar");
       if (!sidebar || !state.homeV14 || !state.homeV14.sidebarOpen) return false;
       const context = sidebarReturnContext();
+      const mobile = isMobileSidebarDevice();
       state.homeV14.sidebarOpen = false;
       sidebar.hidden = true;
       sidebar.setAttribute("aria-hidden", "true");
       state.homeV14.sidebarReturnTarget = null;
       state.homeV14.sidebarReturnFocus = null;
       state.homeV14.sidebarReturnScrollY = 0;
-      if (opts.restore !== false && isHomeRouteActive()) restoreSidebarHomeFocus(context);
+      syncSidebarMobilePresentation();
+      if (opts.restore !== false && isHomeRouteActive() && !mobile) restoreSidebarHomeFocus(context);
+      settleMobileSidebarHistory({
+        fromPopState: opts.fromPopState === true
+      });
       return context;
     }
 
@@ -23158,25 +23413,16 @@ utils.encode = function encode(arr, enc) {
       const action = button.dataset.sidebarAction || "";
       if (action === "live") {
         rememberFocusReturn();
-        openLiveHome();
-        return true;
+        return requestSidebarNavigation({ type: "live" });
       }
       if (action === "settings") {
-        openSettingHome();
-        return true;
+        return requestSidebarNavigation({ type: "settings" });
       }
       if (action === "secondary") {
-        const context = closeSidebar({ restore: false });
         const listId = normalizeLegacyCategoryId(button.dataset.sidebarListId || "");
         if (!listId) return false;
-        return openSecondaryCatalog(listId, {
-          originSection: listId,
-          originTarget: context && context.target,
-          returnTarget: context && context.target,
-          returnFocus: context && context.focus,
-          returnScrollY: context && context.scrollY,
-          fromSidebar: true
-        });
+        const context = sidebarReturnContext();
+        return requestSidebarNavigation({ type: "secondary", listId, context });
       }
       return false;
     }
@@ -23205,6 +23451,12 @@ utils.encode = function encode(arr, enc) {
     }
 
     function handleSidebarBackKey(event) {
+      if (state.homeV14 && state.homeV14.sidebarHistoryBackPending) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+        return true;
+      }
       if (!isSidebarOpen()) return false;
       if (isConnectionPanelOpen() && $("connectionDock") && $("connectionDock").contains(document.activeElement)) return false;
       event.preventDefault();
@@ -23248,7 +23500,11 @@ utils.encode = function encode(arr, enc) {
       const visible = isHomeRouteActive() && !!state.homeV14.sidebarOpen;
       sidebar.hidden = !visible;
       sidebar.setAttribute("aria-hidden", visible ? "false" : "true");
-      if (!visible) state.homeV14.sidebarOpen = false;
+      if (!visible) {
+        state.homeV14.sidebarOpen = false;
+        if (!state.homeV14.sidebarHistoryBackPending) clearMobileSidebarHistoryEntry();
+      }
+      syncSidebarMobilePresentation();
     }
 
     function syncHomeRoutePresentation() {
@@ -36474,6 +36730,11 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if ($("searchHistoryClear")) $("searchHistoryClear").addEventListener("click", clearSearchHistory);
       if ($("secondaryCatalogBack")) $("secondaryCatalogBack").addEventListener("click", requestCloseSecondaryCatalog);
       if ($("homeSearchLauncher")) $("homeSearchLauncher").addEventListener("click", openSearchPage);
+      if ($("homeMenuLauncher")) $("homeMenuLauncher").addEventListener("click", () => {
+        if (isSidebarOpen()) closeSidebar();
+        else openSidebar();
+      });
+      if ($("homeSidebarBackdrop")) $("homeSidebarBackdrop").addEventListener("click", () => closeSidebar());
       if ($("homeRecentMore")) $("homeRecentMore").addEventListener("click", () => openSecondaryCatalog("recent", { originSection: "recent", originTarget: $("homeRecentMore") }));
       if ($("homeHotMore")) $("homeHotMore").addEventListener("click", () => openSecondaryCatalog("now-playing", { originSection: "now-playing", originTarget: $("homeHotMore") }));
       document.querySelectorAll("[data-home-hot-source]").forEach((button) => {
@@ -38412,6 +38673,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const horizontal = target.closest && target.closest(".rail, #panTabs, .secondary-filter-row");
       const panList = $("panResultList");
       const connectionBody = $("connectionBody");
+      const sidebar = $("homeSidebar");
       const suggestPanel = $("suggestPanel");
       const detail = $("detailSheet");
       const sync = $("syncSheet");
@@ -38426,6 +38688,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       } else if (connectionBody && connectionBody.contains(target)) {
         const panelDelta = revealVerticalInContainer(target, connectionBody, 24, 24);
         deltaY += panelDelta.y;
+      } else if (sidebar && sidebar.contains(target)) {
+        const sidebarDelta = revealVerticalInContainer(target, sidebar, 24, 24);
+        deltaY += sidebarDelta.y;
       } else if (suggestPanel && suggestPanel.contains(target)) {
         const suggestDelta = revealVerticalInContainer(target, suggestPanel, 18, 18);
         deltaY += suggestDelta.y;
@@ -38439,7 +38704,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       } else if (secondary && !secondary.hidden && secondary.contains(target)) {
         const secondaryDelta = revealSecondaryFocusedTarget(target);
         deltaY += secondaryDelta.y;
-      } else if (!(connectionBody && connectionBody.contains(target)) && !(suggestPanel && suggestPanel.contains(target))) {
+      } else if (!(connectionBody && connectionBody.contains(target))
+        && !(sidebar && sidebar.contains(target))
+        && !(suggestPanel && suggestPanel.contains(target))) {
         const homeDelta = revealHomeFocusedTarget(target, options);
         deltaY += homeDelta.y;
       }
@@ -39170,6 +39437,22 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
     window.addEventListener("popstate", (event) => {
       const detailSheet = $("detailSheet");
+      if (state.homeV14 && state.homeV14.sidebarHistoryBackPending) {
+        const deferredAction = state.homeV14.sidebarDeferredAction;
+        state.homeV14.sidebarDeferredAction = null;
+        state.homeV14.sidebarHistoryBackPending = false;
+        state.homeV14.sidebarHistoryEntry = false;
+        if (history.state && history.state.homeSidebar) {
+          try { history.replaceState(Object.assign({}, history.state, { homeSidebar: false }), "", location.href); } catch (e) {}
+        }
+        syncSidebarMobilePresentation();
+        if (deferredAction) performSidebarNavigation(deferredAction);
+        return;
+      }
+      if (isMobileSidebarDevice() && isSidebarOpen()) {
+        closeSidebar({ restore: false, fromPopState: true });
+        return;
+      }
       // 正在关闭动画中，忽略重复触发
       const isClosing = detailSheet && detailSheet.classList.contains("sheet-closing");
       if (isClosing) return;
@@ -39252,6 +39535,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const detailLayoutChanged = syncDetailLayout();
       if (detailLayoutChanged && $("detailSheet") && $("detailSheet").classList.contains("active") && state.selected) refreshActiveDetailView();
       renderAll({ deferContent: uiSnapshotRoute() === "home" });
+      syncSidebarMobilePresentation();
       scheduleDetailTextClamp();
       scheduleHistorySettlement();
     });
@@ -39263,6 +39547,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const detailLayoutChanged = syncDetailLayout();
       if (detailLayoutChanged && $("detailSheet") && $("detailSheet").classList.contains("active") && state.selected) refreshActiveDetailView();
       renderAll({ deferContent: uiSnapshotRoute() === "home" });
+      syncSidebarMobilePresentation();
       scheduleDetailTextClamp();
     });
     window.addEventListener("scroll", () => {
