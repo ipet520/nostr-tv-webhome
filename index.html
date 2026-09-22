@@ -4635,18 +4635,26 @@
     .home-sidebar {
       position: fixed;
       z-index: 120;
-      top: 0;
-      bottom: 0;
-      left: 0;
+      top: 50%;
+      bottom: auto;
+      left: clamp(20px, 1.4vw, 30px);
       display: flex;
       flex-direction: column;
-      justify-content: center;
-      width: 150px;
-      padding: 24px 10px 26px;
+      justify-content: flex-start;
+      width: clamp(176px, 9.5vw, 190px);
+      height: auto;
+      max-height: calc(100vh - 96px);
+      max-height: calc(100dvh - 96px);
+      padding: 10px 8px;
       pointer-events: auto;
-      background: linear-gradient(90deg, rgba(8, 11, 16, .82) 0%, rgba(8, 11, 16, .68) 72%, rgba(8, 11, 16, .34) 100%);
+      transform: translateY(-50%);
+      box-sizing: border-box;
+      border: 1px solid rgba(255, 255, 255, .12);
+      border-radius: 18px;
+      background: rgba(10, 14, 20, .82);
       -webkit-backdrop-filter: blur(18px) saturate(1.15);
       backdrop-filter: blur(18px) saturate(1.15);
+      box-shadow: 0 16px 42px rgba(0, 0, 0, .30);
       overflow-y: auto;
       overscroll-behavior: contain;
     }
@@ -4674,7 +4682,7 @@
       display: flex;
       align-items: center;
       width: 100%;
-      min-height: 54px;
+      min-height: 52px;
       margin: 0;
       gap: 10px;
       padding: 0 10px;
@@ -4724,15 +4732,15 @@
       bottom: calc(100% + 8px);
     }
     .home-sidebar #connectionToggle {
-      min-height: 54px;
+      min-height: 52px;
       height: auto;
-      justify-content: center;
-      gap: 0;
+      justify-content: flex-start;
+      gap: 10px;
       padding: 0 10px;
       border-radius: 8px;
     }
     .home-sidebar #connectionDock .connection-title {
-      display: none !important;
+      display: inline !important;
     }
     .home-sidebar #connectionDock .connection-arrow { display: none; }
     .home-sidebar #connectionToggle .dot {
@@ -4750,19 +4758,7 @@
     }
     html.tv-mode .home-sidebar-item { transition: none; }
     html.tv-mode #home.home-root .home-sidebar {
-      background: linear-gradient(90deg, rgba(8, 11, 16, .82) 0%, rgba(8, 11, 16, .68) 72%, rgba(8, 11, 16, .34) 100%);
-      -webkit-backdrop-filter: blur(18px) saturate(1.15);
-      backdrop-filter: blur(18px) saturate(1.15);
-    }
-
-    html.tv-mode #home.home-root .home-sidebar-nav,
-    html.tv-preview #home.home-root .home-sidebar-nav {
-      transform: translateY(10px);
-    }
-
-    html.tv-mode #home.home-root .home-sidebar-tools,
-    html.tv-preview #home.home-root .home-sidebar-tools {
-      transform: translateY(-10px);
+      background: rgba(10, 14, 20, .82);
     }
 
     /* Home exposes one launcher only.  The real Search form is moved into
@@ -5442,15 +5438,24 @@
 
     @media (pointer: coarse), (max-width: 719px) {
       html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar {
-        width: clamp(220px, 64vw, 260px);
-        max-width: 260px;
+        left: 10px;
+        top: 50%;
+        bottom: auto;
+        transform: translateY(-50%);
+        width: clamp(168px, 44vw, 190px);
+        max-width: 190px;
+        height: auto;
+        max-height: calc(100vh - 96px);
+        max-height: calc(100dvh - 96px);
         padding-top: 16px;
-        padding-top: max(16px, env(safe-area-inset-top, 0px));
-        padding-right: 12px;
+        padding-top: max(10px, env(safe-area-inset-top, 0px));
+        padding-right: 8px;
         padding-bottom: 16px;
-        padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
-        padding-left: 12px;
+        padding-bottom: max(10px, env(safe-area-inset-bottom, 0px));
+        padding-left: 8px;
         justify-content: flex-start;
+        border-radius: 20px;
+        box-sizing: border-box;
         overflow-y: auto;
         overscroll-behavior: contain;
         -webkit-overflow-scrolling: touch;
@@ -5468,16 +5473,18 @@
       }
 
       html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar-item {
-        min-height: 50px;
-        padding: 0 12px;
+        min-height: 48px;
+        gap: 9px;
+        padding: 0 10px;
         transition: background-color 140ms ease, color 140ms ease;
         touch-action: manipulation;
       }
 
       html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar #connectionToggle {
+        min-height: 48px;
         justify-content: flex-start;
         gap: 10px;
-        padding: 0 12px;
+        padding: 0 10px;
       }
 
       html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar #connectionDock .connection-title {
@@ -5501,7 +5508,7 @@
         inset: 0;
         display: block;
         pointer-events: auto;
-        background: rgba(0, 0, 0, .44);
+        background: rgba(0, 0, 0, .20);
         touch-action: none;
       }
 
@@ -5632,8 +5639,8 @@
     @media (orientation: portrait) and (max-width: 719px),
            (orientation: portrait) and (pointer: coarse) {
       html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar {
-        width: clamp(220px, 64vw, 260px);
-        max-width: 260px;
+        width: clamp(168px, 44vw, 190px);
+        max-width: 190px;
       }
 
       html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open {
@@ -5656,8 +5663,10 @@
     @media (orientation: landscape) and (pointer: coarse),
            (orientation: landscape) and (max-width: 719px) {
       html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar {
-        width: clamp(220px, 30vw, 260px);
-        max-width: 260px;
+        max-height: calc(100vh - 48px);
+        max-height: calc(100dvh - 48px);
+        width: clamp(168px, 20vw, 190px);
+        max-width: 190px;
       }
 
       html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open {
