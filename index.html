@@ -19156,11 +19156,14 @@ utils.encode = function encode(arr, enc) {
     function revealConnectionPanel() {
       const panel = $("connectionBody");
       if (!panel || !panel.classList.contains("open")) return false;
+      if (isTvLikeDevice()) panel.scrollTop = 0;
       requestAnimationFrame(() => {
         if (!panel.isConnected || !panel.classList.contains("open")) return;
         panel.style.maxHeight = "";
+        if (isTvLikeDevice()) panel.scrollTop = 0;
         requestAnimationFrame(() => {
           if (!panel.isConnected || !panel.classList.contains("open")) return;
+          if (isTvLikeDevice()) panel.scrollTop = 0;
           const target = connectionPanelItems()[0];
           if (target) focusRemoteTarget(target);
         });
@@ -37720,6 +37723,13 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const inDock = active && dock.contains(active);
       const inBody = active && body.contains(active);
       let target = null;
+      if (isTvLikeDevice() && inBody && key === "ArrowUp" && isConnectionPanelTopFocusRow(active)) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+        body.scrollTop = 0;
+        return true;
+      }
       if (inBody) {
         target = nearestFocusableFromList(key, active, bodyItems);
         if (!target && key === "ArrowUp") target = toggle || bodyItems[0];
@@ -37756,6 +37766,19 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     function connectionPanelItems() {
       const body = $("connectionBody");
       return body ? Array.from(body.querySelectorAll(".focusable,button,input,textarea")).filter(isVisibleFocusable) : [];
+    }
+
+    function isConnectionPanelTopFocusRow(target) {
+      if (!isTvLikeDevice()) return false;
+      const body = $("connectionBody");
+      if (!body || !target || !body.contains(target) || !target.getBoundingClientRect) return false;
+      const first = connectionPanelItems()[0];
+      if (!first || !first.getBoundingClientRect) return false;
+      const firstRect = first.getBoundingClientRect();
+      const targetRect = target.getBoundingClientRect();
+      if (!firstRect.height || !targetRect.height) return false;
+      const tolerance = Math.max(8, Math.min(20, Math.max(firstRect.height, targetRect.height) * .45));
+      return Math.abs(targetRect.top - firstRect.top) <= tolerance;
     }
 
     function nearestFocusableFromList(key, current, list) {
@@ -38894,8 +38917,19 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         const listDelta = revealVerticalInContainer(target, panList, 20, 20);
         deltaY += listDelta.y;
       } else if (connectionBody && connectionBody.contains(target)) {
-        const panelDelta = revealVerticalInContainer(target, connectionBody, 24, 24);
-        deltaY += panelDelta.y;
+        if (isConnectionPanelTopFocusRow(target)) {
+          const before = Number(connectionBody.scrollTop || 0);
+          connectionBody.scrollTop = 0;
+          deltaY -= before;
+          requestAnimationFrame(() => {
+            if (!connectionBody.isConnected || !connectionBody.classList.contains("open")) return;
+            if (document.activeElement !== target) return;
+            if (isConnectionPanelTopFocusRow(target) && connectionBody.scrollTop !== 0) connectionBody.scrollTop = 0;
+          });
+        } else {
+          const panelDelta = revealVerticalInContainer(target, connectionBody, 24, 24);
+          deltaY += panelDelta.y;
+        }
       } else if (sidebar && sidebar.contains(target)) {
         const sidebarDelta = revealVerticalInContainer(target, sidebar, 24, 24);
         deltaY += sidebarDelta.y;
