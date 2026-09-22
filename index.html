@@ -5442,8 +5442,8 @@
 
     @media (pointer: coarse), (max-width: 719px) {
       html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar {
-        width: 78vw;
-        max-width: 320px;
+        width: clamp(220px, 64vw, 260px);
+        max-width: 260px;
         padding-top: 16px;
         padding-top: max(16px, env(safe-area-inset-top, 0px));
         padding-right: 12px;
@@ -5474,6 +5474,20 @@
         touch-action: manipulation;
       }
 
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar #connectionToggle {
+        justify-content: flex-start;
+        gap: 10px;
+        padding: 0 12px;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar #connectionDock .connection-title {
+        display: inline !important;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar #connectionDock .connection-arrow {
+        display: none !important;
+      }
+
       html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar-item:focus,
       html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar-item:active,
       html:not(.tv-mode):not(.tv-preview) #home.home-root #connectionToggle:focus,
@@ -5501,6 +5515,165 @@
 
       html:not(.tv-mode):not(.tv-preview) #home.home-root.mobile-sidebar-open #homeMenuLauncher {
         pointer-events: auto;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root.mobile-connection-open #homeSearchLauncherWrap {
+        display: none !important;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .home-sidebar-nav,
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .home-sidebar-tools > #sidebarSettings {
+        display: none !important;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .home-sidebar-tools {
+        gap: 0;
+        margin-top: 0;
+        padding-top: 0;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open #connectionDock {
+        width: 100%;
+        min-width: 0;
+        max-width: none;
+        height: auto;
+        overflow: visible;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open #connectionToggle {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        width: 100%;
+        min-width: 0;
+        min-height: 50px;
+        justify-content: flex-start;
+        gap: 10px;
+        padding: 0 12px;
+        background: rgba(8, 11, 16, .94);
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open #connectionDock .connection-title {
+        display: inline !important;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open #connectionDock .connection-arrow {
+        display: inline-block !important;
+        margin-left: auto;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open #connectionBody {
+        position: static;
+        inset: auto;
+        display: block;
+        width: 100%;
+        min-width: 0;
+        max-width: none;
+        max-height: none !important;
+        margin-top: 8px;
+        overflow: visible;
+        transform: none !important;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open #connectionBody,
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .connection-grid,
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .pan-config,
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .relay-mirror-config,
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .source-domains-config,
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .source-domains-body {
+        box-sizing: border-box;
+        width: 100%;
+        min-width: 0;
+        max-width: 100%;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .connection-item,
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .connection-item > *,
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .pan-config label,
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .source-domains-body label {
+        min-width: 0;
+        max-width: 100%;
+        box-sizing: border-box;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open #connectionBody .field,
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open #connectionBody input,
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open #connectionBody textarea {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        box-sizing: border-box;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open #connectionBody textarea,
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open #connectionBody .mono {
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .detail-style-segmented {
+        display: grid;
+        width: 100%;
+        min-width: 0;
+        max-width: 100%;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        box-sizing: border-box;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .detail-style-option {
+        min-width: 0;
+        max-width: 100%;
+        box-sizing: border-box;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+    }
+
+    @media (orientation: portrait) and (max-width: 719px),
+           (orientation: portrait) and (pointer: coarse) {
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar {
+        width: clamp(220px, 64vw, 260px);
+        max-width: 260px;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open {
+        width: min(calc(100vw - 24px), 420px);
+        max-width: calc(100vw - 24px);
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .pan-disk-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .pan-disk-grid > label {
+        min-width: 0;
+        justify-content: center;
+        padding-left: 4px;
+        padding-right: 4px;
+      }
+    }
+
+    @media (orientation: landscape) and (pointer: coarse),
+           (orientation: landscape) and (max-width: 719px) {
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar {
+        width: clamp(220px, 30vw, 260px);
+        max-width: 260px;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open {
+        width: min(56vw, 440px);
+        max-width: calc(100vw - 24px);
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .pan-disk-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .pan-disk-grid > label {
+        min-width: 0;
+        justify-content: center;
+        padding-left: 4px;
+        padding-right: 4px;
       }
     }
 
@@ -18942,6 +19115,7 @@ utils.encode = function encode(arr, enc) {
       if (open) disableConnectionTextEditing();
       else if (body.contains(document.activeElement) && toggle) requestAnimationFrame(() => focusRemoteTarget(toggle));
       fitConnectionPanel();
+      syncSidebarMobilePresentation();
       scheduleUiSnapshotSave();
     }
 
@@ -18960,7 +19134,10 @@ utils.encode = function encode(arr, enc) {
       if (!panel || !panel.classList.contains("open")) return false;
       requestAnimationFrame(() => {
         if (!panel.isConnected || !panel.classList.contains("open")) return;
-        const scroller = document.scrollingElement || document.documentElement;
+        const sidebar = $("homeSidebar");
+        const scroller = isMobileSidebarDevice() && isSidebarOpen() && sidebar && sidebar.contains(panel)
+          ? sidebar
+          : document.scrollingElement || document.documentElement;
         const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
         const safe = 16;
         const dock = $("connectionDock");
@@ -23153,7 +23330,10 @@ utils.encode = function encode(arr, enc) {
       const menu = $("homeMenuLauncher");
       const open = !!(sidebar && state.homeV14 && state.homeV14.sidebarOpen && !sidebar.hidden && isHomeRouteActive());
       const mobileOpen = open && isMobileSidebarDevice();
+      const mobileConnectionOpen = mobileOpen && isConnectionPanelOpen();
       if (home) home.classList.toggle("mobile-sidebar-open", mobileOpen);
+      if (home) home.classList.toggle("mobile-connection-open", mobileConnectionOpen);
+      if (sidebar) sidebar.classList.toggle("mobile-connection-open", mobileConnectionOpen);
       if (backdrop) {
         backdrop.hidden = !mobileOpen;
         backdrop.setAttribute("aria-hidden", mobileOpen ? "false" : "true");
@@ -36734,7 +36914,13 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         if (isSidebarOpen()) closeSidebar();
         else openSidebar();
       });
-      if ($("homeSidebarBackdrop")) $("homeSidebarBackdrop").addEventListener("click", () => closeSidebar());
+      if ($("homeSidebarBackdrop")) $("homeSidebarBackdrop").addEventListener("click", () => {
+        if (isMobileSidebarDevice() && isSidebarOpen() && isConnectionPanelOpen()) {
+          closeConnectionPanel();
+          return;
+        }
+        closeSidebar();
+      });
       if ($("homeRecentMore")) $("homeRecentMore").addEventListener("click", () => openSecondaryCatalog("recent", { originSection: "recent", originTarget: $("homeRecentMore") }));
       if ($("homeHotMore")) $("homeHotMore").addEventListener("click", () => openSecondaryCatalog("now-playing", { originSection: "now-playing", originTarget: $("homeHotMore") }));
       document.querySelectorAll("[data-home-hot-source]").forEach((button) => {
