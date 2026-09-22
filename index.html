@@ -34597,7 +34597,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         enqueue(() => saveHistoryPlaybackContext(item, episodeTarget, panItem, { refreshRecent: false }));
         enqueue(() => upsertContinueIndex(item, episodeTarget, panItem, { refreshRecent: false }));
       }
-      const allSettled = Promise.allSettled(tasks);
+      const allSettled = Promise.all(tasks.map((task) => Promise.resolve(task).then(
+        (value) => ({ status: "fulfilled", value }),
+        (reason) => ({ status: "rejected", reason })
+      )));
       let timer = 0;
       const result = await Promise.race([
         allSettled.then((values) => ({ status: "settled", values })),
