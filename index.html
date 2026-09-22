@@ -3418,7 +3418,7 @@
 
     .connection-item {
       display: grid;
-      grid-template-columns: minmax(56px, 74px) minmax(0, 1fr);
+      grid-template-columns: max-content minmax(0, 1fr);
       gap: 8px;
       align-items: baseline;
       font-size: 11px;
@@ -3446,7 +3446,7 @@
     .detail-style-segmented {
       min-width: 0;
       display: inline-grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: repeat(2, minmax(max-content, 1fr));
       gap: 2px;
       padding: 2px;
       border-radius: 8px;
@@ -3838,8 +3838,8 @@
       box-shadow: none;
     }
     /* ------------------------------------------------------------
-       状态按钮迁移：移入搜索栏最左侧，做成圆形图标钮，仅保留呼吸灯。
-       （DOM 中 #connectionDock 已移动进搜索表单，功能面板随之带过去）
+       状态按钮保留为纯图标入口；功能面板已独立到 Home 层级 Overlay。
+       #connectionDock 只承载入口按钮，#connectionBody 不参与 Sidebar 布局。
        ------------------------------------------------------------ */
     .search {
       grid-template-columns: auto minmax(0, 1fr) auto;
@@ -3908,32 +3908,6 @@
 
     /* 呼吸灯：方案 6 数据矩阵闪烁样式见 .connection-toggle .dot（上方），此处不再覆盖 */
 
-    /* 下拉状态面板改为从按钮左侧对齐展开（仍由 fitConnectionPanel 夹在视口内） */
-    #connectionBody {
-      right: auto;
-      left: 0;
-    }
-
-    /* TV 端：状态面板内容很长（状态项 + 盘搜/镜像配置 + 操作按钮），
-       原本无高度限制会从屏幕底部溢出、底部控件被挤出视口看起来“被挤压”。
-       这里限制最大高度并开启竖向滚动；遥控聚焦时 scrollIntoView 会把当前项滚入面板内，
-       所有条目都能正常到达。 */
-    html.tv-mode #connectionBody {
-      width: min(calc(var(--fm-web-width, 100vw) - 28px), 460px);
-      max-height: calc(var(--fm-web-height, 100vh) - 132px);
-      overflow-y: auto;
-      overflow-x: hidden;
-      overscroll-behavior: contain;
-      -webkit-overflow-scrolling: touch;
-      scrollbar-width: thin;
-    }
-    html.tv-mode #connectionBody::-webkit-scrollbar {
-      width: 6px;
-    }
-    html.tv-mode #connectionBody::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, .22);
-      border-radius: 999px;
-    }
     /* ------------------------------------------------------------
        搜索图标移入搜索框内右侧（纯图标）；隐藏独立设置按钮
        （设置功能改为长按状态圆钮触发，见脚本）
@@ -4641,7 +4615,7 @@
       display: flex;
       flex-direction: column;
       justify-content: flex-start;
-      width: clamp(176px, 9.5vw, 190px);
+      width: clamp(160px, 8.5vw, 172px);
       height: auto;
       max-height: calc(100vh - 96px);
       max-height: calc(100dvh - 96px);
@@ -4679,12 +4653,14 @@
       padding-top: 14px;
     }
     .home-sidebar-item {
-      display: flex;
+      display: grid;
+      grid-template-columns: 22px 4em;
       align-items: center;
+      justify-content: center;
+      column-gap: 9px;
       width: 100%;
       min-height: 52px;
       margin: 0;
-      gap: 10px;
       padding: 0 10px;
       border: 0;
       border-radius: 8px;
@@ -4705,8 +4681,12 @@
       color: currentColor;
     }
     .home-sidebar-item .home-sidebar-label {
-      min-width: 0;
+      width: 4em;
+      min-width: 4em;
+      max-width: 4em;
       overflow: visible;
+      white-space: nowrap;
+      text-align: left;
     }
     .home-sidebar-item:focus,
     .home-sidebar-item:active {
@@ -4727,20 +4707,18 @@
       margin: 0;
       border-radius: 8px;
     }
-    .home-sidebar #connectionBody {
-      top: auto;
-      bottom: calc(100% + 8px);
-    }
     .home-sidebar #connectionToggle {
+      display: flex;
       min-height: 52px;
       height: auto;
-      justify-content: flex-start;
-      gap: 10px;
-      padding: 0 10px;
+      width: 100%;
+      justify-content: center;
+      gap: 0;
+      padding: 0 6px;
       border-radius: 8px;
     }
     .home-sidebar #connectionDock .connection-title {
-      display: inline !important;
+      display: none !important;
     }
     .home-sidebar #connectionDock .connection-arrow { display: none; }
     .home-sidebar #connectionToggle .dot {
@@ -5442,8 +5420,8 @@
         top: 50%;
         bottom: auto;
         transform: translateY(-50%);
-        width: clamp(168px, 44vw, 190px);
-        max-width: 190px;
+        width: clamp(152px, 38vw, 164px);
+        max-width: 164px;
         height: auto;
         max-height: calc(100vh - 96px);
         max-height: calc(100dvh - 96px);
@@ -5473,22 +5451,26 @@
       }
 
       html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar-item {
+        display: grid;
+        grid-template-columns: 22px 4em;
         min-height: 48px;
-        gap: 9px;
+        column-gap: 9px;
         padding: 0 10px;
         transition: background-color 140ms ease, color 140ms ease;
         touch-action: manipulation;
       }
 
       html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar #connectionToggle {
+        display: flex;
         min-height: 48px;
-        justify-content: flex-start;
-        gap: 10px;
-        padding: 0 10px;
+        width: 100%;
+        justify-content: center;
+        gap: 0;
+        padding: 0 6px;
       }
 
       html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar #connectionDock .connection-title {
-        display: inline !important;
+        display: none !important;
       }
 
       html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar #connectionDock .connection-arrow {
@@ -5524,140 +5506,15 @@
         pointer-events: auto;
       }
 
-      html:not(.tv-mode):not(.tv-preview) #home.home-root.mobile-connection-open #homeSearchLauncherWrap {
-        display: none !important;
-      }
-
-      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .home-sidebar-nav,
-      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .home-sidebar-tools > #sidebarSettings {
-        display: none !important;
-      }
-
-      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .home-sidebar-tools {
-        gap: 0;
-        margin-top: 0;
-        padding-top: 0;
-      }
-
-      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open #connectionDock {
-        width: 100%;
-        min-width: 0;
-        max-width: none;
-        height: auto;
-        overflow: visible;
-      }
-
-      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open #connectionToggle {
-        position: sticky;
-        top: 0;
-        z-index: 2;
-        width: 100%;
-        min-width: 0;
-        min-height: 50px;
-        justify-content: flex-start;
-        gap: 10px;
-        padding: 0 12px;
-        background: rgba(8, 11, 16, .94);
-      }
-
-      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open #connectionDock .connection-title {
-        display: inline !important;
-      }
-
-      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open #connectionDock .connection-arrow {
-        display: inline-block !important;
-        margin-left: auto;
-      }
-
-      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open #connectionBody {
-        position: static;
-        inset: auto;
-        display: block;
-        width: 100%;
-        min-width: 0;
-        max-width: none;
-        max-height: none !important;
-        margin-top: 8px;
-        overflow: visible;
-        transform: none !important;
-      }
-
-      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open #connectionBody,
-      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .connection-grid,
-      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .pan-config,
-      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .relay-mirror-config,
-      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .source-domains-config,
-      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .source-domains-body {
-        box-sizing: border-box;
-        width: 100%;
-        min-width: 0;
-        max-width: 100%;
-      }
-
-      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .connection-item,
-      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .connection-item > *,
-      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .pan-config label,
-      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .source-domains-body label {
-        min-width: 0;
-        max-width: 100%;
-        box-sizing: border-box;
-      }
-
-      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open #connectionBody .field,
-      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open #connectionBody input,
-      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open #connectionBody textarea {
-        width: 100%;
-        max-width: 100%;
-        min-width: 0;
-        box-sizing: border-box;
-      }
-
-      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open #connectionBody textarea,
-      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open #connectionBody .mono {
-        overflow-wrap: anywhere;
-        word-break: break-word;
-      }
-
-      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .detail-style-segmented {
-        display: grid;
-        width: 100%;
-        min-width: 0;
-        max-width: 100%;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        box-sizing: border-box;
-      }
-
-      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .detail-style-option {
-        min-width: 0;
-        max-width: 100%;
-        box-sizing: border-box;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
     }
 
     @media (orientation: portrait) and (max-width: 719px),
            (orientation: portrait) and (pointer: coarse) {
       html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar {
-        width: clamp(168px, 44vw, 190px);
-        max-width: 190px;
+        width: clamp(152px, 38vw, 164px);
+        max-width: 164px;
       }
 
-      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open {
-        width: min(calc(100vw - 24px), 420px);
-        max-width: calc(100vw - 24px);
-      }
-
-      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .pan-disk-grid {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-      }
-
-      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .pan-disk-grid > label {
-        min-width: 0;
-        justify-content: center;
-        padding-left: 4px;
-        padding-right: 4px;
-      }
     }
 
     @media (orientation: landscape) and (pointer: coarse),
@@ -5665,25 +5522,166 @@
       html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar {
         max-height: calc(100vh - 48px);
         max-height: calc(100dvh - 48px);
-        width: clamp(168px, 20vw, 190px);
-        max-width: 190px;
+        width: clamp(152px, 18vw, 164px);
+        max-width: 164px;
       }
 
-      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open {
-        width: min(56vw, 440px);
-        max-width: calc(100vw - 24px);
-      }
+    }
 
-      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .pan-disk-grid {
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-      }
+    /* 基础设置是 Home 层级的独立浮层，不再参与 Sidebar 的尺寸和滚动。 */
+    .connection-overlay-host {
+      position: fixed;
+      inset: 0;
+      z-index: 124;
+      display: block;
+      pointer-events: none;
+    }
 
-      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.mobile-connection-open .pan-disk-grid > label {
+    .connection-overlay-host[hidden],
+    .connection-overlay-backdrop[hidden] {
+      display: none !important;
+    }
+
+    .connection-overlay-host.open {
+      pointer-events: auto;
+    }
+
+    .connection-overlay-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 124;
+      display: block;
+      background: rgba(0, 0, 0, .31);
+      pointer-events: auto;
+      touch-action: none;
+    }
+
+    #connectionOverlayHost #connectionBody {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      right: auto;
+      bottom: auto;
+      z-index: 126;
+      width: max-content;
+      min-width: 480px;
+      max-width: min(720px, calc(100vw - 48px));
+      max-height: min(80vh, 760px);
+      box-sizing: border-box;
+      margin: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+      transform: translate(-50%, -50%) !important;
+      scrollbar-width: thin;
+    }
+
+    #connectionOverlayHost #connectionBody.open {
+      display: block;
+    }
+
+    #connectionOverlayHost .connection-item > b,
+    #connectionOverlayHost .connection-item > span:not(.mono),
+    #connectionOverlayHost .pan-config > label,
+    #connectionOverlayHost .relay-mirror-config > label,
+    #connectionOverlayHost .pan-disk-grid > label,
+    #connectionOverlayHost .connection-body .btn,
+    #connectionOverlayHost .detail-style-option {
+      white-space: nowrap;
+    }
+
+    #connectionOverlayHost .connection-item > span:not(.mono) {
+      overflow-wrap: normal;
+      word-break: normal;
+    }
+
+    #connectionOverlayHost .connection-item > .mono,
+    #connectionOverlayHost #statusRelays,
+    #connectionOverlayHost #statusRefresh,
+    #connectionOverlayHost .relay-mirror-progress,
+    #connectionOverlayHost textarea.field,
+    #connectionOverlayHost .mono {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    #connectionOverlayHost .connection-item,
+    #connectionOverlayHost .pan-config > label,
+    #connectionOverlayHost .relay-mirror-config > label,
+    #connectionOverlayHost .source-domains-body > label {
+      min-width: 0;
+      box-sizing: border-box;
+    }
+
+    #connectionOverlayHost .connection-item > .detail-style-segmented {
+      width: 100%;
+      min-width: 0;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(max-content, 1fr));
+      box-sizing: border-box;
+    }
+
+    #connectionOverlayHost .detail-style-option {
+      min-width: 0;
+      overflow: visible;
+      text-overflow: clip;
+    }
+
+    #connectionOverlayHost .pan-config .field,
+    #connectionOverlayHost .relay-mirror-config .field,
+    #connectionOverlayHost .source-domains-body .field {
+      width: 100%;
+      min-width: 0;
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+
+    #connectionOverlayHost .pan-disk-grid {
+      grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+    }
+
+    #connectionOverlayHost .pan-disk-grid > label {
+      min-width: 0;
+    }
+
+    #connectionOverlayHost .connection-body .actions {
+      grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+    }
+
+    @media (pointer: coarse), (max-width: 719px) {
+      html:not(.tv-mode):not(.tv-preview) #connectionOverlayHost #connectionBody {
+        width: min(calc(100vw - 24px), 420px);
         min-width: 0;
-        justify-content: center;
-        padding-left: 4px;
-        padding-right: 4px;
+        max-width: calc(100vw - 24px);
+        max-height: calc(100vh - 24px);
+        max-height: calc(100dvh - 24px);
+        border-radius: 20px;
       }
+    }
+
+    @media (orientation: landscape) and (pointer: coarse),
+           (orientation: landscape) and (max-width: 719px) {
+      html:not(.tv-mode):not(.tv-preview) #connectionOverlayHost #connectionBody {
+        width: min(520px, 70vw, calc(100vw - 24px));
+        min-width: 0;
+        max-width: calc(100vw - 24px);
+        max-height: calc(100vh - 24px);
+        max-height: calc(100dvh - 24px);
+      }
+    }
+
+    html.tv-mode #connectionOverlayHost #connectionBody,
+    html.tv-preview #connectionOverlayHost #connectionBody {
+      width: max-content;
+      min-width: 560px;
+      max-width: min(760px, calc(100vw - 120px));
+      max-height: calc(100vh - 120px);
+    }
+
+    .home-sidebar {
+      overflow-x: hidden;
     }
 
     html.tv-mode #home.home-root #homeMenuLauncher,
@@ -6868,6 +6866,84 @@
 <body>
   <main class="app home-root" id="home">
     <div id="homeSidebarBackdrop" class="home-sidebar-backdrop" hidden aria-hidden="true"></div>
+    <div id="connectionOverlayHost" class="connection-overlay-host" hidden aria-hidden="true">
+      <div id="connectionOverlayBackdrop" class="connection-overlay-backdrop" hidden aria-hidden="true"></div>
+      <div class="connection-body" id="connectionBody" aria-hidden="true">
+        <div class="connection-grid">
+          <div class="connection-item"><b>App SDK</b><span id="statusSdk">检测中</span></div>
+          <div class="connection-item"><b>TMDB</b><span id="statusTmdb">等待请求</span></div>
+          <div class="connection-item"><b>Nostr</b><span id="statusNostr">等待连接</span></div>
+          <div class="connection-item"><b>盘搜</b><span id="statusPan">未搜索</span></div>
+          <div class="connection-item"><b>发布</b><span id="statusPublish">暂无发布</span></div>
+          <div class="connection-item"><b>身份</b><span class="mono" id="statusIdentity">未就绪</span></div>
+          <div class="connection-item refresh-progress"><b>刷新</b><span id="statusRefresh">未执行</span></div>
+          <div class="connection-item"><b>Relays</b><span id="statusRelays">未连接</span></div>
+          <div class="connection-item"><b>首页全屏</b><div class="detail-style-segmented" id="homeFullscreenSegmented" role="group" aria-label="首页全屏">
+            <button class="detail-style-option focusable" id="homeFullscreenOnBtn" type="button" data-home-fullscreen="on">开启</button>
+            <button class="detail-style-option focusable" id="homeFullscreenOffBtn" type="button" data-home-fullscreen="off">关闭</button>
+          </div></div>
+          <div class="connection-item"><b>热门来源</b><div class="detail-style-segmented" id="homeHotSourceSegmented" role="group" aria-label="热门来源">
+            <button class="detail-style-option focusable" id="homeHotSourceNostrBtn" type="button" data-home-hot-source="nostr">Nostr热榜</button>
+            <button class="detail-style-option focusable" id="homeHotSourceTmdbBtn" type="button" data-home-hot-source="tmdb">TMDB趋势</button>
+          </div></div>
+        </div>
+        <div class="pan-config">
+          <label for="tmdbKeyInput">TMDB Key
+            <input class="field focusable mono" id="tmdbKeyInput" type="password" inputmode="text" autocomplete="off" placeholder="TMDB API Key" readonly>
+          </label>
+          <label for="panBaseInput">盘搜地址
+            <input class="field focusable" id="panBaseInput" type="url" inputmode="url" placeholder="https://so.252035.xyz" readonly>
+          </label>
+          <label for="panChannelsInput">TG频道
+            <textarea class="field focusable" id="panChannelsInput" rows="2" placeholder="可选，多个频道用逗号或换行分隔" readonly></textarea>
+          </label>
+          <label for="panUserInput">账号
+            <input class="field focusable" id="panUserInput" type="text" autocomplete="username" placeholder="未启用认证可留空" readonly>
+          </label>
+          <label for="panPassInput">密码
+            <input class="field focusable" id="panPassInput" type="password" autocomplete="current-password" placeholder="未启用认证可留空" readonly>
+          </label>
+          <div class="pan-disk-grid" id="panDiskGrid"></div>
+          <div class="source-domains-config">
+            <button class="btn focusable source-domains-toggle" id="sourceDomainsToggle" type="button" aria-expanded="false" aria-controls="sourceDomainsBody">播放站源域名</button>
+            <div id="sourceDomainsBody" class="source-domains-body" hidden aria-hidden="true">
+              <label for="sourceDomainsWanou">玩偶
+                <textarea class="field focusable mono" id="sourceDomainsWanou" rows="2" readonly></textarea>
+              </label>
+              <label for="sourceDomainsMuou">木偶
+                <textarea class="field focusable mono" id="sourceDomainsMuou" rows="2" readonly></textarea>
+              </label>
+              <label for="sourceDomainsDuoduo">多多
+                <textarea class="field focusable mono" id="sourceDomainsDuoduo" rows="2" readonly></textarea>
+              </label>
+              <label for="sourceDomainsHuban">虎斑
+                <textarea class="field focusable mono" id="sourceDomainsHuban" rows="2" readonly></textarea>
+              </label>
+              <label for="sourceDomainsShandian">闪电
+                <textarea class="field focusable mono" id="sourceDomainsShandian" rows="2" readonly></textarea>
+              </label>
+              <button class="btn focusable" id="sourceDomainsResetBtn" type="button">恢复默认</button>
+            </div>
+          </div>
+          <button class="btn focusable" id="savePanConfigBtn" type="button">保存配置</button>
+        </div>
+        <div class="relay-mirror-config">
+          <label for="mirrorSourceInput">镜像源 Relays
+            <textarea class="field focusable mono" id="mirrorSourceInput" rows="3" placeholder="每行一个源 relay" readonly></textarea>
+          </label>
+          <label for="mirrorTargetInput">镜像目标 Relays
+            <textarea class="field focusable mono" id="mirrorTargetInput" rows="2" placeholder="每行一个目标 relay，例如 wss://your-relay.example" readonly></textarea>
+          </label>
+          <div class="relay-mirror-progress mono" id="mirrorProgress">镜像未执行</div>
+          <button class="btn focusable" id="mirrorRelayBtn" type="button">镜像榜单</button>
+        </div>
+        <div class="actions" style="margin-top:10px">
+          <button class="btn focusable" id="refreshNostrBtn" type="button">刷新榜单</button>
+          <button class="btn focusable" id="syncBtn" type="button">同步身份</button>
+          <button class="btn danger focusable" id="deleteDataBtn" type="button">删除数据</button>
+        </div>
+      </div>
+    </div>
     <aside class="home-sidebar" id="homeSidebar" hidden aria-hidden="true" aria-label="主导航">
       <nav class="home-sidebar-nav" id="homeSidebarNav" aria-label="内容导航"></nav>
       <div class="home-sidebar-tools" id="homeSidebarTools" aria-label="工具"></div>
@@ -6892,81 +6968,6 @@
             <span class="connection-title">基础设置</span>
             <span class="connection-arrow">⌃</span>
           </button>
-          <div class="connection-body" id="connectionBody" aria-hidden="true">
-            <div class="connection-grid">
-              <div class="connection-item"><b>App SDK</b><span id="statusSdk">检测中</span></div>
-              <div class="connection-item"><b>TMDB</b><span id="statusTmdb">等待请求</span></div>
-              <div class="connection-item"><b>Nostr</b><span id="statusNostr">等待连接</span></div>
-              <div class="connection-item"><b>盘搜</b><span id="statusPan">未搜索</span></div>
-              <div class="connection-item"><b>发布</b><span id="statusPublish">暂无发布</span></div>
-              <div class="connection-item"><b>身份</b><span class="mono" id="statusIdentity">未就绪</span></div>
-              <div class="connection-item refresh-progress"><b>刷新</b><span id="statusRefresh">未执行</span></div>
-              <div class="connection-item"><b>Relays</b><span id="statusRelays">未连接</span></div>
-              <div class="connection-item"><b>首页全屏</b><div class="detail-style-segmented" id="homeFullscreenSegmented" role="group" aria-label="首页全屏">
-                <button class="detail-style-option focusable" id="homeFullscreenOnBtn" type="button" data-home-fullscreen="on">开启</button>
-                <button class="detail-style-option focusable" id="homeFullscreenOffBtn" type="button" data-home-fullscreen="off">关闭</button>
-              </div></div>
-              <div class="connection-item"><b>热门来源</b><div class="detail-style-segmented" id="homeHotSourceSegmented" role="group" aria-label="热门来源">
-                <button class="detail-style-option focusable" id="homeHotSourceNostrBtn" type="button" data-home-hot-source="nostr">Nostr热榜</button>
-                <button class="detail-style-option focusable" id="homeHotSourceTmdbBtn" type="button" data-home-hot-source="tmdb">TMDB趋势</button>
-              </div></div>
-            </div>
-            <div class="pan-config">
-              <label for="tmdbKeyInput">TMDB Key
-                <input class="field focusable mono" id="tmdbKeyInput" type="password" inputmode="text" autocomplete="off" placeholder="TMDB API Key" readonly>
-              </label>
-              <label for="panBaseInput">盘搜地址
-                <input class="field focusable" id="panBaseInput" type="url" inputmode="url" placeholder="https://so.252035.xyz" readonly>
-              </label>
-              <label for="panChannelsInput">TG频道
-                <textarea class="field focusable" id="panChannelsInput" rows="2" placeholder="可选，多个频道用逗号或换行分隔" readonly></textarea>
-              </label>
-              <label for="panUserInput">账号
-                <input class="field focusable" id="panUserInput" type="text" autocomplete="username" placeholder="未启用认证可留空" readonly>
-              </label>
-              <label for="panPassInput">密码
-                <input class="field focusable" id="panPassInput" type="password" autocomplete="current-password" placeholder="未启用认证可留空" readonly>
-              </label>
-              <div class="pan-disk-grid" id="panDiskGrid"></div>
-              <div class="source-domains-config">
-                <button class="btn focusable source-domains-toggle" id="sourceDomainsToggle" type="button" aria-expanded="false" aria-controls="sourceDomainsBody">播放站源域名</button>
-                <div id="sourceDomainsBody" class="source-domains-body" hidden aria-hidden="true">
-                  <label for="sourceDomainsWanou">玩偶
-                    <textarea class="field focusable mono" id="sourceDomainsWanou" rows="2" readonly></textarea>
-                  </label>
-                  <label for="sourceDomainsMuou">木偶
-                    <textarea class="field focusable mono" id="sourceDomainsMuou" rows="2" readonly></textarea>
-                  </label>
-                  <label for="sourceDomainsDuoduo">多多
-                    <textarea class="field focusable mono" id="sourceDomainsDuoduo" rows="2" readonly></textarea>
-                  </label>
-                  <label for="sourceDomainsHuban">虎斑
-                    <textarea class="field focusable mono" id="sourceDomainsHuban" rows="2" readonly></textarea>
-                  </label>
-                  <label for="sourceDomainsShandian">闪电
-                    <textarea class="field focusable mono" id="sourceDomainsShandian" rows="2" readonly></textarea>
-                  </label>
-                  <button class="btn focusable" id="sourceDomainsResetBtn" type="button">恢复默认</button>
-                </div>
-              </div>
-              <button class="btn focusable" id="savePanConfigBtn" type="button">保存配置</button>
-            </div>
-            <div class="relay-mirror-config">
-              <label for="mirrorSourceInput">镜像源 Relays
-                <textarea class="field focusable mono" id="mirrorSourceInput" rows="3" placeholder="每行一个源 relay" readonly></textarea>
-              </label>
-              <label for="mirrorTargetInput">镜像目标 Relays
-                <textarea class="field focusable mono" id="mirrorTargetInput" rows="2" placeholder="每行一个目标 relay，例如 wss://your-relay.example" readonly></textarea>
-              </label>
-              <div class="relay-mirror-progress mono" id="mirrorProgress">镜像未执行</div>
-              <button class="btn focusable" id="mirrorRelayBtn" type="button">镜像榜单</button>
-            </div>
-            <div class="actions" style="margin-top:10px">
-              <button class="btn focusable" id="refreshNostrBtn" type="button">刷新榜单</button>
-              <button class="btn focusable" id="syncBtn" type="button">同步身份</button>
-              <button class="btn danger focusable" id="deleteDataBtn" type="button">删除数据</button>
-            </div>
-          </div>
         </aside>
       <input class="field focusable" id="searchInput" type="search" inputmode="search" enterkeyhint="search" placeholder="搜索关键词" aria-autocomplete="list" aria-controls="suggestPanel" readonly>
       <button class="btn blue focusable" id="searchSubmitBtn" type="submit" aria-label="搜索" title="搜索">
@@ -19101,6 +19102,8 @@ utils.encode = function encode(arr, enc) {
       const body = $("connectionBody");
       if (!dock || !body) return;
       body.style.setProperty("--connection-shift", "0px");
+      const host = $("connectionOverlayHost");
+      if (host && body.parentElement === host) return;
       if (!dock.classList.contains("open")) return;
       requestAnimationFrame(() => {
         const rect = body.getBoundingClientRect();
@@ -19116,13 +19119,25 @@ utils.encode = function encode(arr, enc) {
       const dock = $("connectionDock");
       const body = $("connectionBody");
       const toggle = $("connectionToggle");
+      const host = $("connectionOverlayHost");
+      const overlayBackdrop = $("connectionOverlayBackdrop");
       if (!dock || !body) return;
-      dock.classList.toggle("open", !!open);
-      body.classList.toggle("open", !!open);
-      if (toggle) toggle.setAttribute("aria-expanded", open ? "true" : "false");
-      body.setAttribute("aria-hidden", open ? "false" : "true");
-      if (open) disableConnectionTextEditing();
-      else if (body.contains(document.activeElement) && toggle) requestAnimationFrame(() => focusRemoteTarget(toggle));
+      const isOpen = !!open;
+      dock.classList.toggle("open", isOpen);
+      body.classList.toggle("open", isOpen);
+      if (host) {
+        host.hidden = !isOpen;
+        host.classList.toggle("open", isOpen);
+        host.setAttribute("aria-hidden", isOpen ? "false" : "true");
+      }
+      if (overlayBackdrop) {
+        overlayBackdrop.hidden = !isOpen;
+        overlayBackdrop.setAttribute("aria-hidden", isOpen ? "false" : "true");
+      }
+      if (toggle) toggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+      body.setAttribute("aria-hidden", isOpen ? "false" : "true");
+      if (isOpen) disableConnectionTextEditing();
+      else if (isTvLikeDevice() && body.contains(document.activeElement) && toggle) requestAnimationFrame(() => focusRemoteTarget(toggle));
       fitConnectionPanel();
       syncSidebarMobilePresentation();
       scheduleUiSnapshotSave();
@@ -19143,28 +19158,7 @@ utils.encode = function encode(arr, enc) {
       if (!panel || !panel.classList.contains("open")) return false;
       requestAnimationFrame(() => {
         if (!panel.isConnected || !panel.classList.contains("open")) return;
-        const sidebar = $("homeSidebar");
-        const scroller = isMobileSidebarDevice() && isSidebarOpen() && sidebar && sidebar.contains(panel)
-          ? sidebar
-          : document.scrollingElement || document.documentElement;
-        const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
-        const safe = 16;
-        const dock = $("connectionDock");
-        if (dock && dock.getBoundingClientRect) {
-          const dockRect = dock.getBoundingClientRect();
-          const available = Math.max(160, Math.floor(dockRect.top - safe - 8));
-          panel.style.maxHeight = `${available}px`;
-        }
-        const rect = panel.getBoundingClientRect();
-        let delta = 0;
-        if (rect.top < safe) delta = rect.top - safe;
-        else if (rect.bottom > viewportHeight - safe) delta = rect.bottom - (viewportHeight - safe);
-        if (delta && scroller) {
-          const max = Math.max(0, Number(scroller.scrollHeight || 0) - Number(scroller.clientHeight || viewportHeight || 0));
-          const current = Number(scroller.scrollTop || 0);
-          const next = Math.max(0, Math.min(max, current + delta));
-          if (Math.abs(next - current) > .5) scroller.scrollTop = next;
-        }
+        panel.style.maxHeight = "";
         requestAnimationFrame(() => {
           if (!panel.isConnected || !panel.classList.contains("open")) return;
           const target = connectionPanelItems()[0];
@@ -23581,6 +23575,7 @@ utils.encode = function encode(arr, enc) {
       if (state.homeV14 && state.homeV14.sidebarHistoryBackPending) return false;
       const sidebar = $("homeSidebar");
       if (!sidebar || !state.homeV14 || !state.homeV14.sidebarOpen) return false;
+      if (isConnectionPanelOpen()) closeConnectionPanel();
       const context = sidebarReturnContext();
       const mobile = isMobileSidebarDevice();
       state.homeV14.sidebarOpen = false;
@@ -23621,7 +23616,7 @@ utils.encode = function encode(arr, enc) {
       const sidebar = $("homeSidebar");
       const active = document.activeElement;
       if (!sidebar || !active || !sidebar.contains(active)) return false;
-      if (isConnectionPanelOpen() && $("connectionDock") && $("connectionDock").contains(active)) return false;
+      if (isConnectionPanelOpen()) return false;
       event.preventDefault();
       event.stopPropagation();
       if (event.stopImmediatePropagation) event.stopImmediatePropagation();
@@ -23647,7 +23642,7 @@ utils.encode = function encode(arr, enc) {
         return true;
       }
       if (!isSidebarOpen()) return false;
-      if (isConnectionPanelOpen() && $("connectionDock") && $("connectionDock").contains(document.activeElement)) return false;
+      if (isConnectionPanelOpen()) return false;
       event.preventDefault();
       event.stopPropagation();
       if (event.stopImmediatePropagation) event.stopImmediatePropagation();
@@ -23658,6 +23653,13 @@ utils.encode = function encode(arr, enc) {
     function handleSidebarMenuKey(event) {
       if (normalizeRemoteKey(event) !== "Menu") return false;
       if (isSidebarOpen()) {
+        if (isConnectionPanelOpen()) {
+          event.preventDefault();
+          event.stopPropagation();
+          if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+          closeConnectionPanel();
+          return true;
+        }
         event.preventDefault();
         event.stopPropagation();
         if (event.stopImmediatePropagation) event.stopImmediatePropagation();
@@ -23687,6 +23689,7 @@ utils.encode = function encode(arr, enc) {
       const sidebar = $("homeSidebar");
       if (!sidebar || !state.homeV14) return;
       const visible = isHomeRouteActive() && !!state.homeV14.sidebarOpen;
+      if (!visible && isConnectionPanelOpen()) closeConnectionPanel();
       sidebar.hidden = !visible;
       sidebar.setAttribute("aria-hidden", visible ? "false" : "true");
       if (!visible) {
@@ -29588,6 +29591,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
     function openDetail(item, options) {
       const opts = options || {};
+      if (isConnectionPanelOpen()) closeConnectionPanel();
       const detailWasActive = $("detailSheet") && $("detailSheet").classList.contains("active");
       const sameSelected = state.selected === item;
       if (state.selected && state.selected !== item) {
@@ -36930,6 +36934,11 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         }
         closeSidebar();
       });
+      if ($("connectionOverlayBackdrop")) $("connectionOverlayBackdrop").addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        closeConnectionPanel();
+      });
       if ($("homeRecentMore")) $("homeRecentMore").addEventListener("click", () => openSecondaryCatalog("recent", { originSection: "recent", originTarget: $("homeRecentMore") }));
       if ($("homeHotMore")) $("homeHotMore").addEventListener("click", () => openSecondaryCatalog("now-playing", { originSection: "now-playing", originTarget: $("homeHotMore") }));
       document.querySelectorAll("[data-home-hot-source]").forEach((button) => {
@@ -37391,7 +37400,11 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     function handleConnectionPanelEnterKey(event) {
       if (!isConnectionPanelOpen()) return false;
       const active = document.activeElement;
-      if (!active || !$("connectionDock") || !$("connectionDock").contains(active)) return false;
+      const dock = $("connectionDock");
+      const body = $("connectionBody");
+      const inDock = !!(active && dock && dock.contains(active));
+      const inBody = !!(active && body && body.contains(active));
+      if (!active || !inDock && !inBody) return false;
       if (active === $("connectionToggle")) return false;
       if (active.matches && active.matches("input[type='checkbox']")) {
         event.preventDefault();
@@ -37693,8 +37706,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       event.stopPropagation();
       if (event.stopImmediatePropagation) event.stopImmediatePropagation();
       closeConnectionPanel();
-      const toggle = $("connectionToggle");
-      if (toggle) requestAnimationFrame(() => focusRemoteTarget(toggle));
       return true;
     }
 
@@ -37707,13 +37718,14 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const active = document.activeElement;
       const bodyItems = connectionPanelItems();
       const inDock = active && dock.contains(active);
+      const inBody = active && body.contains(active);
       let target = null;
-      if (!inDock || active === toggle) {
-        target = key === "ArrowDown" ? bodyItems[0] || toggle : toggle || bodyItems[0];
-      } else if (body.contains(active)) {
+      if (inBody) {
         target = nearestFocusableFromList(key, active, bodyItems);
         if (!target && key === "ArrowUp") target = toggle || bodyItems[0];
         if (!target) target = active;
+      } else if (!inDock || active === toggle) {
+        target = key === "ArrowDown" ? bodyItems[0] || toggle : toggle || bodyItems[0];
       } else {
         target = bodyItems[0] || toggle;
       }
@@ -37726,8 +37738,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     function restoreConnectionPanelFocus() {
       if (!isConnectionPanelOpen()) return false;
       const dock = $("connectionDock");
+      const body = $("connectionBody");
       const active = document.activeElement;
-      if (active && dock && dock.contains(active) && isVisibleFocusable(active)) return false;
+      if (active && ((dock && dock.contains(active)) || (body && body.contains(active))) && isVisibleFocusable(active)) return false;
       const target = $("connectionToggle") || connectionPanelItems()[0];
       if (!target) return false;
       focusRemoteTarget(target);
@@ -39021,6 +39034,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     function focusScopeRoot() {
       if ($("syncSheet") && $("syncSheet").classList.contains("active")) return $("syncSheet");
       if ($("detailSheet") && $("detailSheet").classList.contains("active")) return $("detailSheet");
+      if (isConnectionPanelOpen() && $("connectionBody")) return $("connectionBody");
       if (isSidebarOpen()) return $("homeSidebar");
       return document;
     }
@@ -39257,9 +39271,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const snapshotFocusEpoch = homeFocusUserEpoch();
       renderAll({ deferContent: snapshot.route === "home" });
       if (snapshot.connectionOpen && $("connectionDock") && $("connectionBody")) {
-        $("connectionDock").classList.add("open");
-        $("connectionBody").classList.add("open");
-        fitConnectionPanel();
+        setConnectionPanelOpen(true);
       }
       if (snapshot.route === "detail" && snapshot.selected) {
         if (location.hash !== "#detail" && snapshot.route === "detail") history.replaceState({ sheet: "detail" }, "", "#detail");
@@ -39645,6 +39657,22 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         return;
       }
       if (isMobileSidebarDevice() && isSidebarOpen()) {
+        if (isConnectionPanelOpen()) {
+          closeConnectionPanel();
+          // The transient Sidebar entry was already traversed by browser
+          // Back. Restore that existing entry so the next Back still closes
+          // Sidebar instead of leaving Home; no new entry is created.
+          if (state.homeV14 && state.homeV14.sidebarHistoryEntry
+            && !(event && event.state && event.state.homeSidebar)) {
+            try { history.forward(); } catch (e) {}
+          }
+          return;
+        }
+        if (event && event.state && event.state.homeSidebar
+          && state.homeV14 && state.homeV14.sidebarHistoryEntry) {
+          syncSidebarMobilePresentation();
+          return;
+        }
         closeSidebar({ restore: false, fromPopState: true });
         return;
       }
