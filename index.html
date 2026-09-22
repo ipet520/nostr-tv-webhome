@@ -4738,6 +4738,37 @@
     html.tv-mode #home.home-root .home-sidebar {
       background: rgba(10, 14, 20, .82);
     }
+    html.tv-mode #home.home-root .home-sidebar,
+    html.tv-preview #home.home-root .home-sidebar {
+      width: clamp(120px, 6.4vw, 130px);
+      padding-left: 6px;
+      padding-right: 6px;
+    }
+    html.tv-mode #home.home-root .home-sidebar-item,
+    html.tv-preview #home.home-root .home-sidebar-item {
+      grid-template-columns: 22px 4em;
+      column-gap: 6px;
+      padding-left: 6px;
+      padding-right: 6px;
+    }
+    html.tv-mode #home.home-root .home-sidebar-item .home-sidebar-icon,
+    html.tv-preview #home.home-root .home-sidebar-item .home-sidebar-icon {
+      justify-self: center;
+    }
+    html.tv-mode #home.home-root .home-sidebar-item .home-sidebar-label,
+    html.tv-preview #home.home-root .home-sidebar-item .home-sidebar-label {
+      justify-self: start;
+    }
+    html.tv-mode #home.home-root .home-sidebar-item:focus,
+    html.tv-mode #home.home-root .home-sidebar-item:active,
+    html.tv-preview #home.home-root .home-sidebar-item:focus,
+    html.tv-preview #home.home-root .home-sidebar-item:active,
+    html.tv-mode #home.home-root .home-sidebar #connectionToggle:focus,
+    html.tv-mode #home.home-root .home-sidebar #connectionToggle:active,
+    html.tv-preview #home.home-root .home-sidebar #connectionToggle:focus,
+    html.tv-preview #home.home-root .home-sidebar #connectionToggle:active {
+      transform: none;
+    }
 
     /* Home exposes one launcher only.  The real Search form is moved into
        #searchPageFormHost by openSearchPage(), so Search keeps its existing
