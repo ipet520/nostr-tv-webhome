@@ -29387,6 +29387,28 @@ utils.encode = function encode(arr, enc) {
         .filter(Boolean);
     }
 
+    function canonicalMainlandResourceTitleFromDetail(item, detail, localizedTitle, detailOriginalTitle) {
+      const localized = String(localizedTitle || "").trim();
+      if (titleHasChinese(localized)) return localized;
+      const mediaType = normalizeHistoryMediaType(item && (item.mediaType || item.media_type));
+      const container = detail && detail.alternative_titles;
+      const entries = mediaType === "tv"
+        ? container && container.results
+        : container && container.titles;
+      if (Array.isArray(entries)) {
+        const mainlandTitle = entries
+          .filter((entry) => String(entry && entry.iso_3166_1 || "").trim().toUpperCase() === "CN")
+          .map((entry) => String(entry && entry.title || "").trim())
+          .find((title) => title && titleHasChinese(title));
+        if (mainlandTitle) return mainlandTitle;
+      }
+      return localized
+        || String(detailOriginalTitle || "").trim()
+        || String(item && item.title || "").trim()
+        || String(item && item.originalTitle || "").trim()
+        || "";
+    }
+
     function canonicalDetailLooksRaw(item, detail) {
       if (!detail || typeof detail !== "object") return false;
       const mediaType = normalizeHistoryMediaType(item && (item.mediaType || item.media_type));
@@ -29466,7 +29488,7 @@ utils.encode = function encode(arr, enc) {
       return Object.assign({
         title: item.title,
         originalTitle: item.originalTitle || detailOriginalTitle,
-        resourceSearchTitle: localizedTitle,
+        resourceSearchTitle: canonicalMainlandResourceTitleFromDetail(item, detail, localizedTitle, detailOriginalTitle),
         aliases: mergeTitleAliases(
           item.aliases,
           item.title,
@@ -39783,6 +39805,37 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       check("RECENT_HOME_SINGLE_DELETE_PRESERVED", String(deleteRecentWatchingMedia).includes("#homeRecentRail") && String(deleteRecentWatchingMedia).includes("renderHomeRecent"), "Home Recent 单删仍保留", "FROZEN_SOURCE_AUDIT");
       check("RECENT_BATCH_TV_FOCUS", String(secondaryCatalogDirectionalTarget).includes("recentHeaderItems") && String(secondaryCatalogDirectionalTarget).includes("ArrowDown"), "管理 Header 参与 TV 焦点导航", "STATIC_HOOK");
       check("RECENT_BATCH_MOBILE_SAFE", String(consumeRecentWatchingClick).includes("consumeRecentWatchingPress") && String(enterRecentManageMode).includes("isRecentManagePage"), "手机复用同一点击/选择链", "STATIC_HOOK");
+      const canonicalMockItem = { mediaType: "movie", title: "The Example", originalTitle: "The Example" };
+      const canonicalMockDetail = {
+        title: "The Example",
+        original_title: "The Example",
+        alternative_titles: { titles: [
+          { iso_3166_1: "CN", title: "示例大陆名" },
+          { iso_3166_1: "HK", title: "示例香港名" }
+        ] }
+      };
+      const canonicalMockIdentity = canonicalIdentityFromDetail(canonicalMockItem, canonicalMockDetail);
+      const localizedChineseIdentity = canonicalIdentityFromDetail(
+        canonicalMockItem,
+        { title: "最后生还者", original_title: "The Example", alternative_titles: { titles: [{ iso_3166_1: "CN", title: "最后生还者" }] } }
+      );
+      const hkOnlyIdentity = canonicalIdentityFromDetail(
+        canonicalMockItem,
+        { title: "Example", original_title: "Example", alternative_titles: { titles: [{ iso_3166_1: "HK", title: "示例香港名" }] } }
+      );
+      const englishCnIdentity = canonicalIdentityFromDetail(
+        canonicalMockItem,
+        { title: "Example", original_title: "Example", alternative_titles: { titles: [{ iso_3166_1: "CN", title: "Example" }] } }
+      );
+      const canonicalSearchSource = String(bindActions);
+      check("CANONICAL_CN_RESOURCE_TITLE_PRIORITY", canonicalMockIdentity && canonicalMockIdentity.resourceSearchTitle === "示例大陆名", "英文本地化标题优先使用 CN 中文资源名", "RUNTIME_MOCK");
+      check("CANONICAL_LOCALIZED_CHINESE_PRIORITY", localizedChineseIdentity && localizedChineseIdentity.resourceSearchTitle === "最后生还者", "已有中文本地化标题不被 alternative title 覆盖", "RUNTIME_MOCK");
+      check("CANONICAL_CN_ALIAS_FALLBACK", englishCnIdentity && englishCnIdentity.resourceSearchTitle === "Example", "英文 CN alias 不冒充中文资源主标题", "RUNTIME_MOCK");
+      check("CANONICAL_HK_TW_NOT_PROMOTED", hkOnlyIdentity && hkOnlyIdentity.resourceSearchTitle === "Example", "没有 CN 中文名时不提升 HK/TW 标题", "RUNTIME_MOCK");
+      check("CANONICAL_ALIASES_PRESERVED", canonicalMockIdentity && ["The Example", "示例大陆名", "示例香港名"].every((title) => canonicalMockIdentity.aliases.includes(title)), "CN/HK 与原始标题仍保留在 aliases", "RUNTIME_MOCK");
+      check("PAN_RESOURCE_KEYWORD_USES_CN_TITLE", canonicalMockIdentity && panKeyword(canonicalMockIdentity) === "示例大陆名", "Pan 资源关键词读取 canonical resourceSearchTitle", "RUNTIME_MOCK");
+      check("NATIVE_SEARCH_USES_CN_TITLE", canonicalMockIdentity && resourceSearchKeyword(canonicalMockIdentity) === "示例大陆名" && canonicalSearchSource.includes("nativeSearch(resourceSearchKeyword(state.selected))"), "详情原生搜索读取 canonical resourceSearchTitle", "RUNTIME_MOCK");
+      check("CURATED_SEARCH_ALIASES_PRESERVED", canonicalMockIdentity && curatedSearchKeywords(canonicalMockIdentity).includes("示例大陆名") && curatedSearchKeywords(canonicalMockIdentity).includes("示例香港名"), "精选源仍使用完整 aliases 搜索集合", "RUNTIME_MOCK");
       const oldWebviewUnsupported = ["Promise", "allSettled"].join(".");
       check("OLD_WEBVIEW_COMPAT", !document.documentElement.innerHTML.includes(oldWebviewUnsupported), "未引入旧 WebView 不支持的 Promise 聚合 API", "STATIC_HOOK");
       check("PHASE3_SIDEBAR_NOT_ROUTE", HOME_PRESENTATION_ROUTES.join(",") === "home,search,secondary" && !sidebarSource.includes('pushState'), "Sidebar does not create a presentation route", "STATIC_HOOK");
