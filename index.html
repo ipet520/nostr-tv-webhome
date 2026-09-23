@@ -1014,6 +1014,43 @@
       outline-offset: 3px;
     }
 
+    .card.recent-watching-card .recent-batch-indicator {
+      display: none;
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      z-index: 6;
+      width: 26px;
+      height: 26px;
+      place-items: center;
+      box-sizing: border-box;
+      border: 2px solid rgba(255, 255, 255, .82);
+      border-radius: 999px;
+      background: rgba(8, 12, 18, .72);
+      color: #fff;
+      font-size: 16px;
+      font-weight: 700;
+      line-height: 1;
+      pointer-events: none;
+    }
+
+    #secondaryCatalog.recent-manage-active .card.recent-watching-card .recent-batch-indicator {
+      display: grid;
+    }
+
+    #secondaryCatalog.recent-manage-active .card.recent-watching-card.recent-batch-selected .recent-batch-indicator {
+      border-color: rgba(191, 233, 255, .96);
+      background: #4e9fc7;
+    }
+
+    #secondaryCatalog.recent-manage-active .card.recent-watching-card.recent-batch-selected .recent-batch-indicator::after {
+      content: "✓";
+    }
+
+    #secondaryCatalog.recent-manage-active .card.recent-watching-card.recent-batch-selected {
+      box-shadow: 0 0 0 2px rgba(191, 233, 255, .58);
+    }
+
     .block-select-hint {
       display: none;
       margin: 6px 0 10px;
@@ -5856,6 +5893,69 @@
       font-size: 15px;
     }
 
+    .recent-manage-controls,
+    .recent-manage-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .recent-manage-controls[hidden],
+    .recent-manage-actions[hidden] {
+      display: none !important;
+    }
+
+    .recent-manage-controls {
+      margin-left: auto;
+    }
+
+    .recent-manage-selected-count {
+      color: var(--home-v14-muted);
+      font-size: 14px;
+      white-space: nowrap;
+    }
+
+    .recent-manage-button,
+    .recent-manage-actions button {
+      min-height: 36px;
+      padding: 0 11px;
+      border: 1px solid rgba(255, 255, 255, .16);
+      border-radius: 7px;
+      background: rgba(255, 255, 255, .08);
+      color: rgba(255, 255, 255, .92);
+      font-size: 14px;
+      white-space: nowrap;
+    }
+
+    .recent-manage-button:disabled,
+    .recent-manage-actions button:disabled {
+      opacity: .42;
+    }
+
+    .recent-manage-button:focus,
+    .recent-manage-actions button:focus {
+      outline: none;
+      border-color: rgba(191, 233, 255, .88);
+      background: rgba(191, 233, 255, .16);
+    }
+
+    @media (pointer: coarse), (max-width: 719px) {
+      .secondary-page-head.recent-manage-head {
+        flex-wrap: wrap;
+      }
+
+      .recent-manage-controls {
+        margin-left: auto;
+        max-width: 100%;
+      }
+
+      .recent-manage-actions {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+    }
+
     .secondary-catalog-filters {
       display: flex;
       flex-direction: column;
@@ -7052,6 +7152,15 @@
         </button>
         <h1 id="secondaryCatalogTitle">分类</h1>
         <span class="secondary-page-count" id="secondaryCatalogCount"></span>
+        <div class="recent-manage-controls" id="recentManageControls" hidden>
+          <button class="recent-manage-button focusable" id="recentManageBtn" type="button">管理</button>
+          <div class="recent-manage-actions" id="recentManageActions" hidden>
+            <span class="recent-manage-selected-count" id="recentManageSelectedCount">已选择 0 项</span>
+            <button class="focusable" id="recentManageSelectAll" type="button">全选</button>
+            <button class="focusable" id="recentManageDelete" type="button">删除所选</button>
+            <button class="focusable" id="recentManageCancel" type="button">取消</button>
+          </div>
+        </div>
       </div>
       <div class="weekly-secondary-copy" aria-live="polite">
         <h2 id="weeklySecondaryTitle"></h2>
@@ -16748,6 +16857,7 @@ utils.encode = function encode(arr, enc) {
       historyContexts: { loaded: false, loading: false, promise: null, entries: [], diag: null },
       continueIndex: { loaded: false, loading: false, promise: null, entries: [], diag: null },
       recentDelete: { armedKey: "", armedCard: null, pendingKey: "", pendingCard: null, pendingTimer: 0, remotePressLocked: false, remotePressCard: null, remotePressKey: "" },
+      recentManage: { active: false, selectedKeys: {}, deleting: false, deleteArmed: false, deleteArmTimer: 0 },
       detailCover: { images: [], index: 0, timer: 0, token: 0, swipe: null },
       deviceMode: "unknown",
       previewMode: false,
@@ -22327,6 +22437,7 @@ utils.encode = function encode(arr, enc) {
       const recentDelete = state.recentDelete;
       const key = recentWatchingMediaKey(card && card.__mediaItem);
       if (!card || !recentDelete || !key) return false;
+      if (recentManageCard(card)) return toggleRecentManageSelection(card);
       if (recentDelete.armedKey) {
         if (recentDelete.armedKey === key) {
           deleteRecentWatchingMedia(card.__mediaItem, card).catch(() => {});
@@ -22374,6 +22485,221 @@ utils.encode = function encode(arr, enc) {
 
     function consumeRecentWatchingClick(card) {
       return consumeRecentWatchingPress(card);
+    }
+
+    function isRecentManagePage() {
+      return homeUiRoute() === "secondary"
+        && state.homeV14 && state.homeV14.secondaryListId === "recent";
+    }
+
+    function recentManageRuntime() {
+      if (!state.recentManage) state.recentManage = { active: false, selectedKeys: {}, deleting: false, deleteArmed: false, deleteArmTimer: 0 };
+      if (!state.recentManage.selectedKeys || typeof state.recentManage.selectedKeys !== "object") state.recentManage.selectedKeys = {};
+      return state.recentManage;
+    }
+
+    function recentManageItems() {
+      const recentState = state.recent || {};
+      const recentItems = Array.isArray(recentState.items) ? recentState.items : [];
+      const query = secondaryActiveQuery("recent");
+      const source = recentState.loaded === true
+        ? recentItems
+        : query && Array.isArray(query.items) ? query.items : [];
+      return uniqueRecentWatchingMedia(source);
+    }
+
+    function recentManageCard(card) {
+      return !!(card
+        && card.__mediaItem
+        && card.closest
+        && card.closest("#secondaryCatalogGrid")
+        && isRecentManagePage()
+        && recentManageRuntime().active
+        && card.classList.contains("recent-watching-card"));
+    }
+
+    function recentManageSelectedCount() {
+      return Object.keys(recentManageRuntime().selectedKeys || {}).length;
+    }
+
+    function recentManageSelectedItems() {
+      const selected = recentManageRuntime().selectedKeys || {};
+      return recentManageItems().filter((item) => !!selected[recentWatchingMediaKey(item)]).map((item) => Object.assign({}, item));
+    }
+
+    function cancelRecentManageDeleteArm() {
+      const manage = recentManageRuntime();
+      if (manage.deleteArmTimer) clearTimeout(manage.deleteArmTimer);
+      manage.deleteArmTimer = 0;
+      manage.deleteArmed = false;
+    }
+
+    function syncRecentManageCardStates() {
+      const grid = $("secondaryCatalogGrid");
+      const manage = recentManageRuntime();
+      if (!grid) return;
+      Array.from(grid.querySelectorAll(".recent-watching-card")).forEach((card) => {
+        const key = recentWatchingMediaKey(card.__mediaItem);
+        const selected = !!(manage.active && key && manage.selectedKeys[key]);
+        card.classList.toggle("recent-batch-selected", selected);
+        if (manage.active) card.setAttribute("aria-pressed", selected ? "true" : "false");
+        else card.removeAttribute("aria-pressed");
+      });
+    }
+
+    function updateRecentManageUi() {
+      const page = $("secondaryCatalog");
+      const head = page && page.querySelector(".secondary-page-head");
+      const controls = $("recentManageControls");
+      const manageButton = $("recentManageBtn");
+      const actions = $("recentManageActions");
+      const count = $("recentManageSelectedCount");
+      const selectAll = $("recentManageSelectAll");
+      const deleteButton = $("recentManageDelete");
+      const cancel = $("recentManageCancel");
+      const onRecent = isRecentManagePage();
+      const manage = recentManageRuntime();
+      const items = onRecent ? recentManageItems() : [];
+      const availableKeys = {};
+      items.forEach((item) => {
+        const key = recentWatchingMediaKey(item);
+        if (key) availableKeys[key] = true;
+      });
+      Object.keys(manage.selectedKeys).forEach((key) => {
+        if (!availableKeys[key]) delete manage.selectedKeys[key];
+      });
+      const selectedCount = recentManageSelectedCount();
+      const allSelected = !!items.length && selectedCount === items.length;
+      if (head) head.classList.toggle("recent-manage-head", onRecent);
+      if (page) page.classList.toggle("recent-manage-active", onRecent && manage.active);
+      if (controls) controls.hidden = !onRecent;
+      if (manageButton) manageButton.hidden = !onRecent || manage.active;
+      if (actions) actions.hidden = !onRecent || !manage.active;
+      if (count) count.textContent = `已选择 ${selectedCount} 项`;
+      if (selectAll) {
+        selectAll.textContent = allSelected ? "取消全选" : "全选";
+        selectAll.disabled = !items.length || manage.deleting;
+        selectAll.setAttribute("aria-pressed", allSelected ? "true" : "false");
+      }
+      if (deleteButton) {
+        deleteButton.textContent = manage.deleting
+          ? "正在删除…"
+          : manage.deleteArmed ? `确认删除（${selectedCount}）` : selectedCount ? `删除所选（${selectedCount}）` : "删除所选";
+        deleteButton.disabled = !selectedCount || manage.deleting;
+      }
+      if (cancel) cancel.disabled = manage.deleting;
+      syncRecentManageCardStates();
+    }
+
+    function enterRecentManageMode() {
+      if (!isRecentManagePage()) return false;
+      const manage = recentManageRuntime();
+      if (manage.deleting) return true;
+      cancelRecentDeleteArm();
+      cancelRecentManageDeleteArm();
+      manage.active = true;
+      manage.selectedKeys = {};
+      manage.deleting = false;
+      updateRecentManageUi();
+      return true;
+    }
+
+    function exitRecentManageMode(options) {
+      const opts = options || {};
+      const manage = recentManageRuntime();
+      if (!manage.active) return false;
+      if (manage.deleting) {
+        if (!opts.silent) toast("正在删除，请稍候");
+        return true;
+      }
+      cancelRecentManageDeleteArm();
+      manage.active = false;
+      manage.selectedKeys = {};
+      updateRecentManageUi();
+      if (opts.focus && isTvLikeDevice() && isRecentManagePage()) {
+        requestAnimationFrame(() => {
+          if (isRecentManagePage() && !recentManageRuntime().active) focusRemoteTarget($("recentManageBtn"));
+        });
+      }
+      return true;
+    }
+
+    function resetRecentManageState() {
+      const manage = recentManageRuntime();
+      cancelRecentManageDeleteArm();
+      manage.active = false;
+      manage.selectedKeys = {};
+      manage.deleting = false;
+      const page = $("secondaryCatalog");
+      if (page) page.classList.remove("recent-manage-active");
+      const head = page && page.querySelector(".secondary-page-head");
+      if (head) head.classList.remove("recent-manage-head");
+      const controls = $("recentManageControls");
+      if (controls) controls.hidden = true;
+      syncRecentManageCardStates();
+    }
+
+    function toggleRecentManageSelection(card) {
+      const manage = recentManageRuntime();
+      const item = card && card.__mediaItem;
+      const key = recentWatchingMediaKey(item);
+      if (!recentManageCard(card) || !key) return false;
+      if (manage.deleting) return true;
+      cancelRecentManageDeleteArm();
+      if (manage.selectedKeys[key]) delete manage.selectedKeys[key];
+      else manage.selectedKeys[key] = true;
+      updateRecentManageUi();
+      return true;
+    }
+
+    function toggleRecentManageSelectAll() {
+      if (!isRecentManagePage()) return false;
+      const manage = recentManageRuntime();
+      if (manage.deleting) return true;
+      const items = recentManageItems();
+      cancelRecentManageDeleteArm();
+      const selectedCount = recentManageSelectedCount();
+      if (items.length && selectedCount === items.length) manage.selectedKeys = {};
+      else {
+        manage.selectedKeys = {};
+        items.forEach((item) => {
+          const key = recentWatchingMediaKey(item);
+          if (key) manage.selectedKeys[key] = true;
+        });
+      }
+      updateRecentManageUi();
+      return true;
+    }
+
+    function armRecentManageDelete() {
+      if (!isRecentManagePage()) return false;
+      const manage = recentManageRuntime();
+      const count = recentManageSelectedCount();
+      if (manage.deleting || !count) return true;
+      if (manage.deleteArmed) {
+        cancelRecentManageDeleteArm();
+        deleteRecentWatchingBatch(recentManageSelectedItems()).catch(() => {
+          const current = recentManageRuntime();
+          current.deleting = false;
+          updateRecentManageUi();
+        });
+        return true;
+      }
+      manage.deleteArmed = true;
+      if (manage.deleteArmTimer) clearTimeout(manage.deleteArmTimer);
+      manage.deleteArmTimer = setTimeout(() => {
+        manage.deleteArmTimer = 0;
+        manage.deleteArmed = false;
+        updateRecentManageUi();
+      }, 2800);
+      updateRecentManageUi();
+      toast(`再次确认删除 ${count} 项最近观看`);
+      return true;
+    }
+
+    function handleRecentManageCancel() {
+      if (!isRecentManagePage()) return false;
+      return exitRecentManageMode({ focus: true });
     }
 
     function nativeHistoryDeleteCandidates(item, mediaKey, sourceItems) {
@@ -22807,7 +23133,209 @@ utils.encode = function encode(arr, enc) {
       };
     }
 
+    async function deleteRecentWatchingBatch(items) {
+      if (!isRecentManagePage()) return false;
+      const manage = recentManageRuntime();
+      if (manage.deleting) return true;
+      const frozenItems = (Array.isArray(items) ? items : [])
+        .map((item) => Object.assign({}, item))
+        .filter((item) => !!recentWatchingMediaKey(item));
+      if (!frozenItems.length) {
+        updateRecentManageUi();
+        return false;
+      }
+      manage.deleting = true;
+
+      try {
+        cancelRecentManageDeleteArm();
+        cancelRecentDeleteArm();
+        updateRecentManageUi();
+        let historyContextReady = false;
+        let continueIndexReady = false;
+        let initialSnapshot = null;
+        let fatalReason = "";
+        try {
+          await loadContinueIndex();
+          await loadHistoryContextIndex();
+          historyContextReady = !(state.historyContexts && state.historyContexts.diag && state.historyContexts.diag.error);
+          continueIndexReady = !(state.continueIndex && state.continueIndex.diag && state.continueIndex.diag.error);
+          if (!historyContextReady || !continueIndexReady) fatalReason = "LOCAL_CONTEXT_READ_FAILED";
+          else initialSnapshot = await readFreshNativeHistoryItemsForDeletion();
+        } catch (e) {
+          fatalReason = "HISTORY_READ_FAILED";
+        }
+
+        const previousContexts = historyContextReady && state.historyContexts && Array.isArray(state.historyContexts.entries)
+          ? state.historyContexts.entries.slice() : [];
+        const previousContinue = continueIndexReady && state.continueIndex && Array.isArray(state.continueIndex.entries)
+          ? state.continueIndex.entries.slice() : [];
+        const groups = frozenItems.map((item) => {
+          const key = recentWatchingMediaKey(item);
+          const frozenNativeIdentities = initialSnapshot
+            ? uniqueNativeHistoryDeleteCandidates(nativeHistoryDeleteCandidates(item, key, initialSnapshot)).map(freezeNativeHistoryDeleteIdentity)
+            : [];
+          const nativeExpected = !!String(item.nativeHistoryKey || "").trim() || frozenNativeIdentities.length > 0;
+          const localMatch = previousContexts.some((entry) => recentContextMediaKey(entry) === key)
+            || previousContinue.some((entry) => String(entry && entry.mediaKey || recentContextMediaKey(entry)) === key);
+          return {
+            key,
+            item,
+            frozenNativeIdentities,
+            nativeExpected,
+            nativeVerified: !nativeExpected || !frozenNativeIdentities.length,
+            localMatch,
+            failed: !!fatalReason,
+            message: fatalReason
+          };
+        });
+
+        let localCleanupFailed = false;
+        let renderFailed = false;
+        const finish = async (refreshAllowed) => {
+        const successfulKeys = {};
+        groups.forEach((group) => {
+          if (!group.failed && group.nativeVerified && (group.nativeExpected || group.localMatch)) successfulKeys[group.key] = true;
+          if (!group.nativeExpected && !group.localMatch) group.failed = true;
+        });
+        const successfulList = Object.keys(successfulKeys);
+        if (historyContextReady && successfulList.length) {
+          const nextContexts = previousContexts.filter((entry) => !successfulKeys[recentContextMediaKey(entry)]);
+          if (nextContexts.length !== previousContexts.length) {
+            try {
+              await persistHistoryContextEntries(nextContexts);
+              if (state.historyContexts) state.historyContexts.entries = nextContexts;
+            } catch (e) {
+              localCleanupFailed = true;
+            }
+          }
+        }
+        if (continueIndexReady && successfulList.length) {
+          const nextContinue = previousContinue.filter((entry) => !successfulKeys[String(entry && entry.mediaKey || recentContextMediaKey(entry))]);
+          if (nextContinue.length !== previousContinue.length) {
+            try {
+              await persistContinueIndexEntries(nextContinue);
+              if (state.continueIndex) state.continueIndex.entries = nextContinue;
+            } catch (e) {
+              localCleanupFailed = true;
+            }
+          }
+        }
+        let refreshFailed = false;
+        const recentBeforeRefresh = state.recent && Array.isArray(state.recent.items) ? state.recent.items.slice() : [];
+        if (refreshAllowed) {
+          try {
+            await loadRecentList({ refresh: true, silent: true });
+            if (state.recent && state.recent.error) {
+              refreshFailed = true;
+              state.recent.items = recentBeforeRefresh;
+            }
+          } catch (e) {
+            refreshFailed = true;
+            if (state.recent) state.recent.items = recentBeforeRefresh;
+          }
+        }
+        if (refreshFailed && successfulList.length && state.recent && Array.isArray(state.recent.items)) {
+          state.recent.items = state.recent.items.filter((item) => !successfulKeys[recentWatchingMediaKey(item)]);
+        }
+        if (isRecentManagePage()) {
+          const query = secondaryActiveQuery("recent") || secondaryGetQuery("recent");
+          query.items = state.recent && Array.isArray(state.recent.items) ? state.recent.items.slice() : [];
+          query.loaded = true;
+          query.loading = false;
+          query.error = refreshFailed ? "最近观看刷新失败" : "";
+          query.page = 1;
+          query.totalPages = 1;
+          query.totalResults = query.items.length;
+          query.hasMore = false;
+          try {
+            renderSecondaryCatalog();
+          } catch (e) {
+            renderFailed = true;
+          }
+        }
+        successfulList.forEach((key) => { delete manage.selectedKeys[key]; });
+        manage.deleting = false;
+        manage.deleteArmed = false;
+        updateRecentManageUi();
+        const failedGroups = groups.filter((group) => group.failed);
+        let resultMessage = "";
+        if (successfulList.length && failedGroups.length) resultMessage = `已删除 ${successfulList.length} 项，${failedGroups.length} 项删除失败`;
+        else if (successfulList.length) resultMessage = `已删除 ${successfulList.length} 项`;
+        else if (failedGroups.length) resultMessage = `删除失败，${failedGroups.length} 项未删除`;
+        if (localCleanupFailed) resultMessage += resultMessage ? "，但本地续播状态清理失败" : "本地续播状态清理失败";
+        if (resultMessage) toast(resultMessage);
+        if (refreshFailed) toast("最近观看刷新失败");
+        if (renderFailed) toast("最近观看界面刷新失败");
+        requestAnimationFrame(() => {
+          if (!isRecentManagePage()) return;
+          const grid = $("secondaryCatalogGrid");
+          const cards = grid ? Array.from(grid.querySelectorAll(".recent-watching-card")).filter(canFastHomeFocus) : [];
+          const failedKeys = failedGroups.map((group) => group.key);
+          let target = failedKeys.length
+            ? cards.find((card) => failedKeys.indexOf(recentWatchingMediaKey(card.__mediaItem)) >= 0)
+            : cards[0];
+          if (!target) target = $("secondaryCatalogBack");
+          if (target && isTvLikeDevice()) focusRemoteTarget(target);
+        });
+        return successfulList.length > 0;
+        };
+
+        if (fatalReason) return await finish(false);
+        const maxRounds = 3;
+        const retryDelay = 220;
+        let snapshot = initialSnapshot || [];
+        for (let round = 0; round < maxRounds; round++) {
+          const pendingGroups = groups.filter((group) => !group.failed && group.nativeExpected && !group.nativeVerified);
+          if (!pendingGroups.length) break;
+          for (const group of pendingGroups) {
+            const present = nativeHistoryDeleteFrozenPresent(snapshot, group.frozenNativeIdentities);
+            for (const nativeIdentity of present) {
+              try {
+                await deleteNativeHistoryViaLocalApi(nativeIdentity);
+              } catch (e) {
+                group.message = String(e && e.message || e || "DELETE_FAILED");
+              }
+            }
+          }
+          await new Promise((resolve) => setTimeout(resolve, retryDelay));
+          try {
+            snapshot = await readFreshNativeHistoryItemsForDeletion();
+          } catch (e) {
+            pendingGroups.forEach((group) => {
+              group.failed = true;
+              group.message = "HISTORY_READ_FAILED";
+            });
+            break;
+          }
+          pendingGroups.forEach((group) => {
+            const remaining = nativeHistoryDeleteFrozenPresent(snapshot, group.frozenNativeIdentities);
+            if (!remaining.length) group.nativeVerified = true;
+            else if (round === maxRounds - 1) {
+              group.failed = true;
+              group.message = "DELETE_NOT_CONFIRMED";
+            }
+          });
+        }
+        groups.forEach((group) => {
+          if (group.nativeExpected && !group.nativeVerified && !group.failed) {
+            group.failed = true;
+            group.message = "DELETE_NOT_CONFIRMED";
+          }
+        });
+        return await finish(true);
+      } catch (e) {
+        toast("最近观看批量删除未完成，请重试");
+        return false;
+      } finally {
+        manage.deleting = false;
+        manage.deleteArmed = false;
+        cancelRecentManageDeleteArm();
+        try { updateRecentManageUi(); } catch (e) {}
+      }
+    }
+
     async function deleteRecentWatchingMedia(item, card) {
+      if (isRecentManagePage() && recentManageRuntime().active) return false;
       const key = recentWatchingMediaKey(item);
       if (!key) return false;
       const grid = card && card.closest && card.closest("#homeRecentRail, #secondaryCatalogGrid, .list-panel:not([hidden]) .media-grid");
@@ -25377,6 +25905,11 @@ utils.encode = function encode(arr, enc) {
       const form = $("searchForm");
       const host = $("searchPageFormHost");
       if (!form || !host) return false;
+      if (isRecentManagePage() && recentManageRuntime().deleting) {
+        toast("正在删除，请稍候");
+        return true;
+      }
+      if (isRecentManagePage()) resetRecentManageState();
       if (homeUiRoute() === "search" && isSearchHistoryEntry()) return true;
       if (!isSearchHistoryEntry()) {
         if (location.hash === "#search" || history.state && history.state.sheet === "search") {
@@ -26349,6 +26882,11 @@ utils.encode = function encode(arr, enc) {
       listId = normalizeLegacyCategoryId(listId);
       if (!listId || !getList(listId) && !["now-playing", "recent"].includes(listId)) return false;
       if (!isHomeRouteActive() && homeUiRoute() !== "home") return false;
+      if (isRecentManagePage() && recentManageRuntime().deleting) {
+        toast("正在删除，请稍候");
+        return true;
+      }
+      if (listId !== "recent" || !isRecentManagePage()) resetRecentManageState();
       const enteringFromHome = homeUiRoute() === "home";
       if (enteringFromHome && !isSecondaryHistoryEntry()) {
         if (location.hash === "#secondary" || history.state && history.state.sheet === "secondary") {
@@ -26594,6 +27132,7 @@ utils.encode = function encode(arr, enc) {
     function renderSecondaryCatalog() {
       if (homeUiRoute() !== "secondary") return;
       const listId = state.homeV14.secondaryListId;
+      updateRecentManageUi();
       const list = getList(listId);
       const isRecent = listId === "recent";
       const isWeekly = listId === "now-playing";
@@ -26649,6 +27188,7 @@ utils.encode = function encode(arr, enc) {
       } else {
         fillGrid(grid, items);
       }
+      updateRecentManageUi();
       observeInfiniteScroll();
       scheduleSecondaryFilterFocusRestore();
     }
@@ -26662,6 +27202,15 @@ utils.encode = function encode(arr, enc) {
       if (homeUiRoute() !== "secondary") return false;
       const homeV14 = state.homeV14;
       if (!homeV14) return false;
+      const manage = recentManageRuntime();
+      if (manage.active && manage.deleting) {
+        toast("正在删除，请稍候");
+        return true;
+      }
+      if (manage.active) {
+        exitRecentManageMode({ focus: true });
+        return true;
+      }
       if (homeV14.secondaryHistoryBackPending) return true;
       if (isSecondaryHistoryEntry()) {
         homeV14.secondaryHistoryBackPending = true;
@@ -26682,6 +27231,7 @@ utils.encode = function encode(arr, enc) {
 
     function closeSecondaryCatalog() {
       if (homeUiRoute() !== "secondary") return false;
+      resetRecentManageState();
       const saved = state.homeV14.secondaryReturn || {};
       state.homeV14.secondaryHistoryBackPending = false;
       state.homeV14.route = "home";
@@ -27396,6 +27946,7 @@ utils.encode = function encode(arr, enc) {
         <div class="poster-wrap">
           <img class="poster" alt="" ${imageAttrs(posterSrc, imageOpt)}>
           ${people > 0 ? `<span class="card-people">${escapeHtml(people)}人</span>` : ""}
+          ${recentWatching && !home && !weekly ? `<span class="recent-batch-indicator" aria-hidden="true"></span>` : ""}
           ${recentWatching ? `<span class="recent-delete-indicator" aria-hidden="true">🗑</span>` : ""}
           ${home && rating ? `<span class="rating-badge">${escapeHtml(rating)}</span>` : ""}
           ${airStatusHtml}
@@ -37102,6 +37653,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if ($("searchPageBack")) $("searchPageBack").addEventListener("click", requestCloseSearchPage);
       if ($("searchHistoryClear")) $("searchHistoryClear").addEventListener("click", clearSearchHistory);
       if ($("secondaryCatalogBack")) $("secondaryCatalogBack").addEventListener("click", requestCloseSecondaryCatalog);
+      if ($("recentManageBtn")) $("recentManageBtn").addEventListener("click", enterRecentManageMode);
+      if ($("recentManageSelectAll")) $("recentManageSelectAll").addEventListener("click", toggleRecentManageSelectAll);
+      if ($("recentManageDelete")) $("recentManageDelete").addEventListener("click", armRecentManageDelete);
+      if ($("recentManageCancel")) $("recentManageCancel").addEventListener("click", handleRecentManageCancel);
       if ($("homeSearchLauncher")) $("homeSearchLauncher").addEventListener("click", openSearchPage);
       if ($("homeMenuLauncher")) $("homeMenuLauncher").addEventListener("click", () => {
         if (isSidebarOpen()) closeSidebar();
@@ -37465,6 +38020,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           if (el && isTextEditingElement(el) && !el.readOnly) return;
         }
         if (handleSidebarBackKey(event)) return;
+        if (isRecentManagePage() && recentManageRuntime().active && handleSecondaryBackKey(event)) return;
         if (state.recentDelete && (state.recentDelete.armedKey || state.recentDelete.pendingKey || state.recentDelete.remotePressLocked)) {
           cancelRecentDeleteArm();
           event.preventDefault();
@@ -37650,6 +38206,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       event.preventDefault();
       event.stopPropagation();
       if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+      if (isRecentManagePage() && recentManageRuntime().active) {
+        exitRecentManageMode({ focus: true });
+        return true;
+      }
       requestCloseSecondaryCatalog();
       return true;
     }
@@ -38415,6 +38975,24 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         : grid ? Array.from(grid.querySelectorAll(".card")).filter(canFastHomeFocus) : [];
       const firstCard = cards[0] || null;
       const backTop = visibleBackTopTarget();
+      const recentHeaderItems = state.homeV14 && state.homeV14.secondaryListId === "recent"
+        ? [
+          back,
+          recentManageRuntime().active ? $("recentManageSelectAll") : $("recentManageBtn"),
+          recentManageRuntime().active ? $("recentManageDelete") : null,
+          recentManageRuntime().active ? $("recentManageCancel") : null
+        ].filter(canFastHomeFocus)
+        : [];
+      if (recentHeaderItems.length && recentHeaderItems.indexOf(active) >= 0) {
+        const headerIndex = recentHeaderItems.indexOf(active);
+        if (key === "ArrowLeft" || key === "ArrowRight") {
+          const target = recentHeaderItems[headerIndex + (key === "ArrowRight" ? 1 : -1)];
+          return target || active;
+        }
+        if (key === "ArrowDown") return firstCard || active;
+        if (key === "ArrowUp") return headerIndex > 0 ? recentHeaderItems[headerIndex - 1] : active;
+        return active;
+      }
       if (active === backTop) {
         if (key === "ArrowUp" || key === "ArrowLeft") return resolveBackTopFocusOrigin(backTop) || cards[cards.length - 1] || back || active;
         return active;
@@ -38458,6 +39036,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         }
         if (key === "ArrowUp") {
           if (rowIndex > 0) return cards[index - columns] || cards[Math.max(0, index - 1)] || active;
+          if (recentHeaderItems.length) return recentHeaderItems[1] || recentHeaderItems[0] || active;
           const lastRow = rows[rows.length - 1];
           return lastRow ? secondaryFilterFocusTarget(lastRow, active.getBoundingClientRect().left) || back || active : back || active;
         }
@@ -39177,6 +39756,35 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       check("PHASE3_SIDEBAR_SINGLE_DOM", document.querySelectorAll("#homeSidebar").length === 1 && document.querySelectorAll("#homeSidebarNav").length === 1 && document.querySelectorAll("#homeSidebarTools").length === 1, "one Sidebar overlay exists", "DOM_ASSERTION");
       check("PHASE3_SIDEBAR_REAL_NAVIGATION", sidebarSource.includes("openSecondaryCatalog") && sidebarSource.includes("openLiveHome") && sidebarSource.includes("openSettingHome"), "Sidebar uses existing navigation/actions", "STATIC_HOOK");
       check("PHASE3_SIDEBAR_KEEP_NAVIGATION", typeof openKeepHome === "function" && String(performSidebarNavigation).includes('action.type === "keep"') && String(performSidebarNavigation).includes("openKeepHome") && String(activateSidebarItem).includes('requestSidebarNavigation({ type: "keep" })'), "Sidebar收藏使用Native Keep入口", "STATIC_HOOK");
+      const recentBatchSource = String(enterRecentManageMode) + String(exitRecentManageMode) + String(toggleRecentManageSelection) + String(toggleRecentManageSelectAll) + String(deleteRecentWatchingBatch) + String(handleSecondaryBackKey) + String(secondaryCatalogDirectionalTarget) + String(updateRecentManageUi);
+      check("PHASE3_RECENT_BATCH_MANAGEMENT", typeof enterRecentManageMode === "function" && typeof deleteRecentWatchingBatch === "function" && document.querySelectorAll("#recentManageBtn").length === 1, "Recent batch management helpers and entry exist", "STATIC_HOOK");
+      check("RECENT_MANAGE_SINGLE_ENTRY", !!document.getElementById("recentManageBtn") && !document.getElementById("recentMultiSelectBtn"), "只有管理按钮进入多选模式", "DOM_ASSERTION");
+      check("RECENT_BATCH_ENTRY_SCOPE", String(updateRecentManageUi).includes("isRecentManagePage") && String(updateRecentManageUi).includes("controls.hidden"), "管理入口只在 Secondary Recent 显示", "STATIC_HOOK");
+      check("RECENT_BATCH_NO_NEW_ROUTE", !recentBatchSource.includes("pushState") && !recentBatchSource.includes("replaceState"), "管理模式不新增 history route", "STATIC_HOOK");
+      check("RECENT_BATCH_MULTI_SELECT", String(toggleRecentManageSelection).includes("selectedKeys") && String(toggleRecentManageSelection).includes("delete manage.selectedKeys"), "选择权威是 media key 集合", "STATIC_HOOK");
+      check("RECENT_BATCH_SELECT_ALL_DATASET", String(recentManageItems).includes("uniqueRecentWatchingMedia") && String(toggleRecentManageSelectAll).includes("recentManageItems"), "全选使用完整业务数据集", "STATIC_HOOK");
+      check("RECENT_BATCH_DESELECT_ALL", String(toggleRecentManageSelectAll).includes("manage.selectedKeys = {}"), "取消全选清空选择", "STATIC_HOOK");
+      check("RECENT_BATCH_CARD_NO_OPEN", String(consumeRecentWatchingPress).includes("recentManageCard(card)") && !String(toggleRecentManageSelection).includes("openRecentWatchingDetail"), "管理态卡片不打开详情", "STATIC_HOOK");
+      check("RECENT_BATCH_SINGLE_DELETE_BYPASSED", String(consumeRecentWatchingPress).includes("recentManageCard(card)") && String(deleteRecentWatchingMedia).includes("recentManageRuntime().active"), "管理态绕过单删链", "STATIC_HOOK");
+      check("RECENT_BATCH_BACK_EXIT_ONLY", String(handleSecondaryBackKey).includes("exitRecentManageMode") && String(handleSecondaryBackKey).includes("return true"), "管理态 Back 只退出管理", "STATIC_HOOK");
+      check("RECENT_BATCH_NATIVE_AUTHORITY", String(deleteRecentWatchingBatch).includes("readFreshNativeHistoryItemsForDeletion") && String(deleteRecentWatchingBatch).includes("deleteNativeHistoryViaLocalApi"), "批量删除复用 Native History 验证", "STATIC_HOOK");
+      check("RECENT_BATCH_GROUP_DELETE", String(deleteRecentWatchingBatch).includes("freezeNativeHistoryDeleteIdentity") && String(deleteRecentWatchingBatch).includes("nativeHistoryDeleteFrozenPresent"), "Native History member 按媒体组统一验证", "STATIC_HOOK");
+      check("RECENT_BATCH_ALWAYS_RELEASE_DELETING", String(deleteRecentWatchingBatch).includes("finally") && String(deleteRecentWatchingBatch).includes("manage.deleting = false") && String(deleteRecentWatchingBatch).includes("cancelRecentManageDeleteArm"), "批量删除最终释放 deleting 状态", "STATIC_HOOK");
+      check("RECENT_BATCH_PERSIST_FAILURE_RECOVERY", String(deleteRecentWatchingBatch).includes("localCleanupFailed") && String(deleteRecentWatchingBatch).includes("persistHistoryContextEntries") && String(deleteRecentWatchingBatch).includes("persistContinueIndexEntries") && String(deleteRecentWatchingBatch).includes("loadRecentList({ refresh: true, silent: true })"), "本地续播清理异常仍完成恢复", "STATIC_HOOK");
+      check("RECENT_BATCH_EMPTY_DATASET_AUTHORITY", String(recentManageItems).includes("recentState.loaded === true") && String(recentManageItems).includes("recentItems"), "已加载空 Recent 不回退旧 query", "STATIC_HOOK");
+      check("RECENT_BATCH_SINGLE_CONTEXT_PERSIST", String(deleteRecentWatchingBatch).includes("persistHistoryContextEntries") && String(deleteRecentWatchingBatch).includes("previousContexts"), "History Context 统一持久化", "STATIC_HOOK");
+      check("RECENT_BATCH_SINGLE_CONTINUE_PERSIST", String(deleteRecentWatchingBatch).includes("persistContinueIndexEntries") && String(deleteRecentWatchingBatch).includes("previousContinue"), "Continue Index 统一持久化", "STATIC_HOOK");
+      check("RECENT_BATCH_SINGLE_RECENT_REFRESH", String(deleteRecentWatchingBatch).includes('loadRecentList({ refresh: true, silent: true })') && String(deleteRecentWatchingBatch).indexOf('loadRecentList({ refresh: true, silent: true })') === String(deleteRecentWatchingBatch).lastIndexOf('loadRecentList({ refresh: true, silent: true })'), "批量删除只统一刷新 Recent", "STATIC_HOOK");
+      check("RECENT_BATCH_PARTIAL_FAILURE", String(deleteRecentWatchingBatch).includes("failedGroups") && String(deleteRecentWatchingBatch).includes("successfulList"), "批量删除支持部分成功", "STATIC_HOOK");
+      check("RECENT_BATCH_FAILED_KEYS_PRESERVED", String(deleteRecentWatchingBatch).includes("delete manage.selectedKeys[key]") && String(deleteRecentWatchingBatch).includes("failedKeys"), "失败项保留选择", "STATIC_HOOK");
+      check("RECENT_BATCH_DELETE_CONFIRM", String(armRecentManageDelete).includes("再次确认删除") && String(armRecentManageDelete).includes("2800"), "批量删除有二次确认", "STATIC_HOOK");
+      check("RECENT_BATCH_CONFIRM_RESET_ON_SELECTION", String(toggleRecentManageSelection).includes("cancelRecentManageDeleteArm") && String(toggleRecentManageSelectAll).includes("cancelRecentManageDeleteArm"), "选择变化取消删除确认", "STATIC_HOOK");
+      check("RECENT_SINGLE_DELETE_PRESERVED", typeof deleteRecentWatchingMedia === "function" && String(deleteRecentWatchingMedia).includes("deleteNativeHistoryMediaGroupVerified"), "普通 Secondary 单删仍保留", "FROZEN_SOURCE_AUDIT");
+      check("RECENT_HOME_SINGLE_DELETE_PRESERVED", String(deleteRecentWatchingMedia).includes("#homeRecentRail") && String(deleteRecentWatchingMedia).includes("renderHomeRecent"), "Home Recent 单删仍保留", "FROZEN_SOURCE_AUDIT");
+      check("RECENT_BATCH_TV_FOCUS", String(secondaryCatalogDirectionalTarget).includes("recentHeaderItems") && String(secondaryCatalogDirectionalTarget).includes("ArrowDown"), "管理 Header 参与 TV 焦点导航", "STATIC_HOOK");
+      check("RECENT_BATCH_MOBILE_SAFE", String(consumeRecentWatchingClick).includes("consumeRecentWatchingPress") && String(enterRecentManageMode).includes("isRecentManagePage"), "手机复用同一点击/选择链", "STATIC_HOOK");
+      const oldWebviewUnsupported = ["Promise", "allSettled"].join(".");
+      check("OLD_WEBVIEW_COMPAT", !document.documentElement.innerHTML.includes(oldWebviewUnsupported), "未引入旧 WebView 不支持的 Promise 聚合 API", "STATIC_HOOK");
       check("PHASE3_SIDEBAR_NOT_ROUTE", HOME_PRESENTATION_ROUTES.join(",") === "home,search,secondary" && !sidebarSource.includes('pushState'), "Sidebar does not create a presentation route", "STATIC_HOOK");
       check("PHASE3_SIDEBAR_MENU_KEY", String(normalizeRemoteKey).includes('82: "Menu"') && String(handleSidebarMenuKey).includes("openSidebar"), "Menu/keyCode 82 opens Sidebar", "STATIC_HOOK");
       check("PHASE3_SIDEBAR_FOCUS_SCOPE", String(focusScopeRoot).includes('isSidebarOpen()') && String(handleSidebarDirectionalKey).includes("closeSidebar"), "Sidebar owns directional focus while open", "STATIC_HOOK");
@@ -39926,6 +40534,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       // call history.back() again from popstate.
       if (homeUiRoute() === "secondary" && location.hash !== "#secondary"
         && $("secondaryCatalog") && !$("secondaryCatalog").hidden) {
+        if (isRecentManagePage() && recentManageRuntime().active) {
+          if (recentManageRuntime().deleting) toast("正在删除，请稍候");
+          else exitRecentManageMode({ focus: true });
+          try { history.forward(); } catch (e) {}
+          return;
+        }
         state.homeV14.secondaryHistoryBackPending = false;
         closeSecondaryCatalog();
         if (!location.hash && (!history.state || history.state.sheet !== "home")) {
