@@ -16741,6 +16741,7 @@ utils.encode = function encode(arr, enc) {
       loadingMore: false,
       railScroll: {},
       homeV14: {
+        categoryFeeds: {},
         sections: {},
         sectionObserver: null,
         imageObserver: null,
@@ -16834,7 +16835,7 @@ utils.encode = function encode(arr, enc) {
       searchImeFocusSeq: 0,
       searchImeFrameToken: 0,
       suggestions: { keyword: "", items: [], loading: false, timer: 0, seq: 0, controller: null },
-      hot: { db: null, dbPromise: null, idb: false, ready: false, items: [], media: new Map(), users: new Map(), ingestQueue: Promise.resolve(), refreshTimer: 0 },
+      hot: { db: null, dbPromise: null, idb: false, ready: false, version: 0, items: [], media: new Map(), users: new Map(), ingestQueue: Promise.resolve(), refreshTimer: 0 },
       searchHot: { items: [], loading: false, loaded: false, error: "", loadedAt: 0, requestSeq: 0 },
       relay: { connected: 0, published: 0, total: 0, lastOk: 0, lastDone: 0, statuses: {}, subscribeStarted: false, subscribeDone: 0, subscribeFinished: {}, subscribeToken: 0, refresh: null, backfillBusy: {}, backfillTimers: {}, backfillState: {}, queryAborters: new Set(), subscriptionAborters: new Set(), fallbackReadyAt: 0, fallbackTimer: 0, fallbackPrefetchTimer: 0 },
       recommendationSource: "pending",
@@ -17935,7 +17936,10 @@ utils.encode = function encode(arr, enc) {
       renderUiPrefsControls();
       if (next === "tmdb") ensureSearchHotData();
       if (state.activeList === "all" && homeUiRoute() === "search") renderSearch();
-      if (homeUiRoute() === "home") renderHome();
+      if (homeUiRoute() === "home") {
+        invalidateHomeCategoryFeeds();
+        renderHome();
+      }
       if (homeUiRoute() === "secondary") {
         const secondaryId = normalizeLegacyCategoryId(state.homeV14 && state.homeV14.secondaryListId);
         const secondaryFilters = secondaryId ? secondaryFilterState(secondaryId) : null;
@@ -18548,10 +18552,17 @@ utils.encode = function encode(arr, enc) {
       return idbRequest(db.transaction(storeName, "readonly").objectStore(storeName).get(key)).catch(() => null);
     }
 
+    function markHomeHotVersion() {
+      state.hot.version = Number(state.hot.version || 0) + 1;
+      if (typeof invalidateHomeCategoryFeeds === "function") invalidateHomeCategoryFeeds();
+    }
+
     async function hotLoadIndex() {
       const db = await openHotDb();
       if (!db) {
         state.hot.ready = true;
+        markHomeHotVersion();
+        scheduleRender();
         return;
       }
       try {
@@ -18564,6 +18575,7 @@ utils.encode = function encode(arr, enc) {
       } catch (e) {
         state.hot.ready = true;
       }
+      markHomeHotVersion();
       useNostrRecommendationsIfReady();
       refreshActiveNostrSecondaryQuery(true);
       scheduleRender();
@@ -19017,12 +19029,14 @@ utils.encode = function encode(arr, enc) {
       clearTimeout(state.hot.refreshTimer);
       state.hot.refreshTimer = 0;
       state.hot.items = buildHotItemsFromIndex();
+      markHomeHotVersion();
       useNostrRecommendationsIfReady();
       refreshActiveNostrSecondaryQuery(true);
       if (isNostrRefreshActive()) {
         updateNostrRefreshProgress({ indexed: state.hot.items.length });
         maybeFinishNostrRefresh();
       }
+      if (homeUiRoute() === "home") scheduleRender();
     }
 
     function scheduleHotRefresh(delay) {
@@ -19081,6 +19095,7 @@ utils.encode = function encode(arr, enc) {
         state.hot.media.clear();
         state.hot.users.clear();
         state.hot.items = [];
+        markHomeHotVersion();
         return;
       }
       if (!onlyMine) {
@@ -19092,6 +19107,7 @@ utils.encode = function encode(arr, enc) {
         state.hot.media.clear();
         state.hot.users.clear();
         state.hot.items = [];
+        markHomeHotVersion();
         return;
       }
       const identity = state.identity && state.identity.pubkey;
@@ -19122,6 +19138,7 @@ utils.encode = function encode(arr, enc) {
         await idbDone(tx).catch(() => {});
       }
       state.hot.items = buildHotItemsFromIndex();
+      markHomeHotVersion();
     }
 
     async function hotRemoveVectors(vectors, options) {
@@ -25380,85 +25397,229 @@ utils.encode = function encode(arr, enc) {
       replaceHomeRailChildren(rail, [status], captureHomeRailFocus(rail));
     }
 
-    function homeDomesticPreferred(item, mediaType) {
-      const type = String(mediaType || "").toLowerCase();
-      if (type === "anime") {
-        const itemType = String(item && (item.mediaType || item.media_type) || "").toLowerCase();
-        return itemType === "movie" || itemType === "tv" ? homeDomesticPreferred(item, itemType) : false;
-      }
-      if (!item || (type !== "movie" && type !== "tv")) return false;
-      if (type === "movie") {
-        return String(item.originalLanguage || item.original_language || "").trim().toLowerCase() === "zh";
-      }
-      const countries = Array.isArray(item.originCountries)
-        ? item.originCountries
-        : Array.isArray(item.origin_country) ? item.origin_country : String(item.originCountries || item.origin_country || "").split(/[|,\s]+/);
-      return countries.map((value) => String(value || "").trim().toUpperCase()).some((value) => value === "CN" || value === "HK" || value === "TW");
-    }
-
-    function prioritizeHomeDomestic(items, mediaType, limit) {
-      const source = Array.isArray(items) ? items : [];
-      const preferred = source.filter((item) => homeDomesticPreferred(item, mediaType));
-      if (!preferred.length) return source;
-      const others = source.filter((item) => !homeDomesticPreferred(item, mediaType));
-      const target = Math.max(1, Math.ceil(Number(limit || 0) / 2));
-      const preferredFront = preferred.slice(0, Math.min(preferred.length, target));
-      return preferredFront.concat(others, preferred.slice(preferredFront.length));
-    }
-
     function homeNostrSignalKey(item) {
       const mediaType = String(item && (item.mediaType || item.media_type) || "").toLowerCase();
       const tmdbId = String(item && (item.tmdbId || item.tmdb_id) || "").trim();
       return (mediaType === "movie" || mediaType === "tv") && tmdbId ? `tmdb:${mediaType}:${tmdbId}` : "";
     }
 
-    function prioritizeHomeNostrCandidates(items, mediaType) {
-      const source = Array.isArray(items) ? items : [];
-      if (homeHotSource() !== "nostr" || !["movie", "tv", "anime"].includes(String(mediaType || "")) || !state.hot || !state.hot.ready) return source;
-      const candidateKeys = new Set();
-      source.forEach((item) => {
-        const itemType = String(item && (item.mediaType || item.media_type) || "").toLowerCase();
-        const typeAllowed = mediaType === "anime"
-          ? itemType === "movie" || itemType === "tv"
-          : itemType === mediaType;
-        const key = homeNostrSignalKey(item);
-        if (key && typeAllowed) candidateKeys.add(key);
+    const HOME_CATEGORY_IDS = new Set(["movie", "tv", "anime", "documentary"]);
+
+    function isHomeCategoryId(id) {
+      return HOME_CATEGORY_IDS.has(normalizeLegacyCategoryId(id));
+    }
+
+    function homeCategoryEffectiveSource(id) {
+      id = normalizeLegacyCategoryId(id);
+      return id === "documentary" ? "tmdb" : homeHotSource();
+    }
+
+    function homeNostrHotSignature() {
+      const items = Array.isArray(state.hot && state.hot.items) ? state.hot.items : [];
+      return items.slice(0, SECONDARY_NOSTR_HOT_MAX_SCAN_CANDIDATES).map((item, index) => [
+        homeNostrSignalKey(item),
+        Number(item && (item.people || item.count) || 0),
+        String(item && (item.latest || item.lastEventAt || item.last_event_at) || ""),
+        index
+      ].join(":")).join("|");
+    }
+
+    function homeCategoryFeedKey(id) {
+      id = normalizeLegacyCategoryId(id);
+      const selectedSource = homeHotSource();
+      const effectiveSource = homeCategoryEffectiveSource(id);
+      const hotVersion = effectiveSource === "nostr" ? Number(state.hot && state.hot.version || 0) : 0;
+      const hotSignature = effectiveSource === "nostr" ? homeNostrHotSignature() : "canonical";
+      return JSON.stringify([id, selectedSource, effectiveSource, hotVersion, hotSignature]);
+    }
+
+    function homeCategoryFeed(id) {
+      id = normalizeLegacyCategoryId(id);
+      if (!isHomeCategoryId(id)) return null;
+      const home = state.homeV14;
+      home.categoryFeeds = home.categoryFeeds && typeof home.categoryFeeds === "object" ? home.categoryFeeds : {};
+      let feed = home.categoryFeeds[id];
+      if (!feed) {
+        feed = home.categoryFeeds[id] = {
+          id,
+          key: "",
+          source: "",
+          items: [],
+          nostrItems: [],
+          tmdbItems: [],
+          loading: false,
+          loaded: false,
+          error: "",
+          promise: null,
+          requestSeq: 0,
+          dataVersion: "",
+          signature: ""
+        };
+      }
+      const key = homeCategoryFeedKey(id);
+      if (feed.key !== key) {
+        feed.key = key;
+        feed.source = homeCategoryEffectiveSource(id);
+        feed.items = [];
+        feed.nostrItems = [];
+        feed.tmdbItems = [];
+        feed.loading = false;
+        feed.loaded = false;
+        feed.error = "";
+        feed.promise = null;
+        feed.requestSeq = Number(feed.requestSeq || 0) + 1;
+        feed.dataVersion = key;
+        feed.signature = key;
+      }
+      return feed;
+    }
+
+    function invalidateHomeCategoryFeeds() {
+      const home = state.homeV14;
+      const feeds = home && home.categoryFeeds;
+      if (!feeds || typeof feeds !== "object") return;
+      Object.keys(feeds).forEach((id) => {
+        const feed = feeds[id];
+        if (!feed) return;
+        feed.key = "";
+        feed.items = [];
+        feed.nostrItems = [];
+        feed.tmdbItems = [];
+        feed.loading = false;
+        feed.loaded = false;
+        feed.error = "";
+        feed.promise = null;
+        feed.requestSeq = Number(feed.requestSeq || 0) + 1;
       });
-      if (!candidateKeys.size) return source;
-      const matchedSignals = [];
-      const seen = new Set();
-      (Array.isArray(state.hot && state.hot.items) ? state.hot.items : []).forEach((signal, index) => {
-        const key = homeNostrSignalKey(signal);
-        if (!key || !candidateKeys.has(key) || seen.has(key)) return;
-        seen.add(key);
-        const latestRaw = signal && (signal.latest || signal.lastEventAt || signal.last_event_at || 0);
-        const latestNumber = Number(latestRaw);
-        const latest = Number.isFinite(latestNumber) ? latestNumber : (Date.parse(String(latestRaw || "")) || 0);
-        matchedSignals.push({
-          key,
-          index,
-          people: Math.max(0, Number(signal.people || signal.count || 0)),
-          latest: Number.isFinite(latest) ? latest : 0
+    }
+
+    function homeCategoryFeedIsCurrent(feed, key, requestSeq) {
+      return !!(feed && feed.key === key && Number(feed.requestSeq || 0) === Number(requestSeq || 0));
+    }
+
+    function homeCategoryDefaultFilters() {
+      return { mediaType: "all", genre: "all", region: "all", year: "all", sort: "hot" };
+    }
+
+    function homeCategoryTmdbSources(id) {
+      const filters = homeCategoryDefaultFilters();
+      return secondaryFullCatalogSources(id)
+        .map((source) => secondaryApplyServerFilters(source, filters))
+        .filter(Boolean)
+        .map((result) => result.entry);
+    }
+
+    async function loadHomeCategoryTmdbPool(id) {
+      const sources = homeCategoryTmdbSources(id);
+      if (!sources.length) return { items: [], error: "暂无可用来源" };
+      const results = await Promise.all(sources.map((source) => Promise.resolve()
+        .then(() => requestJson(tmdbUrl(source, 1), 18))
+        .then((body) => ({ source, body: body || {}, error: null }))
+        .catch((error) => ({ source, body: null, error }))));
+      const incoming = [];
+      let goodCount = 0;
+      results.forEach((result) => {
+        if (result.error || !result.body) return;
+        goodCount += 1;
+        (Array.isArray(result.body.results) ? result.body.results : []).forEach((item, index) => {
+          const normalized = normalizeTmdb(item, result.source, index);
+          if (hasPoster(normalized) && (!isReleaseFilteredCatalogId(id) || isReleasedAsOfToday(normalized))) incoming.push(normalized);
         });
       });
-      matchedSignals.sort((a, b) => b.people - a.people || b.latest - a.latest || a.index - b.index);
-      const signals = new Map(matchedSignals.map((signal, index) => [signal.key, {
-        rank: index + 1,
-        people: signal.people
-      }]));
-      if (!signals.size) return source;
-      return source.map((item, index) => {
-        const itemType = String(item && (item.mediaType || item.media_type) || "").toLowerCase();
-        const key = homeNostrSignalKey(item);
-        const signal = key ? signals.get(key) : null;
-        const typeAllowed = mediaType === "anime"
-          ? itemType === "movie" || itemType === "tv"
-          : itemType === mediaType;
-        if (!signal || !typeAllowed) return { item, index, score: -index };
-        const rankBoost = Math.max(0, 3 - Math.min(3, signal.rank - 1));
-        const heatBoost = Math.min(1.5, Math.log1p(signal.people) / 8);
-        return { item, index, score: -index + Math.min(4, rankBoost + heatBoost) };
-      }).sort((a, b) => b.score - a.score || a.index - b.index).map((entry) => entry.item);
+      return {
+        items: uniqueMedia(filterReleasedCatalogItems(id, incoming)),
+        error: goodCount ? "" : "加载失败"
+      };
+    }
+
+    async function loadHomeCategoryNostrPool(id, feed, key, requestSeq, target) {
+      if (!state.hot || !state.hot.ready) return [];
+      const scanFilters = homeCategoryDefaultFilters();
+      const knownQuery = { items: Array.isArray(feed && feed.tmdbItems) ? feed.tmdbItems : [] };
+      const candidates = secondaryNostrHotCandidates(id);
+      const qualified = [];
+      let newDetailRequests = 0;
+      for (let offset = 0; offset < candidates.length && qualified.length < target; offset += SECONDARY_NOSTR_HOT_BATCH_SIZE) {
+        if (!homeCategoryFeedIsCurrent(feed, key, requestSeq)) return qualified;
+        const batch = candidates.slice(offset, offset + SECONDARY_NOSTR_HOT_BATCH_SIZE).filter((candidate) => {
+          const needsDetail = secondaryNostrDetailRequestNeeded(candidate, id, knownQuery);
+          if (needsDetail) {
+            if (newDetailRequests >= SECONDARY_NOSTR_HOT_MAX_NEW_DETAIL_REQUESTS) return false;
+            newDetailRequests += 1;
+          }
+          return true;
+        });
+        if (!batch.length) continue;
+        const results = await weeklyMapLimit(batch, SECONDARY_NOSTR_HOT_DETAIL_CONCURRENCY, (candidate, index) => secondaryNostrEnrichCandidate(candidate, id, knownQuery, index));
+        if (!homeCategoryFeedIsCurrent(feed, key, requestSeq)) return qualified;
+        results
+          .filter((result) => result && result.ok && result.value && secondaryNostrHotFilterMatches(id, scanFilters, result.value))
+          .map((result) => result.value)
+          .slice(0, Math.max(0, target - qualified.length))
+          .forEach((item) => qualified.push(item));
+      }
+      return uniqueMedia(qualified);
+    }
+
+    function homeCategoryFeedLimit(id) {
+      const config = homeSectionConfig().find((entry) => entry.listId === normalizeLegacyCategoryId(id));
+      return Number(config && config.initialLimit || homeRailLimit("portrait"));
+    }
+
+    function loadHomeCategoryFeed(id) {
+      id = normalizeLegacyCategoryId(id);
+      if (!isHomeCategoryId(id)) return Promise.resolve(null);
+      const feed = homeCategoryFeed(id);
+      const key = feed.key;
+      if (feed.loading && feed.promise) return feed.promise;
+      if (feed.loaded) return Promise.resolve(feed);
+      const requestSeq = Number(feed.requestSeq || 0) + 1;
+      feed.requestSeq = requestSeq;
+      feed.loading = true;
+      feed.loaded = false;
+      feed.error = "";
+      const target = homeCategoryFeedLimit(id);
+      const source = homeCategoryEffectiveSource(id);
+      const task = Promise.resolve().then(async () => {
+        let nostrItems = [];
+        let tmdbResult = { items: [], error: "" };
+        if (source === "nostr") {
+          nostrItems = await loadHomeCategoryNostrPool(id, feed, key, requestSeq, target);
+          if (!homeCategoryFeedIsCurrent(feed, key, requestSeq)) return feed;
+          if (nostrItems.length < target) tmdbResult = await loadHomeCategoryTmdbPool(id);
+        } else {
+          tmdbResult = await loadHomeCategoryTmdbPool(id);
+        }
+        if (!homeCategoryFeedIsCurrent(feed, key, requestSeq)) return feed;
+        const tmdbItems = Array.isArray(tmdbResult.items) ? tmdbResult.items : [];
+        const items = filterBlocked(uniqueMedia(nostrItems.concat(tmdbItems)));
+        if (!items.length && tmdbResult.error && !nostrItems.length) throw new Error(tmdbResult.error);
+        feed.source = source;
+        feed.nostrItems = nostrItems;
+        feed.tmdbItems = tmdbItems;
+        feed.items = items;
+        feed.loaded = true;
+        feed.error = "";
+        feed.dataVersion = key;
+        feed.signature = key;
+        return feed;
+      }).catch((error) => {
+        if (homeCategoryFeedIsCurrent(feed, key, requestSeq)) {
+          feed.loaded = true;
+          feed.error = String(error && error.message || "加载失败");
+          feed.items = [];
+          feed.nostrItems = [];
+          feed.tmdbItems = [];
+        }
+        return feed;
+      }).finally(() => {
+        if (homeCategoryFeedIsCurrent(feed, key, requestSeq)) {
+          feed.loading = false;
+          feed.promise = null;
+        }
+      });
+      feed.promise = task;
+      return task;
     }
 
     function fillHomeRail(rail, items, options) {
@@ -25470,7 +25631,7 @@ utils.encode = function encode(arr, enc) {
         ? uniqueRecentWatchingMedia(source)
         : opts.allowNoPoster ? uniqueHistoryMedia(source) : uniqueMedia(source);
       const limit = Number(opts.limit || homeRailLimit(variant));
-      const unique = opts.homeDomesticType ? prioritizeHomeDomestic(uniqueSource, opts.homeDomesticType, limit) : uniqueSource;
+      const unique = uniqueSource;
       const limited = unique.slice(0, limit);
       const renderKeys = limited.map(mediaRenderKey).join("\n");
       rail.dataset.homeVariant = variant;
@@ -25538,14 +25699,15 @@ utils.encode = function encode(arr, enc) {
       if (title) title.textContent = config.title;
       if (!rail) return;
       rail.dataset.homeVariant = config.variant;
-      const page = state.catalogPage[config.listId];
-      const items = page && page.loaded ? filterReleasedCatalogItems(config.listId, state.catalog[config.listId] || []) : [];
-      const rankedItems = prioritizeHomeNostrCandidates(items, config.listId);
-      if (page && page.loading) {
+      const feed = homeCategoryFeed(config.listId);
+      const items = feed && feed.loaded ? feed.items : [];
+      rail.dataset.homeFeedSource = feed && feed.source || "";
+      rail.dataset.homeFeedVersion = feed && feed.dataVersion || "";
+      if (feed && feed.loading) {
         showHomeRailStatus(rail, "加载中...", { variant: config.variant });
-      } else if (page && page.error) {
+      } else if (feed && feed.error) {
         showHomeRailStatus(rail, "加载失败", { variant: config.variant });
-      } else if (!page || !page.loaded) {
+      } else if (!feed || !feed.loaded) {
         const rect = section.getBoundingClientRect ? section.getBoundingClientRect() : null;
         const nearViewport = !rect || rect.top <= (window.innerHeight || document.documentElement.clientHeight || 0) + 760;
         if (!nearViewport) {
@@ -25562,11 +25724,10 @@ utils.encode = function encode(arr, enc) {
           replaceHomeRailChildren(rail, skeletons, captureHomeRailFocus(rail));
         }
       } else {
-        fillHomeRail(rail, rankedItems, {
+        fillHomeRail(rail, items, {
           variant: config.variant,
           limit: config.initialLimit,
           homeMore: true,
-          homeDomesticType: ["movie", "tv", "anime"].includes(config.listId) ? config.listId : "",
           railKey: `home:${config.listId}`,
           homeEagerCount: 4
         });
@@ -25811,9 +25972,9 @@ utils.encode = function encode(arr, enc) {
 
     function enqueueHomeListLoad(id) {
       if (!isHomeRouteActive() || !id || id === "all" || id === "recent" || id === "live") return;
-      const page = state.catalogPage[id];
+      const feed = homeCategoryFeed(id);
       const home = state.homeV14;
-      if (page && (page.loading || page.loaded) || home.loadQueue.includes(id)) return;
+      if (feed && (feed.loading || feed.loaded) || home.loadQueue.includes(id)) return;
       home.loadQueue.push(id);
       pumpHomeListLoads();
     }
@@ -25822,12 +25983,12 @@ utils.encode = function encode(arr, enc) {
       const home = state.homeV14;
       while (isHomeRouteActive() && home.activeLoads < HOME_V14_MAX_CONCURRENT && home.loadQueue.length) {
         const id = home.loadQueue.shift();
-        const page = state.catalogPage[id];
-        if (page && (page.loading || page.loaded)) continue;
+        const feed = homeCategoryFeed(id);
+        if (feed && (feed.loading || feed.loaded)) continue;
         home.activeLoads += 1;
         home.requestCount += 1;
         home.maxConcurrent = Math.max(home.maxConcurrent, home.activeLoads);
-        Promise.resolve(loadCatalogList(id)).catch(() => {}).finally(() => {
+        Promise.resolve(loadHomeCategoryFeed(id)).catch(() => {}).finally(() => {
           home.activeLoads = Math.max(0, home.activeLoads - 1);
           if (isHomeRouteActive()) renderHome();
           pumpHomeListLoads();
@@ -25878,7 +26039,10 @@ utils.encode = function encode(arr, enc) {
       const configs = homeSectionConfig();
       const cards = Array.from(homeRoot.querySelectorAll(".home-rail > .card"));
       const images = Array.from(homeRoot.querySelectorAll("img"));
-      const pageLoaded = configs.filter((config) => state.catalogPage[config.listId] && state.catalogPage[config.listId].loaded).length;
+      const pageLoaded = configs.filter((config) => {
+        const feed = home.categoryFeeds && home.categoryFeeds[config.listId];
+        return !!(feed && feed.loaded && feed.key === homeCategoryFeedKey(config.listId));
+      }).length;
       const isRealSrc = (image) => {
         const src = image.getAttribute("src") || "";
         return !!src && !/^data:image\//i.test(src);
@@ -25895,6 +26059,11 @@ utils.encode = function encode(arr, enc) {
         activeListRequestCount: home.requestCount,
         homeListConcurrentRequests: home.activeLoads,
         homeListMaxConcurrentRequests: home.maxConcurrent,
+        homeCategoryFeedSources: configs.reduce((result, config) => {
+          const feed = home.categoryFeeds && home.categoryFeeds[config.listId];
+          result[config.listId] = feed && feed.source || "";
+          return result;
+        }, {}),
         heroCandidateCount: Number(home.heroCandidateCount || 0),
         heroPoolCandidateCount: Number(home.heroFeed && home.heroFeed.poolCount || 0),
         heroExtraTmdbRequestCount: Number(home.heroExtraTmdbRequestCount || 0),
