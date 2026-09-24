@@ -914,22 +914,45 @@
 
     .rating-badge {
       position: absolute;
-      right: 7px;
+      left: 7px;
+      right: auto;
       top: 7px;
-      min-width: 24px;
-      height: 18px;
-      padding: 0 5px;
-      display: grid;
-      place-items: center;
+      bottom: auto;
+      z-index: 3;
+      min-width: 28px;
+      height: 22px;
+      box-sizing: border-box;
+      padding: 0 7px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
       border-radius: 999px;
-      background: rgba(255, 235, 120, .28);
-      border: 1px solid rgba(255, 230, 100, .35);
-      color: rgba(255, 248, 200, .95);
+      background: rgba(6, 9, 12, .48);
+      border: 1px solid rgba(255, 255, 255, .16);
+      color: rgba(255, 255, 255, .88);
       font-size: 10px;
-      font-weight: 800;
+      font-weight: 760;
       line-height: 1;
       -webkit-backdrop-filter: blur(8px);
       backdrop-filter: blur(8px);
+    }
+
+    .rating-badge .badge-icon,
+    .card-people .badge-icon {
+      width: 12px;
+      height: 12px;
+      flex: 0 0 12px;
+      display: block;
+      fill: currentColor;
+      pointer-events: none;
+    }
+
+    .rating-badge .badge-value,
+    .card-people .badge-value {
+      display: inline-block;
+      min-width: 0;
+      line-height: 1;
     }
 
     .card-meta {
@@ -1191,11 +1214,18 @@
     .card-people {
       position: absolute;
       right: 7px;
-      bottom: 7px;
-      z-index: 2;
+      left: auto;
+      top: 7px;
+      bottom: auto;
+      z-index: 3;
+      min-width: 28px;
+      height: 22px;
       min-height: 22px;
+      box-sizing: border-box;
       display: inline-flex;
       align-items: center;
+      justify-content: center;
+      gap: 4px;
       padding: 0 7px;
       border-radius: 999px;
       background: rgba(6, 9, 12, .48);
@@ -1206,11 +1236,16 @@
       line-height: 1;
       text-shadow: 0 1px 2px rgba(0, 0, 0, .46);
       pointer-events: none;
+      -webkit-backdrop-filter: blur(8px);
+      backdrop-filter: blur(8px);
     }
 
     .card.has-air-status .card-people,
     .poster-wrap.has-air-status .card-people {
-      bottom: calc(2px + 1.2em + 4px);
+      right: 7px;
+      left: auto;
+      top: 7px;
+      bottom: auto;
     }
 
     .person-info {
@@ -4280,13 +4315,8 @@
       letter-spacing: -.2px;
     }
 
-    /* 评分徽章：金色霓虹描边发光，比原来更鲜艳饱和 */
-    .rating-badge {
-      background: rgba(10, 8, 2, .55) !important;
-      border-color: rgba(217, 182, 106, .75) !important;
-      color: #ffd98a !important;
-      box-shadow: 0 0 10px rgba(217, 182, 106, .35), inset 0 0 6px rgba(217, 182, 106, .12) !important;
-    }
+    /* Rating and Nostr people use one neutral badge treatment.  Their
+       semantic distinction is carried by the icon and corner placement. */
 
     /* 最近播放卡的进度条改为红→品红渐变，比纯色更有层次 */
     .recent-progress span {
@@ -5262,13 +5292,8 @@
       right: auto;
       left: 7px;
       min-width: 28px;
-      height: 20px;
-      font-size: clamp(10px, .7vw, 14px);
-      background: rgba(8, 11, 16, .78);
-      border-color: transparent;
-      color: #fff;
-      -webkit-backdrop-filter: none;
-      backdrop-filter: none;
+      height: 22px;
+      font-size: 10px;
     }
 
     .home-rail > .card.landscape-card .poster,
@@ -6287,9 +6312,6 @@
       top: 8px;
       right: auto;
       left: 8px;
-      background: rgba(8, 11, 16, .76);
-      border-color: transparent;
-      color: #fff;
     }
 
     .weekly-secondary-rail > .weekly-card:focus {
@@ -6620,7 +6642,50 @@
     /* Keep the Home rating as a quiet in-poster label; the shared legacy
        badge treatment must not turn a frameless poster into a panel. */
     #home.home-root .home-rail > .card .rating-badge {
-      border: 0 !important;
+      box-shadow: none !important;
+    }
+
+    /* Every Home and Secondary media card shares one information layer:
+       rating at the poster's upper-left, Nostr people at the upper-right,
+       and the air/episode status across the bottom. */
+    #home.home-root .home-rail > .card .rating-badge,
+    #secondaryCatalog .media-grid > .card .rating-badge,
+    #secondaryCatalog .weekly-secondary-rail > .weekly-card .rating-badge {
+      top: 8px;
+      right: auto;
+      left: 8px;
+      bottom: auto;
+    }
+
+    #home.home-root .home-rail > .card .card-people,
+    #secondaryCatalog .media-grid > .card .card-people,
+    #secondaryCatalog .weekly-secondary-rail > .weekly-card .card-people {
+      top: 8px;
+      right: 8px;
+      left: auto;
+      bottom: auto;
+    }
+
+    #home.home-root .home-rail > .card .rating-badge,
+    #home.home-root .home-rail > .card .card-people,
+    #secondaryCatalog .media-grid > .card .rating-badge,
+    #secondaryCatalog .media-grid > .card .card-people,
+    #secondaryCatalog .weekly-secondary-rail > .weekly-card .rating-badge,
+    #secondaryCatalog .weekly-secondary-rail > .weekly-card .card-people {
+      min-width: 28px !important;
+      min-height: 22px !important;
+      height: 22px !important;
+      box-sizing: border-box !important;
+      padding: 0 7px !important;
+      gap: 4px !important;
+      border-radius: 999px !important;
+      background: rgba(6, 9, 12, .48) !important;
+      border: 1px solid rgba(255, 255, 255, .16) !important;
+      color: rgba(255, 255, 255, .88) !important;
+      font-size: 10px !important;
+      font-weight: 760 !important;
+      line-height: 1 !important;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, .46) !important;
       box-shadow: none !important;
     }
 
@@ -26803,7 +26868,7 @@ utils.encode = function encode(arr, enc) {
     const SECONDARY_NOSTR_VARIETY_TARGET_MATCHES = 18;
     const SECONDARY_NOSTR_VARIETY_SCAN_BATCH_SIZE = 4;
     const SECONDARY_NOSTR_VARIETY_MAX_NEW_DETAIL_REQUESTS = 54;
-    const NOSTR_TMDB_META_CACHE_VERSION = 1;
+    const NOSTR_TMDB_META_CACHE_VERSION = 2;
     const NOSTR_TMDB_META_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
     const NOSTR_TMDB_META_CACHE_MAX_ENTRIES = 1000;
     const NOSTR_TMDB_META_CACHE_SAVE_DEBOUNCE_MS = 450;
@@ -26896,6 +26961,7 @@ utils.encode = function encode(arr, enc) {
       const genreIds = Array.isArray(value.genreIds) ? value.genreIds : Array.isArray(value.genre_ids) ? value.genre_ids : null;
       const regions = Array.isArray(value.regions) ? value.regions : Array.isArray(value.originCountries) ? value.originCountries : Array.isArray(value.origin_country) ? value.origin_country : null;
       if (!genreIds || !regions || value.releaseDate == null && value.release_date == null) return null;
+      const voteAverageValue = Number(value.voteAverage != null ? value.voteAverage : value.vote_average);
       return {
         version: NOSTR_TMDB_META_CACHE_VERSION,
         mediaType,
@@ -26903,6 +26969,7 @@ utils.encode = function encode(arr, enc) {
         genreIds: Array.from(new Set(genreIds.map((item) => String(item).trim()).filter(Boolean))),
         regions: Array.from(new Set(regions.map((item) => String(item).trim().toUpperCase()).filter(Boolean))),
         releaseDate: String(value.releaseDate != null ? value.releaseDate : value.release_date || "").trim(),
+        voteAverage: Number.isFinite(voteAverageValue) && voteAverageValue > 0 ? voteAverageValue : 0,
         fetchedAt,
         classification: value.classification === "valid" || value.classification === "invalid" ? value.classification : ""
       };
@@ -27038,6 +27105,7 @@ utils.encode = function encode(arr, enc) {
         genreIds: genreValue,
         regions: regionValue,
         releaseDate: releaseValue,
+        voteAverage: item.voteAverage != null ? item.voteAverage : item.vote_average,
         fetchedAt: Date.now()
       });
     }
@@ -27069,6 +27137,9 @@ utils.encode = function encode(arr, enc) {
         genreIds: genreValue,
         regions: regionValue,
         releaseDate: detail[releaseKey],
+        voteAverage: detail.vote_average != null
+          ? detail.vote_average
+          : hotItem.voteAverage != null ? hotItem.voteAverage : hotItem.vote_average,
         fetchedAt: Date.now()
       });
     }
@@ -27091,7 +27162,8 @@ utils.encode = function encode(arr, enc) {
         genre_ids: entry.genreIds,
         origin_country: entry.regions,
         release_date: entry.mediaType === "movie" ? entry.releaseDate : "",
-        first_air_date: entry.mediaType === "tv" ? entry.releaseDate : ""
+        first_air_date: entry.mediaType === "tv" ? entry.releaseDate : "",
+        vote_average: entry.voteAverage
       };
       const item = normalizeTmdb(raw, { id: "secondary-nostr", title: listId, mediaType: entry.mediaType }, index);
       if (!item) return null;
@@ -27144,7 +27216,10 @@ utils.encode = function encode(arr, enc) {
         genre_ids: genreIds,
         origin_country: detail.origin_country || (Array.isArray(detail.production_countries)
           ? detail.production_countries.map((country) => country && country.iso_3166_1).filter(Boolean)
-          : [])
+          : []),
+        vote_average: detail.vote_average != null
+          ? detail.vote_average
+          : hotItem.voteAverage != null ? hotItem.voteAverage : hotItem.vote_average
       });
       const item = normalizeTmdb(raw, { id: "secondary-nostr", title: listId, mediaType: hotItem.mediaType }, index);
       item.id = `tmdb:${hotItem.mediaType}:${hotItem.tmdbId}`;
@@ -29296,7 +29371,17 @@ utils.encode = function encode(arr, enc) {
       button.__weeklyHome = weeklyHome;
       if (recentWatching) recordRecentNativeKeyFlow("RECENT_NATIVE_KEY_AT_CARD", item);
       button.classList.toggle("blocked", isBlocked(item));
-      const rating = item.voteAverage ? Number(item.voteAverage).toFixed(1) : "";
+      const rawRating = item && item.voteAverage != null && item.voteAverage !== ""
+        ? item.voteAverage
+        : item && item.vote_average;
+      const ratingValue = Number(rawRating);
+      const rating = Number.isFinite(ratingValue) && ratingValue > 0 ? ratingValue.toFixed(1) : "";
+      const ratingBadgeHtml = rating
+        ? `<span class="rating-badge" aria-label="评分 ${escapeAttr(rating)}"><svg class="badge-icon rating-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.8L12 3.6z"></path></svg><span class="badge-value">${escapeHtml(rating)}</span></span>`
+        : "";
+      const peopleBadgeHtml = hasNostrPeople
+        ? `<span class="card-people" aria-label="Nostr 热度 ${escapeAttr(String(people))} 人"><svg class="badge-icon people-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.2 11a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4zm5.9-1.1a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2zM3.7 18.7c0-2.5 2.4-4.2 5.5-4.2s5.5 1.7 5.5 4.2v1.2H3.7v-1.2zm11.1-3.5c2.8.2 5 1.6 5.5 3.6v1.1h-3.8v-1.2c0-1.4-.6-2.6-1.7-3.5z"></path></svg><span class="badge-value">${escapeHtml(people)}人</span></span>`
+        : "";
       const poster = displayImage(landscape ? item.landscape || item.image || item.pic : item.pic, { size: landscape ? "w780" : "w342" });
       const posterSrc = poster || "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
       const imageOpt = {
@@ -29319,13 +29404,12 @@ utils.encode = function encode(arr, enc) {
       ` : `
         <div class="poster-wrap${hasAirStatus ? " has-air-status" : ""}">
           <img class="poster" alt="" ${imageAttrs(posterSrc, imageOpt)}>
-          ${hasNostrPeople ? `<span class="card-people">${escapeHtml(people)}人</span>` : ""}
+          ${peopleBadgeHtml}
           ${recentWatching && !home && !weekly ? `<span class="recent-batch-indicator" aria-hidden="true"></span>` : ""}
           ${recentWatching ? `<span class="recent-delete-indicator" aria-hidden="true">🗑</span>` : ""}
-          ${home && rating ? `<span class="rating-badge">${escapeHtml(rating)}</span>` : ""}
+          ${ratingBadgeHtml}
           ${airStatusHtml}
         </div>
-        ${!home && rating ? `<span class="rating-badge">${escapeHtml(rating)}</span>` : ""}
         <div class="card-body">
           <div class="card-title">${escapeHtml(item.title)}</div>
           <div class="card-meta">${escapeHtml(item.remark)}</div>
@@ -41460,6 +41544,82 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       check("NOSTR_ANIME_PERSISTENT_META_READ_SHARED", sharedAnimeResolverSource.includes("secondaryNostrAnimeMemoryCache") && sharedAnimeResolverSource.includes("nostrTmdbMetaRuntime().entries") && sharedAnimeResolverSource.includes("ensureNostrTmdbMetaLoaded"), "anime reads the same runtime, memory, persistent sequence", "STATIC_HOOK");
       check("NOSTR_ANIME_PERSISTENT_META_WRITE_SHARED", sharedAnimeResolverSource.includes("nostrTmdbRecordFromDetail") && sharedAuthoritySource.includes("nostrTmdbMetaPut"), "anime detail writes through the shared metadata authority", "STATIC_HOOK");
       check("NOSTR_CROSS_CATEGORY_SINGLE_META_CACHE", sharedMovieCold.detailRequests === 1 && sharedMovieWarm.detailRequests === 0 && sharedTvCold.detailRequests === 1 && sharedTvWarm.detailRequests === 0 && sharedAnimeCold.detailRequests === 1 && sharedAnimeWarm.detailRequests === 0 && Object.keys(sharedMetaStore).length === 3, "movie/tv/anime use one metadata store with warm detail reuse", "RUNTIME_MOCK");
+      const ratingHotMock = { mediaType: "movie", tmdbId: "99005", title: "Rating Movie", pic: "mock-poster", people: 88, nostrHotRank: 3 };
+      const ratingDetailMock = { id: 99005, title: "Rating Movie", poster_path: "/mock-rating.jpg", vote_average: 8.6, genre_ids: [18], production_countries: [{ iso_3166_1: "CN" }], release_date: "2020-01-01" };
+      const ratingMetadataMock = nostrTmdbMetaFromDetail(ratingHotMock, ratingDetailMock);
+      const ratingMetadataItemMock = nostrTmdbItemFromMetadata(ratingHotMock, ratingMetadataMock, "movie", 0);
+      const ratingMetadataOverlayMock = nostrHotSignalOverlay(ratingMetadataItemMock, ratingHotMock, "movie");
+      const ratingDetailItemMock = secondaryNostrItemFromDetail(ratingHotMock, ratingDetailMock, "movie", 0);
+      const ratingDetailOverlayMock = nostrHotSignalOverlay(ratingDetailItemMock, ratingHotMock, "movie");
+      const cardLayerSummary = (card) => ({
+        rating: !!(card && card.querySelector(".rating-badge")),
+        people: !!(card && card.querySelector(".card-people")),
+        status: !!(card && card.querySelector(".card-air-status:not(.hidden)")),
+        ratingInPoster: !!(card && card.querySelector(".poster-wrap .rating-badge")),
+        peopleInPoster: !!(card && card.querySelector(".poster-wrap .card-people"))
+      });
+      const homeNormalMovieCard = mediaCard({ source: "tmdb", mediaType: "movie", tmdbId: "card-movie", title: "普通电影", voteAverage: 8.2, pic: "mock-poster" }, 0, { home: true });
+      const homeNostrMovieCard = mediaCard({ source: "nostr-hot", mediaType: "movie", tmdbId: "card-nostr-movie", title: "Nostr 电影", voteAverage: 8.4, people: 326, pic: "mock-poster" }, 0, { home: true });
+      const homeNostrTvCard = mediaCard({ source: "nostr-hot", mediaType: "tv", listId: "tv", tmdbId: "card-nostr-tv", title: "Nostr 电视剧", voteAverage: 8.1, people: 214, weeklyUpdateText: "更新至 6集", pic: "mock-poster" }, 0, { home: true, weeklyHome: true });
+      const homeNostrAnimeCard = mediaCard({ source: "nostr-hot", mediaType: "tv", listId: "anime", tmdbId: "card-nostr-anime", title: "Nostr 动画", voteAverage: 8.3, people: 168, weeklyUpdateText: "更新至 4集", pic: "mock-poster" }, 0, { home: true, weeklyHome: true });
+      const homeNostrVarietyCard = mediaCard({ source: "nostr-hot", mediaType: "tv", listId: "variety", tmdbId: "card-nostr-variety", title: "Nostr 综艺", voteAverage: 7.9, people: 97, weeklyUpdateText: "更新至 3期", pic: "mock-poster" }, 0, { home: true, weeklyHome: true });
+      const secondaryNormalMovieCard = mediaCard({ source: "tmdb", mediaType: "movie", tmdbId: "secondary-movie", title: "Secondary 电影", voteAverage: 7.8, pic: "mock-poster" }, 0, {});
+      const secondaryNostrMovieCard = mediaCard({ source: "nostr-hot", mediaType: "movie", tmdbId: "secondary-nostr-movie", title: "Secondary Nostr 电影", voteAverage: 8.5, people: 301, pic: "mock-poster" }, 0, {});
+      const secondaryNostrTvCard = mediaCard({ source: "nostr-hot", mediaType: "tv", listId: "tv", tmdbId: "secondary-nostr-tv", title: "Secondary Nostr 电视剧", voteAverage: 8.0, people: 201, weeklyUpdateText: "更新至 5集", pic: "mock-poster" }, 0, { weekly: true });
+      const secondaryNostrAnimeCard = mediaCard({ source: "nostr-hot", mediaType: "tv", listId: "anime", tmdbId: "secondary-nostr-anime", title: "Secondary Nostr 动画", voteAverage: 8.2, people: 155, weeklyUpdateText: "更新至 7集", pic: "mock-poster" }, 0, { weekly: true });
+      const secondaryNostrVarietyCard = mediaCard({ source: "nostr-hot", mediaType: "tv", listId: "variety", tmdbId: "secondary-nostr-variety", title: "Secondary Nostr 综艺", voteAverage: 7.7, people: 76, weeklyUpdateText: "更新至 2期", pic: "mock-poster" }, 0, { weekly: true });
+      const noRatingPeopleCard = mediaCard({ source: "nostr-hot", mediaType: "movie", tmdbId: "no-rating", title: "无评分但有热度", voteAverage: 0, people: 42, pic: "mock-poster" }, 0, { home: true });
+      const layerNormalMovie = cardLayerSummary(homeNormalMovieCard);
+      const layerNostrMovie = cardLayerSummary(homeNostrMovieCard);
+      const layerNostrTv = cardLayerSummary(homeNostrTvCard);
+      const layerNostrAnime = cardLayerSummary(homeNostrAnimeCard);
+      const layerNostrVariety = cardLayerSummary(homeNostrVarietyCard);
+      const layerSecondaryMovie = cardLayerSummary(secondaryNormalMovieCard);
+      const layerSecondaryNostrMovie = cardLayerSummary(secondaryNostrMovieCard);
+      const layerSecondaryNostrTv = cardLayerSummary(secondaryNostrTvCard);
+      const layerSecondaryNostrAnime = cardLayerSummary(secondaryNostrAnimeCard);
+      const layerSecondaryNostrVariety = cardLayerSummary(secondaryNostrVarietyCard);
+      const layerNoRatingPeople = cardLayerSummary(noRatingPeopleCard);
+      const badgeStyleText = Array.from(document.querySelectorAll("style")).map((style) => String(style.textContent || "")).join("\n");
+      const unifiedBadgeCss = badgeStyleText.slice(badgeStyleText.indexOf("/* Every Home and Secondary media card shares one information layer"));
+      const cardRendererSource = String(mediaCard);
+      const badgeCssBlock = (selector) => {
+        const start = badgeStyleText.indexOf(selector);
+        const end = start >= 0 ? badgeStyleText.indexOf("\n    }", start) : -1;
+        return start >= 0 && end > start ? badgeStyleText.slice(start, end) : "";
+      };
+      const ratingBadgeCss = badgeCssBlock("    .rating-badge {");
+      const peopleBadgeCss = badgeCssBlock("    .card-people {");
+      const overlayRatingValue = (item) => Number(item && (item.voteAverage || item.vote_average) || 0);
+      check("HOME_NOSTR_RATING_PRESERVED", overlayRatingValue(nostrHotSignalOverlay(Object.assign({}, ratingHotMock, { voteAverage: 8.6 }), ratingHotMock, "movie")) === 8.6, "Home Nostr overlay keeps the normalized TMDB rating", "RUNTIME_MOCK");
+      check("SECONDARY_NOSTR_RATING_PRESERVED", overlayRatingValue(ratingDetailOverlayMock) === 8.6, "Secondary Nostr detail item keeps the TMDB rating", "RUNTIME_MOCK");
+      check("RATING_AFTER_METADATA_OVERLAY", overlayRatingValue(ratingMetadataOverlayMock) === 8.6 && ratingMetadataMock.voteAverage === 8.6, "persistent metadata reconstruction carries the cached TMDB rating", "RUNTIME_MOCK");
+      check("RATING_AFTER_DETAIL_OVERLAY", overlayRatingValue(ratingDetailOverlayMock) === 8.6 && ratingDetailItemMock.voteAverage === 8.6, "detail enrichment and Nostr overlay retain vote_average", "RUNTIME_MOCK");
+      check("RATING_INDEPENDENT_FROM_PEOPLE", layerNostrMovie.rating && layerNostrMovie.people && layerNoRatingPeople.people && !layerNoRatingPeople.rating, "rating and people render independently without a fake zero rating", "RUNTIME_MOCK");
+      check("RATING_INDEPENDENT_FROM_AIR_STATUS", layerNostrTv.rating && layerNostrTv.status && layerNostrTv.people, "air status does not suppress rating or people", "RUNTIME_MOCK");
+      check("NOSTR_RATING_PEOPLE_COEXIST", layerNostrMovie.rating && layerNostrMovie.people && layerSecondaryNostrMovie.rating && layerSecondaryNostrMovie.people, "Home and Secondary Nostr movie cards render both badges", "RUNTIME_MOCK");
+      check("NOSTR_RATING_PEOPLE_AIR_STATUS_COEXIST", layerNostrTv.rating && layerNostrTv.people && layerNostrTv.status && layerNostrAnime.rating && layerNostrAnime.people && layerNostrAnime.status && layerNostrVariety.rating && layerNostrVariety.people && layerNostrVariety.status && layerSecondaryNostrTv.status && layerSecondaryNostrAnime.status && layerSecondaryNostrVariety.status, "TV/anime/variety cards retain all three independent information dimensions", "RUNTIME_MOCK");
+      check("HOME_RATING_LEFT_TOP", unifiedBadgeCss.includes(".rating-badge") && unifiedBadgeCss.includes("left: 8px") && unifiedBadgeCss.includes("right: auto"), "Home rating is pinned to the shared upper-left position", "STATIC_HOOK");
+      check("HOME_PEOPLE_RIGHT_TOP", unifiedBadgeCss.includes(".card-people") && unifiedBadgeCss.includes("right: 8px") && unifiedBadgeCss.includes("left: auto"), "Home people is pinned to the shared upper-right position", "STATIC_HOOK");
+      check("SECONDARY_RATING_LEFT_TOP", unifiedBadgeCss.includes("#secondaryCatalog .media-grid > .card .rating-badge") && unifiedBadgeCss.includes("left: 8px"), "Secondary rating uses the same upper-left position", "STATIC_HOOK");
+      check("SECONDARY_PEOPLE_RIGHT_TOP", unifiedBadgeCss.includes("#secondaryCatalog .media-grid > .card .card-people") && unifiedBadgeCss.includes("right: 8px"), "Secondary people uses the same upper-right position", "STATIC_HOOK");
+      check("RATING_ICON_PRESENT", cardRendererSource.includes('class="badge-icon rating-icon"') && cardRendererSource.includes("<path d=\"M12 3.6"), "rating badge uses an inline SVG star icon", "STATIC_HOOK");
+      check("PEOPLE_ICON_PRESENT", cardRendererSource.includes('class="badge-icon people-icon"') && cardRendererSource.includes("<path d=\"M9.2 11"), "people badge uses an inline SVG group icon", "STATIC_HOOK");
+      check("RATING_PEOPLE_SEMANTICALLY_DISTINCT", cardRendererSource.includes("rating-icon") && cardRendererSource.includes("people-icon") && cardRendererSource.includes("评分") && cardRendererSource.includes("Nostr 热度"), "rating and people badges have distinct semantic labels and icons", "STATIC_HOOK");
+      check("NO_EMOJI_ICON", !cardRendererSource.includes("⭐") && !cardRendererSource.includes("🌟") && !cardRendererSource.includes("👥") && !cardRendererSource.includes("👤") && !cardRendererSource.includes("★"), "rating/people icons are SVG paths rather than emoji", "STATIC_HOOK");
+      check("RATING_NUMBER_COLOR_EQUALS_PEOPLE_NUMBER_COLOR", ratingBadgeCss.includes("color: rgba(255, 255, 255, .88);") && peopleBadgeCss.includes("color: rgba(255, 255, 255, .88);"), "rating and people use the same number color", "STATIC_HOOK");
+      check("BADGE_VISUAL_PROPERTIES_UNIFIED", ["height: 22px;", "border-radius: 999px;", "font-size: 10px;", "font-weight: 760;", "padding: 0 7px;", "background: rgba(6, 9, 12, .48);"].every((property) => ratingBadgeCss.includes(property) && peopleBadgeCss.includes(property)), "rating and people share background, height, radius, size, weight and padding", "STATIC_HOOK");
+      check("HOME_BADGE_VISUAL_CONSISTENCY", cardRendererSource.includes("rating-badge .badge-icon") && cardRendererSource.includes("card-people .badge-icon") && badgeStyleText.includes("height: 22px") && badgeStyleText.includes("gap: 4px"), "Home badges share height, padding, icon size and spacing", "STATIC_HOOK");
+      check("SECONDARY_BADGE_VISUAL_CONSISTENCY", badgeStyleText.includes(".rating-badge .badge-icon,\n    .card-people .badge-icon") && badgeStyleText.includes("min-width: 28px"), "Secondary badges share the same visual contract", "STATIC_HOOK");
+      check("RATING_BADGE_NO_PEOPLE_OVERLAP", layerNostrMovie.ratingInPoster && layerNostrMovie.peopleInPoster && unifiedBadgeCss.includes("left: 8px") && unifiedBadgeCss.includes("right: 8px"), "rating and people occupy opposite top corners", "RUNTIME_MOCK");
+      check("RATING_BADGE_NO_AIR_STATUS_OVERLAP", layerNostrTv.rating && layerNostrTv.status && unifiedBadgeCss.includes("bottom: auto") && badgeStyleText.includes(".card-air-status") && badgeStyleText.includes("bottom: 0"), "rating remains top-left while status remains bottom", "RUNTIME_MOCK");
+      check("PEOPLE_BADGE_NO_AIR_STATUS_OVERLAP", layerNostrTv.people && layerNostrTv.status && unifiedBadgeCss.includes("top: 8px") && badgeStyleText.includes(".card-air-status") && badgeStyleText.includes("bottom: 0"), "people remains top-right while status remains bottom", "RUNTIME_MOCK");
+      check("TMDB_RATING_ONLY_NORMAL", layerNormalMovie.rating && !layerNormalMovie.people, "ordinary TMDB cards show valid rating without Nostr people", "RUNTIME_MOCK");
+      check("TMDB_NO_FAKE_RATING", !layerNoRatingPeople.rating && layerNoRatingPeople.people, "missing rating is not replaced by zero while real people remains visible", "RUNTIME_MOCK");
+      check("MOVIE_CARD_LAYER_REGRESSION", layerNormalMovie.rating && layerSecondaryMovie.rating && layerNostrMovie.rating && layerSecondaryNostrMovie.rating, "movie Home/Secondary rating paths remain available", "FROZEN_SOURCE_AUDIT");
+      check("TV_CARD_LAYER_REGRESSION", layerNostrTv.rating && layerNostrTv.people && layerNostrTv.status && layerSecondaryNostrTv.status, "TV Home/Secondary status and hot badges remain available", "FROZEN_SOURCE_AUDIT");
+      check("ANIME_CARD_LAYER_REGRESSION", layerNostrAnime.rating && layerNostrAnime.people && layerNostrAnime.status && layerSecondaryNostrAnime.status, "anime Home/Secondary status and hot badges remain available", "FROZEN_SOURCE_AUDIT");
+      check("VARIETY_CARD_LAYER_REGRESSION", layerNostrVariety.rating && layerNostrVariety.people && layerNostrVariety.status && layerSecondaryNostrVariety.status, "variety Home/Secondary status and hot badges remain available", "FROZEN_SOURCE_AUDIT");
       const varietyMockCandidate = (rank) => ({ mediaType: "tv", tmdbId: String(880000 + rank), title: `Mock Variety ${rank}`, pic: "mock-poster", people: 5000 - rank, nostrHotRank: rank });
       const varietyMockMetadata = (candidate, valid, region) => ({ version: NOSTR_TMDB_META_CACHE_VERSION, mediaType: "tv", tmdbId: candidate.tmdbId, genreIds: valid ? ["10764"] : ["18"], regions: [region || "CN"], releaseDate: "2020-01-01", fetchedAt: Date.now() });
       const varietyMockScan = (validRanks, discoverRanks, failureRanks, regionOverrides) => {
