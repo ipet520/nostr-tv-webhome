@@ -919,23 +919,21 @@
       top: 7px;
       bottom: auto;
       z-index: 3;
-      min-width: 28px;
-      height: 22px;
+      min-width: 0;
+      height: auto;
       box-sizing: border-box;
-      padding: 0 7px;
+      padding: 0;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 4px;
-      border-radius: 999px;
-      background: rgba(6, 9, 12, .48);
-      border: 1px solid rgba(255, 255, 255, .16);
+      gap: 5px;
       color: rgba(255, 255, 255, .88);
-      font-size: 10px;
+      font-size: 11px;
       font-weight: 760;
       line-height: 1;
-      -webkit-backdrop-filter: blur(8px);
-      backdrop-filter: blur(8px);
+      white-space: nowrap;
+      overflow: visible;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, .46);
     }
 
     .rating-badge .badge-icon,
@@ -953,6 +951,7 @@
       display: inline-block;
       min-width: 0;
       line-height: 1;
+      white-space: nowrap;
     }
 
     .card-meta {
@@ -1218,26 +1217,23 @@
       top: 7px;
       bottom: auto;
       z-index: 3;
-      min-width: 28px;
-      height: 22px;
-      min-height: 22px;
+      min-width: 0;
+      height: auto;
+      min-height: 0;
       box-sizing: border-box;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 4px;
-      padding: 0 7px;
-      border-radius: 999px;
-      background: rgba(6, 9, 12, .48);
-      border: 1px solid rgba(255, 255, 255, .16);
+      gap: 5px;
+      padding: 0;
       color: rgba(255, 255, 255, .88);
-      font-size: 10px;
+      font-size: 11px;
       font-weight: 760;
       line-height: 1;
       text-shadow: 0 1px 2px rgba(0, 0, 0, .46);
       pointer-events: none;
-      -webkit-backdrop-filter: blur(8px);
-      backdrop-filter: blur(8px);
+      white-space: nowrap;
+      overflow: visible;
     }
 
     .card.has-air-status .card-people,
@@ -3247,7 +3243,6 @@
       box-shadow: var(--glass-edge), 0 8px 22px rgba(0, 0, 0, .2);
     }
 
-    html:not(.tv-mode) .rating-badge,
     html:not(.tv-mode) .recent-badge {
       -webkit-backdrop-filter: blur(12px) saturate(150%);
       backdrop-filter: blur(12px) saturate(150%);
@@ -6647,21 +6642,22 @@
 
     /* Every Home and Secondary media card shares one information layer:
        rating at the poster's upper-left, Nostr people at the upper-right,
-       and the air/episode status across the bottom. */
+       and the air/episode status across the bottom. Top metadata is frameless;
+       portrait cards use a compact scale while landscape cards keep normal sizing. */
     #home.home-root .home-rail > .card .rating-badge,
     #secondaryCatalog .media-grid > .card .rating-badge,
     #secondaryCatalog .weekly-secondary-rail > .weekly-card .rating-badge {
-      top: 8px;
+      top: 9px;
       right: auto;
-      left: 8px;
+      left: 9px;
       bottom: auto;
     }
 
     #home.home-root .home-rail > .card .card-people,
     #secondaryCatalog .media-grid > .card .card-people,
     #secondaryCatalog .weekly-secondary-rail > .weekly-card .card-people {
-      top: 8px;
-      right: 8px;
+      top: 9px;
+      right: 9px;
       left: auto;
       bottom: auto;
     }
@@ -6672,21 +6668,81 @@
     #secondaryCatalog .media-grid > .card .card-people,
     #secondaryCatalog .weekly-secondary-rail > .weekly-card .rating-badge,
     #secondaryCatalog .weekly-secondary-rail > .weekly-card .card-people {
-      min-width: 28px !important;
-      min-height: 22px !important;
-      height: 22px !important;
+      min-width: 0 !important;
+      min-height: 0 !important;
+      height: auto !important;
       box-sizing: border-box !important;
-      padding: 0 7px !important;
-      gap: 4px !important;
-      border-radius: 999px !important;
-      background: rgba(6, 9, 12, .48) !important;
-      border: 1px solid rgba(255, 255, 255, .16) !important;
+      padding: 0 !important;
+      gap: 3px !important;
+      border: 0 !important;
+      border-radius: 0 !important;
       color: rgba(255, 255, 255, .88) !important;
-      font-size: 10px !important;
+      font-size: 9px !important;
       font-weight: 760 !important;
       line-height: 1 !important;
+      white-space: nowrap !important;
+      overflow: visible !important;
       text-shadow: 0 1px 2px rgba(0, 0, 0, .46) !important;
       box-shadow: none !important;
+      -webkit-backdrop-filter: none !important;
+      backdrop-filter: none !important;
+    }
+
+    #home.home-root .home-rail > .card:not(.landscape-card) .rating-badge,
+    #home.home-root .home-rail > .card:not(.landscape-card) .card-people,
+    #secondaryCatalog .media-grid > .card:not(.landscape-card) .rating-badge,
+    #secondaryCatalog .media-grid > .card:not(.landscape-card) .card-people,
+    #secondaryCatalog .weekly-secondary-rail > .weekly-card:not(.landscape-card) .rating-badge,
+    #secondaryCatalog .weekly-secondary-rail > .weekly-card:not(.landscape-card) .card-people {
+      top: 9px;
+    }
+
+    #home.home-root .home-rail > .card:not(.landscape-card) .badge-icon,
+    #secondaryCatalog .media-grid > .card:not(.landscape-card) .badge-icon,
+    #secondaryCatalog .weekly-secondary-rail > .weekly-card:not(.landscape-card) .badge-icon {
+      width: 9px !important;
+      height: 9px !important;
+      flex-basis: 9px !important;
+    }
+
+    #home.home-root .home-rail > .card.landscape-card .rating-badge,
+    #home.home-root .home-rail > .card.landscape-card .card-people,
+    #secondaryCatalog .media-grid > .card.landscape-card .rating-badge,
+    #secondaryCatalog .media-grid > .card.landscape-card .card-people,
+    #secondaryCatalog .weekly-secondary-rail > .weekly-card.landscape-card .rating-badge,
+    #secondaryCatalog .weekly-secondary-rail > .weekly-card.landscape-card .card-people {
+      top: 10px;
+      font-size: 11px !important;
+      gap: 5px !important;
+    }
+
+    #home.home-root .home-rail > .card.landscape-card .badge-icon,
+    #secondaryCatalog .media-grid > .card.landscape-card .badge-icon,
+    #secondaryCatalog .weekly-secondary-rail > .weekly-card.landscape-card .badge-icon {
+      width: 14px !important;
+      height: 14px !important;
+      flex-basis: 14px !important;
+    }
+
+    @media (max-width: 719px) {
+      #home.home-root .home-rail > .card:not(.landscape-card) .rating-badge,
+      #home.home-root .home-rail > .card:not(.landscape-card) .card-people,
+      #secondaryCatalog .media-grid > .card:not(.landscape-card) .rating-badge,
+      #secondaryCatalog .media-grid > .card:not(.landscape-card) .card-people,
+      #secondaryCatalog .weekly-secondary-rail > .weekly-card:not(.landscape-card) .rating-badge,
+      #secondaryCatalog .weekly-secondary-rail > .weekly-card:not(.landscape-card) .card-people {
+        top: 8px;
+        font-size: 8px !important;
+        gap: 2px !important;
+      }
+
+      #home.home-root .home-rail > .card:not(.landscape-card) .badge-icon,
+      #secondaryCatalog .media-grid > .card:not(.landscape-card) .badge-icon,
+      #secondaryCatalog .weekly-secondary-rail > .weekly-card:not(.landscape-card) .badge-icon {
+        width: 8px !important;
+        height: 8px !important;
+        flex-basis: 8px !important;
+      }
     }
 
     @media (max-width: 719px), (pointer: coarse) {
@@ -29380,7 +29436,7 @@ utils.encode = function encode(arr, enc) {
         ? `<span class="rating-badge" aria-label="评分 ${escapeAttr(rating)}"><svg class="badge-icon rating-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.8L12 3.6z"></path></svg><span class="badge-value">${escapeHtml(rating)}</span></span>`
         : "";
       const peopleBadgeHtml = hasNostrPeople
-        ? `<span class="card-people" aria-label="Nostr 热度 ${escapeAttr(String(people))} 人"><svg class="badge-icon people-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.2 11a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4zm5.9-1.1a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2zM3.7 18.7c0-2.5 2.4-4.2 5.5-4.2s5.5 1.7 5.5 4.2v1.2H3.7v-1.2zm11.1-3.5c2.8.2 5 1.6 5.5 3.6v1.1h-3.8v-1.2c0-1.4-.6-2.6-1.7-3.5z"></path></svg><span class="badge-value">${escapeHtml(people)}人</span></span>`
+        ? `<span class="card-people" aria-label="Nostr 热度 ${escapeAttr(String(people))}"><svg class="badge-icon people-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 11a3.4 3.4 0 1 0 0-6.8 3.4 3.4 0 0 0 0 6.8zm-6.2 8.3c0-3 2.7-5 6.2-5s6.2 2 6.2 5v.7H5.8v-.7z"></path></svg><span class="badge-value">${escapeHtml(people)}</span></span>`
         : "";
       const poster = displayImage(landscape ? item.landscape || item.image || item.pic : item.pic, { size: landscape ? "w780" : "w342" });
       const posterSrc = poster || "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
@@ -41560,6 +41616,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       });
       const homeNormalMovieCard = mediaCard({ source: "tmdb", mediaType: "movie", tmdbId: "card-movie", title: "普通电影", voteAverage: 8.2, pic: "mock-poster" }, 0, { home: true });
       const homeNostrMovieCard = mediaCard({ source: "nostr-hot", mediaType: "movie", tmdbId: "card-nostr-movie", title: "Nostr 电影", voteAverage: 8.4, people: 326, pic: "mock-poster" }, 0, { home: true });
+      const homeLandscapeNostrMovieCard = mediaCard({ source: "nostr-hot", mediaType: "movie", tmdbId: "card-landscape-nostr-movie", title: "横向 Nostr 电影", voteAverage: 8.4, people: 326, pic: "mock-poster", landscape: "mock-landscape" }, 0, { home: true, landscape: true });
       const homeNostrTvCard = mediaCard({ source: "nostr-hot", mediaType: "tv", listId: "tv", tmdbId: "card-nostr-tv", title: "Nostr 电视剧", voteAverage: 8.1, people: 214, weeklyUpdateText: "更新至 6集", pic: "mock-poster" }, 0, { home: true, weeklyHome: true });
       const homeNostrAnimeCard = mediaCard({ source: "nostr-hot", mediaType: "tv", listId: "anime", tmdbId: "card-nostr-anime", title: "Nostr 动画", voteAverage: 8.3, people: 168, weeklyUpdateText: "更新至 4集", pic: "mock-poster" }, 0, { home: true, weeklyHome: true });
       const homeNostrVarietyCard = mediaCard({ source: "nostr-hot", mediaType: "tv", listId: "variety", tmdbId: "card-nostr-variety", title: "Nostr 综艺", voteAverage: 7.9, people: 97, weeklyUpdateText: "更新至 3期", pic: "mock-poster" }, 0, { home: true, weeklyHome: true });
@@ -41569,8 +41626,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const secondaryNostrAnimeCard = mediaCard({ source: "nostr-hot", mediaType: "tv", listId: "anime", tmdbId: "secondary-nostr-anime", title: "Secondary Nostr 动画", voteAverage: 8.2, people: 155, weeklyUpdateText: "更新至 7集", pic: "mock-poster" }, 0, { weekly: true });
       const secondaryNostrVarietyCard = mediaCard({ source: "nostr-hot", mediaType: "tv", listId: "variety", tmdbId: "secondary-nostr-variety", title: "Secondary Nostr 综艺", voteAverage: 7.7, people: 76, weeklyUpdateText: "更新至 2期", pic: "mock-poster" }, 0, { weekly: true });
       const noRatingPeopleCard = mediaCard({ source: "nostr-hot", mediaType: "movie", tmdbId: "no-rating", title: "无评分但有热度", voteAverage: 0, people: 42, pic: "mock-poster" }, 0, { home: true });
+      const portraitPeople4DigitCard = mediaCard({ source: "nostr-hot", mediaType: "movie", tmdbId: "four-digit-people", title: "四位数热度", voteAverage: 7.5, people: 9999, pic: "mock-poster" }, 0, { home: true });
       const layerNormalMovie = cardLayerSummary(homeNormalMovieCard);
       const layerNostrMovie = cardLayerSummary(homeNostrMovieCard);
+      const layerLandscapeNostrMovie = cardLayerSummary(homeLandscapeNostrMovieCard);
       const layerNostrTv = cardLayerSummary(homeNostrTvCard);
       const layerNostrAnime = cardLayerSummary(homeNostrAnimeCard);
       const layerNostrVariety = cardLayerSummary(homeNostrVarietyCard);
@@ -41580,8 +41639,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const layerSecondaryNostrAnime = cardLayerSummary(secondaryNostrAnimeCard);
       const layerSecondaryNostrVariety = cardLayerSummary(secondaryNostrVarietyCard);
       const layerNoRatingPeople = cardLayerSummary(noRatingPeopleCard);
+      const portraitPeople4DigitValue = portraitPeople4DigitCard.querySelector(".card-people .badge-value");
       const badgeStyleText = Array.from(document.querySelectorAll("style")).map((style) => String(style.textContent || "")).join("\n");
       const unifiedBadgeCss = badgeStyleText.slice(badgeStyleText.indexOf("/* Every Home and Secondary media card shares one information layer"));
+      const metadataContractCss = unifiedBadgeCss.split("@media (max-width: 719px), (pointer: coarse)")[0];
       const cardRendererSource = String(mediaCard);
       const badgeCssBlock = (selector) => {
         const start = badgeStyleText.indexOf(selector);
@@ -41599,21 +41660,33 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       check("RATING_INDEPENDENT_FROM_AIR_STATUS", layerNostrTv.rating && layerNostrTv.status && layerNostrTv.people, "air status does not suppress rating or people", "RUNTIME_MOCK");
       check("NOSTR_RATING_PEOPLE_COEXIST", layerNostrMovie.rating && layerNostrMovie.people && layerSecondaryNostrMovie.rating && layerSecondaryNostrMovie.people, "Home and Secondary Nostr movie cards render both badges", "RUNTIME_MOCK");
       check("NOSTR_RATING_PEOPLE_AIR_STATUS_COEXIST", layerNostrTv.rating && layerNostrTv.people && layerNostrTv.status && layerNostrAnime.rating && layerNostrAnime.people && layerNostrAnime.status && layerNostrVariety.rating && layerNostrVariety.people && layerNostrVariety.status && layerSecondaryNostrTv.status && layerSecondaryNostrAnime.status && layerSecondaryNostrVariety.status, "TV/anime/variety cards retain all three independent information dimensions", "RUNTIME_MOCK");
-      check("HOME_RATING_LEFT_TOP", unifiedBadgeCss.includes(".rating-badge") && unifiedBadgeCss.includes("left: 8px") && unifiedBadgeCss.includes("right: auto"), "Home rating is pinned to the shared upper-left position", "STATIC_HOOK");
-      check("HOME_PEOPLE_RIGHT_TOP", unifiedBadgeCss.includes(".card-people") && unifiedBadgeCss.includes("right: 8px") && unifiedBadgeCss.includes("left: auto"), "Home people is pinned to the shared upper-right position", "STATIC_HOOK");
-      check("SECONDARY_RATING_LEFT_TOP", unifiedBadgeCss.includes("#secondaryCatalog .media-grid > .card .rating-badge") && unifiedBadgeCss.includes("left: 8px"), "Secondary rating uses the same upper-left position", "STATIC_HOOK");
-      check("SECONDARY_PEOPLE_RIGHT_TOP", unifiedBadgeCss.includes("#secondaryCatalog .media-grid > .card .card-people") && unifiedBadgeCss.includes("right: 8px"), "Secondary people uses the same upper-right position", "STATIC_HOOK");
+      check("HOME_RATING_LEFT_TOP", unifiedBadgeCss.includes(".rating-badge") && unifiedBadgeCss.includes("left: 9px") && unifiedBadgeCss.includes("right: auto"), "Home rating is pinned to the shared upper-left position", "STATIC_HOOK");
+      check("HOME_PEOPLE_RIGHT_TOP", unifiedBadgeCss.includes(".card-people") && unifiedBadgeCss.includes("right: 9px") && unifiedBadgeCss.includes("left: auto"), "Home people is pinned to the shared upper-right position", "STATIC_HOOK");
+      check("SECONDARY_RATING_LEFT_TOP", unifiedBadgeCss.includes("#secondaryCatalog .media-grid > .card .rating-badge") && unifiedBadgeCss.includes("left: 9px"), "Secondary rating uses the same upper-left position", "STATIC_HOOK");
+      check("SECONDARY_PEOPLE_RIGHT_TOP", unifiedBadgeCss.includes("#secondaryCatalog .media-grid > .card .card-people") && unifiedBadgeCss.includes("right: 9px"), "Secondary people uses the same upper-right position", "STATIC_HOOK");
       check("RATING_ICON_PRESENT", cardRendererSource.includes('class="badge-icon rating-icon"') && cardRendererSource.includes("<path d=\"M12 3.6"), "rating badge uses an inline SVG star icon", "STATIC_HOOK");
-      check("PEOPLE_ICON_PRESENT", cardRendererSource.includes('class="badge-icon people-icon"') && cardRendererSource.includes("<path d=\"M9.2 11"), "people badge uses an inline SVG group icon", "STATIC_HOOK");
+      check("PEOPLE_ICON_PRESENT", cardRendererSource.includes('class="badge-icon people-icon"') && cardRendererSource.includes("<path d=\"M12 11a3.4"), "people badge uses an inline SVG single-person icon", "STATIC_HOOK");
       check("RATING_PEOPLE_SEMANTICALLY_DISTINCT", cardRendererSource.includes("rating-icon") && cardRendererSource.includes("people-icon") && cardRendererSource.includes("评分") && cardRendererSource.includes("Nostr 热度"), "rating and people badges have distinct semantic labels and icons", "STATIC_HOOK");
       check("NO_EMOJI_ICON", !cardRendererSource.includes("⭐") && !cardRendererSource.includes("🌟") && !cardRendererSource.includes("👥") && !cardRendererSource.includes("👤") && !cardRendererSource.includes("★"), "rating/people icons are SVG paths rather than emoji", "STATIC_HOOK");
-      check("RATING_NUMBER_COLOR_EQUALS_PEOPLE_NUMBER_COLOR", ratingBadgeCss.includes("color: rgba(255, 255, 255, .88);") && peopleBadgeCss.includes("color: rgba(255, 255, 255, .88);"), "rating and people use the same number color", "STATIC_HOOK");
-      check("BADGE_VISUAL_PROPERTIES_UNIFIED", ["height: 22px;", "border-radius: 999px;", "font-size: 10px;", "font-weight: 760;", "padding: 0 7px;", "background: rgba(6, 9, 12, .48);"].every((property) => ratingBadgeCss.includes(property) && peopleBadgeCss.includes(property)), "rating and people share background, height, radius, size, weight and padding", "STATIC_HOOK");
-      check("HOME_BADGE_VISUAL_CONSISTENCY", cardRendererSource.includes("rating-badge .badge-icon") && cardRendererSource.includes("card-people .badge-icon") && badgeStyleText.includes("height: 22px") && badgeStyleText.includes("gap: 4px"), "Home badges share height, padding, icon size and spacing", "STATIC_HOOK");
-      check("SECONDARY_BADGE_VISUAL_CONSISTENCY", badgeStyleText.includes(".rating-badge .badge-icon,\n    .card-people .badge-icon") && badgeStyleText.includes("min-width: 28px"), "Secondary badges share the same visual contract", "STATIC_HOOK");
-      check("RATING_BADGE_NO_PEOPLE_OVERLAP", layerNostrMovie.ratingInPoster && layerNostrMovie.peopleInPoster && unifiedBadgeCss.includes("left: 8px") && unifiedBadgeCss.includes("right: 8px"), "rating and people occupy opposite top corners", "RUNTIME_MOCK");
-      check("RATING_BADGE_NO_AIR_STATUS_OVERLAP", layerNostrTv.rating && layerNostrTv.status && unifiedBadgeCss.includes("bottom: auto") && badgeStyleText.includes(".card-air-status") && badgeStyleText.includes("bottom: 0"), "rating remains top-left while status remains bottom", "RUNTIME_MOCK");
-      check("PEOPLE_BADGE_NO_AIR_STATUS_OVERLAP", layerNostrTv.people && layerNostrTv.status && unifiedBadgeCss.includes("top: 8px") && badgeStyleText.includes(".card-air-status") && badgeStyleText.includes("bottom: 0"), "people remains top-right while status remains bottom", "RUNTIME_MOCK");
+      check("RATING_NUMBER_COLOR_EQUALS_PEOPLE_NUMBER_COLOR", ratingBadgeCss.includes("color: rgba(255, 255, 255, .88);") && peopleBadgeCss.includes("color: rgba(255, 255, 255, .88);") && metadataContractCss.includes("color: rgba(255, 255, 255, .88) !important;"), "rating and people use the same number color", "STATIC_HOOK");
+      check("RATING_BACKGROUND_REMOVED", !ratingBadgeCss.includes("background:") && !metadataContractCss.includes("background: rgba(6, 9, 12, .48)") && metadataContractCss.includes("backdrop-filter: none !important"), "rating is a frameless text/icon label", "STATIC_HOOK");
+      check("PEOPLE_BACKGROUND_REMOVED", !peopleBadgeCss.includes("background:") && !metadataContractCss.includes("background: rgba(6, 9, 12, .48)") && metadataContractCss.includes("backdrop-filter: none !important"), "people is a frameless text/icon label", "STATIC_HOOK");
+      check("PEOPLE_SUFFIX_REMOVED", portraitPeople4DigitValue && portraitPeople4DigitValue.textContent === "9999" && !String(portraitPeople4DigitValue.textContent).includes("人"), "people count has no visible 人 suffix", "RUNTIME_MOCK");
+      check("TOP_META_INSET_REFINED", metadataContractCss.includes("top: 9px") && metadataContractCss.includes("left: 9px") && metadataContractCss.includes("right: 9px") && metadataContractCss.includes("top: 10px"), "top metadata has refined inset values", "STATIC_HOOK");
+      check("LANDSCAPE_TOP_META_NORMAL", layerLandscapeNostrMovie.rating && layerLandscapeNostrMovie.people && metadataContractCss.includes(".card.landscape-card") && metadataContractCss.includes("font-size: 11px !important") && metadataContractCss.includes("width: 14px !important"), "landscape cards keep the normal metadata scale", "RUNTIME_MOCK");
+      check("PORTRAIT_TOP_META_COMPACT", layerNostrMovie.rating && layerNostrMovie.people && metadataContractCss.includes(":not(.landscape-card)") && metadataContractCss.includes("font-size: 9px !important") && metadataContractCss.includes("width: 9px !important"), "portrait cards use the compact metadata scale", "RUNTIME_MOCK");
+      check("PORTRAIT_RATING_PEOPLE_GAP", metadataContractCss.includes("gap: 3px !important") && metadataContractCss.includes("left: 9px") && metadataContractCss.includes("right: 9px") && !metadataContractCss.includes("margin-left: -") && !metadataContractCss.includes("transform:"), "portrait metadata keeps a positive safe gap without forced compression", "STATIC_HOOK");
+      check("PORTRAIT_META_NO_WRAP", ratingBadgeCss.includes("white-space: nowrap;") && peopleBadgeCss.includes("white-space: nowrap;") && metadataContractCss.includes("white-space: nowrap !important"), "rating and people remain single-line", "STATIC_HOOK");
+      check("PORTRAIT_PEOPLE_4_DIGIT_SAFE", layerNostrMovie.rating && portraitPeople4DigitValue && portraitPeople4DigitValue.textContent === "9999" && !metadataContractCss.includes("width: 50%") && metadataContractCss.includes("min-width: 0 !important"), "four-digit people remains an unforced, non-wrapping value", "RUNTIME_MOCK");
+      check("HOME_BADGE_VISUAL_CONSISTENCY", cardRendererSource.includes("rating-badge .badge-icon") && cardRendererSource.includes("card-people .badge-icon") && metadataContractCss.includes("font-weight: 760 !important") && metadataContractCss.includes("padding: 0 !important") && metadataContractCss.includes("gap: 3px !important"), "Home badges share the frameless visual language", "STATIC_HOOK");
+      check("SECONDARY_BADGE_VISUAL_CONSISTENCY", metadataContractCss.includes("#secondaryCatalog .media-grid > .card .rating-badge") && metadataContractCss.includes("#secondaryCatalog .media-grid > .card .card-people") && metadataContractCss.includes("border: 0 !important"), "Secondary badges share the same visual contract", "STATIC_HOOK");
+      check("RATING_BADGE_NO_PEOPLE_OVERLAP", layerNostrMovie.ratingInPoster && layerNostrMovie.peopleInPoster && metadataContractCss.includes("left: 9px") && metadataContractCss.includes("right: 9px"), "rating and people occupy opposite top corners", "RUNTIME_MOCK");
+      check("RATING_BADGE_NO_AIR_STATUS_OVERLAP", layerNostrTv.rating && layerNostrTv.status && metadataContractCss.includes("bottom: auto") && badgeStyleText.includes(".card-air-status") && badgeStyleText.includes("bottom: 0"), "rating remains top-left while status remains bottom", "RUNTIME_MOCK");
+      check("PEOPLE_BADGE_NO_AIR_STATUS_OVERLAP", layerNostrTv.people && layerNostrTv.status && metadataContractCss.includes("top: 9px") && badgeStyleText.includes(".card-air-status") && badgeStyleText.includes("bottom: 0"), "people remains top-right while status remains bottom", "RUNTIME_MOCK");
+      check("STATUS_UNCHANGED", layerNostrTv.status && layerNostrAnime.status && layerNostrVariety.status && badgeStyleText.includes(".card-air-status") && badgeStyleText.includes("bottom: 0"), "air/episode/variety status remains a bottom layer", "RUNTIME_MOCK");
+      check("CARD_SIZE_UNCHANGED", !metadataContractCss.includes("grid-template-columns") && !metadataContractCss.includes("width: 100%") && !metadataContractCss.includes("height: 100%"), "metadata styles do not change card dimensions", "STATIC_HOOK");
+      check("POSTER_RATIO_UNCHANGED", badgeStyleText.includes(".poster {") && badgeStyleText.includes("aspect-ratio: 2 / 3") && badgeStyleText.includes("aspect-ratio: 16 / 9") && !metadataContractCss.includes("aspect-ratio"), "poster ratios remain outside the metadata contract", "STATIC_HOOK");
+      check("FOCUS_GEOMETRY_UNCHANGED", !metadataContractCss.includes("transform:") && !metadataContractCss.includes("focus-ring") && !metadataContractCss.includes("outline-offset"), "metadata styles do not change focus geometry", "STATIC_HOOK");
       check("TMDB_RATING_ONLY_NORMAL", layerNormalMovie.rating && !layerNormalMovie.people, "ordinary TMDB cards show valid rating without Nostr people", "RUNTIME_MOCK");
       check("TMDB_NO_FAKE_RATING", !layerNoRatingPeople.rating && layerNoRatingPeople.people, "missing rating is not replaced by zero while real people remains visible", "RUNTIME_MOCK");
       check("MOVIE_CARD_LAYER_REGRESSION", layerNormalMovie.rating && layerSecondaryMovie.rating && layerNostrMovie.rating && layerSecondaryNostrMovie.rating, "movie Home/Secondary rating paths remain available", "FROZEN_SOURCE_AUDIT");
