@@ -16791,6 +16791,12 @@ utils.encode = function encode(arr, enc) {
         secondaryQueries: {},
         secondaryActiveQueryKey: "",
         secondaryQueryPlan: null,
+        secondaryNostrMetaCache: {},
+        secondaryNostrAnimeMetaCache: {},
+        secondaryNostrTmdbMemoryCache: {},
+        nostrTmdbMeta: { version: 1, loaded: false, loading: false, promise: null, entries: {}, dirty: false, dirtyVersion: 0, saveTimer: 0, savePromise: null, lastLoadAt: 0, lastSaveAt: 0, expiredCount: 0, evictedCount: 0 },
+        secondaryNostrAnimeResolver: null,
+        secondaryNostrAnimeMetrics: null,
         secondaryFocusRestore: null,
         secondaryWeeklyInitialFocusPending: false,
         secondaryReturn: null,
@@ -17173,6 +17179,7 @@ utils.encode = function encode(arr, enc) {
       if (type === "historyContext") return "fish2018_home_v1_history_context";
       if (type === "continueIndex") return "fish2018_home_v1_continue_index";
       if (type === "homeWeekly") return "fish2018_home_v1_home_weekly";
+      if (type === "nostrTmdbMeta") return "fish2018_home_v1_nostr_tmdb_meta";
       return type;
     }
 
@@ -25414,9 +25421,12 @@ utils.encode = function encode(arr, enc) {
       return id === "documentary" ? "tmdb" : homeHotSource();
     }
 
-    function homeNostrHotSignature() {
+    function homeNostrHotSignature(id) {
       const items = Array.isArray(state.hot && state.hot.items) ? state.hot.items : [];
-      return items.slice(0, SECONDARY_NOSTR_HOT_MAX_SCAN_CANDIDATES).map((item, index) => [
+      const scanLimit = normalizeLegacyCategoryId(id) === "anime"
+        ? SECONDARY_NOSTR_ANIME_MAX_SCAN_CANDIDATES
+        : SECONDARY_NOSTR_HOT_MAX_SCAN_CANDIDATES;
+      return items.slice(0, scanLimit).map((item, index) => [
         homeNostrSignalKey(item),
         Number(item && (item.people || item.count) || 0),
         String(item && (item.latest || item.lastEventAt || item.last_event_at) || ""),
@@ -25429,7 +25439,7 @@ utils.encode = function encode(arr, enc) {
       const selectedSource = homeHotSource();
       const effectiveSource = homeCategoryEffectiveSource(id);
       const hotVersion = effectiveSource === "nostr" ? Number(state.hot && state.hot.version || 0) : 0;
-      const hotSignature = effectiveSource === "nostr" ? homeNostrHotSignature() : "canonical";
+      const hotSignature = effectiveSource === "nostr" ? homeNostrHotSignature(id) : "canonical";
       return JSON.stringify([id, selectedSource, effectiveSource, hotVersion, hotSignature]);
     }
 
@@ -25536,6 +25546,13 @@ utils.encode = function encode(arr, enc) {
       if (!state.hot || !state.hot.ready) return [];
       const scanFilters = homeCategoryDefaultFilters();
       const knownQuery = { items: Array.isArray(feed && feed.tmdbItems) ? feed.tmdbItems : [] };
+      if (normalizeLegacyCategoryId(id) === "anime") {
+        return secondaryLoadNostrAnimePool(scanFilters, knownQuery, target, {
+          isCurrent: () => homeCategoryFeedIsCurrent(feed, key, requestSeq),
+          onProgress: (items) => commitHomeCategoryNostrItems(id, feed, key, requestSeq, items)
+        });
+      }
+      await ensureNostrTmdbMetaLoaded();
       const candidates = secondaryNostrHotCandidates(id);
       const qualified = [];
       let newDetailRequests = 0;
@@ -25559,6 +25576,21 @@ utils.encode = function encode(arr, enc) {
           .forEach((item) => qualified.push(item));
       }
       return uniqueMedia(qualified);
+    }
+
+    function commitHomeCategoryNostrItems(id, feed, key, requestSeq, items) {
+      if (!homeCategoryFeedIsCurrent(feed, key, requestSeq)) return false;
+      const nostrItems = uniqueMedia(Array.isArray(items) ? items : []);
+      feed.source = "nostr";
+      feed.nostrItems = nostrItems;
+      feed.items = filterBlocked(uniqueMedia(nostrItems.concat(Array.isArray(feed.tmdbItems) ? feed.tmdbItems : [])));
+      feed.dataVersion = key;
+      feed.signature = key;
+      const section = Array.from(document.querySelectorAll("#listStack > .home-dynamic-section")).find((entry) => entry.dataset.homeListId === normalizeLegacyCategoryId(id));
+      const config = homeSectionConfig().find((entry) => entry.listId === normalizeLegacyCategoryId(id));
+      if (section && config) renderHomeDynamicSection(section, config);
+      recordHomeV14Diag();
+      return true;
     }
 
     function homeCategoryFeedLimit(id) {
@@ -25700,14 +25732,15 @@ utils.encode = function encode(arr, enc) {
       if (!rail) return;
       rail.dataset.homeVariant = config.variant;
       const feed = homeCategoryFeed(config.listId);
-      const items = feed && feed.loaded ? feed.items : [];
+      const hasPartialItems = config.listId === "anime" && !!(feed && Array.isArray(feed.items) && feed.items.length);
+      const items = feed && (feed.loaded || hasPartialItems) ? feed.items : [];
       rail.dataset.homeFeedSource = feed && feed.source || "";
       rail.dataset.homeFeedVersion = feed && feed.dataVersion || "";
-      if (feed && feed.loading) {
+      if (feed && feed.loading && !hasPartialItems) {
         showHomeRailStatus(rail, "加载中...", { variant: config.variant });
-      } else if (feed && feed.error) {
+      } else if (feed && feed.error && !hasPartialItems) {
         showHomeRailStatus(rail, "加载失败", { variant: config.variant });
-      } else if (!feed || !feed.loaded) {
+      } else if (!feed || (!feed.loaded && !hasPartialItems)) {
         const rect = section.getBoundingClientRect ? section.getBoundingClientRect() : null;
         const nearViewport = !rect || rect.top <= (window.innerHeight || document.documentElement.clientHeight || 0) + 760;
         if (!nearViewport) {
@@ -26074,6 +26107,7 @@ utils.encode = function encode(arr, enc) {
         hotRenderSource: homeRoot.querySelector("#recommendSection") && homeRoot.querySelector("#recommendSection").dataset.hotSource || "",
         hotRenderDataPath: homeRoot.querySelector("#recommendRail") && homeRoot.querySelector("#recommendRail").dataset.hotDataPath || "",
         hotCardCount: homeRoot.querySelectorAll("#recommendRail > .card").length,
+        nostrAnime: home.secondaryNostrAnimeMetrics || null,
         homeRoute: homeUiRoute()
       };
       home.imageSrcCount = diag.imageSrcCount;
@@ -26596,6 +26630,12 @@ utils.encode = function encode(arr, enc) {
     const SECONDARY_NOSTR_HOT_MAX_SCAN_CANDIDATES = 72;
     const SECONDARY_NOSTR_HOT_MAX_NEW_DETAIL_REQUESTS = 36;
     const SECONDARY_NOSTR_HOT_DETAIL_CONCURRENCY = 4;
+    const SECONDARY_NOSTR_ANIME_MAX_SCAN_CANDIDATES = 150;
+    const SECONDARY_NOSTR_ANIME_SCAN_BATCH_SIZE = 4;
+    const NOSTR_TMDB_META_CACHE_VERSION = 1;
+    const NOSTR_TMDB_META_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+    const NOSTR_TMDB_META_CACHE_MAX_ENTRIES = 1000;
+    const NOSTR_TMDB_META_CACHE_SAVE_DEBOUNCE_MS = 450;
 
     function secondaryNostrHotEnabled(id, filters) {
       return ["movie", "tv", "anime"].includes(normalizeLegacyCategoryId(id))
@@ -26615,7 +26655,7 @@ utils.encode = function encode(arr, enc) {
           seen.add(key);
           return true;
         })
-        .slice(0, SECONDARY_NOSTR_HOT_MAX_SCAN_CANDIDATES);
+        .slice(0, allowed === "anime" ? SECONDARY_NOSTR_ANIME_MAX_SCAN_CANDIDATES : SECONDARY_NOSTR_HOT_MAX_SCAN_CANDIDATES);
     }
 
     function secondaryNostrMetaCache() {
@@ -26624,6 +26664,273 @@ utils.encode = function encode(arr, enc) {
         ? home.secondaryNostrMetaCache
         : {};
       return home.secondaryNostrMetaCache;
+    }
+
+    function secondaryNostrTmdbMemoryCache() {
+      const home = state.homeV14;
+      home.secondaryNostrTmdbMemoryCache = home.secondaryNostrTmdbMemoryCache && typeof home.secondaryNostrTmdbMemoryCache === "object"
+        ? home.secondaryNostrTmdbMemoryCache
+        : {};
+      return home.secondaryNostrTmdbMemoryCache;
+    }
+
+    function secondaryNostrAnimeMemoryCache() {
+      return secondaryNostrTmdbMemoryCache();
+    }
+
+    function nostrTmdbMetaRuntime() {
+      const home = state.homeV14;
+      let runtime = home.nostrTmdbMeta;
+      if (!runtime || typeof runtime !== "object" || Number(runtime.version || 0) !== NOSTR_TMDB_META_CACHE_VERSION) {
+        runtime = home.nostrTmdbMeta = {
+          version: NOSTR_TMDB_META_CACHE_VERSION,
+          loaded: false,
+          loading: false,
+          promise: null,
+          entries: {},
+          dirty: false,
+          dirtyVersion: 0,
+          saveTimer: 0,
+          savePromise: null,
+          lastLoadAt: 0,
+          lastSaveAt: 0,
+          expiredCount: 0,
+          evictedCount: 0
+        };
+      }
+      runtime.entries = runtime.entries && typeof runtime.entries === "object" ? runtime.entries : {};
+      return runtime;
+    }
+
+    function nostrTmdbMetaEntryKey(value) {
+      const mediaType = String(value && (value.mediaType || value.media_type) || "").toLowerCase();
+      const tmdbId = String(value && (value.tmdbId || value.tmdb_id || value.id) || "").replace(/^tmdb:(movie|tv):/i, "").trim();
+      return (mediaType === "movie" || mediaType === "tv") && tmdbId ? `tmdb:${mediaType}:${tmdbId}` : "";
+    }
+
+    function normalizeNostrTmdbMetaEntry(value) {
+      if (!value || typeof value !== "object") return null;
+      const mediaType = String(value.mediaType || value.media_type || "").toLowerCase();
+      const tmdbId = String(value.tmdbId || value.tmdb_id || value.id || "").replace(/^tmdb:(movie|tv):/i, "").trim();
+      const fetchedAt = Number(value.fetchedAt || value.fetched_at || 0);
+      if (Number(value.version || NOSTR_TMDB_META_CACHE_VERSION) !== NOSTR_TMDB_META_CACHE_VERSION) return null;
+      if ((mediaType !== "movie" && mediaType !== "tv") || !tmdbId || !Number.isFinite(fetchedAt) || fetchedAt <= 0) return null;
+      const genreIds = Array.isArray(value.genreIds) ? value.genreIds : Array.isArray(value.genre_ids) ? value.genre_ids : null;
+      const regions = Array.isArray(value.regions) ? value.regions : Array.isArray(value.originCountries) ? value.originCountries : Array.isArray(value.origin_country) ? value.origin_country : null;
+      if (!genreIds || !regions || value.releaseDate == null && value.release_date == null) return null;
+      return {
+        version: NOSTR_TMDB_META_CACHE_VERSION,
+        mediaType,
+        tmdbId,
+        genreIds: Array.from(new Set(genreIds.map((item) => String(item).trim()).filter(Boolean))),
+        regions: Array.from(new Set(regions.map((item) => String(item).trim().toUpperCase()).filter(Boolean))),
+        releaseDate: String(value.releaseDate != null ? value.releaseDate : value.release_date || "").trim(),
+        fetchedAt,
+        classification: value.classification === "valid" || value.classification === "invalid" ? value.classification : ""
+      };
+    }
+
+    function nostrTmdbMetaEnforceCapacity(runtime) {
+      const keys = Object.keys(runtime.entries || {});
+      if (keys.length <= NOSTR_TMDB_META_CACHE_MAX_ENTRIES) return 0;
+      keys.sort((a, b) => Number(runtime.entries[a] && runtime.entries[a].fetchedAt || 0) - Number(runtime.entries[b] && runtime.entries[b].fetchedAt || 0));
+      const removeCount = keys.length - NOSTR_TMDB_META_CACHE_MAX_ENTRIES;
+      keys.slice(0, removeCount).forEach((key) => delete runtime.entries[key]);
+      runtime.evictedCount = Number(runtime.evictedCount || 0) + removeCount;
+      return removeCount;
+    }
+
+    function scheduleNostrTmdbMetaSave() {
+      const runtime = nostrTmdbMetaRuntime();
+      runtime.dirty = true;
+      runtime.dirtyVersion = Number(runtime.dirtyVersion || 0) + 1;
+      if (runtime.saveTimer || !runtime.loaded) return;
+      runtime.saveTimer = setTimeout(() => {
+        runtime.saveTimer = 0;
+        flushNostrTmdbMetaCache().catch(() => {});
+      }, NOSTR_TMDB_META_CACHE_SAVE_DEBOUNCE_MS);
+    }
+
+    async function flushNostrTmdbMetaCache() {
+      const runtime = nostrTmdbMetaRuntime();
+      if (!runtime.loaded || !runtime.dirty) return false;
+      if (runtime.savePromise) return runtime.savePromise;
+      nostrTmdbMetaEnforceCapacity(runtime);
+      const version = Number(runtime.dirtyVersion || 0);
+      const snapshot = {
+        version: NOSTR_TMDB_META_CACHE_VERSION,
+        savedAt: Date.now(),
+        entries: Object.keys(runtime.entries || {}).reduce((result, key) => {
+          const entry = normalizeNostrTmdbMetaEntry(runtime.entries[key]);
+          if (entry) result[key] = entry;
+          return result;
+        }, {})
+      };
+      runtime.savePromise = Promise.resolve().then(async () => {
+        try {
+          await sdk().cache.set(cacheKey("nostrTmdbMeta"), JSON.stringify(snapshot));
+          runtime.lastSaveAt = Date.now();
+          if (Number(runtime.dirtyVersion || 0) === version) runtime.dirty = false;
+          return true;
+        } catch (e) {
+          runtime.dirty = true;
+          return false;
+        } finally {
+          runtime.savePromise = null;
+          if (runtime.dirty && !runtime.saveTimer) {
+            runtime.saveTimer = setTimeout(() => {
+              runtime.saveTimer = 0;
+              flushNostrTmdbMetaCache().catch(() => {});
+            }, NOSTR_TMDB_META_CACHE_SAVE_DEBOUNCE_MS);
+          }
+        }
+      });
+      return runtime.savePromise;
+    }
+
+    function ensureNostrTmdbMetaLoaded() {
+      const runtime = nostrTmdbMetaRuntime();
+      if (runtime.loaded) return Promise.resolve(runtime);
+      if (runtime.loading && runtime.promise) return runtime.promise;
+      runtime.loading = true;
+      runtime.promise = Promise.resolve().then(async () => {
+        let saved = null;
+        try {
+          const raw = await sdk().cache.get(cacheKey("nostrTmdbMeta"));
+          saved = typeof raw === "string" ? safeJson(raw, null) : raw;
+        } catch (e) {
+          saved = null;
+        }
+        const now = Date.now();
+        const entries = {};
+        let expired = 0;
+        if (saved && typeof saved === "object" && Number(saved.version || 0) === NOSTR_TMDB_META_CACHE_VERSION && saved.entries && typeof saved.entries === "object") {
+          Object.keys(saved.entries).forEach((key) => {
+            const entry = normalizeNostrTmdbMetaEntry(saved.entries[key]);
+            if (!entry) return;
+            if (now - entry.fetchedAt > NOSTR_TMDB_META_CACHE_TTL_MS) {
+              expired += 1;
+              return;
+            }
+            entries[nostrTmdbMetaEntryKey(entry) || key] = entry;
+          });
+        }
+        runtime.entries = entries;
+        runtime.expiredCount = expired;
+        const evicted = nostrTmdbMetaEnforceCapacity(runtime);
+        runtime.loaded = true;
+        runtime.loading = false;
+        runtime.lastLoadAt = Date.now();
+        runtime.promise = null;
+        if (expired || evicted) scheduleNostrTmdbMetaSave();
+        return runtime;
+      }).catch(() => {
+        runtime.entries = {};
+        runtime.loaded = true;
+        runtime.loading = false;
+        runtime.lastLoadAt = Date.now();
+        runtime.promise = null;
+        return runtime;
+      });
+      return runtime.promise;
+    }
+
+    function nostrTmdbMetaPut(value, classification) {
+      const runtime = nostrTmdbMetaRuntime();
+      const entry = normalizeNostrTmdbMetaEntry(Object.assign({}, value, { classification }));
+      const key = nostrTmdbMetaEntryKey(entry);
+      if (!entry || !key || !runtime.loaded) return false;
+      runtime.entries[key] = entry;
+      nostrTmdbMetaEnforceCapacity(runtime);
+      scheduleNostrTmdbMetaSave();
+      return true;
+    }
+
+    function nostrTmdbMetaFromItem(hotItem, item) {
+      if (!hotItem || !item || typeof item !== "object" || !homeNostrSignalKey(hotItem)) return null;
+      const mediaType = String(hotItem.mediaType || hotItem.media_type || "").toLowerCase();
+      const genreValue = item.genreIds != null ? item.genreIds : item.genre_ids;
+      const regionValue = item.originCountries != null ? item.originCountries : item.origin_country;
+      const releaseValue = item.releaseDate != null ? item.releaseDate : mediaType === "tv" ? item.first_air_date : item.release_date;
+      if ((mediaType !== "movie" && mediaType !== "tv") || !Array.isArray(genreValue) || !Array.isArray(regionValue) || releaseValue == null) return null;
+      return normalizeNostrTmdbMetaEntry({
+        version: NOSTR_TMDB_META_CACHE_VERSION,
+        mediaType,
+        tmdbId: hotItem.tmdbId,
+        genreIds: genreValue,
+        regions: regionValue,
+        releaseDate: releaseValue,
+        fetchedAt: Date.now()
+      });
+    }
+
+    function secondaryNostrAnimeMetadataFromItem(hotItem, item) {
+      return nostrTmdbMetaFromItem(hotItem, item);
+    }
+
+    function nostrTmdbMetaFromDetail(hotItem, detail) {
+      if (!hotItem || !detail || typeof detail !== "object" || detail.id == null || !homeNostrSignalKey(hotItem)) return null;
+      const mediaType = String(hotItem.mediaType || hotItem.media_type || "").toLowerCase();
+      const genreValue = Array.isArray(detail.genre_ids)
+        ? detail.genre_ids
+        : Array.isArray(detail.genres) ? detail.genres.map((genre) => genre && genre.id).filter((value) => value != null) : [];
+      let regionValue = [];
+      if (mediaType === "tv") {
+        regionValue = Array.isArray(detail.origin_country) ? detail.origin_country : [];
+      } else if (mediaType === "movie") {
+        regionValue = Array.isArray(detail.production_countries)
+          ? detail.production_countries.map((country) => country && (country.iso_3166_1 || country.iso)).filter(Boolean)
+          : Array.isArray(detail.origin_country) ? detail.origin_country : [];
+      }
+      const releaseKey = mediaType === "tv" ? "first_air_date" : "release_date";
+      if ((mediaType !== "movie" && mediaType !== "tv") || typeof detail[releaseKey] !== "string") return null;
+      return normalizeNostrTmdbMetaEntry({
+        version: NOSTR_TMDB_META_CACHE_VERSION,
+        mediaType,
+        tmdbId: hotItem.tmdbId,
+        genreIds: genreValue,
+        regions: regionValue,
+        releaseDate: detail[releaseKey],
+        fetchedAt: Date.now()
+      });
+    }
+
+    function secondaryNostrAnimeMetadataFromDetail(hotItem, detail) {
+      return nostrTmdbMetaFromDetail(hotItem, detail);
+    }
+
+    function nostrTmdbItemFromMetadata(hotItem, metadata, listId, index) {
+      const entry = normalizeNostrTmdbMetaEntry(metadata);
+      const hotMediaType = String(hotItem && (hotItem.mediaType || hotItem.media_type) || "").toLowerCase();
+      if (!hotItem || !entry || hotMediaType !== entry.mediaType) return null;
+      const raw = {
+        id: entry.tmdbId,
+        media_type: entry.mediaType,
+        name: hotItem.title || "未命名",
+        title: hotItem.title || "未命名",
+        original_name: hotItem.title || "",
+        original_title: hotItem.title || "",
+        genre_ids: entry.genreIds,
+        origin_country: entry.regions,
+        release_date: entry.mediaType === "movie" ? entry.releaseDate : "",
+        first_air_date: entry.mediaType === "tv" ? entry.releaseDate : ""
+      };
+      const item = normalizeTmdb(raw, { id: "secondary-nostr", title: listId, mediaType: entry.mediaType }, index);
+      if (!item) return null;
+      item.source = "nostr-hot";
+      item.id = `tmdb:${entry.mediaType}:${entry.tmdbId}`;
+      item.tmdbId = entry.tmdbId;
+      item.mediaType = entry.mediaType;
+      item.pic = item.pic || hotItem.pic || hotItem.image || "";
+      item.image = item.image || hotItem.image || item.pic || "";
+      item.title = item.title || hotItem.title || "未命名";
+      item.listId = listId;
+      item.listTitle = listId === "anime" ? "动画" : listId === "tv" ? "电视剧" : "电影";
+      return item;
+    }
+
+    function secondaryNostrAnimeItemFromMetadata(hotItem, metadata, listId, index) {
+      return nostrTmdbItemFromMetadata(hotItem, metadata, listId, index);
     }
 
     function secondaryNostrKnownItem(hotItem, query) {
@@ -26699,22 +27006,301 @@ utils.encode = function encode(arr, enc) {
         && (filters.year === "all" || secondaryYearMatches(item, filters.year));
     }
 
+    function nostrTmdbRecordFromMetadata(hotItem, metadata, listId, index, source) {
+      const entry = normalizeNostrTmdbMetaEntry(metadata);
+      const item = entry ? nostrTmdbItemFromMetadata(hotItem, entry, listId, index) : null;
+      const valid = !!(item && secondaryNostrHotFilterMatches(listId, homeCategoryDefaultFilters(), item));
+      if (!entry || !item) return { status: "failed", metadata: null, item: null, source: source || "" };
+      entry.classification = valid ? "valid" : "invalid";
+      item.nostrMetadataSource = source === "persistent" ? "cache" : source || "";
+      return { status: valid ? "valid" : "invalid", metadata: entry, item: valid ? item : null, source: source || "" };
+    }
+
+    function nostrTmdbRecordFromDetail(hotItem, detail, listId, index, source) {
+      const metadata = nostrTmdbMetaFromDetail(hotItem, detail);
+      if (!metadata) return { status: "failed", metadata: null, item: null, source: source || "detail" };
+      const record = nostrTmdbRecordFromMetadata(hotItem, metadata, listId, index, source || "detail");
+      if (record.status === "valid" || record.status === "invalid") nostrTmdbMetaPut(record.metadata, record.status);
+      return record;
+    }
+
+    function secondaryNostrAnimeRecordFromMetadata(hotItem, metadata, index, source) {
+      return nostrTmdbRecordFromMetadata(hotItem, metadata, "anime", index, source);
+    }
+
+    function secondaryNostrAnimeCandidateKey(candidate) {
+      return homeNostrSignalKey(candidate);
+    }
+
+    function secondaryNostrAnimeResolverKey(candidates) {
+      return JSON.stringify([
+        Number(state.hot && state.hot.version || 0),
+        (Array.isArray(candidates) ? candidates : []).map((candidate, index) => [
+          secondaryNostrAnimeCandidateKey(candidate),
+          Number(candidate && (candidate.people || candidate.count) || 0),
+          String(candidate && (candidate.latest || candidate.lastEventAt || candidate.last_event_at) || ""),
+          index + 1
+        ])
+      ]);
+    }
+
+    function secondaryNostrAnimeEmptyMetrics() {
+      return { candidatesScanned: 0, lastScannedRank: 0, knownMetadataHits: 0, persistentHits: 0, memoryHits: 0, newDetailRequests: 0, detailFailures: 0, finalAnimeMatches: 0 };
+    }
+
+    function secondaryNostrAnimeResolverState(candidates) {
+      const home = state.homeV14;
+      const source = Array.isArray(candidates) ? candidates : [];
+      const key = secondaryNostrAnimeResolverKey(source);
+      let runtime = home.secondaryNostrAnimeResolver;
+      if (!runtime || runtime.key !== key) {
+        runtime = home.secondaryNostrAnimeResolver = {
+          key,
+          candidates: source.map((candidate, index) => Object.assign({}, candidate, { nostrHotRank: index + 1 })),
+          statuses: {},
+          items: {},
+          failedKeys: {},
+          nextIndex: 0,
+          done: false,
+          retryOnlyFailed: false,
+          promise: null,
+          listeners: [],
+          metrics: secondaryNostrAnimeEmptyMetrics()
+        };
+      }
+      return runtime;
+    }
+
+    function secondaryNostrAnimeQualifiedItems(runtime, filters, target) {
+      if (!runtime) return [];
+      const limit = Math.max(0, Number(target || SECONDARY_NOSTR_HOT_TARGET_MATCHES));
+      const selected = [];
+      (runtime.candidates || []).forEach((candidate) => {
+        if (selected.length >= limit) return;
+        const key = secondaryNostrAnimeCandidateKey(candidate);
+        if (!key || runtime.statuses[key] !== "valid" || !runtime.items[key]) return;
+        if (!secondaryNostrHotFilterMatches("anime", filters || homeCategoryDefaultFilters(), runtime.items[key])) return;
+        selected.push(runtime.items[key]);
+      });
+      return selected;
+    }
+
+    function secondaryNostrAnimeNotify(runtime) {
+      if (!runtime) return;
+      const defaultItems = secondaryNostrAnimeQualifiedItems(runtime, homeCategoryDefaultFilters(), SECONDARY_NOSTR_HOT_TARGET_MATCHES);
+      runtime.metrics.finalAnimeMatches = defaultItems.length;
+      if (state.homeV14 && state.homeV14.secondaryNostrAnimeResolver === runtime) {
+        state.homeV14.secondaryNostrAnimeMetrics = Object.assign({}, runtime.metrics, {
+          resolverKey: runtime.key,
+          done: !!runtime.done,
+          cacheEntries: Object.keys(nostrTmdbMetaRuntime().entries || {}).length,
+          cacheLoaded: !!nostrTmdbMetaRuntime().loaded
+        });
+        if (state.tvDiag) state.tvDiag.nostrAnime = state.homeV14.secondaryNostrAnimeMetrics;
+      }
+      (runtime.listeners || []).slice().forEach((listener) => {
+        if (!listener || typeof listener.onProgress !== "function") return;
+        const items = secondaryNostrAnimeQualifiedItems(runtime, listener.filters, listener.target);
+        try {
+          if (!listener.isCurrent || listener.isCurrent()) listener.onProgress(items, runtime);
+        } catch (e) {}
+      });
+    }
+
+    function secondaryNostrAnimeApplyResult(runtime, candidate, wrapped) {
+      if (!runtime || !candidate) return;
+      const key = secondaryNostrAnimeCandidateKey(candidate);
+      if (!key) return;
+      const record = wrapped && wrapped.ok ? wrapped.value : null;
+      const rank = Number(candidate.nostrHotRank || 0);
+      runtime.metrics.lastScannedRank = Math.max(Number(runtime.metrics.lastScannedRank || 0), rank);
+      if (record && (record.status === "valid" || record.status === "invalid")) {
+        runtime.statuses[key] = record.status;
+        if (record.status === "valid" && record.item) runtime.items[key] = record.item;
+        else delete runtime.items[key];
+        delete runtime.failedKeys[key];
+      } else {
+        delete runtime.statuses[key];
+        delete runtime.items[key];
+        runtime.failedKeys[key] = true;
+        runtime.metrics.detailFailures = Number(runtime.metrics.detailFailures || 0) + 1;
+      }
+    }
+
+    function secondaryNostrAnimeScanShouldContinue(runtime) {
+      if (!runtime) return false;
+      if (secondaryNostrAnimeQualifiedItems(runtime, homeCategoryDefaultFilters(), SECONDARY_NOSTR_HOT_TARGET_MATCHES).length < SECONDARY_NOSTR_HOT_TARGET_MATCHES) return true;
+      return (runtime.listeners || []).some((listener) => {
+        if (!listener) return false;
+        const filters = listener.filters || homeCategoryDefaultFilters();
+        const nonDefault = ["mediaType", "genre", "region", "year"].some((key) => filters[key] && filters[key] !== "all");
+        return nonDefault && secondaryNostrAnimeQualifiedItems(runtime, filters, listener.target).length < listener.target;
+      });
+    }
+
+    async function secondaryNostrAnimeResolveCandidate(candidate, query, index, runtime) {
+      const key = secondaryNostrAnimeCandidateKey(candidate);
+      if (!key) return { status: "failed", metadata: null, item: null, source: "" };
+      const known = secondaryNostrKnownItem(candidate, query);
+      const knownMetadata = secondaryNostrAnimeMetadataFromItem(candidate, known);
+      if (knownMetadata) {
+        runtime.metrics.knownMetadataHits = Number(runtime.metrics.knownMetadataHits || 0) + 1;
+        const record = secondaryNostrAnimeRecordFromMetadata(candidate, knownMetadata, index, "known");
+        secondaryNostrAnimeMemoryCache()[key] = Promise.resolve(record);
+        return record;
+      }
+      await ensureNostrTmdbMetaLoaded();
+      const memory = secondaryNostrAnimeMemoryCache();
+      if (memory[key]) {
+        const memoryPromise = memory[key];
+        runtime.metrics.memoryHits = Number(runtime.metrics.memoryHits || 0) + 1;
+        const record = await Promise.resolve(memoryPromise);
+        if (record && (record.status === "valid" || record.status === "invalid")) {
+          const refreshed = record.metadata ? secondaryNostrAnimeRecordFromMetadata(candidate, record.metadata, index, "cache") : record;
+          if (refreshed.item) refreshed.item.nostrMetadataSource = "cache";
+          return refreshed;
+        }
+        if (memory[key] === memoryPromise) delete memory[key];
+      }
+      const persistent = nostrTmdbMetaRuntime().entries[key];
+      if (persistent) {
+        runtime.metrics.persistentHits = Number(runtime.metrics.persistentHits || 0) + 1;
+        const record = secondaryNostrAnimeRecordFromMetadata(candidate, persistent, index, "persistent");
+        if (record.status === "valid" || record.status === "invalid") {
+          if (record.item) record.item.nostrMetadataSource = "cache";
+          memory[key] = Promise.resolve(record);
+          return record;
+        }
+      }
+      runtime.metrics.newDetailRequests = Number(runtime.metrics.newDetailRequests || 0) + 1;
+      const detailPromise = requestJson(secondaryNostrDetailUrl(candidate), 18)
+        .then((body) => nostrTmdbRecordFromDetail(candidate, body, "anime", index, "detail"))
+        .catch(() => ({ status: "failed", metadata: null, item: null, source: "detail" }));
+      memory[key] = detailPromise.then((record) => {
+        if (!record || (record.status !== "valid" && record.status !== "invalid")) {
+          if (memory[key]) delete memory[key];
+        }
+        return record;
+      });
+      return memory[key];
+    }
+
+    async function secondaryRunNostrAnimeResolver(runtime, query) {
+      await ensureNostrTmdbMetaLoaded();
+      const retryOnlyFailed = !!runtime.retryOnlyFailed;
+      while (runtime.nextIndex < runtime.candidates.length && (retryOnlyFailed ? Object.keys(runtime.failedKeys || {}).length > 0 : secondaryNostrAnimeScanShouldContinue(runtime))) {
+        const defaultMatches = secondaryNostrAnimeQualifiedItems(runtime, homeCategoryDefaultFilters(), SECONDARY_NOSTR_HOT_TARGET_MATCHES).length;
+        const batchSize = !retryOnlyFailed && defaultMatches < SECONDARY_NOSTR_HOT_TARGET_MATCHES
+          ? Math.min(SECONDARY_NOSTR_ANIME_SCAN_BATCH_SIZE, Math.max(1, SECONDARY_NOSTR_HOT_TARGET_MATCHES - defaultMatches))
+          : SECONDARY_NOSTR_ANIME_SCAN_BATCH_SIZE;
+        const batch = runtime.candidates.slice(runtime.nextIndex, runtime.nextIndex + batchSize);
+        runtime.nextIndex += batch.length;
+        runtime.metrics.candidatesScanned = Number(runtime.metrics.candidatesScanned || 0) + batch.length;
+        const pending = batch.filter((candidate) => {
+          const key = secondaryNostrAnimeCandidateKey(candidate);
+          return !!key && (retryOnlyFailed ? !!runtime.failedKeys[key] : !runtime.statuses[key]);
+        });
+        if (!pending.length) {
+          secondaryNostrAnimeNotify(runtime);
+          continue;
+        }
+        await weeklyMapLimit(pending, SECONDARY_NOSTR_HOT_DETAIL_CONCURRENCY, (candidate) => {
+          return secondaryNostrAnimeResolveCandidate(candidate, query, Number(candidate.nostrHotRank || 0) - 1, runtime);
+        }, (wrapped, candidate) => {
+          secondaryNostrAnimeApplyResult(runtime, candidate, wrapped);
+          secondaryNostrAnimeNotify(runtime);
+        });
+        if (retryOnlyFailed ? !Object.keys(runtime.failedKeys || {}).length : !secondaryNostrAnimeScanShouldContinue(runtime)) break;
+      }
+      runtime.retryOnlyFailed = false;
+      runtime.done = true;
+      secondaryNostrAnimeNotify(runtime);
+      await flushNostrTmdbMetaCache();
+      return runtime;
+    }
+
+    function secondaryNostrAnimeStartResolver(runtime, query) {
+      if (!runtime) return Promise.resolve(null);
+      if (runtime.promise && !runtime.done) return runtime.promise;
+      if (runtime.done && Object.keys(runtime.failedKeys || {}).length) {
+        runtime.nextIndex = 0;
+        runtime.done = false;
+        runtime.promise = null;
+        runtime.metrics = secondaryNostrAnimeEmptyMetrics();
+        runtime.retryOnlyFailed = true;
+      }
+      if (runtime.done && secondaryNostrAnimeScanShouldContinue(runtime)) {
+        runtime.done = false;
+        runtime.promise = null;
+      }
+      if (!runtime.promise) runtime.promise = secondaryRunNostrAnimeResolver(runtime, query).catch(() => runtime);
+      return runtime.promise;
+    }
+
+    async function secondaryLoadNostrAnimePool(filters, query, target, options) {
+      const opts = options || {};
+      const candidates = secondaryNostrHotCandidates("anime");
+      const runtime = secondaryNostrAnimeResolverState(candidates);
+      const listener = {
+        filters: Object.assign({}, homeCategoryDefaultFilters(), filters || {}),
+        target: Math.max(0, Number(target || SECONDARY_NOSTR_HOT_TARGET_MATCHES)),
+        isCurrent: typeof opts.isCurrent === "function" ? opts.isCurrent : null,
+        onProgress: typeof opts.onProgress === "function" ? opts.onProgress : null
+      };
+      runtime.listeners.push(listener);
+      try {
+        secondaryNostrAnimeNotify(runtime);
+        await secondaryNostrAnimeStartResolver(runtime, query);
+        return secondaryNostrAnimeQualifiedItems(runtime, listener.filters, listener.target);
+      } finally {
+        runtime.listeners = runtime.listeners.filter((entry) => entry !== listener);
+      }
+    }
+
     async function secondaryNostrEnrichCandidate(hotItem, listId, query, index) {
       const known = secondaryNostrKnownItem(hotItem, query);
       if (known && secondaryNostrItemAllowed(listId, known)) {
         return Object.assign({}, known, { source: "nostr-hot", listId, listTitle: listId === "anime" ? "动画" : listId === "tv" ? "电视剧" : "电影" });
       }
       const key = homeNostrSignalKey(hotItem);
-      const cache = secondaryNostrMetaCache();
       if (!key) return null;
-      if (!cache[key]) {
-        cache[key] = requestJson(secondaryNostrDetailUrl(hotItem), 18)
-          .then((body) => secondaryNostrItemFromDetail(hotItem, body, listId, index))
-          .catch(() => null);
+      await ensureNostrTmdbMetaLoaded();
+      const memory = secondaryNostrTmdbMemoryCache();
+      const memoryPromise = memory[key];
+      if (memoryPromise) {
+        const memoryRecord = await Promise.resolve(memoryPromise);
+        if (memoryRecord && (memoryRecord.status === "valid" || memoryRecord.status === "invalid")) {
+          const refreshed = memoryRecord.metadata
+            ? nostrTmdbRecordFromMetadata(hotItem, memoryRecord.metadata, listId, index, "cache")
+            : memoryRecord;
+          return refreshed.status === "valid"
+            ? Object.assign({}, refreshed.item, { listId, listTitle: listId === "anime" ? "动画" : listId === "tv" ? "电视剧" : "电影" })
+            : null;
+        }
+        if (memory[key] === memoryPromise) delete memory[key];
       }
-      const item = await Promise.resolve(cache[key]);
-      return secondaryNostrItemAllowed(listId, item)
-        ? Object.assign({}, item, { listId, listTitle: listId === "anime" ? "动画" : listId === "tv" ? "电视剧" : "电影" })
+      const persistent = nostrTmdbMetaRuntime().entries[key];
+      if (persistent) {
+        const record = nostrTmdbRecordFromMetadata(hotItem, persistent, listId, index, "persistent");
+        if (record.status === "valid" || record.status === "invalid") {
+          memory[key] = Promise.resolve(record);
+          return record.status === "valid"
+            ? Object.assign({}, record.item, { listId, listTitle: listId === "anime" ? "动画" : listId === "tv" ? "电视剧" : "电影" })
+            : null;
+        }
+      }
+      const detailPromise = requestJson(secondaryNostrDetailUrl(hotItem), 18)
+        .then((body) => nostrTmdbRecordFromDetail(hotItem, body, listId, index, "detail"))
+        .catch(() => ({ status: "failed", metadata: null, item: null, source: "detail" }));
+      memory[key] = detailPromise.then((record) => {
+        if (!record || (record.status !== "valid" && record.status !== "invalid")) {
+          if (memory[key]) delete memory[key];
+        }
+        return record;
+      });
+      const record = await Promise.resolve(memory[key]);
+      return record && record.status === "valid"
+        ? Object.assign({}, record.item, { listId, listTitle: listId === "anime" ? "动画" : listId === "tv" ? "电视剧" : "电影" })
         : null;
     }
 
@@ -26722,8 +27308,9 @@ utils.encode = function encode(arr, enc) {
       const known = secondaryNostrKnownItem(hotItem, query);
       if (known && secondaryNostrItemAllowed(listId, known)) return false;
       const key = homeNostrSignalKey(hotItem);
-      const cache = secondaryNostrMetaCache();
-      return !!key && !cache[key];
+      const memory = secondaryNostrTmdbMemoryCache();
+      const persistent = nostrTmdbMetaRuntime().entries[key];
+      return !!key && !memory[key] && !persistent;
     }
 
     function secondaryNostrTaskIsCurrent(id, filters, query, generation) {
@@ -26769,11 +27356,12 @@ utils.encode = function encode(arr, enc) {
       query.nostrHotItems = uniqueMedia(Array.isArray(items) ? items : []);
       const fallback = (query.items || []).filter((item) => item && item.source !== "nostr-hot");
       query.items = uniqueMedia(query.nostrHotItems.concat(fallback));
-      if (query.nostrHotItems.length && !query.loaded && !query.loading) {
+      const progressiveAnime = normalizeLegacyCategoryId(id) === "anime";
+      if (progressiveAnime && query.nostrHotItems.length && !query.loaded) {
         query.loaded = true;
         query.error = "";
       }
-      if (query.loaded) {
+      if (query.loaded || progressiveAnime && query.nostrHotItems.length) {
         renderSecondaryCatalog();
         restoreSecondaryNostrGridFocus(focus);
       }
@@ -26796,6 +27384,23 @@ utils.encode = function encode(arr, enc) {
       query.nostrHotGeneration = generation;
       query.nostrHotLoading = true;
       query.nostrHotItems = [];
+      if (id === "anime") {
+        try {
+          const qualifiedAnime = await secondaryLoadNostrAnimePool(scanFilters, query, SECONDARY_NOSTR_HOT_TARGET_MATCHES, {
+            isCurrent: () => secondaryNostrTaskIsCurrent(id, scanFilters, query, generation),
+            onProgress: (items) => commitSecondaryNostrHotItems(id, scanFilters, query, generation, items)
+          });
+          if (secondaryNostrTaskIsCurrent(id, scanFilters, query, generation)) {
+            query.nostrHotItems = uniqueMedia(qualifiedAnime);
+            query.nostrHotLoaded = true;
+            commitSecondaryNostrHotItems(id, scanFilters, query, generation, qualifiedAnime);
+          }
+          return qualifiedAnime;
+        } finally {
+          if (Number(query.nostrHotGeneration || 0) === generation) query.nostrHotLoading = false;
+        }
+      }
+      await ensureNostrTmdbMetaLoaded();
       const qualified = [];
       let newDetailRequests = 0;
       try {
@@ -27428,7 +28033,8 @@ utils.encode = function encode(arr, enc) {
           ? query.loading ? "正在读取最近观看…" : query.error ? query.error : query.loaded ? items.length ? "已加载全部" : "暂无最近观看" : ""
           : query.loading ? (query.page > 0 ? "正在加载下一页…" : "加载中…") : query.error ? "加载失败，请重试或调整筛选" : query.loaded && !query.hasMore ? "已加载全部" : "";
       }
-      if (query.loading && !query.page) {
+      const progressiveNostrAnime = listId === "anime" && query.nostrHot && query.nostrHotItems && query.nostrHotItems.length;
+      if (query.loading && !query.page && !progressiveNostrAnime) {
         showGridStatus(grid, "加载中...");
       } else if (query.error && !query.page) {
         showGridStatus(grid, "加载失败，请重试或调整筛选");
@@ -40211,6 +40817,104 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       check("PAN_RESOURCE_KEYWORD_USES_CN_TITLE", canonicalMockIdentity && panKeyword(canonicalMockIdentity) === "示例大陆名", "Pan 资源关键词读取 canonical resourceSearchTitle", "RUNTIME_MOCK");
       check("NATIVE_SEARCH_USES_CN_TITLE", canonicalMockIdentity && resourceSearchKeyword(canonicalMockIdentity) === "示例大陆名" && canonicalSearchSource.includes("nativeSearch(resourceSearchKeyword(state.selected))"), "详情原生搜索读取 canonical resourceSearchTitle", "RUNTIME_MOCK");
       check("CURATED_SEARCH_ALIASES_PRESERVED", canonicalMockIdentity && curatedSearchKeywords(canonicalMockIdentity).includes("示例大陆名") && curatedSearchKeywords(canonicalMockIdentity).includes("示例香港名"), "精选源仍使用完整 aliases 搜索集合", "RUNTIME_MOCK");
+      const animeMockCandidate = (rank, id) => ({ mediaType: "tv", tmdbId: String(id || 7000 + rank), title: `Mock Anime ${rank}`, pic: "mock-poster", latest: "2026-01-01", people: 1000 - rank, nostrHotRank: rank });
+      const animeMockMetadata = (candidate, valid) => ({ version: NOSTR_TMDB_META_CACHE_VERSION, mediaType: candidate.mediaType, tmdbId: candidate.tmdbId, genreIds: valid ? ["16"] : ["18"], regions: ["CN"], releaseDate: "2020-01-01", fetchedAt: Date.now() });
+      const animeMockScan = (candidates, validRanks, persistent, failures) => {
+        const runtime = { candidates, statuses: {}, items: {}, failedKeys: {}, nextIndex: 0, metrics: { candidatesScanned: 0, lastScannedRank: 0, persistentHits: 0, newDetailRequests: 0 } };
+        const store = persistent || {};
+        const failed = failures || new Set();
+        const details = [];
+        while (runtime.nextIndex < runtime.candidates.length) {
+          const currentMatches = secondaryNostrAnimeQualifiedItems(runtime, homeCategoryDefaultFilters(), SECONDARY_NOSTR_HOT_TARGET_MATCHES).length;
+          const batchSize = currentMatches < SECONDARY_NOSTR_HOT_TARGET_MATCHES
+            ? Math.min(SECONDARY_NOSTR_ANIME_SCAN_BATCH_SIZE, Math.max(1, SECONDARY_NOSTR_HOT_TARGET_MATCHES - currentMatches))
+            : SECONDARY_NOSTR_ANIME_SCAN_BATCH_SIZE;
+          const batch = runtime.candidates.slice(runtime.nextIndex, runtime.nextIndex + batchSize);
+          runtime.nextIndex += batch.length;
+          runtime.metrics.candidatesScanned += batch.length;
+          batch.forEach((candidate) => {
+            const key = secondaryNostrAnimeCandidateKey(candidate);
+            runtime.metrics.lastScannedRank = Math.max(runtime.metrics.lastScannedRank, Number(candidate.nostrHotRank || 0));
+            if (store[key]) {
+              runtime.metrics.persistentHits += 1;
+              const record = secondaryNostrAnimeRecordFromMetadata(candidate, store[key], candidate.nostrHotRank - 1, "persistent");
+              runtime.statuses[key] = record.status;
+              if (record.item) runtime.items[key] = record.item;
+              return;
+            }
+            runtime.metrics.newDetailRequests += 1;
+            details.push(key);
+            if (failed.has(key)) return;
+            const record = secondaryNostrAnimeRecordFromMetadata(candidate, animeMockMetadata(candidate, validRanks.has(Number(candidate.nostrHotRank))), candidate.nostrHotRank - 1, "detail");
+            if (record.status === "valid" || record.status === "invalid") {
+              runtime.statuses[key] = record.status;
+              if (record.item) runtime.items[key] = record.item;
+              store[key] = record.metadata;
+            }
+          });
+          if (secondaryNostrAnimeQualifiedItems(runtime, homeCategoryDefaultFilters(), SECONDARY_NOSTR_HOT_TARGET_MATCHES).length >= SECONDARY_NOSTR_HOT_TARGET_MATCHES) break;
+        }
+        return { runtime, store, details, items: secondaryNostrAnimeQualifiedItems(runtime, homeCategoryDefaultFilters(), SECONDARY_NOSTR_HOT_TARGET_MATCHES) };
+      };
+      const animeRanksA = new Set([3, 4, 11, 33, 34, 43, 44, 54, 56, 64, 69, 79, 80, 84, 89, 90, 114, 116]);
+      const animeCandidatesA = Array.from({ length: 150 }, (_, index) => animeMockCandidate(index + 1));
+      const animeColdA = animeMockScan(animeCandidatesA, animeRanksA, {}, new Set());
+      const animeWarmB = animeMockScan(animeCandidatesA, animeRanksA, animeColdA.store, new Set());
+      const animeNegativeC = animeMockScan([animeMockCandidate(1, 9901)], new Set(), {}, new Set());
+      const animeNegativeCSecond = animeMockScan([animeMockCandidate(1, 9901)], new Set(), animeNegativeC.store, new Set());
+      const animeFailureCandidate = animeMockCandidate(1, 9902);
+      const animeFailureKey = secondaryNostrAnimeCandidateKey(animeFailureCandidate);
+      const animeFailureD = animeMockScan([animeFailureCandidate], new Set([1]), {}, new Set([animeFailureKey]));
+      const animeFailureDSecond = animeMockScan([animeFailureCandidate], new Set([1]), animeFailureD.store, new Set());
+      const animeReorderedE = animeMockScan([animeCandidatesA[3], animeCandidatesA[2]].concat(animeCandidatesA.slice(0, 2), animeCandidatesA.slice(4)), animeRanksA, animeColdA.store, new Set());
+      const animeNewCandidateF = animeMockCandidate(2, 9903);
+      const animeNewF = animeMockScan([animeNewCandidateF].concat(animeCandidatesA.slice(0, 1), animeCandidatesA.slice(2)), animeRanksA, animeColdA.store, new Set());
+      const animeResolverSource = String(secondaryLoadNostrAnimePool) + String(secondaryRunNostrAnimeResolver) + String(secondaryNostrAnimeResolveCandidate);
+      const animeCacheSource = String(nostrTmdbMetaRuntime) + String(ensureNostrTmdbMetaLoaded) + String(nostrTmdbMetaPut) + String(normalizeNostrTmdbMetaEntry);
+      check("NOSTR_ANIME_CASE_A_COLD", animeColdA.items.length === 18 && animeColdA.runtime.metrics.lastScannedRank === 116 && animeColdA.details.length === 116, "Top150 cold scan stops at the 18th valid rank", "RUNTIME_MOCK");
+      check("NOSTR_ANIME_CASE_B_WARM", animeWarmB.items.map((item) => item.tmdbId).join(",") === animeColdA.items.map((item) => item.tmdbId).join(",") && animeWarmB.runtime.metrics.newDetailRequests === 0 && animeWarmB.runtime.metrics.persistentHits === 116, "warm reload reuses persistent metadata", "RUNTIME_MOCK");
+      check("NOSTR_ANIME_CASE_C_NEGATIVE_CACHE", animeNegativeC.runtime.metrics.newDetailRequests === 1 && animeNegativeCSecond.runtime.metrics.newDetailRequests === 0 && animeNegativeCSecond.runtime.metrics.persistentHits === 1 && Object.keys(animeNegativeC.store).length === 1, "negative successful classification is persisted", "RUNTIME_MOCK");
+      check("NOSTR_ANIME_CASE_D_FAILURE_RETRY", animeFailureD.runtime.metrics.newDetailRequests === 1 && animeFailureDSecond.runtime.metrics.newDetailRequests === 1 && Object.keys(animeFailureD.store).length === 0, "failed detail is not negative-cached and retries", "RUNTIME_MOCK");
+      check("NOSTR_ANIME_CASE_E_REORDER", animeReorderedE.items[0] && animeReorderedE.items[0].tmdbId === animeCandidatesA[3].tmdbId && animeReorderedE.items[1] && animeReorderedE.items[1].tmdbId === animeCandidatesA[2].tmdbId && animeReorderedE.runtime.metrics.newDetailRequests === 0, "latest Nostr order wins without rewriting metadata cache", "RUNTIME_MOCK");
+      check("NOSTR_ANIME_CASE_F_NEW_CANDIDATE", animeNewF.runtime.metrics.newDetailRequests === 1 && animeNewF.runtime.metrics.persistentHits >= 17, "only a new cache miss requests detail", "RUNTIME_MOCK");
+      check("NOSTR_ANIME_NO_DISCOVER_PREFILTER", !animeResolverSource.includes("discover") && !animeResolverSource.includes("secondaryFullCatalogSources"), "anime production resolver has no Discover prefilter", "STATIC_HOOK");
+      check("NOSTR_ANIME_PERSISTENT_CACHE_LAYER", animeResolverSource.includes("ensureNostrTmdbMetaLoaded") && animeResolverSource.includes("nostrTmdbMetaPut") && animeCacheSource.includes("NOSTR_TMDB_META_CACHE_TTL_MS"), "anime resolver uses one persistent TTL cache", "STATIC_HOOK");
+      check("NOSTR_ANIME_FAILURE_NOT_CACHED", animeResolverSource.includes("status === \"failed\"") && animeResolverSource.includes("delete memory[key]"), "detail failures remain retryable", "STATIC_HOOK");
+      check("NOSTR_ANIME_CACHE_NO_NOSTR_RANK", !animeCacheSource.includes("nostrHotRank") && !animeCacheSource.includes("people") && !animeCacheSource.includes("latest"), "persistent metadata has no Nostr ranking fields", "STATIC_HOOK");
+      check("NOSTR_ANIME_SHARED_HOME_SECONDARY", String(loadHomeCategoryNostrPool).includes("secondaryLoadNostrAnimePool") && String(secondaryLoadNostrHotItems).includes("secondaryLoadNostrAnimePool"), "Home and Secondary subscribe to the shared resolver", "STATIC_HOOK");
+      const sharedMetaStore = {};
+      const sharedMetaMockRun = (candidate, listId, detail) => {
+        const key = nostrTmdbMetaEntryKey(candidate);
+        if (sharedMetaStore[key]) {
+          return { detailRequests: 0, record: nostrTmdbRecordFromMetadata(candidate, sharedMetaStore[key], listId, 0, "persistent") };
+        }
+        const metadata = nostrTmdbMetaFromDetail(candidate, detail);
+        const record = nostrTmdbRecordFromMetadata(candidate, metadata, listId, 0, "detail");
+        if (record.status === "valid" || record.status === "invalid") sharedMetaStore[key] = record.metadata;
+        return { detailRequests: 1, record };
+      };
+      const sharedMovieCandidate = { mediaType: "movie", tmdbId: "99001", title: "Shared Movie", pic: "mock-poster" };
+      const sharedMovieDetail = { id: 99001, genre_ids: [18], production_countries: [{ iso_3166_1: "CN" }], release_date: "2020-01-01" };
+      const sharedTvCandidate = { mediaType: "tv", tmdbId: "99002", title: "Shared TV", pic: "mock-poster" };
+      const sharedTvDetail = { id: 99002, genre_ids: [18], origin_country: ["CN"], first_air_date: "2020-01-01" };
+      const sharedAnimeCandidate = { mediaType: "tv", tmdbId: "99003", title: "Shared Anime", pic: "mock-poster" };
+      const sharedAnimeDetail = { id: 99003, genre_ids: [16], origin_country: ["CN"], first_air_date: "2020-01-01" };
+      const sharedMovieCold = sharedMetaMockRun(sharedMovieCandidate, "movie", sharedMovieDetail);
+      const sharedMovieWarm = sharedMetaMockRun(sharedMovieCandidate, "movie", sharedMovieDetail);
+      const sharedTvCold = sharedMetaMockRun(sharedTvCandidate, "tv", sharedTvDetail);
+      const sharedTvWarm = sharedMetaMockRun(sharedTvCandidate, "tv", sharedTvDetail);
+      const sharedAnimeCold = sharedMetaMockRun(sharedAnimeCandidate, "anime", sharedAnimeDetail);
+      const sharedAnimeWarm = sharedMetaMockRun(sharedAnimeCandidate, "anime", sharedAnimeDetail);
+      const sharedEnricherSource = String(secondaryNostrEnrichCandidate);
+      const sharedAnimeResolverSource = String(secondaryNostrAnimeResolveCandidate);
+      const sharedAuthoritySource = String(nostrTmdbMetaFromItem) + String(nostrTmdbMetaFromDetail) + String(nostrTmdbRecordFromMetadata) + String(nostrTmdbRecordFromDetail) + String(nostrTmdbMetaPut);
+      check("NOSTR_MOVIE_PERSISTENT_META_READ", sharedEnricherSource.includes("secondaryNostrTmdbMemoryCache") && sharedEnricherSource.includes("nostrTmdbMetaRuntime().entries") && sharedEnricherSource.includes("ensureNostrTmdbMetaLoaded"), "movie/tv enricher reads runtime, memory, persistent metadata before detail", "STATIC_HOOK");
+      check("NOSTR_MOVIE_PERSISTENT_META_WRITE", sharedEnricherSource.includes("nostrTmdbRecordFromDetail") && sharedAuthoritySource.includes("nostrTmdbMetaPut"), "movie detail writes the shared minimal metadata record", "STATIC_HOOK");
+      check("NOSTR_TV_PERSISTENT_META_READ", sharedEnricherSource.includes("secondaryNostrTmdbMemoryCache") && sharedEnricherSource.includes("nostrTmdbMetaRuntime().entries") && sharedEnricherSource.includes("ensureNostrTmdbMetaLoaded"), "tv enricher reads the shared persistent metadata record", "STATIC_HOOK");
+      check("NOSTR_TV_PERSISTENT_META_WRITE", sharedEnricherSource.includes("nostrTmdbRecordFromDetail") && sharedAuthoritySource.includes("nostrTmdbMetaPut"), "tv detail writes the shared minimal metadata record", "STATIC_HOOK");
+      check("NOSTR_ANIME_PERSISTENT_META_READ_SHARED", sharedAnimeResolverSource.includes("secondaryNostrAnimeMemoryCache") && sharedAnimeResolverSource.includes("nostrTmdbMetaRuntime().entries") && sharedAnimeResolverSource.includes("ensureNostrTmdbMetaLoaded"), "anime reads the same runtime, memory, persistent sequence", "STATIC_HOOK");
+      check("NOSTR_ANIME_PERSISTENT_META_WRITE_SHARED", sharedAnimeResolverSource.includes("nostrTmdbRecordFromDetail") && sharedAuthoritySource.includes("nostrTmdbMetaPut"), "anime detail writes through the shared metadata authority", "STATIC_HOOK");
+      check("NOSTR_CROSS_CATEGORY_SINGLE_META_CACHE", sharedMovieCold.detailRequests === 1 && sharedMovieWarm.detailRequests === 0 && sharedTvCold.detailRequests === 1 && sharedTvWarm.detailRequests === 0 && sharedAnimeCold.detailRequests === 1 && sharedAnimeWarm.detailRequests === 0 && Object.keys(sharedMetaStore).length === 3, "movie/tv/anime use one metadata store with warm detail reuse", "RUNTIME_MOCK");
       const oldWebviewUnsupported = ["Promise", "allSettled"].join(".");
       check("OLD_WEBVIEW_COMPAT", !document.documentElement.innerHTML.includes(oldWebviewUnsupported), "未引入旧 WebView 不支持的 Promise 聚合 API", "STATIC_HOOK");
       check("PHASE3_SIDEBAR_NOT_ROUTE", HOME_PRESENTATION_ROUTES.join(",") === "home,search,secondary" && !sidebarSource.includes('pushState'), "Sidebar does not create a presentation route", "STATIC_HOOK");
