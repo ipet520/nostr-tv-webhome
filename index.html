@@ -16563,8 +16563,8 @@ utils.encode = function encode(arr, enc) {
             mediaType: "movie",
             sources: [
               { endpoint: "movie/now_playing", mediaType: "movie", params: { language: "zh-CN" } },
-              { endpoint: "discover/movie", mediaType: "movie", params: { with_original_language: "zh", sort_by: "popularity.desc", "primary_release_date_gte": "today-120", "primary_release_date_lte": "today" } },
-              { endpoint: "discover/movie", mediaType: "movie", params: { with_watch_providers: "8|337|350|384|9|15|386|531", watch_region: "US", sort_by: "popularity.desc", "primary_release_date_gte": "today-90", "primary_release_date_lte": "today", vote_count_gte: "10" } }
+              { endpoint: "discover/movie", mediaType: "movie", params: { with_original_language: "zh", sort_by: "popularity.desc", "primary_release_date_gte": "today-120" } },
+              { endpoint: "discover/movie", mediaType: "movie", params: { with_watch_providers: "8|337|350|384|9|15|386|531", watch_region: "US", sort_by: "popularity.desc", "primary_release_date_gte": "today-90", vote_count_gte: "10" } }
             ]
           },
           {
@@ -17289,7 +17289,10 @@ utils.encode = function encode(arr, enc) {
     }
 
     function isReleaseFilteredCatalogId(id) {
-      return ["all", "tv", "movie", "anime"].includes(String(id || ""));
+      // Movie catalogues intentionally include announced/future releases.
+      // Keep the existing release-date guard for recommendation/all, TV and
+      // anime paths only.
+      return ["all", "tv", "anime"].includes(String(id || ""));
     }
 
     function filterReleasedCatalogItems(id, items) {
@@ -17360,6 +17363,23 @@ utils.encode = function encode(arr, enc) {
       if (!date) return "";
       const parts = date.split("-");
       return `${Number(parts[1])}月${Number(parts[2])}日`;
+    }
+
+    function movieReleaseStatusText(item, weeklyText) {
+      if (!item || String(item.mediaType || item.media_type || "").toLowerCase() !== "movie") return "";
+      if (String(weeklyText == null ? item.weeklyUpdateText || "" : weeklyText).trim()) return "";
+      const releaseDate = latestDateOnly(item.releaseDate || item.release_date || "");
+      if (!releaseDate) return "";
+      const currentDate = today();
+      if (releaseDate <= currentDate) return "已上映";
+      const parts = releaseDate.split("-");
+      const year = Number(parts[0]);
+      const month = Number(parts[1]);
+      const day = Number(parts[2]);
+      const currentYear = Number(currentDate.slice(0, 4));
+      return year === currentYear
+        ? `${month}月${day}日上映`
+        : `${year}年${month}月${day}日上映`;
     }
 
     function weeklyWeekdayLabel(value) {
@@ -22159,7 +22179,7 @@ utils.encode = function encode(arr, enc) {
     function loadMoreVisible() {
       if (homeUiRoute() === "secondary" && state.activeList === "all") {
         if (appendActiveGridBatch()) return;
-        secondaryLoadNextPage();
+        if (secondaryCanLoadMore()) secondaryLoadNextPage();
         return;
       }
       if (appendActiveGridBatch()) return;
@@ -27668,18 +27688,8 @@ utils.encode = function encode(arr, enc) {
     }
     function secondaryLoadNextPage() {
       const query = secondaryActiveQuery(state.homeV14.secondaryListId);
-      if (!query || query.loading) return false;
-      if (!query.hasMore && !query.error) return false;
-      if (query.error && Array.isArray(query.sourceStates)) {
-        query.sourceStates.forEach((sourceState) => {
-          if (sourceState && sourceState.error) {
-            sourceState.error = "";
-            sourceState.done = false;
-            sourceState.loading = false;
-          }
-        });
-      }
-      loadSecondaryPage(query.listId, query, query.error && query.failedPage || query.page + 1).catch(() => {});
+      if (!query || !secondaryCanLoadMore()) return false;
+      loadSecondaryPage(query.listId, query, query.page + 1).catch(() => {});
       return true;
     }
     function secondaryCanLoadMore() {
@@ -27687,7 +27697,7 @@ utils.encode = function encode(arr, enc) {
       if (state.homeV14.secondaryListId === "recent") return false;
       // Failed pages stay visible for an explicit retry/filter action; the
       // infinite-scroll observer must never turn an error into a retry loop.
-      return !!(query && !query.loading && query.hasMore);
+      return !!(query && !query.loading && !query.error && query.hasMore);
     }
     function applySecondaryFilter(id, group, value) {
       id = normalizeLegacyCategoryId(id);
@@ -28047,6 +28057,7 @@ utils.encode = function encode(arr, enc) {
       }
       updateRecentManageUi();
       observeInfiniteScroll();
+      requestAnimationFrame(ensureScrollablePage);
       scheduleSecondaryFilterFocusRestore();
     }
 
@@ -28506,7 +28517,7 @@ utils.encode = function encode(arr, enc) {
       }
       if (index < 0) return;
       if (homeUiRoute() === "secondary" && grid === $("secondaryCatalogGrid") && index >= Math.max(0, grid.querySelectorAll(".card").length - gridColumns(grid) * 2)) {
-        secondaryLoadNextPage();
+        if (secondaryCanLoadMore()) secondaryLoadNextPage();
       }
       const info = state.gridRender[gridRenderId(grid)];
       if (!info || Number(info.rendered || 0) >= Number(info.total || 0)) return;
@@ -28754,9 +28765,10 @@ utils.encode = function encode(arr, enc) {
       const tvEpisodeCard = !people && String(item && item.mediaType || "").toLowerCase() === "tv" && !!tvDetailCacheId(item);
       const initialTvDetail = tvEpisodeCard ? tvDetailCacheValue(item) || item.tvDetail || item.weeklyDetail || item.heroDetail || null : null;
       const initialTvEpisodeStatus = tvEpisodeCard ? tvEpisodeStatusLabel(initialTvDetail) : "";
-      const airStatusText = weeklyUpdate || initialTvEpisodeStatus;
+      const movieReleaseStatus = movieReleaseStatusText(item, weeklyHome || weekly ? weeklyUpdate : undefined);
+      const airStatusText = weeklyUpdate || initialTvEpisodeStatus || movieReleaseStatus;
       const airStatusClass = weeklyUpdate ? "card-air-status weekly-air-status" : "card-air-status";
-      const airStatusHtml = (weeklyUpdate || tvEpisodeCard)
+      const airStatusHtml = (weeklyUpdate || tvEpisodeCard || movieReleaseStatus)
         ? `<div class="${airStatusClass}"${airStatusText ? "" : " hidden"}>${escapeHtml(airStatusText)}</div>`
         : "";
       const searchResult = opts.searchResult === true;
@@ -40915,6 +40927,26 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       check("NOSTR_ANIME_PERSISTENT_META_READ_SHARED", sharedAnimeResolverSource.includes("secondaryNostrAnimeMemoryCache") && sharedAnimeResolverSource.includes("nostrTmdbMetaRuntime().entries") && sharedAnimeResolverSource.includes("ensureNostrTmdbMetaLoaded"), "anime reads the same runtime, memory, persistent sequence", "STATIC_HOOK");
       check("NOSTR_ANIME_PERSISTENT_META_WRITE_SHARED", sharedAnimeResolverSource.includes("nostrTmdbRecordFromDetail") && sharedAuthoritySource.includes("nostrTmdbMetaPut"), "anime detail writes through the shared metadata authority", "STATIC_HOOK");
       check("NOSTR_CROSS_CATEGORY_SINGLE_META_CACHE", sharedMovieCold.detailRequests === 1 && sharedMovieWarm.detailRequests === 0 && sharedTvCold.detailRequests === 1 && sharedTvWarm.detailRequests === 0 && sharedAnimeCold.detailRequests === 1 && sharedAnimeWarm.detailRequests === 0 && Object.keys(sharedMetaStore).length === 3, "movie/tv/anime use one metadata store with warm detail reuse", "RUNTIME_MOCK");
+      const movieToday = today();
+      const movieYesterday = weeklyAddDays(movieToday, -1);
+      const movieFuture = weeklyAddDays(movieToday, 1);
+      const movieNextYear = `${Number(movieToday.slice(0, 4)) + 1}-01-15`;
+      const movieFutureLabel = movieFuture.slice(0, 4) === movieToday.slice(0, 4)
+        ? `${weeklyDateLabel(movieFuture)}上映`
+        : `${movieFuture.slice(0, 4)}年${weeklyDateLabel(movieFuture)}上映`;
+      const movieLatestPlan = secondaryApplyServerFilters(secondaryFullCatalogSources("movie")[0], { mediaType: "all", genre: "all", region: "all", year: "all", sort: "latest" });
+      check("MOVIE_FUTURE_RELEASE_ALLOWED", filterReleasedCatalogItems("movie", [{ mediaType: "movie", releaseDate: movieFuture }]).length === 1, "future movie releases remain eligible", "RUNTIME_MOCK");
+      check("TV_FUTURE_RELEASE_FILTER_UNCHANGED", filterReleasedCatalogItems("tv", [{ mediaType: "tv", firstAirDate: movieFuture }]).length === 0, "future TV releases remain filtered", "RUNTIME_MOCK");
+      check("ANIME_FUTURE_RELEASE_FILTER_UNCHANGED", filterReleasedCatalogItems("anime", [{ mediaType: "tv", firstAirDate: movieFuture }]).length === 0, "future anime releases remain filtered", "RUNTIME_MOCK");
+      check("MOVIE_LATEST_NO_TODAY_LIMIT", movieLatestPlan && movieLatestPlan.entry.params.sort_by === "primary_release_date.desc" && !Object.keys(movieLatestPlan.entry.params).some((key) => /_lte$/.test(key)), "movie latest keeps release-date sorting without a today limit", "RUNTIME_MOCK");
+      check("MOVIE_RELEASE_STATUS_CASES", movieReleaseStatusText({ mediaType: "movie", releaseDate: movieYesterday }) === "已上映"
+        && movieReleaseStatusText({ mediaType: "movie", releaseDate: movieToday }) === "已上映"
+        && movieReleaseStatusText({ mediaType: "movie", releaseDate: movieFuture }) === movieFutureLabel
+        && movieReleaseStatusText({ mediaType: "movie", releaseDate: movieNextYear }) === `${movieNextYear.slice(0, 4)}年1月15日上映`
+        && movieReleaseStatusText({ mediaType: "movie", releaseDate: "" }) === "", "movie release status covers past, today, future, next year and empty dates", "RUNTIME_MOCK");
+      check("MOVIE_WEEKLY_STATUS_PRECEDENCE", movieReleaseStatusText({ mediaType: "movie", releaseDate: movieToday, weeklyUpdateText: "本周新片 · 9月24日上映" }, "本周新片 · 9月24日上映") === "", "weekly movie text suppresses the ordinary release label", "RUNTIME_MOCK");
+      check("MOVIE_RELEASE_STATUS_NO_DETAIL_REQUEST", !String(movieReleaseStatusText).includes("requestJson") && !String(mediaCard).includes("secondaryNostrDetailUrl"), "movie release status uses normalized card data only", "STATIC_HOOK");
+      check("SECONDARY_SHORT_PAGE_AUTOFILL", String(renderSecondaryCatalog).includes("requestAnimationFrame(ensureScrollablePage)") && String(ensureScrollablePage).includes("loadMoreVisible"), "short secondary pages can continue while the viewport is not filled", "STATIC_HOOK");
       const oldWebviewUnsupported = ["Promise", "allSettled"].join(".");
       check("OLD_WEBVIEW_COMPAT", !document.documentElement.innerHTML.includes(oldWebviewUnsupported), "未引入旧 WebView 不支持的 Promise 聚合 API", "STATIC_HOOK");
       check("PHASE3_SIDEBAR_NOT_ROUTE", HOME_PRESENTATION_ROUTES.join(",") === "home,search,secondary" && !sidebarSource.includes('pushState'), "Sidebar does not create a presentation route", "STATIC_HOOK");
