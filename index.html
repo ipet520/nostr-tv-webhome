@@ -1208,6 +1208,11 @@
       pointer-events: none;
     }
 
+    .card.has-air-status .card-people,
+    .poster-wrap.has-air-status .card-people {
+      bottom: calc(2px + 1.2em + 4px);
+    }
+
     .person-info {
       display: block;
       padding: 12px;
@@ -4686,35 +4691,35 @@
       gap: 4px;
     }
     .home-sidebar-tools {
-      margin-top: 18px;
-      padding-top: 14px;
+      margin-top: 14px;
+      padding-top: 10px;
     }
     .home-sidebar-item {
       display: grid;
-      grid-template-columns: 22px 4em;
+      grid-template-columns: 20px 4em;
       align-items: center;
       justify-content: center;
-      column-gap: 9px;
+      column-gap: 6px;
       width: 100%;
-      min-height: 52px;
+      min-height: 46px;
       margin: 0;
       padding: 0 10px;
       border: 0;
-      border-radius: 8px;
+      border-radius: 7px;
       color: rgba(255, 255, 255, .72);
       background: transparent;
       box-shadow: none;
       text-align: left;
-      font-size: clamp(14px, .9vw, 17px);
+      font-size: clamp(13px, .86vw, 16px);
       font-weight: 600;
       white-space: nowrap;
       transition: background-color 140ms ease, color 140ms ease, transform 140ms ease;
     }
     .home-sidebar-item .home-sidebar-icon {
       display: block;
-      width: 22px;
-      height: 22px;
-      flex: 0 0 22px;
+      width: 20px;
+      height: 20px;
+      flex: 0 0 20px;
       color: currentColor;
     }
     .home-sidebar-item .home-sidebar-label {
@@ -4746,7 +4751,7 @@
     }
     .home-sidebar #connectionToggle {
       display: flex;
-      min-height: 52px;
+      min-height: 46px;
       height: auto;
       width: 100%;
       justify-content: center;
@@ -5510,19 +5515,19 @@
 
       html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar-nav,
       html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar-tools {
-        gap: 6px;
+        gap: 4px;
       }
 
       html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar-tools {
-        margin-top: 16px;
-        padding-top: 12px;
+        margin-top: 14px;
+        padding-top: 10px;
       }
 
       html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar-item {
         display: grid;
-        grid-template-columns: 22px 4em;
-        min-height: 48px;
-        column-gap: 9px;
+        grid-template-columns: 20px 4em;
+        min-height: 44px;
+        column-gap: 6px;
         padding: 0 10px;
         transition: background-color 140ms ease, color 140ms ease;
         touch-action: manipulation;
@@ -5530,7 +5535,7 @@
 
       html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar #connectionToggle {
         display: flex;
-        min-height: 48px;
+        min-height: 44px;
         width: 100%;
         justify-content: center;
         gap: 0;
@@ -6974,6 +6979,12 @@
 
     #detailContinueBtn > .icon,
     #detailContinueBtn[data-play-state="idle"] > .icon,
+    #detailContinueBtn[data-play-state="unreleased"] > .icon {
+      fill: #8FA3B8 !important;
+      stroke: none !important;
+      color: #8FA3B8 !important;
+    }
+
     #detailContinueBtn[data-play-state="preparing"] > .icon {
       fill: #F2B84B !important;
       stroke: none !important;
@@ -16589,6 +16600,15 @@ utils.encode = function encode(arr, enc) {
               { endpoint: "discover/movie", mediaType: "movie", params: { with_genres: "99", with_original_language: "zh", sort_by: "vote_average.desc", vote_count_gte: "20", language: "zh-CN" } }
             ]
           },
+          {
+            id: "variety",
+            title: "综艺",
+            hint: "真人秀与脱口秀",
+            mediaType: "tv",
+            sources: [
+              { endpoint: "discover/tv", mediaType: "tv", params: { with_genres: "10764|10767", sort_by: "popularity.desc", include_null_first_air_dates: "false" } }
+            ]
+          },
         ]
       },
       nostr: {
@@ -16797,6 +16817,8 @@ utils.encode = function encode(arr, enc) {
         nostrTmdbMeta: { version: 1, loaded: false, loading: false, promise: null, entries: {}, dirty: false, dirtyVersion: 0, saveTimer: 0, savePromise: null, lastLoadAt: 0, lastSaveAt: 0, expiredCount: 0, evictedCount: 0 },
         secondaryNostrAnimeResolver: null,
         secondaryNostrAnimeMetrics: null,
+        secondaryNostrVarietyResolver: null,
+        secondaryNostrVarietyMetrics: null,
         secondaryFocusRestore: null,
         secondaryWeeklyInitialFocusPending: false,
         secondaryReturn: null,
@@ -17288,11 +17310,26 @@ utils.encode = function encode(arr, enc) {
       return !releaseDate || releaseDate <= today();
     }
 
+    function detailUnreleasedInfo(item) {
+      const mediaType = String(item && (item.mediaType || item.media_type) || "").toLowerCase();
+      if (mediaType !== "movie" && mediaType !== "tv") return { mediaType, date: "", unreleased: false };
+      if (mediaType === "movie") {
+        const movieDate = latestDateOnly(item.releaseDate) || latestDateOnly(item.release_date);
+        return { mediaType, date: movieDate, unreleased: !!movieDate && movieDate > today() };
+      }
+      const firstAirDate = latestDateOnly(item.firstAirDate) || latestDateOnly(item.first_air_date);
+      const releaseDate = latestDateOnly(item.releaseDate) || latestDateOnly(item.release_date);
+      const normalizedNextEpisodeDate = latestDateOnly(item.weeklyNextEpisodeDate)
+        || latestDateOnly(item.weeklyNextEpisode && item.weeklyNextEpisode.air_date);
+      const date = firstAirDate || (releaseDate && releaseDate === normalizedNextEpisodeDate ? "" : releaseDate);
+      return { mediaType, date, unreleased: !!date && date > today() };
+    }
+
     function isReleaseFilteredCatalogId(id) {
       // Movie catalogues intentionally include announced/future releases.
-      // Keep the existing release-date guard for recommendation/all, TV and
-      // anime paths only.
-      return ["all", "tv", "anime"].includes(String(id || ""));
+      // Keep the existing release-date guard for recommendation/all, TV,
+      // anime and variety paths only.
+      return ["all", "tv", "anime", "variety"].includes(String(id || ""));
     }
 
     function filterReleasedCatalogItems(id, items) {
@@ -21096,6 +21133,21 @@ utils.encode = function encode(arr, enc) {
       return true;
     }
 
+    function settleDetailUnreleased(item, reason) {
+      const info = detailUnreleasedInfo(item);
+      if (!info.unreleased) return false;
+      const run = state.detailPlayback && detailPlaybackIsCurrent(state.detailPlayback)
+        && state.detailPlayback.item === item ? state.detailPlayback : null;
+      if (run) {
+        run.error = "";
+        run.playRequested = false;
+        run.unreleasedInfo = info;
+        clearDirectPlayStatus(0, reason || "unreleased_gate");
+        settleDetailPlayback(run, "UNRELEASED", reason || "unreleased_gate");
+      }
+      return !!run;
+    }
+
     function cancelDetailPlaybackPreparation(reason) {
       const run = state.detailPlayback;
       if (!run) return false;
@@ -21225,6 +21277,7 @@ utils.encode = function encode(arr, enc) {
     function prepareDetailPlayback(item, options) {
       const opts = options || {};
       const previous = state.detailPlayback || {};
+      const continueGate = opts.continueGate === true;
       cancelDetailPlaybackPreparation("new_detail_prepare");
       const run = {
         seq: Number(previous.seq || 0) + 1,
@@ -21246,14 +21299,15 @@ utils.encode = function encode(arr, enc) {
         directAction: null,
         error: "",
         reason: String(opts.reason || "detail_prepare"),
-        phase: "PREPARING",
+        preparationStarted: false,
+        phase: "CONTINUE_GATE",
         settledResult: "",
         finalFailureNotified: false,
         curatedSummarySent: false,
         cancelled: false,
         cancelReason: "",
         staleLogged: false,
-        continuePending: opts.continueGate === true,
+        continuePending: continueGate,
         continueDecisionPromise: null,
         continueResource: null,
         continueResourcePromise: null,
@@ -21330,6 +21384,28 @@ utils.encode = function encode(arr, enc) {
             return null;
           }
         }
+        const knownNativeHistory = state.detailMode === "CONTINUE"
+          && state.detailModeItemKey === panSearchItemKey(item)
+          && detailContinueHistoryIsValid(state.detailHistory)
+          && detailHistoryMatches(item, state.detailHistory);
+        const unreleased = detailUnreleasedInfo(item);
+        if (unreleased.unreleased && !knownNativeHistory) {
+          recordDetailPlaybackDecision("DETAIL_OPEN_PLAYBACK_DECISION", item, {
+            continueContextFound: !!(continueDecision && continueDecision.attempted),
+            continueUrlFound: false,
+            nativeHistoryKnown: !!(continueDecision && continueDecision.history),
+            nativeProgress: continueDecision && continueDecision.history
+              ? historyPlaybackPositionValue(continueDecision.history) : 0,
+            decision: "UNRELEASED",
+            unreleasedDate: unreleased.date,
+            curatedStarted: false
+          });
+          settleDetailUnreleased(item, "unreleased_gate");
+          updateDetailContinueButton();
+          return null;
+        }
+        run.preparationStarted = true;
+        run.phase = "PREPARING";
         recordDetailPlaybackDecision("DETAIL_OPEN_PLAYBACK_DECISION", item, {
           continueContextFound: !!(continueDecision && continueDecision.attempted),
           continueUrlFound: false,
@@ -21733,6 +21809,17 @@ utils.encode = function encode(arr, enc) {
         playPreparedDetailCandidate(item, prepared, button).catch(() => {});
         return;
       }
+      const readyCandidate = detailDirectPlayCandidateFor(item);
+      if (readyCandidate) {
+        playDetailDirectReadyCandidate(item, readyCandidate, history, button).catch(() => {});
+        return;
+      }
+      if (detailUnreleasedInfo(item).unreleased && !history) {
+        settleDetailUnreleased(item, "unreleased_manual_guard");
+        updateDetailContinueButton();
+        toast("尚未上映");
+        return;
+      }
       const detailPlayback = state.detailPlayback;
       if (detailPlayback && detailPlaybackIsCurrent(detailPlayback) && detailPlayback.handoffStarted) return;
       if (detailPlayback && detailPlaybackIsCurrent(detailPlayback) && detailPlayback.active && !detailPlayback.candidate) {
@@ -21743,11 +21830,6 @@ utils.encode = function encode(arr, enc) {
           showDirectPlayStatus(detailPlayback.token, "REQUESTED_PREPARING", DIRECT_PLAY_STATUS_TEXT.REQUESTED_PREPARING, "play_requested_while_curated_preparing");
           toast("资源正在准备，请稍候");
         }
-        return;
-      }
-      const readyCandidate = detailDirectPlayCandidateFor(item);
-      if (readyCandidate) {
-        playDetailDirectReadyCandidate(item, readyCandidate, history, button).catch(() => {});
         return;
       }
       // 详情进入时的 prepareOnly 仍在同一个 playBestQuark action 中运行时，
@@ -21800,7 +21882,10 @@ utils.encode = function encode(arr, enc) {
       if (action && ["READY", "STARTING_PLAYER"].includes(String(status.textKey || status.phase || ""))) {
         return "ready";
       }
-      if (run && run.active) return "preparing";
+      if (run && (runPhase === "UNRELEASED" || run.settledResult === "UNRELEASED")) {
+        return "unreleased";
+      }
+      if (run && run.active && (run.preparationStarted || ["PREPARING", "PAN_DIRECT"].includes(runPhase))) return "preparing";
       if (action && (action.prepareOnly || action.playRequested || action.searchStarted)) return "preparing";
 
       const failurePhase = ["NO_RESOURCE", "CONNECTION_FAILED", "FINAL_ERROR"].includes(runPhase);
@@ -24258,6 +24343,7 @@ utils.encode = function encode(arr, enc) {
         tv: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m8 3 4 2 4-2"/><path d="M8 19v2h8v-2"/>',
         anime: '<circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4V8Z"/><path d="M5 5 3 3"/><path d="m19 5 2-2"/>',
         documentary: '<path d="M5 4h10a4 4 0 0 1 4 4v12H9a4 4 0 0 0-4 0V4Z"/><path d="M5 4v16"/><path d="M9 8h6"/><path d="M9 12h6"/>',
+        variety: '<path d="M4 7h16v10H4z"/><path d="m8 7 1.5-3h5L16 7"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/>',
         keep: '<path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1Z"/>',
         settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>'
       };
@@ -24273,7 +24359,8 @@ utils.encode = function encode(arr, enc) {
         { key: "movie", label: "电影", action: "secondary", listId: "movie" },
         { key: "tv", label: "电视剧", action: "secondary", listId: "tv" },
         { key: "anime", label: "动画", action: "secondary", listId: "anime" },
-        { key: "documentary", label: "纪录片", action: "secondary", listId: "documentary" }
+        { key: "documentary", label: "纪录片", action: "secondary", listId: "documentary" },
+        { key: "variety", label: "综艺", action: "secondary", listId: "variety" }
       ];
       return items.map((item) => {
         if (item.action !== "secondary" || item.listId === "recent") return item;
@@ -24610,7 +24697,8 @@ utils.encode = function encode(arr, enc) {
         movie: 20,
         tv: 30,
         anime: 40,
-        documentary: 50
+        documentary: 50,
+        variety: 60
       };
       return Number(priority[id] || 200 + Number(index || 0));
     }
@@ -25430,7 +25518,7 @@ utils.encode = function encode(arr, enc) {
       return (mediaType === "movie" || mediaType === "tv") && tmdbId ? `tmdb:${mediaType}:${tmdbId}` : "";
     }
 
-    const HOME_CATEGORY_IDS = new Set(["movie", "tv", "anime", "documentary"]);
+    const HOME_CATEGORY_IDS = new Set(["movie", "tv", "anime", "documentary", "variety"]);
 
     function isHomeCategoryId(id) {
       return HOME_CATEGORY_IDS.has(normalizeLegacyCategoryId(id));
@@ -25443,9 +25531,12 @@ utils.encode = function encode(arr, enc) {
 
     function homeNostrHotSignature(id) {
       const items = Array.isArray(state.hot && state.hot.items) ? state.hot.items : [];
-      const scanLimit = normalizeLegacyCategoryId(id) === "anime"
+      const normalizedId = normalizeLegacyCategoryId(id);
+      const scanLimit = normalizedId === "anime"
         ? SECONDARY_NOSTR_ANIME_MAX_SCAN_CANDIDATES
-        : SECONDARY_NOSTR_HOT_MAX_SCAN_CANDIDATES;
+        : normalizedId === "variety"
+          ? SECONDARY_NOSTR_VARIETY_MAX_SCAN_CANDIDATES
+          : SECONDARY_NOSTR_HOT_MAX_SCAN_CANDIDATES;
       return items.slice(0, scanLimit).map((item, index) => [
         homeNostrSignalKey(item),
         Number(item && (item.people || item.count) || 0),
@@ -25572,6 +25663,12 @@ utils.encode = function encode(arr, enc) {
           onProgress: (items) => commitHomeCategoryNostrItems(id, feed, key, requestSeq, items)
         });
       }
+      if (normalizeLegacyCategoryId(id) === "variety") {
+        return secondaryLoadNostrVarietyPool(scanFilters, knownQuery, target, {
+          isCurrent: () => homeCategoryFeedIsCurrent(feed, key, requestSeq),
+          onProgress: (items) => commitHomeCategoryNostrItems(id, feed, key, requestSeq, items)
+        });
+      }
       await ensureNostrTmdbMetaLoaded();
       const candidates = secondaryNostrHotCandidates(id);
       const qualified = [];
@@ -25613,6 +25710,21 @@ utils.encode = function encode(arr, enc) {
       return true;
     }
 
+    function commitHomeCategoryTmdbItems(id, feed, key, requestSeq, items) {
+      if (!homeCategoryFeedIsCurrent(feed, key, requestSeq)) return false;
+      const tmdbItems = uniqueMedia(Array.isArray(items) ? items : []);
+      feed.source = "nostr";
+      feed.tmdbItems = tmdbItems;
+      feed.items = filterBlocked(uniqueMedia((Array.isArray(feed.nostrItems) ? feed.nostrItems : []).concat(tmdbItems)));
+      feed.dataVersion = key;
+      feed.signature = key;
+      const section = Array.from(document.querySelectorAll("#listStack > .home-dynamic-section")).find((entry) => entry.dataset.homeListId === normalizeLegacyCategoryId(id));
+      const config = homeSectionConfig().find((entry) => entry.listId === normalizeLegacyCategoryId(id));
+      if (section && config && tmdbItems.length) renderHomeDynamicSection(section, config);
+      recordHomeV14Diag();
+      return true;
+    }
+
     function homeCategoryFeedLimit(id) {
       const config = homeSectionConfig().find((entry) => entry.listId === normalizeLegacyCategoryId(id));
       return Number(config && config.initialLimit || homeRailLimit("portrait"));
@@ -25636,9 +25748,16 @@ utils.encode = function encode(arr, enc) {
         let nostrItems = [];
         let tmdbResult = { items: [], error: "" };
         if (source === "nostr") {
+          const progressiveTmdbPromise = id === "variety"
+            ? loadHomeCategoryTmdbPool(id).then((result) => {
+              if (homeCategoryFeedIsCurrent(feed, key, requestSeq)) commitHomeCategoryTmdbItems(id, feed, key, requestSeq, result && result.items || []);
+              return result;
+            })
+            : null;
           nostrItems = await loadHomeCategoryNostrPool(id, feed, key, requestSeq, target);
           if (!homeCategoryFeedIsCurrent(feed, key, requestSeq)) return feed;
-          if (nostrItems.length < target) tmdbResult = await loadHomeCategoryTmdbPool(id);
+          if (progressiveTmdbPromise) tmdbResult = await progressiveTmdbPromise;
+          else if (nostrItems.length < target) tmdbResult = await loadHomeCategoryTmdbPool(id);
         } else {
           tmdbResult = await loadHomeCategoryTmdbPool(id);
         }
@@ -25657,11 +25776,12 @@ utils.encode = function encode(arr, enc) {
         return feed;
       }).catch((error) => {
         if (homeCategoryFeedIsCurrent(feed, key, requestSeq)) {
+          const retainedTmdb = id === "variety" && Array.isArray(feed.tmdbItems) ? feed.tmdbItems : [];
           feed.loaded = true;
           feed.error = String(error && error.message || "加载失败");
-          feed.items = [];
+          feed.items = filterBlocked(uniqueMedia(retainedTmdb));
           feed.nostrItems = [];
-          feed.tmdbItems = [];
+          feed.tmdbItems = retainedTmdb;
         }
         return feed;
       }).finally(() => {
@@ -25752,7 +25872,7 @@ utils.encode = function encode(arr, enc) {
       if (!rail) return;
       rail.dataset.homeVariant = config.variant;
       const feed = homeCategoryFeed(config.listId);
-      const hasPartialItems = config.listId === "anime" && !!(feed && Array.isArray(feed.items) && feed.items.length);
+      const hasPartialItems = ["anime", "variety"].includes(config.listId) && !!(feed && Array.isArray(feed.items) && feed.items.length);
       const items = feed && (feed.loaded || hasPartialItems) ? feed.items : [];
       rail.dataset.homeFeedSource = feed && feed.source || "";
       rail.dataset.homeFeedVersion = feed && feed.dataVersion || "";
@@ -25887,11 +26007,24 @@ utils.encode = function encode(arr, enc) {
 
     function isTvEpisodeStatusCard(card) {
       const item = card && card.__mediaItem;
-      return !!(card && item && !Number(item.people || 0)
+      return !!(card && item
         && String(item.mediaType || "").toLowerCase() === "tv"
         && tvDetailCacheId(item)
         && card.querySelector
         && card.querySelector(".card-air-status"));
+    }
+
+    function syncCardAirStatusLayout(card, label) {
+      if (!card) return;
+      const text = String(label || "").trim();
+      const visible = !!text;
+      const status = card.querySelector && card.querySelector(".card-air-status");
+      if (status) {
+        status.textContent = text;
+        status.hidden = !visible;
+      }
+      card.classList.toggle("has-air-status", visible);
+      card.querySelectorAll(".poster-wrap").forEach((wrap) => wrap.classList.toggle("has-air-status", visible));
     }
 
     function updateTvEpisodeStatusCards(itemOrId, detail) {
@@ -25904,9 +26037,9 @@ utils.encode = function encode(arr, enc) {
         const status = card.querySelector(".card-air-status");
         if (!status) return;
         const weeklyText = String(cardItem.weeklyUpdateText || "").trim();
-        const label = weeklyText || tvEpisodeStatusLabel(detail);
-        status.textContent = label;
-        status.hidden = !label;
+        const isVariety = normalizeLegacyCategoryId(cardItem.listId || cardItem.categoryId || cardItem.category) === "variety";
+        const label = weeklyText || (isVariety ? varietyEpisodeStatusLabel(detail) : tvEpisodeStatusLabel(detail));
+        syncCardAirStatusLayout(card, label);
       });
     }
 
@@ -26301,7 +26434,7 @@ utils.encode = function encode(arr, enc) {
     }
 
     const SECONDARY_GENRE_LABELS = { "12": "冒险", "14": "奇幻", "16": "动画", "18": "剧情", "27": "恐怖", "28": "动作", "35": "喜剧", "36": "历史", "37": "西部", "53": "惊悚", "80": "犯罪", "99": "纪录片", "878": "科幻", "9648": "悬疑", "10402": "音乐", "10749": "爱情", "10751": "家庭", "10752": "战争", "10759": "动作冒险", "10762": "儿童", "10763": "新闻", "10764": "真人秀", "10765": "科幻奇幻", "10766": "肥皂剧", "10767": "脱口秀", "10768": "战争政治" };
-    const SECONDARY_REGION_LABELS = { CN: "中国大陆", HK: "香港", TW: "台湾", US: "美国", GB: "英国", JP: "日本", KR: "韩国", AU: "澳大利亚", CA: "加拿大", FR: "法国", DE: "德国", IN: "印度" };
+    const SECONDARY_REGION_LABELS = { CN: "中国大陆", "HK|TW": "港台", HK: "香港", TW: "台湾", US: "美国", GB: "英国", JP: "日本", KR: "韩国", AU: "澳大利亚", CA: "加拿大", FR: "法国", DE: "德国", IN: "印度" };
     // Keep Secondary controls useful without probing every option.  Movie
     // and TV genre IDs are deliberately separate; the underlying TMDB
     // discover source remains responsible for applying the selected value.
@@ -26310,12 +26443,14 @@ utils.encode = function encode(arr, enc) {
     const SECONDARY_REGION_IDS = ["CN", "HK", "TW", "US", "GB", "JP", "KR", "AU", "CA", "FR", "DE", "IN"];
     const SECONDARY_TV_REGION_IDS = ["CN", "HK", "TW", "KR", "JP", "US", "GB"];
     const SECONDARY_ANIMATION_REGION_IDS = ["CN", "JP"];
+    const SECONDARY_VARIETY_REGION_IDS = ["CN", "HK|TW", "KR", "JP"];
     const SECONDARY_FILTER_SCHEMA = {
       "now-playing": [],
       movie: ["genre", "region", "year", "sort"],
       tv: ["genre", "region", "year", "sort"],
       anime: ["region", "year", "sort"],
-      documentary: ["year", "sort"]
+      documentary: ["year", "sort"],
+      variety: ["region", "year"]
     };
 
     function secondaryFilterDefaults() { return { mediaType: "all", genre: "all", region: "all", year: "all", sort: "hot", lastFocused: {} }; }
@@ -26379,6 +26514,11 @@ utils.encode = function encode(arr, enc) {
     function secondaryUniqueValues(values) { return Array.from(new Set((values || []).map((value) => String(value || "").trim()).filter(Boolean))); }
     function secondaryParamValues(value) { return secondaryUniqueValues(String(value || "").split(/[|,\s]+/)); }
     function secondaryMergeParamValue(existing, value) { return secondaryUniqueValues(secondaryParamValues(existing).concat([value])).join(","); }
+    function secondaryRegionMatches(item, value) {
+      if (!value || value === "all") return true;
+      const selected = new Set(secondaryParamValues(value).map((entry) => String(entry).toUpperCase()));
+      return secondaryItemRegions(item).some((entry) => selected.has(String(entry).toUpperCase()));
+    }
     function secondaryFilterSchemaKeys(id) {
       id = normalizeLegacyCategoryId(id);
       if (id === "recent") return [];
@@ -26404,6 +26544,12 @@ utils.encode = function encode(arr, enc) {
           without_genres: "16,99,10763,10764,10766,10767"
         }) }];
       }
+      if (id === "variety") {
+        return [{ id, title: "综艺", endpoint: "discover/tv", mediaType: "tv", params: Object.assign({}, common, {
+          with_genres: "10764|10767",
+          include_null_first_air_dates: "false"
+        }) }];
+      }
       if (id === "anime") {
         return [
           { id, title: "动画", endpoint: "discover/tv", mediaType: "tv", params: Object.assign({}, common, { with_genres: "16", with_origin_country: "CN|JP" }) },
@@ -26419,7 +26565,7 @@ utils.encode = function encode(arr, enc) {
       return [];
     }
 
-    const SECONDARY_FULL_CATALOG_IDS = new Set(["movie", "tv", "anime", "documentary"]);
+    const SECONDARY_FULL_CATALOG_IDS = new Set(["movie", "tv", "anime", "documentary", "variety"]);
     function secondaryFilterDefaultValue(key) { return key === "sort" ? "hot" : "all"; }
     function secondaryNormalizeFilterValues(id, groups) {
       const filters = secondaryFilterState(id);
@@ -26443,7 +26589,7 @@ utils.encode = function encode(arr, enc) {
     }
     function secondaryFilterKey(id, filters) {
       id = normalizeLegacyCategoryId(id);
-      const hotSource = ["movie", "tv", "anime"].includes(id) && filters.sort === "hot" ? homeHotSource() : "";
+      const hotSource = ["movie", "tv", "anime", "variety"].includes(id) && filters.sort === "hot" ? homeHotSource() : "";
       return JSON.stringify([id, id === "now-playing" ? "weekly-feed" : id === "recent" ? "local-history" : "tmdb", hotSource, filters.mediaType, filters.genre, filters.region, filters.year, filters.sort]);
     }
     function secondaryGetQuery(id) {
@@ -26452,7 +26598,7 @@ utils.encode = function encode(arr, enc) {
       home.secondaryQueries = home.secondaryQueries && typeof home.secondaryQueries === "object" ? home.secondaryQueries : {};
       const filters = secondaryFilterState(id);
       const key = secondaryFilterKey(id, filters);
-      const hotSource = ["movie", "tv", "anime"].includes(id) && filters.sort === "hot" ? homeHotSource() : "";
+      const hotSource = ["movie", "tv", "anime", "variety"].includes(id) && filters.sort === "hot" ? homeHotSource() : "";
       let query = home.secondaryQueries[key];
       if (!query) {
         query = home.secondaryQueries[key] = {
@@ -26509,8 +26655,9 @@ utils.encode = function encode(arr, enc) {
       }
       if (filters.region !== "all") {
         if (secondaryIsDiscoverSource(entry)) {
-          const fixed = secondaryParamValues(params.with_origin_country);
-          if (fixed.length && !fixed.includes(filters.region)) return null;
+          const fixed = secondaryParamValues(params.with_origin_country).map((value) => String(value).toUpperCase());
+          const selected = secondaryParamValues(filters.region).map((value) => String(value).toUpperCase());
+          if (fixed.length && !selected.some((value) => fixed.includes(value))) return null;
           params.with_origin_country = filters.region;
           server.push("region");
         } else client.push("region");
@@ -26631,7 +26778,7 @@ utils.encode = function encode(arr, enc) {
         if (group) groups.push(group);
       }
       if (schema.includes("region")) {
-        const regionIds = id === "anime" ? SECONDARY_ANIMATION_REGION_IDS : tvPage ? SECONDARY_TV_REGION_IDS : SECONDARY_REGION_IDS;
+        const regionIds = id === "anime" ? SECONDARY_ANIMATION_REGION_IDS : id === "variety" ? SECONDARY_VARIETY_REGION_IDS : tvPage ? SECONDARY_TV_REGION_IDS : SECONDARY_REGION_IDS;
         const group = add("region", "地区", regionIds, SECONDARY_REGION_LABELS);
         if (group) groups.push(group);
       }
@@ -26652,13 +26799,17 @@ utils.encode = function encode(arr, enc) {
     const SECONDARY_NOSTR_HOT_DETAIL_CONCURRENCY = 4;
     const SECONDARY_NOSTR_ANIME_MAX_SCAN_CANDIDATES = 150;
     const SECONDARY_NOSTR_ANIME_SCAN_BATCH_SIZE = 4;
+    const SECONDARY_NOSTR_VARIETY_MAX_SCAN_CANDIDATES = 240;
+    const SECONDARY_NOSTR_VARIETY_TARGET_MATCHES = 18;
+    const SECONDARY_NOSTR_VARIETY_SCAN_BATCH_SIZE = 4;
+    const SECONDARY_NOSTR_VARIETY_MAX_NEW_DETAIL_REQUESTS = 54;
     const NOSTR_TMDB_META_CACHE_VERSION = 1;
     const NOSTR_TMDB_META_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
     const NOSTR_TMDB_META_CACHE_MAX_ENTRIES = 1000;
     const NOSTR_TMDB_META_CACHE_SAVE_DEBOUNCE_MS = 450;
 
     function secondaryNostrHotEnabled(id, filters) {
-      return ["movie", "tv", "anime"].includes(normalizeLegacyCategoryId(id))
+      return ["movie", "tv", "anime", "variety"].includes(normalizeLegacyCategoryId(id))
         && filters && filters.sort === "hot"
         && homeHotSource() === "nostr";
     }
@@ -26669,13 +26820,20 @@ utils.encode = function encode(arr, enc) {
       return filterBlocked(Array.isArray(state.hot && state.hot.items) ? state.hot.items : [])
         .filter((item) => {
           const type = String(item && (item.mediaType || item.media_type) || "").toLowerCase();
-          const matches = allowed === "anime" ? type === "movie" || type === "tv" : type === allowed;
+          const matches = allowed === "anime"
+            ? type === "movie" || type === "tv"
+            : allowed === "variety" ? type === "tv" : type === allowed;
           const key = homeNostrSignalKey(item);
           if (!matches || !key || seen.has(key)) return false;
           seen.add(key);
           return true;
         })
-        .slice(0, allowed === "anime" ? SECONDARY_NOSTR_ANIME_MAX_SCAN_CANDIDATES : SECONDARY_NOSTR_HOT_MAX_SCAN_CANDIDATES);
+        .slice(0, allowed === "anime"
+          ? SECONDARY_NOSTR_ANIME_MAX_SCAN_CANDIDATES
+          : allowed === "variety"
+            ? SECONDARY_NOSTR_VARIETY_MAX_SCAN_CANDIDATES
+            : SECONDARY_NOSTR_HOT_MAX_SCAN_CANDIDATES)
+        .map((item, index) => Object.assign({}, item, { nostrHotRank: index + 1 }));
     }
 
     function secondaryNostrMetaCache() {
@@ -26937,7 +27095,6 @@ utils.encode = function encode(arr, enc) {
       };
       const item = normalizeTmdb(raw, { id: "secondary-nostr", title: listId, mediaType: entry.mediaType }, index);
       if (!item) return null;
-      item.source = "nostr-hot";
       item.id = `tmdb:${entry.mediaType}:${entry.tmdbId}`;
       item.tmdbId = entry.tmdbId;
       item.mediaType = entry.mediaType;
@@ -26945,8 +27102,7 @@ utils.encode = function encode(arr, enc) {
       item.image = item.image || hotItem.image || item.pic || "";
       item.title = item.title || hotItem.title || "未命名";
       item.listId = listId;
-      item.listTitle = listId === "anime" ? "动画" : listId === "tv" ? "电视剧" : "电影";
-      return item;
+      return nostrHotSignalOverlay(item, hotItem, listId);
     }
 
     function secondaryNostrAnimeItemFromMetadata(hotItem, metadata, listId, index) {
@@ -26991,7 +27147,6 @@ utils.encode = function encode(arr, enc) {
           : [])
       });
       const item = normalizeTmdb(raw, { id: "secondary-nostr", title: listId, mediaType: hotItem.mediaType }, index);
-      item.source = "nostr-hot";
       item.id = `tmdb:${hotItem.mediaType}:${hotItem.tmdbId}`;
       item.tmdbId = String(hotItem.tmdbId || "");
       item.mediaType = String(hotItem.mediaType || "").toLowerCase();
@@ -26999,8 +27154,7 @@ utils.encode = function encode(arr, enc) {
       item.image = item.image || hotItem.image || item.pic || "";
       item.title = item.title || hotItem.title || "未命名";
       item.listId = listId;
-      item.listTitle = listId === "anime" ? "动画" : listId === "tv" ? "电视剧" : "电影";
-      return item;
+      return nostrHotSignalOverlay(item, hotItem, listId);
     }
 
     function secondaryNostrItemAllowed(id, item) {
@@ -27010,6 +27164,7 @@ utils.encode = function encode(arr, enc) {
       if (listId === "movie" && type !== "movie") return false;
       if (listId === "tv" && type !== "tv") return false;
       if (listId === "anime" && !secondaryItemGenreIds(item).includes("16")) return false;
+      if (listId === "variety" && (type !== "tv" || !secondaryItemGenreIds(item).some((value) => ["10764", "10767"].includes(value)))) return false;
       const regions = secondaryItemRegions(item);
       if (listId === "anime" && regions.length && !regions.some((value) => SECONDARY_ANIMATION_REGION_IDS.includes(String(value).toUpperCase()))) return false;
       if (listId === "tv" && regions.length && !regions.some((value) => SECONDARY_TV_REGION_IDS.includes(String(value).toUpperCase()))) return false;
@@ -27022,8 +27177,28 @@ utils.encode = function encode(arr, enc) {
       if (isReleaseFilteredCatalogId(id) && !isReleasedAsOfToday(item)) return false;
       return (filters.mediaType === "all" || secondaryItemMediaType(item) === filters.mediaType)
         && (filters.genre === "all" || secondaryItemGenreIds(item).includes(filters.genre))
-        && (filters.region === "all" || secondaryItemRegions(item).includes(filters.region))
+        && (filters.region === "all" || secondaryRegionMatches(item, filters.region))
         && (filters.year === "all" || secondaryYearMatches(item, filters.year));
+    }
+
+    function nostrListTitle(listId) {
+      const id = normalizeLegacyCategoryId(listId);
+      return id === "anime" ? "动画" : id === "tv" ? "电视剧" : id === "variety" ? "综艺" : "电影";
+    }
+
+    function nostrHotSignalOverlay(item, hotItem, listId) {
+      if (!item) return null;
+      const result = Object.assign({}, item, { source: "nostr-hot", listId, listTitle: nostrListTitle(listId) });
+      const hot = hotItem || {};
+      if (hot.people != null || hot.count != null) {
+        result.people = hot.people != null ? hot.people : hot.count;
+        result.count = hot.count != null ? hot.count : hot.people;
+      }
+      if (hot.latest != null) result.latest = hot.latest;
+      else if (hot.lastEventAt != null || hot.last_event_at != null) result.latest = hot.lastEventAt != null ? hot.lastEventAt : hot.last_event_at;
+      if (hot.lastEventAt != null || hot.last_event_at != null) result.lastEventAt = hot.lastEventAt != null ? hot.lastEventAt : hot.last_event_at;
+      if (hot.nostrHotRank != null) result.nostrHotRank = hot.nostrHotRank;
+      return result;
     }
 
     function nostrTmdbRecordFromMetadata(hotItem, metadata, listId, index, source) {
@@ -27082,6 +27257,7 @@ utils.encode = function encode(arr, enc) {
           failedKeys: {},
           nextIndex: 0,
           done: false,
+          detailBudgetExhausted: false,
           retryOnlyFailed: false,
           promise: null,
           listeners: [],
@@ -27139,6 +27315,10 @@ utils.encode = function encode(arr, enc) {
         if (record.status === "valid" && record.item) runtime.items[key] = record.item;
         else delete runtime.items[key];
         delete runtime.failedKeys[key];
+      } else if (record && record.status === "budget") {
+        runtime.detailBudgetExhausted = true;
+        delete runtime.statuses[key];
+        delete runtime.items[key];
       } else {
         delete runtime.statuses[key];
         delete runtime.items[key];
@@ -27277,10 +27457,316 @@ utils.encode = function encode(arr, enc) {
       }
     }
 
+    function secondaryNostrVarietyMemoryCache() {
+      return secondaryNostrTmdbMemoryCache();
+    }
+
+    function secondaryNostrVarietyRecordFromMetadata(hotItem, metadata, index, source) {
+      return nostrTmdbRecordFromMetadata(hotItem, metadata, "variety", index, source);
+    }
+
+    function secondaryNostrVarietyCandidateKey(candidate) {
+      return homeNostrSignalKey(candidate);
+    }
+
+    function secondaryNostrVarietyResolverKey(candidates) {
+      return JSON.stringify([
+        Number(state.hot && state.hot.version || 0),
+        (Array.isArray(candidates) ? candidates : []).map((candidate, index) => [
+          secondaryNostrVarietyCandidateKey(candidate),
+          Number(candidate && (candidate.people || candidate.count) || 0),
+          String(candidate && (candidate.latest || candidate.lastEventAt || candidate.last_event_at) || ""),
+          index + 1
+        ])
+      ]);
+    }
+
+    function secondaryNostrVarietyEmptyMetrics() {
+      return { candidatesScanned: 0, lastScannedRank: 0, knownMetadataHits: 0, persistentHits: 0, memoryHits: 0, discoverRequests: 0, discoverMetadataMatches: 0, newDetailRequests: 0, detailFailures: 0, finalVarietyMatches: 0 };
+    }
+
+    function secondaryNostrVarietyResolverState(candidates) {
+      const home = state.homeV14;
+      const source = Array.isArray(candidates) ? candidates : [];
+      const key = secondaryNostrVarietyResolverKey(source);
+      let runtime = home.secondaryNostrVarietyResolver;
+      if (!runtime || runtime.key !== key) {
+        runtime = home.secondaryNostrVarietyResolver = {
+          key,
+          candidates: source.map((candidate, index) => Object.assign({}, candidate, { nostrHotRank: index + 1 })),
+          statuses: {},
+          items: {},
+          failedKeys: {},
+          nextIndex: 0,
+          done: false,
+          retryOnlyFailed: false,
+          promise: null,
+          listeners: [],
+          discoverPrimed: false,
+          discoverPromise: null,
+          metrics: secondaryNostrVarietyEmptyMetrics()
+        };
+      }
+      return runtime;
+    }
+
+    function secondaryNostrVarietyQualifiedItems(runtime, filters, target) {
+      if (!runtime) return [];
+      const limit = Math.max(0, Number(target || SECONDARY_NOSTR_VARIETY_TARGET_MATCHES));
+      const selected = [];
+      (runtime.candidates || []).forEach((candidate) => {
+        if (selected.length >= limit) return;
+        const key = secondaryNostrVarietyCandidateKey(candidate);
+        if (!key || runtime.statuses[key] !== "valid" || !runtime.items[key]) return;
+        if (!secondaryNostrHotFilterMatches("variety", filters || homeCategoryDefaultFilters(), runtime.items[key])) return;
+        selected.push(runtime.items[key]);
+      });
+      return selected;
+    }
+
+    function secondaryNostrVarietyNotify(runtime) {
+      if (!runtime) return;
+      const defaultItems = secondaryNostrVarietyQualifiedItems(runtime, homeCategoryDefaultFilters(), SECONDARY_NOSTR_VARIETY_TARGET_MATCHES);
+      runtime.metrics.finalVarietyMatches = defaultItems.length;
+      if (state.homeV14 && state.homeV14.secondaryNostrVarietyResolver === runtime) {
+        state.homeV14.secondaryNostrVarietyMetrics = Object.assign({}, runtime.metrics, {
+          resolverKey: runtime.key,
+          done: !!runtime.done,
+          cacheEntries: Object.keys(nostrTmdbMetaRuntime().entries || {}).length,
+          cacheLoaded: !!nostrTmdbMetaRuntime().loaded
+        });
+        if (state.tvDiag) state.tvDiag.nostrVariety = state.homeV14.secondaryNostrVarietyMetrics;
+      }
+      (runtime.listeners || []).slice().forEach((listener) => {
+        if (!listener || typeof listener.onProgress !== "function") return;
+        const items = secondaryNostrVarietyQualifiedItems(runtime, listener.filters, listener.target);
+        try {
+          if (!listener.isCurrent || listener.isCurrent()) listener.onProgress(items, runtime);
+        } catch (e) {}
+      });
+    }
+
+    function secondaryNostrVarietyApplyResult(runtime, candidate, wrapped) {
+      if (!runtime || !candidate) return;
+      const key = secondaryNostrVarietyCandidateKey(candidate);
+      if (!key) return;
+      const record = wrapped && wrapped.ok ? wrapped.value : null;
+      const rank = Number(candidate.nostrHotRank || 0);
+      runtime.metrics.lastScannedRank = Math.max(Number(runtime.metrics.lastScannedRank || 0), rank);
+      if (record && (record.status === "valid" || record.status === "invalid")) {
+        runtime.statuses[key] = record.status;
+        if (record.status === "valid" && record.item) runtime.items[key] = record.item;
+        else delete runtime.items[key];
+        delete runtime.failedKeys[key];
+      } else if (record && record.status === "budget") {
+        runtime.detailBudgetExhausted = true;
+        delete runtime.statuses[key];
+        delete runtime.items[key];
+      } else {
+        delete runtime.statuses[key];
+        delete runtime.items[key];
+        runtime.failedKeys[key] = true;
+        runtime.metrics.detailFailures = Number(runtime.metrics.detailFailures || 0) + 1;
+      }
+    }
+
+    function secondaryNostrVarietyPrimeDiscover(runtime) {
+      if (!runtime) return Promise.resolve(runtime);
+      if (runtime.discoverPrimed) return Promise.resolve(runtime);
+      if (runtime.discoverPromise) return runtime.discoverPromise;
+      runtime.discoverPromise = Promise.resolve().then(async () => {
+        await ensureNostrTmdbMetaLoaded();
+        const candidates = Array.isArray(runtime.candidates) ? runtime.candidates : [];
+        const candidateMap = new Map();
+        candidates.forEach((candidate) => {
+          const key = secondaryNostrVarietyCandidateKey(candidate);
+          if (key && !candidateMap.has(key)) candidateMap.set(key, candidate);
+        });
+        const sources = secondaryFullCatalogSources("variety");
+        const memory = secondaryNostrVarietyMemoryCache();
+        const matched = new Set();
+        for (let sourceIndex = 0; sourceIndex < sources.length && matched.size < SECONDARY_NOSTR_VARIETY_TARGET_MATCHES; sourceIndex++) {
+          const source = sources[sourceIndex];
+          for (let page = 1; page <= 3 && matched.size < SECONDARY_NOSTR_VARIETY_TARGET_MATCHES; page++) {
+            runtime.metrics.discoverRequests = Number(runtime.metrics.discoverRequests || 0) + 1;
+            let body = null;
+            try { body = await requestJson(tmdbUrl(source, page), 18); } catch (e) { break; }
+            const results = Array.isArray(body && body.results) ? body.results : [];
+            if (!results.length) break;
+            results.forEach((raw, index) => {
+              const normalized = normalizeTmdb(raw, source, (page - 1) * 20 + index);
+              const key = homeNostrSignalKey(normalized);
+              const candidate = key && candidateMap.get(key);
+              if (!candidate || matched.has(key)) return;
+              const persistent = nostrTmdbMetaRuntime().entries[key];
+              if (memory[key] || persistent) {
+                matched.add(key);
+                return;
+              }
+              const metadata = nostrTmdbMetaFromItem(candidate, normalized);
+              if (!metadata) return;
+              const record = secondaryNostrVarietyRecordFromMetadata(candidate, metadata, Number(candidate.nostrHotRank || 0) - 1, "discover");
+              if (record.status !== "valid" && record.status !== "invalid") return;
+              runtime.metrics.discoverMetadataMatches = Number(runtime.metrics.discoverMetadataMatches || 0) + 1;
+              matched.add(key);
+              memory[key] = Promise.resolve(record);
+              nostrTmdbMetaPut(record.metadata, record.status);
+            });
+          }
+        }
+        runtime.discoverPrimed = true;
+        runtime.discoverPromise = null;
+        return runtime;
+      }).catch(() => {
+        runtime.discoverPrimed = true;
+        runtime.discoverPromise = null;
+        return runtime;
+      });
+      return runtime.discoverPromise;
+    }
+
+    function secondaryNostrVarietyScanShouldContinue(runtime) {
+      if (!runtime) return false;
+      if (runtime.detailBudgetExhausted) return false;
+      if (secondaryNostrVarietyQualifiedItems(runtime, homeCategoryDefaultFilters(), SECONDARY_NOSTR_VARIETY_TARGET_MATCHES).length < SECONDARY_NOSTR_VARIETY_TARGET_MATCHES) return true;
+      return (runtime.listeners || []).some((listener) => {
+        if (!listener) return false;
+        const filters = listener.filters || homeCategoryDefaultFilters();
+        const nonDefault = ["mediaType", "genre", "region", "year"].some((key) => filters[key] && filters[key] !== "all");
+        return nonDefault && secondaryNostrVarietyQualifiedItems(runtime, filters, listener.target).length < listener.target;
+      });
+    }
+
+    async function secondaryNostrVarietyResolveCandidate(candidate, query, index, runtime) {
+      const key = secondaryNostrVarietyCandidateKey(candidate);
+      if (!key) return { status: "failed", metadata: null, item: null, source: "" };
+      const known = secondaryNostrKnownItem(candidate, query);
+      const knownMetadata = nostrTmdbMetaFromItem(candidate, known);
+      if (knownMetadata) {
+        runtime.metrics.knownMetadataHits = Number(runtime.metrics.knownMetadataHits || 0) + 1;
+        const record = secondaryNostrVarietyRecordFromMetadata(candidate, knownMetadata, index, "known");
+        secondaryNostrVarietyMemoryCache()[key] = Promise.resolve(record);
+        return record;
+      }
+      await ensureNostrTmdbMetaLoaded();
+      const memory = secondaryNostrVarietyMemoryCache();
+      if (memory[key]) {
+        const memoryPromise = memory[key];
+        runtime.metrics.memoryHits = Number(runtime.metrics.memoryHits || 0) + 1;
+        const record = await Promise.resolve(memoryPromise);
+        if (record && (record.status === "valid" || record.status === "invalid")) {
+          const memorySource = record.source === "discover" ? "discover" : "cache";
+          const refreshed = record.metadata ? secondaryNostrVarietyRecordFromMetadata(candidate, record.metadata, index, memorySource) : record;
+          if (refreshed.item) refreshed.item.nostrMetadataSource = memorySource;
+          return refreshed;
+        }
+        if (memory[key] === memoryPromise) delete memory[key];
+      }
+      const persistent = nostrTmdbMetaRuntime().entries[key];
+      if (persistent) {
+        runtime.metrics.persistentHits = Number(runtime.metrics.persistentHits || 0) + 1;
+        const record = secondaryNostrVarietyRecordFromMetadata(candidate, persistent, index, "persistent");
+        if (record.status === "valid" || record.status === "invalid") {
+          if (record.item) record.item.nostrMetadataSource = "cache";
+          memory[key] = Promise.resolve(record);
+          return record;
+        }
+      }
+      if (!runtime.retryOnlyFailed && Number(runtime.metrics.newDetailRequests || 0) >= SECONDARY_NOSTR_VARIETY_MAX_NEW_DETAIL_REQUESTS) {
+        return { status: "budget", metadata: null, item: null, source: "budget" };
+      }
+      runtime.metrics.newDetailRequests = Number(runtime.metrics.newDetailRequests || 0) + 1;
+      const detailPromise = requestJson(secondaryNostrDetailUrl(candidate), 18)
+        .then((body) => nostrTmdbRecordFromDetail(candidate, body, "variety", index, "detail"))
+        .catch(() => ({ status: "failed", metadata: null, item: null, source: "detail" }));
+      memory[key] = detailPromise.then((record) => {
+        if (!record || (record.status !== "valid" && record.status !== "invalid")) {
+          if (memory[key]) delete memory[key];
+        }
+        return record;
+      });
+      return memory[key];
+    }
+
+    async function secondaryRunNostrVarietyResolver(runtime, query) {
+      await ensureNostrTmdbMetaLoaded();
+      const retryOnlyFailed = !!runtime.retryOnlyFailed;
+      while (runtime.nextIndex < runtime.candidates.length && (retryOnlyFailed ? Object.keys(runtime.failedKeys || {}).length > 0 : secondaryNostrVarietyScanShouldContinue(runtime))) {
+        const defaultMatches = secondaryNostrVarietyQualifiedItems(runtime, homeCategoryDefaultFilters(), SECONDARY_NOSTR_VARIETY_TARGET_MATCHES).length;
+        const batchSize = !retryOnlyFailed && defaultMatches < SECONDARY_NOSTR_VARIETY_TARGET_MATCHES
+          ? Math.min(SECONDARY_NOSTR_VARIETY_SCAN_BATCH_SIZE, Math.max(1, SECONDARY_NOSTR_VARIETY_TARGET_MATCHES - defaultMatches))
+          : SECONDARY_NOSTR_VARIETY_SCAN_BATCH_SIZE;
+        const batch = runtime.candidates.slice(runtime.nextIndex, runtime.nextIndex + batchSize);
+        runtime.nextIndex += batch.length;
+        runtime.metrics.candidatesScanned = Number(runtime.metrics.candidatesScanned || 0) + batch.length;
+        const pending = batch.filter((candidate) => {
+          const key = secondaryNostrVarietyCandidateKey(candidate);
+          return !!key && (retryOnlyFailed ? !!runtime.failedKeys[key] : !runtime.statuses[key]);
+        });
+        if (!pending.length) {
+          secondaryNostrVarietyNotify(runtime);
+          continue;
+        }
+        await weeklyMapLimit(pending, SECONDARY_NOSTR_HOT_DETAIL_CONCURRENCY, (candidate) => {
+          return secondaryNostrVarietyResolveCandidate(candidate, query, Number(candidate.nostrHotRank || 0) - 1, runtime);
+        }, (wrapped, candidate) => {
+          secondaryNostrVarietyApplyResult(runtime, candidate, wrapped);
+          secondaryNostrVarietyNotify(runtime);
+        });
+        if (retryOnlyFailed ? !Object.keys(runtime.failedKeys || {}).length : !secondaryNostrVarietyScanShouldContinue(runtime)) break;
+      }
+      runtime.retryOnlyFailed = false;
+      runtime.done = true;
+      secondaryNostrVarietyNotify(runtime);
+      await flushNostrTmdbMetaCache();
+      return runtime;
+    }
+
+    function secondaryNostrVarietyStartResolver(runtime, query) {
+      if (!runtime) return Promise.resolve(null);
+      if (runtime.promise && !runtime.done) return runtime.promise;
+      if (runtime.done && Object.keys(runtime.failedKeys || {}).length) {
+        runtime.nextIndex = 0;
+        runtime.done = false;
+        runtime.promise = null;
+        runtime.metrics = secondaryNostrVarietyEmptyMetrics();
+        runtime.retryOnlyFailed = true;
+      }
+      if (runtime.done && secondaryNostrVarietyScanShouldContinue(runtime)) {
+        runtime.done = false;
+        runtime.promise = null;
+      }
+      if (!runtime.promise) runtime.promise = secondaryRunNostrVarietyResolver(runtime, query).catch(() => runtime);
+      return runtime.promise;
+    }
+
+    async function secondaryLoadNostrVarietyPool(filters, query, target, options) {
+      const opts = options || {};
+      const candidates = secondaryNostrHotCandidates("variety");
+      const runtime = secondaryNostrVarietyResolverState(candidates);
+      const listener = {
+        filters: Object.assign({}, homeCategoryDefaultFilters(), filters || {}),
+        target: Math.max(0, Number(target || SECONDARY_NOSTR_VARIETY_TARGET_MATCHES)),
+        isCurrent: typeof opts.isCurrent === "function" ? opts.isCurrent : null,
+        onProgress: typeof opts.onProgress === "function" ? opts.onProgress : null
+      };
+      runtime.listeners.push(listener);
+      try {
+        await secondaryNostrVarietyPrimeDiscover(runtime);
+        secondaryNostrVarietyNotify(runtime);
+        await secondaryNostrVarietyStartResolver(runtime, query);
+        return secondaryNostrVarietyQualifiedItems(runtime, listener.filters, listener.target);
+      } finally {
+        runtime.listeners = runtime.listeners.filter((entry) => entry !== listener);
+      }
+    }
+
     async function secondaryNostrEnrichCandidate(hotItem, listId, query, index) {
       const known = secondaryNostrKnownItem(hotItem, query);
       if (known && secondaryNostrItemAllowed(listId, known)) {
-        return Object.assign({}, known, { source: "nostr-hot", listId, listTitle: listId === "anime" ? "动画" : listId === "tv" ? "电视剧" : "电影" });
+        const knownItem = nostrHotSignalOverlay(known, hotItem, listId);
+        if (knownItem) knownItem.nostrMetadataSource = "known";
+        return knownItem;
       }
       const key = homeNostrSignalKey(hotItem);
       if (!key) return null;
@@ -27294,7 +27780,7 @@ utils.encode = function encode(arr, enc) {
             ? nostrTmdbRecordFromMetadata(hotItem, memoryRecord.metadata, listId, index, "cache")
             : memoryRecord;
           return refreshed.status === "valid"
-            ? Object.assign({}, refreshed.item, { listId, listTitle: listId === "anime" ? "动画" : listId === "tv" ? "电视剧" : "电影" })
+            ? nostrHotSignalOverlay(refreshed.item, hotItem, listId)
             : null;
         }
         if (memory[key] === memoryPromise) delete memory[key];
@@ -27305,7 +27791,7 @@ utils.encode = function encode(arr, enc) {
         if (record.status === "valid" || record.status === "invalid") {
           memory[key] = Promise.resolve(record);
           return record.status === "valid"
-            ? Object.assign({}, record.item, { listId, listTitle: listId === "anime" ? "动画" : listId === "tv" ? "电视剧" : "电影" })
+            ? nostrHotSignalOverlay(record.item, hotItem, listId)
             : null;
         }
       }
@@ -27320,7 +27806,7 @@ utils.encode = function encode(arr, enc) {
       });
       const record = await Promise.resolve(memory[key]);
       return record && record.status === "valid"
-        ? Object.assign({}, record.item, { listId, listTitle: listId === "anime" ? "动画" : listId === "tv" ? "电视剧" : "电影" })
+        ? nostrHotSignalOverlay(record.item, hotItem, listId)
         : null;
     }
 
@@ -27376,12 +27862,12 @@ utils.encode = function encode(arr, enc) {
       query.nostrHotItems = uniqueMedia(Array.isArray(items) ? items : []);
       const fallback = (query.items || []).filter((item) => item && item.source !== "nostr-hot");
       query.items = uniqueMedia(query.nostrHotItems.concat(fallback));
-      const progressiveAnime = normalizeLegacyCategoryId(id) === "anime";
-      if (progressiveAnime && query.nostrHotItems.length && !query.loaded) {
+      const progressiveCategory = ["anime", "variety"].includes(normalizeLegacyCategoryId(id));
+      if (progressiveCategory && query.nostrHotItems.length && !query.loaded) {
         query.loaded = true;
         query.error = "";
       }
-      if (query.loaded || progressiveAnime && query.nostrHotItems.length) {
+      if (query.loaded || progressiveCategory && query.nostrHotItems.length) {
         renderSecondaryCatalog();
         restoreSecondaryNostrGridFocus(focus);
       }
@@ -27416,6 +27902,22 @@ utils.encode = function encode(arr, enc) {
             commitSecondaryNostrHotItems(id, scanFilters, query, generation, qualifiedAnime);
           }
           return qualifiedAnime;
+        } finally {
+          if (Number(query.nostrHotGeneration || 0) === generation) query.nostrHotLoading = false;
+        }
+      }
+      if (id === "variety") {
+        try {
+          const qualifiedVariety = await secondaryLoadNostrVarietyPool(scanFilters, query, SECONDARY_NOSTR_VARIETY_TARGET_MATCHES, {
+            isCurrent: () => secondaryNostrTaskIsCurrent(id, scanFilters, query, generation),
+            onProgress: (items) => commitSecondaryNostrHotItems(id, scanFilters, query, generation, items)
+          });
+          if (secondaryNostrTaskIsCurrent(id, scanFilters, query, generation)) {
+            query.nostrHotItems = uniqueMedia(qualifiedVariety);
+            query.nostrHotLoaded = true;
+            commitSecondaryNostrHotItems(id, scanFilters, query, generation, qualifiedVariety);
+          }
+          return qualifiedVariety;
         } finally {
           if (Number(query.nostrHotGeneration || 0) === generation) query.nostrHotLoading = false;
         }
@@ -27485,7 +27987,7 @@ utils.encode = function encode(arr, enc) {
         const nostrItem = item && item.source === "nostr-hot";
         return (filters.mediaType === "all" || (!nostrItem && serverFilters.has("mediaType")) || secondaryItemMediaType(item) === filters.mediaType)
         && (filters.genre === "all" || (!nostrItem && serverFilters.has("genre")) || secondaryItemGenreIds(item).includes(filters.genre))
-        && (filters.region === "all" || (!nostrItem && serverFilters.has("region")) || secondaryItemRegions(item).includes(filters.region))
+        && (filters.region === "all" || (!nostrItem && serverFilters.has("region")) || secondaryRegionMatches(item, filters.region))
         && (filters.year === "all" || (!nostrItem && serverFilters.has("year")) || secondaryYearMatches(item, filters.year));
       });
       const metric = (item, key) => Number(item && (key ? item[key] : item.popularity || item.people || item.count) || 0);
@@ -28762,18 +29264,21 @@ utils.encode = function encode(arr, enc) {
       const weeklyUpdate = (weeklyHome || weekly)
         ? String(item.weeklyUpdateText || "").trim()
         : "";
-      const tvEpisodeCard = !people && String(item && item.mediaType || "").toLowerCase() === "tv" && !!tvDetailCacheId(item);
+      const isVarietyCard = normalizeLegacyCategoryId(item && (item.listId || item.categoryId || item.category) || "") === "variety";
+      const hasNostrPeople = item && item.source === "nostr-hot" && people > 0;
+      const tvEpisodeCard = String(item && item.mediaType || "").toLowerCase() === "tv" && !!tvDetailCacheId(item);
       const initialTvDetail = tvEpisodeCard ? tvDetailCacheValue(item) || item.tvDetail || item.weeklyDetail || item.heroDetail || null : null;
-      const initialTvEpisodeStatus = tvEpisodeCard ? tvEpisodeStatusLabel(initialTvDetail) : "";
+      const initialTvEpisodeStatus = tvEpisodeCard ? (isVarietyCard ? varietyEpisodeStatusLabel(initialTvDetail) : tvEpisodeStatusLabel(initialTvDetail)) : "";
       const movieReleaseStatus = movieReleaseStatusText(item, weeklyHome || weekly ? weeklyUpdate : undefined);
       const airStatusText = weeklyUpdate || initialTvEpisodeStatus || movieReleaseStatus;
       const airStatusClass = weeklyUpdate ? "card-air-status weekly-air-status" : "card-air-status";
       const airStatusHtml = (weeklyUpdate || tvEpisodeCard || movieReleaseStatus)
         ? `<div class="${airStatusClass}"${airStatusText ? "" : " hidden"}>${escapeHtml(airStatusText)}</div>`
         : "";
+      const hasAirStatus = !!airStatusText;
       const searchResult = opts.searchResult === true;
       const searchQuery = String(opts.searchQuery || "").trim();
-      button.className = "card focusable" + (people > 0 ? " has-people" : "") + (recent ? " recent-card" : "") + (recentWatching ? " recent-watching-card" : "") + (landscape ? " landscape-card" : "") + (home ? " home-card" : "") + (weeklyHome ? " home-weekly-card" : "") + (weeklyUpdate ? " has-weekly-update" : "") + (weekly ? " weekly-card" : "");
+      button.className = "card focusable" + (hasNostrPeople ? " has-people" : "") + (hasAirStatus ? " has-air-status" : "") + (recent ? " recent-card" : "") + (recentWatching ? " recent-watching-card" : "") + (landscape ? " landscape-card" : "") + (home ? " home-card" : "") + (weeklyHome ? " home-weekly-card" : "") + (weeklyUpdate ? " has-weekly-update" : "") + (weekly ? " weekly-card" : "");
       button.type = "button";
       button.dataset.cardIndex = String(index || 0);
       if (key) button.dataset.mediaKey = key;
@@ -28801,7 +29306,7 @@ utils.encode = function encode(arr, enc) {
       };
       const progress = Math.min(100, Math.max(0, Number(item.progress || 0)));
       button.innerHTML = recent ? `
-        <div class="poster-wrap recent-poster-wrap">
+        <div class="poster-wrap recent-poster-wrap${hasAirStatus ? " has-air-status" : ""}">
           <img class="poster" alt="" ${imageAttrs(posterSrc, imageOpt)}>
           ${airStatusHtml}
         </div>
@@ -28812,9 +29317,9 @@ utils.encode = function encode(arr, enc) {
         </div>
         ${progress > 0 ? `<div class="recent-progress" aria-hidden="true"><span style="--recent-progress:${escapeAttr(progress + "%")}"></span></div>` : ""}
       ` : `
-        <div class="poster-wrap">
+        <div class="poster-wrap${hasAirStatus ? " has-air-status" : ""}">
           <img class="poster" alt="" ${imageAttrs(posterSrc, imageOpt)}>
-          ${people > 0 ? `<span class="card-people">${escapeHtml(people)}人</span>` : ""}
+          ${hasNostrPeople ? `<span class="card-people">${escapeHtml(people)}人</span>` : ""}
           ${recentWatching && !home && !weekly ? `<span class="recent-batch-indicator" aria-hidden="true"></span>` : ""}
           ${recentWatching ? `<span class="recent-delete-indicator" aria-hidden="true">🗑</span>` : ""}
           ${home && rating ? `<span class="rating-badge">${escapeHtml(rating)}</span>` : ""}
@@ -31630,6 +32135,34 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       }
       if (lastEpisode > 0) return `更新至 ${lastEpisode} 集`;
       return "";
+    }
+
+    function varietyEpisodeStatusLabel(detail) {
+      if (!detail || typeof detail !== "object") return "";
+      const status = String(detail.status || "").trim().toLowerCase();
+      const ended = status === "ended";
+      const updating = status === "returning series";
+      if (!ended && !updating) return "";
+      const seasons = Array.isArray(detail.seasons) ? detail.seasons.filter((season) => Number(season && season.season_number || 0) > 0) : [];
+      const seasonCount = Math.max(Number(detail.number_of_seasons || 0), seasons.length);
+      const last = detail.last_episode_to_air && typeof detail.last_episode_to_air === "object" ? detail.last_episode_to_air : null;
+      const lastSeason = Number(last && last.season_number || 0);
+      const lastEpisode = Number(last && last.episode_number || 0);
+      const currentSeason = lastSeason > 0 ? lastSeason : seasonCount === 1 ? 1 : 0;
+      const seasonInfo = seasons.find((season) => Number(season && season.season_number || 0) === currentSeason);
+      const knownEpisodeCount = lastEpisode > 0
+        ? lastEpisode
+        : Number(seasonInfo && (seasonInfo.episode_count || seasonInfo.number_of_episodes) || 0) > 0
+          ? Number(seasonInfo.episode_count || seasonInfo.number_of_episodes)
+          : seasonCount === 1 && Number(detail.number_of_episodes || 0) > 0
+            ? Number(detail.number_of_episodes)
+            : 0;
+      const multiSeason = seasonCount > 1 || currentSeason > 1;
+      if (knownEpisodeCount > 0) {
+        if (ended) return multiSeason ? `第${currentSeason}季 · ${knownEpisodeCount}期全` : `全 ${knownEpisodeCount}期`;
+        if (updating) return multiSeason ? `第${currentSeason}季 · 更新至 ${knownEpisodeCount}期` : `更新至 ${knownEpisodeCount}期`;
+      }
+      return ended ? "已完结" : "更新中";
     }
 
     function detailDateLabel(item, date) {
@@ -40927,6 +41460,74 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       check("NOSTR_ANIME_PERSISTENT_META_READ_SHARED", sharedAnimeResolverSource.includes("secondaryNostrAnimeMemoryCache") && sharedAnimeResolverSource.includes("nostrTmdbMetaRuntime().entries") && sharedAnimeResolverSource.includes("ensureNostrTmdbMetaLoaded"), "anime reads the same runtime, memory, persistent sequence", "STATIC_HOOK");
       check("NOSTR_ANIME_PERSISTENT_META_WRITE_SHARED", sharedAnimeResolverSource.includes("nostrTmdbRecordFromDetail") && sharedAuthoritySource.includes("nostrTmdbMetaPut"), "anime detail writes through the shared metadata authority", "STATIC_HOOK");
       check("NOSTR_CROSS_CATEGORY_SINGLE_META_CACHE", sharedMovieCold.detailRequests === 1 && sharedMovieWarm.detailRequests === 0 && sharedTvCold.detailRequests === 1 && sharedTvWarm.detailRequests === 0 && sharedAnimeCold.detailRequests === 1 && sharedAnimeWarm.detailRequests === 0 && Object.keys(sharedMetaStore).length === 3, "movie/tv/anime use one metadata store with warm detail reuse", "RUNTIME_MOCK");
+      const varietyMockCandidate = (rank) => ({ mediaType: "tv", tmdbId: String(880000 + rank), title: `Mock Variety ${rank}`, pic: "mock-poster", people: 5000 - rank, nostrHotRank: rank });
+      const varietyMockMetadata = (candidate, valid, region) => ({ version: NOSTR_TMDB_META_CACHE_VERSION, mediaType: "tv", tmdbId: candidate.tmdbId, genreIds: valid ? ["10764"] : ["18"], regions: [region || "CN"], releaseDate: "2020-01-01", fetchedAt: Date.now() });
+      const varietyMockScan = (validRanks, discoverRanks, failureRanks, regionOverrides) => {
+        const candidates = Array.from({ length: 150 }, (_, index) => varietyMockCandidate(index + 1));
+        const valid = validRanks || new Set();
+        const discover = discoverRanks || new Set();
+        const failures = failureRanks || new Set();
+        const runtime = { candidates, statuses: {}, items: {} };
+        const items = [];
+        let detailRequests = 0;
+        let discoverMatches = 0;
+        let lastScannedRank = 0;
+        for (let index = 0; index < candidates.length && items.length < SECONDARY_NOSTR_VARIETY_TARGET_MATCHES; index++) {
+          const candidate = candidates[index];
+          const rank = index + 1;
+          lastScannedRank = rank;
+          const source = discover.has(rank) ? "discover" : "detail";
+          if (source === "discover") discoverMatches += 1;
+          else {
+            detailRequests += 1;
+            if (detailRequests > SECONDARY_NOSTR_VARIETY_MAX_NEW_DETAIL_REQUESTS || failures.has(rank)) continue;
+          }
+          const metadata = varietyMockMetadata(candidate, valid.has(rank), regionOverrides && regionOverrides[rank]);
+          const record = secondaryNostrVarietyRecordFromMetadata(candidate, metadata, index, source);
+          runtime.statuses[homeNostrSignalKey(candidate)] = record.status;
+          if (record.item) {
+            runtime.items[homeNostrSignalKey(candidate)] = record.item;
+            items.push(record.item);
+          }
+        }
+        return { items, detailRequests, discoverMatches, lastScannedRank, runtime };
+      };
+      const varietyValidRanksA = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 79, 80, 84, 89, 90, 114, 116, 120, 140]);
+      const varietyDiscoverAll = new Set(Array.from({ length: 150 }, (_, index) => index + 1));
+      const varietyColdA = varietyMockScan(varietyValidRanksA, varietyDiscoverAll, new Set(), {});
+      const varietyDiscoverB = varietyMockScan(varietyValidRanksA, varietyDiscoverAll, new Set(), {});
+      const varietyDiscoverMissC = new Set(Array.from({ length: 150 }, (_, index) => index + 1).filter((rank) => rank !== 79));
+      const varietyDetailFallbackC = varietyMockScan(varietyValidRanksA, varietyDiscoverMissC, new Set(), {});
+      const varietyRegionD = varietyMockScan(new Set([1]), varietyDiscoverAll, new Set(), { 1: "US" });
+      const varietyFailureE = varietyMockScan(new Set(Array.from({ length: 19 }, (_, index) => index + 1)), new Set(Array.from({ length: 19 }, (_, index) => index + 1).filter((rank) => rank !== 2)), new Set([2]), {});
+      const varietyResolverSource = String(secondaryLoadNostrVarietyPool) + String(secondaryRunNostrVarietyResolver) + String(secondaryNostrVarietyResolveCandidate) + String(secondaryNostrVarietyPrimeDiscover);
+      const varietyCardSource = String(mediaCard) + String(updateTvEpisodeStatusCards) + String(nostrHotSignalOverlay);
+      check("NOSTR_VARIETY_CASE_A_COLD", varietyColdA.items.length === 18 && varietyColdA.items[0].nostrHotRank === 1 && varietyColdA.items[17].nostrHotRank === 116 && varietyColdA.items.every((item, index) => Number(item.nostrHotRank) < Number((varietyColdA.items[index - 1] || {}).nostrHotRank || 0) ? false : true), "Top150 variety mock reaches 18 in original Nostr order", "RUNTIME_MOCK");
+      check("NOSTR_VARIETY_CASE_B_DISCOVER", varietyDiscoverB.items.length === 18 && varietyDiscoverB.detailRequests < 18 && varietyDiscoverB.discoverMatches > 0, "Discover metadata avoids one-detail-per-candidate scanning", "RUNTIME_MOCK");
+      check("NOSTR_VARIETY_CASE_C_DETAIL_FALLBACK", varietyDetailFallbackC.items.some((item) => Number(item.nostrHotRank) === 79) && varietyDetailFallbackC.detailRequests === 1, "a Discover miss can still be recovered by Nostr-order detail", "RUNTIME_MOCK");
+      check("NOSTR_VARIETY_CASE_D_REGION_REJECT", varietyRegionD.items.length === 1 && !secondaryNostrHotFilterMatches("variety", { mediaType: "all", genre: "all", region: "CN", year: "all" }, varietyRegionD.items[0]), "genre-valid US item is rejected by the selected region rule", "RUNTIME_MOCK");
+      check("NOSTR_VARIETY_CASE_E_FAILURE_CONTINUES", varietyFailureE.items.length === 18 && varietyFailureE.detailRequests === 1, "one failed detail does not abort the variety scan", "RUNTIME_MOCK");
+      check("NOSTR_VARIETY_CANONICAL_DISCOVER", varietyResolverSource.includes('secondaryFullCatalogSources("variety")') && varietyResolverSource.includes("page <= 3") && varietyResolverSource.includes("with_genres") === false && String(secondaryFullCatalogSources).includes('with_genres: "10764|10767"'), "variety resolver reuses the canonical OR Discover source with a three-page cap", "STATIC_HOOK");
+      check("NOSTR_VARIETY_DETAIL_BUDGET", varietyResolverSource.includes("SECONDARY_NOSTR_VARIETY_MAX_NEW_DETAIL_REQUESTS") && SECONDARY_NOSTR_VARIETY_MAX_NEW_DETAIL_REQUESTS < SECONDARY_NOSTR_VARIETY_MAX_SCAN_CANDIDATES, "variety detail fallback has a bounded adaptive budget", "STATIC_HOOK");
+      check("NOSTR_VARIETY_SHARED_HOME_SECONDARY", String(loadHomeCategoryNostrPool).includes("secondaryLoadNostrVarietyPool") && String(secondaryLoadNostrHotItems).includes("secondaryLoadNostrVarietyPool"), "Home and Secondary use the shared variety resolver", "STATIC_HOOK");
+      const overlayMock = nostrHotSignalOverlay({ source: "tmdb", mediaType: "tv", tmdbId: "99004", title: "Signal Variety", pic: "mock-poster" }, { people: 321, count: 321, latest: "2026-09-24", lastEventAt: "2026-09-24T00:00:00Z", nostrHotRank: 7 }, "variety");
+      check("NOSTR_SIGNAL_OVERLAY_PRESERVED", overlayMock && overlayMock.source === "nostr-hot" && overlayMock.people === 321 && overlayMock.count === 321 && overlayMock.nostrHotRank === 7 && varietyCardSource.includes('item.source === "nostr-hot"'), "Nostr people/count/latest/rank survive metadata enrichment and gate the badge", "RUNTIME_MOCK");
+      check("VARIETY_REGION_COMPOUND_MATCH", secondaryRegionMatches({ originCountries: ["HK"] }, "HK|TW") && secondaryRegionMatches({ originCountries: ["TW"] }, "HK|TW") && !secondaryRegionMatches({ originCountries: ["US"] }, "HK|TW") && String(secondaryFullCatalogSources("variety")[0].params.with_genres) === "10764|10767", "港台 is an item-level OR match and canonical variety uses genre OR", "RUNTIME_MOCK");
+      check("VARIETY_STATUS_LABELS", varietyEpisodeStatusLabel({ status: "Returning Series", last_episode_to_air: { season_number: 1, episode_number: 12 }, number_of_seasons: 1 }) === "更新至 12期"
+        && varietyEpisodeStatusLabel({ status: "Ended", last_episode_to_air: { season_number: 1, episode_number: 12 }, number_of_seasons: 1 }) === "全 12期"
+        && varietyEpisodeStatusLabel({ status: "Returning Series", last_episode_to_air: { season_number: 8, episode_number: 12 }, number_of_seasons: 8 }) === "第8季 · 更新至 12期"
+        && varietyEpisodeStatusLabel({ status: "Ended", last_episode_to_air: { season_number: 8, episode_number: 12 }, number_of_seasons: 8 }) === "第8季 · 12期全"
+        && varietyEpisodeStatusLabel({ status: "Returning Series" }) === "更新中"
+        && varietyEpisodeStatusLabel({ status: "Ended" }) === "已完结", "variety status uses 期 and does not guess missing episode data", "RUNTIME_MOCK");
+      check("VARIETY_FILTER_SCHEMA_NO_SORT", JSON.stringify(SECONDARY_FILTER_SCHEMA.variety) === JSON.stringify(["region", "year"]), "variety exposes only region and year filters", "STATIC_HOOK");
+      check("VARIETY_RELEASE_FILTERED", isReleaseFilteredCatalogId("variety") && filterReleasedCatalogItems("variety", [{ mediaType: "tv", firstAirDate: weeklyAddDays(today(), 1) }]).length === 0, "future variety releases follow the existing TV-like visibility rule", "RUNTIME_MOCK");
+      const secondaryPagingSource = String(secondaryCanLoadMore) + String(secondaryLoadNextPage) + String(loadMoreVisible) + String(maybeAppendGridForFocus) + String(canLoadMore) + String(observeInfiniteScroll);
+      check("VARIETY_PAGINATION_AUTHORITY", String(secondaryCanLoadMore).includes("!query.loading") && String(secondaryCanLoadMore).includes("!query.error") && String(secondaryCanLoadMore).includes("query.hasMore") && String(secondaryLoadNextPage).includes("secondaryCanLoadMore"), "variety uses the shared explicit secondary pagination gate", "STATIC_HOOK");
+      check("VARIETY_SHORT_PAGE_AUTOFILL", String(renderSecondaryCatalog).includes("requestAnimationFrame(ensureScrollablePage") && String(ensureScrollablePage).includes("loadMoreVisible") && String(loadMoreVisible).includes("secondaryCanLoadMore"), "short variety pages can fill the viewport through the shared gate", "STATIC_HOOK");
+      check("VARIETY_ERROR_AUTO_RETRY_BLOCKED", secondaryPagingSource.includes("!query.error") && String(loadMoreVisible).includes("secondaryCanLoadMore") && String(maybeAppendGridForFocus).includes("secondaryCanLoadMore") && String(canLoadMore).includes("secondaryCanLoadMore"), "error state blocks ensure, intersection, focus and arrow pagination paths", "STATIC_HOOK");
+      const varietyHistoryAuthority = String(openSecondaryCatalog) + String(requestCloseSecondaryCatalog) + String(closeSecondaryCatalog) + String(handleSecondaryBackKey);
+      check("VARIETY_HISTORY_BACK_AUTHORITY", String(openSecondaryCatalog).includes("isSecondaryHistoryEntry") && String(openSecondaryCatalog).includes("history.pushState") && String(requestCloseSecondaryCatalog).includes("history.back") && String(closeSecondaryCatalog).includes("secondaryReturn") && String(closeSecondaryCatalog).includes("applyHomeScrollTop") && String(handleSecondaryBackKey).includes("requestCloseSecondaryCatalog"), "variety reuses the shared Secondary history, Back and Home-restore authority", "STATIC_HOOK");
+      check("VARIETY_NOSTR_FIRST_DEDUPE", varietyHistoryAuthority && String(commitSecondaryNostrHotItems).includes("query.nostrHotItems.concat(fallback)") && String(loadHomeCategoryFeed).includes("nostrItems.concat(tmdbItems)"), "Nostr variety items precede TMDB fallback and both merge through uniqueMedia", "STATIC_HOOK");
       const movieToday = today();
       const movieYesterday = weeklyAddDays(movieToday, -1);
       const movieFuture = weeklyAddDays(movieToday, 1);
@@ -40946,6 +41547,143 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         && movieReleaseStatusText({ mediaType: "movie", releaseDate: "" }) === "", "movie release status covers past, today, future, next year and empty dates", "RUNTIME_MOCK");
       check("MOVIE_WEEKLY_STATUS_PRECEDENCE", movieReleaseStatusText({ mediaType: "movie", releaseDate: movieToday, weeklyUpdateText: "本周新片 · 9月24日上映" }, "本周新片 · 9月24日上映") === "", "weekly movie text suppresses the ordinary release label", "RUNTIME_MOCK");
       check("MOVIE_RELEASE_STATUS_NO_DETAIL_REQUEST", !String(movieReleaseStatusText).includes("requestJson") && !String(mediaCard).includes("secondaryNostrDetailUrl"), "movie release status uses normalized card data only", "STATIC_HOOK");
+      const detailPrepareSource = String(prepareDetailPlayback);
+      const detailRequestSource = String(requestDetailPlayback);
+      const detailPlayStateSource = String(detailContinuePlayStateFor);
+      const detailCanonicalPrepareSource = String(prepareDetailPlaybackForDetail);
+      const detailCanonicalSource = String(resolveCanonicalResourceTitle);
+      const detailColorStyle = $("detail-action-colors-v1");
+      const detailColorSource = detailColorStyle ? String(detailColorStyle.textContent || "") : "";
+      const unreleasedGateAt = detailPrepareSource.indexOf("const unreleased = detailUnreleasedInfo(item);");
+      const firstPlayPrepareAt = detailPrepareSource.indexOf('decision: "FIRST_PLAY_PREPARE"');
+      const backgroundPreparingAt = detailPrepareSource.indexOf('showDirectPlayStatus(run.token, "BACKGROUND_PREPARING"');
+      const curatedPrepareAt = detailPrepareSource.indexOf("resolveCuratedPlaybackCandidate(item, run)");
+      const directPrepareAt = detailPrepareSource.indexOf("playBestQuark(item, {");
+      const preparationStartedAt = detailPrepareSource.indexOf("run.preparationStarted = true;");
+      const requestUnreleasedAt = detailRequestSource.indexOf("detailUnreleasedInfo(item).unreleased");
+      const requestDirectAt = detailRequestSource.indexOf("playBestQuark(item");
+      const requestStatusAt = detailRequestSource.indexOf("showDirectPlayStatus(");
+      const gateBlock = unreleasedGateAt >= 0 && preparationStartedAt > unreleasedGateAt
+        ? detailPrepareSource.slice(unreleasedGateAt, preparationStartedAt) : "";
+      const futureDetailDate = weeklyAddDays(today(), 1);
+      const futureMovieDetail = { mediaType: "movie", releaseDate: futureDetailDate };
+      const futureTvDetail = { mediaType: "tv", firstAirDate: futureDetailDate };
+      const futureTvSnakeDetail = { mediaType: "tv", first_air_date: futureDetailDate };
+      const historyFutureItem = { mediaType: "movie", title: "未来历史片", tmdbId: "900001", releaseDate: futureDetailDate };
+      const historyFuture = {
+        source: "history",
+        title: historyFutureItem.title,
+        mediaType: "movie",
+        nativeHistoryRaw: {},
+        nativeHistoryKey: "future-history",
+        historyReplayKind: "URL_NATIVE",
+        position: 100
+      };
+      const detailStateSnapshot = {
+        selected: state.selected,
+        detailMode: state.detailMode,
+        detailModeItemKey: state.detailModeItemKey,
+        detailHistory: state.detailHistory,
+        detailPlayback: state.detailPlayback
+      };
+      let historyPriorityState = "";
+      let unreleasedTerminalState = "";
+      const playStateCases = {};
+      try {
+        state.selected = historyFutureItem;
+        state.detailMode = "FIRST_PLAY";
+        state.detailModeItemKey = panSearchItemKey(historyFutureItem);
+        state.detailHistory = null;
+        state.detailPlayback = {
+          item: historyFutureItem,
+          itemKey: panSearchItemKey(historyFutureItem),
+          active: false,
+          phase: "UNRELEASED",
+          settledResult: "UNRELEASED",
+          preparationStarted: false
+        };
+        unreleasedTerminalState = detailContinuePlayStateFor(historyFutureItem);
+        state.detailMode = "CONTINUE";
+        state.detailHistory = historyFuture;
+        state.detailPlayback = null;
+        historyPriorityState = detailContinuePlayStateFor(historyFutureItem);
+        const releasedDetailItem = { mediaType: "movie", title: "已上映状态片", tmdbId: "900002", releaseDate: today() };
+        state.selected = releasedDetailItem;
+        state.detailMode = "FIRST_PLAY";
+        state.detailModeItemKey = panSearchItemKey(releasedDetailItem);
+        state.detailHistory = null;
+        state.detailPlayback = {
+          item: releasedDetailItem,
+          itemKey: panSearchItemKey(releasedDetailItem),
+          active: true,
+          phase: "CONTINUE_GATE",
+          settledResult: "",
+          preparationStarted: false
+        };
+        playStateCases.idle = detailContinuePlayStateFor(releasedDetailItem);
+        state.detailPlayback.phase = "PREPARING";
+        state.detailPlayback.preparationStarted = true;
+        playStateCases.preparing = detailContinuePlayStateFor(releasedDetailItem);
+        state.detailPlayback.active = false;
+        state.detailPlayback.phase = "NO_RESOURCE";
+        state.detailPlayback.settledResult = "NO_RESOURCE";
+        playStateCases.failed = detailContinuePlayStateFor(releasedDetailItem);
+      } finally {
+        state.selected = detailStateSnapshot.selected;
+        state.detailMode = detailStateSnapshot.detailMode;
+        state.detailModeItemKey = detailStateSnapshot.detailModeItemKey;
+        state.detailHistory = detailStateSnapshot.detailHistory;
+        state.detailPlayback = detailStateSnapshot.detailPlayback;
+      }
+      check("UNRELEASED_MOVIE_RULE", detailUnreleasedInfo(futureMovieDetail).unreleased && !detailUnreleasedInfo({ mediaType: "movie", releaseDate: today() }).unreleased && !detailUnreleasedInfo({ mediaType: "movie", releaseDate: "2026-02-31" }).unreleased, "future movie date blocks while today and invalid dates do not", "RUNTIME_MOCK");
+      check("UNRELEASED_TV_RULE", detailUnreleasedInfo(futureTvDetail).unreleased && detailUnreleasedInfo(futureTvSnakeDetail).unreleased, "TV first-air date accepts camelCase and snake_case fields", "RUNTIME_MOCK");
+      check("UNRELEASED_TODAY_NOT_BLOCKED", !detailUnreleasedInfo({ mediaType: "tv", firstAirDate: today() }).unreleased, "today is treated as released", "RUNTIME_MOCK");
+      check("UNRELEASED_UNKNOWN_DATE_NOT_BLOCKED", !detailUnreleasedInfo({ mediaType: "movie", releaseDate: "" }).unreleased && !detailUnreleasedInfo({ mediaType: "tv" }).unreleased, "empty or unknown dates do not block", "RUNTIME_MOCK");
+      check("UNRELEASED_NEXT_EPISODE_IGNORED", !detailUnreleasedInfo({ mediaType: "tv", next_episode_to_air: { air_date: futureDetailDate } }).unreleased && !detailUnreleasedInfo({ mediaType: "tv", releaseDate: futureDetailDate, weeklyNextEpisodeDate: futureDetailDate, next_episode_to_air: { air_date: futureDetailDate } }).unreleased, "next_episode_to_air and its normalized weekly date cannot trigger the detail gate", "RUNTIME_MOCK");
+      check("TODAY_RELEASE_PREPARES", !detailUnreleasedInfo({ mediaType: "movie", releaseDate: today() }).unreleased && detailPrepareSource.includes('decision: "FIRST_PLAY_PREPARE"'), "today release remains on the normal first-play path", "RUNTIME_MOCK");
+      check("UNKNOWN_DATE_PREPARES", !detailUnreleasedInfo({ mediaType: "movie", releaseDate: "not-a-date" }).unreleased && detailPrepareSource.includes("run.preparationStarted = true"), "unknown release date remains eligible for preparation", "RUNTIME_MOCK");
+      check("NEXT_EPISODE_FUTURE_NOT_BLOCKED", !detailUnreleasedInfo({ mediaType: "tv", firstAirDate: weeklyAddDays(today(), -1), next_episode_to_air: { air_date: futureDetailDate } }).unreleased, "a previously premiered TV show is not blocked by a future next episode", "RUNTIME_MOCK");
+      check("UNRELEASED_GATE_ADDED", typeof detailUnreleasedInfo === "function" && typeof settleDetailUnreleased === "function" && unreleasedGateAt >= 0, "detail has an explicit future-date gate and terminal helper", "STATIC_HOOK");
+      check("UNRELEASED_GATE_POSITION", unreleasedGateAt >= 0 && firstPlayPrepareAt > unreleasedGateAt && backgroundPreparingAt > unreleasedGateAt && curatedPrepareAt > unreleasedGateAt && directPrepareAt > unreleasedGateAt, "gate precedes FIRST_PLAY_PREPARE, status, Curated and Direct preparation", "STATIC_HOOK");
+      check("UNRELEASED_GATE_FINAL_STATE", gateBlock.includes('settleDetailUnreleased(item, "unreleased_gate")') && String(settleDetailUnreleased).includes('settleDetailPlayback(run, "UNRELEASED"') && String(settleDetailUnreleased).includes('run.error = ""'), "unreleased settles as a non-error terminal run", "STATIC_HOOK");
+      check("UNRELEASED_NO_PREPARING_FLASH", detailPrepareSource.includes('phase: "CONTINUE_GATE"') && gateBlock && !gateBlock.includes("BACKGROUND_PREPARING") && !gateBlock.includes("run.preparationStarted = true"), "future item stays idle/blue-gray until it becomes unreleased", "STATIC_HOOK");
+      check("UNRELEASED_NO_CURATED_OR_DIRECT", unreleasedGateAt < curatedPrepareAt && unreleasedGateAt < directPrepareAt && requestUnreleasedAt >= 0 && requestUnreleasedAt < requestDirectAt, "automatic and manual paths stop before Curated/Direct resource search", "STATIC_HOOK");
+      check("UNRELEASED_NO_CURATED", unreleasedGateAt < curatedPrepareAt && gateBlock.indexOf("resolveCuratedPlaybackCandidate") < 0, "unreleased gate cannot start Curated", "STATIC_HOOK");
+      check("UNRELEASED_NO_DIRECT", unreleasedGateAt < directPrepareAt && gateBlock.indexOf("playBestQuark") < 0, "unreleased gate cannot start Direct/Pan", "STATIC_HOOK");
+      check("UNRELEASED_MANUAL_PLAY_BLOCKED", requestUnreleasedAt >= 0 && requestUnreleasedAt < requestStatusAt && detailRequestSource.includes('toast("尚未上映")'), "manual Play remains focusable but does not retry the network", "STATIC_HOOK");
+      check("UNRELEASED_MANUAL_CLICK_BLOCKED", requestUnreleasedAt >= 0 && requestUnreleasedAt < requestDirectAt && detailRequestSource.includes('settleDetailUnreleased(item, "unreleased_manual_guard")'), "manual Play has a second unreleased guard", "STATIC_HOOK");
+      check("UNRELEASED_NOT_FAILURE", unreleasedTerminalState === "unreleased" && detailPlayStateSource.indexOf('runPhase === "UNRELEASED"') < detailPlayStateSource.indexOf("const failurePhase") && !gateBlock.includes("CONNECTION_FAILED") && !gateBlock.includes("notifyCurrentDetailFinalFailure"), "unreleased is not mapped to failed or failure notification", "RUNTIME_MOCK");
+      check("VALID_HISTORY_OVERRIDES_UNRELEASED", historyPriorityState === "ready" && unreleasedTerminalState === "unreleased" && detailPrepareSource.indexOf("detailContinueHistoryIsValid(continueDecision.history)") < unreleasedGateAt && detailRequestSource.indexOf("detailContinueHistoryIsValid(history)") < requestUnreleasedAt, "valid Native History remains ready even when the item date is future", "RUNTIME_MOCK");
+      const historyStateAt = detailPlayStateSource.indexOf("if (history) return \"ready\"");
+      const directReadyStateAt = detailPlayStateSource.indexOf("if (directReady) return \"ready\"");
+      const unreleasedStateAt = detailPlayStateSource.indexOf('runPhase === "UNRELEASED"');
+      const preparingStateAt = detailPlayStateSource.indexOf("return \"preparing\"");
+      const failedStateAt = detailPlayStateSource.indexOf("const failurePhase");
+      check("DETAIL_PLAY_STATE_PRIORITY", historyStateAt >= 0 && directReadyStateAt > historyStateAt && unreleasedStateAt > directReadyStateAt && preparingStateAt > unreleasedStateAt && failedStateAt > preparingStateAt, "state priority is history, playable, unreleased, preparing, failed", "STATIC_HOOK");
+      check("PLAY_STATE_IDLE", playStateCases.idle === "idle", "Continue Gate has no preparing state", "RUNTIME_MOCK");
+      check("PLAY_STATE_PREPARING", playStateCases.preparing === "preparing", "actual resource preparation maps to preparing", "RUNTIME_MOCK");
+      check("PLAY_STATE_READY", historyPriorityState === "ready" && detailPlayStateSource.includes('return "ready"'), "history or playable candidate maps to ready", "RUNTIME_MOCK");
+      check("PLAY_STATE_FAILED", playStateCases.failed === "failed", "real terminal resource failure maps to failed", "RUNTIME_MOCK");
+      check("PLAY_STATE_UNRELEASED", unreleasedTerminalState === "unreleased", "future no-history terminal maps to unreleased", "RUNTIME_MOCK");
+      check("PLAY_COLOR_IDLE", detailColorSource.includes('[data-play-state="idle"]') && detailColorSource.includes("#8FA3B8"), "idle icon is blue-gray", "STATIC_HOOK");
+      check("PLAY_COLOR_UNRELEASED", detailColorSource.includes('[data-play-state="unreleased"]') && detailColorSource.includes("#8FA3B8"), "unreleased icon is blue-gray", "STATIC_HOOK");
+      check("PLAY_COLOR_PREPARING", detailColorSource.includes('[data-play-state="preparing"]') && detailColorSource.includes("#F2B84B"), "preparing icon is amber", "STATIC_HOOK");
+      check("PLAY_COLOR_READY", detailColorSource.includes('[data-play-state="ready"]') && detailColorSource.includes("#35E07A"), "ready icon is green", "STATIC_HOOK");
+      check("PLAY_COLOR_FAILED", detailColorSource.includes('[data-play-state="failed"]') && detailColorSource.includes("#FF0000"), "failed icon is red", "STATIC_HOOK");
+      check("DETAIL_PLAY_STATE_COLORS", detailColorSource.includes('[data-play-state="idle"]') && detailColorSource.includes('[data-play-state="unreleased"]') && detailColorSource.includes("#8FA3B8") && detailColorSource.includes('[data-play-state="preparing"]') && detailColorSource.includes("#F2B84B") && detailColorSource.includes('[data-play-state="ready"]') && detailColorSource.includes("#35E07A") && detailColorSource.includes('[data-play-state="failed"]') && detailColorSource.includes("#FF0000"), "five logical states use the requested four icon colors", "STATIC_HOOK");
+      check("DETAIL_BUTTON_STAYS_FOCUSABLE", !detailRequestSource.includes('detailContinueBtn.disabled') && !detailRequestSource.includes('setAttribute("disabled"'), "unreleased only gates the action and does not disable the button", "STATIC_HOOK");
+      const canonicalResolveAt = detailCanonicalPrepareSource.indexOf("resolveCanonicalResourceTitle");
+      const canonicalPrepareAt = detailCanonicalPrepareSource.indexOf("prepareDetailPlayback(item, options)");
+      check("CANONICAL_TITLE_RESOLUTION_BEFORE_GATE", canonicalResolveAt >= 0 && canonicalPrepareAt > canonicalResolveAt && String(openDetail).includes("continueGate: true"), "canonical identity/title enrichment remains before the Native History gate", "STATIC_HOOK");
+      check("CANONICAL_TITLE_PURPOSE", detailCanonicalSource.includes("resourceSearchTitle") && detailCanonicalSource.includes("canonicalIdentityContextFromDetail") && !detailCanonicalSource.includes("playBestQuark") && !detailCanonicalSource.includes("resolveCuratedPlaybackCandidate"), "canonical resolution serves identity/resource-title enrichment, not playback", "STATIC_HOOK");
+      check("NETWORK_RESOURCE_SEARCH_BEFORE_UNRELEASED_GATE", unreleasedGateAt < curatedPrepareAt && unreleasedGateAt < directPrepareAt && !detailCanonicalSource.includes("nativeSearch") && !detailCanonicalSource.includes("playBestQuark") && !detailCanonicalSource.includes("resolveCuratedPlaybackCandidate"), "no network resource search starts before the unreleased gate", "STATIC_HOOK");
+      check("DETAIL_NORMAL_DATA_PATH_PRESERVED", typeof renderDetailBase === "function" && typeof openDetail === "function" && String(openDetail).includes("renderDetailBase(item)"), "normal detail metadata/data rendering remains available", "FROZEN_SOURCE_AUDIT");
+      check("DETAIL_CONTINUE_HISTORY", detailPrepareSource.includes('decision: "CONTINUE_READY"') && detailPrepareSource.includes("curatedStarted: false"), "valid Continue history still exits before first-play preparation", "FROZEN_SOURCE_AUDIT");
+      check("DETAIL_CURATED_NORMAL", curatedPrepareAt > unreleasedGateAt && detailPrepareSource.includes("curated && curated.candidate"), "normal released detail can still use Curated", "FROZEN_SOURCE_AUDIT");
+      check("DETAIL_DIRECT_FALLBACK_NORMAL", directPrepareAt > unreleasedGateAt && detailPrepareSource.includes('run.phase = "PAN_DIRECT"'), "normal released detail can still use Direct/Pan fallback", "FROZEN_SOURCE_AUDIT");
+      check("READY_COLOR", detailColorSource.includes('[data-play-state="ready"]') && detailColorSource.includes("#35E07A"), "existing ready color remains green", "FROZEN_SOURCE_AUDIT");
+      check("FAILED_COLOR", detailColorSource.includes('[data-play-state="failed"]') && detailColorSource.includes("#FF0000"), "existing failed color remains red", "FROZEN_SOURCE_AUDIT");
+      check("VARIETY_REGRESSION_PRESERVED", isReleaseFilteredCatalogId("variety") && typeof secondaryFullCatalogSources === "function" && Array.isArray(SECONDARY_FILTER_SCHEMA.variety), "variety classification/config path remains present", "FROZEN_SOURCE_AUDIT");
       check("SECONDARY_SHORT_PAGE_AUTOFILL", String(renderSecondaryCatalog).includes("requestAnimationFrame(ensureScrollablePage)") && String(ensureScrollablePage).includes("loadMoreVisible"), "short secondary pages can continue while the viewport is not filled", "STATIC_HOOK");
       const oldWebviewUnsupported = ["Promise", "allSettled"].join(".");
       check("OLD_WEBVIEW_COMPAT", !document.documentElement.innerHTML.includes(oldWebviewUnsupported), "未引入旧 WebView 不支持的 Promise 聚合 API", "STATIC_HOOK");
@@ -40969,6 +41707,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       updateTvDiagnostic();
       return results;
     }
+    window.WEBHOME_RUN_TV_SELF_TESTS = runTvAdaptationSelfTests;
     function keepFocusInView(target, options) {
       if (!target) return;
       if (isTvLikeDevice()) {
