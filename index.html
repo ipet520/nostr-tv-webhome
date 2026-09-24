@@ -16597,10 +16597,10 @@ utils.encode = function encode(arr, enc) {
         eventsKey: "fish2018_home_v1_events",
         nsecKey: "fish2018_home_v1_nsec",
         relays: [
-          "wss://relay.lovelana.org",
-          "wss://relay.nostr.moe",
           "wss://x.kojira.io",
+          "wss://relay.lovelana.org",
           "wss://relay.wellorder.net",
+          "wss://nostr.mom"
         ]
       },
       pan: {
@@ -16836,7 +16836,7 @@ utils.encode = function encode(arr, enc) {
       suggestions: { keyword: "", items: [], loading: false, timer: 0, seq: 0, controller: null },
       hot: { db: null, dbPromise: null, idb: false, ready: false, items: [], media: new Map(), users: new Map(), ingestQueue: Promise.resolve(), refreshTimer: 0 },
       searchHot: { items: [], loading: false, loaded: false, error: "", loadedAt: 0, requestSeq: 0 },
-      relay: { connected: 0, published: 0, total: 0, lastOk: 0, lastDone: 0, statuses: {}, subscribeStarted: false, subscribeDone: 0, subscribeFinished: {}, subscribeToken: 0, refresh: null, backfillBusy: {}, backfillTimers: {}, backfillCandidates: {}, primaryBackfillRelay: "", fallbackReadyAt: 0, fallbackTimer: 0, fallbackPrefetchTimer: 0 },
+      relay: { connected: 0, published: 0, total: 0, lastOk: 0, lastDone: 0, statuses: {}, subscribeStarted: false, subscribeDone: 0, subscribeFinished: {}, subscribeToken: 0, refresh: null, backfillBusy: {}, backfillTimers: {}, backfillState: {}, queryAborters: new Set(), subscriptionAborters: new Set(), fallbackReadyAt: 0, fallbackTimer: 0, fallbackPrefetchTimer: 0 },
       recommendationSource: "pending",
       status: {
         sdk: "检测中",
@@ -16940,6 +16940,7 @@ utils.encode = function encode(arr, enc) {
     const HOT_BACKFILL_IDLE_MS = 650;
     const HOT_BACKFILL_RETRY_MS = 30000;
     const HOT_BACKFILL_RETRY_MAX_MS = 5 * 60 * 1000;
+    const HOT_BACKFILL_MAX_FAILURES = 3;
     const HOT_BACKUP_WINDOW_SECONDS = 7 * HOT_DAY_SECONDS;
     const HOT_REFRESH_IDLE_MS = 260;
     const HOT_REFRESH_BACKFILL_MS = 900;
@@ -18574,15 +18575,25 @@ utils.encode = function encode(arr, enc) {
       return changed;
     }
 
-    function hotIngestEvents(events) {
+    function isHotIngestGenerationActive(generation) {
+      return generation == null || generation === state.relay.subscribeToken;
+    }
+
+    function hotIngestEvents(events, options) {
       const batch = Array.isArray(events) ? events.slice() : [];
-      const run = () => hotIngestEventsNow(batch).catch(() => false);
+      const generation = options && options.generation != null ? options.generation : null;
+      const run = () => {
+        if (!isHotIngestGenerationActive(generation)) return false;
+        return hotIngestEventsNow(batch, generation).catch(() => false);
+      };
       state.hot.ingestQueue = state.hot.ingestQueue.then(run, run);
       return state.hot.ingestQueue;
     }
 
-    async function hotIngestEventsNow(events) {
+    async function hotIngestEventsNow(events, generation) {
+      if (!isHotIngestGenerationActive(generation)) return false;
       await ensureDeleteStateLoaded();
+      if (!isHotIngestGenerationActive(generation)) return false;
       const incoming = new Map();
       for (const event of events || []) {
         const vector = heatVectorFromEvent(event);
@@ -18593,10 +18604,13 @@ utils.encode = function encode(arr, enc) {
       if (!incoming.size) return false;
       const vectors = Array.from(incoming.values());
       const db = await openHotDb();
+      if (!isHotIngestGenerationActive(generation)) return false;
       const existing = await hotGetVectors(vectors.map((vector) => vector.u), db);
+      if (!isHotIngestGenerationActive(generation)) return false;
       const changedMedia = new Set();
       const vectorWrites = [];
       let changed = false;
+      if (!isHotIngestGenerationActive(generation)) return false;
       for (const vector of vectors) {
         const old = existing.get(vector.u) || (!db ? state.hot.users.get(vector.u) : null);
         if (old && !hotIsNewerVector(vector, old)) continue;
@@ -18619,6 +18633,7 @@ utils.encode = function encode(arr, enc) {
         });
         vectorWrites.forEach((vector) => vectorStore.put(hotPersistVector(vector)));
         await idbDone(tx).catch(() => {});
+        if (!isHotIngestGenerationActive(generation)) return false;
       }
       return true;
     }
@@ -19217,12 +19232,57 @@ utils.encode = function encode(arr, enc) {
       return !!(info && info.active && (token == null || token === state.relay.subscribeToken));
     }
 
+    function getRelayBackfillState(relay) {
+      if (!state.relay.backfillState) state.relay.backfillState = {};
+      if (!state.relay.backfillState[relay]) {
+        state.relay.backfillState[relay] = {
+          loading: false,
+          error: "",
+          terminal: false,
+          terminalState: "pending",
+          historyDone: false,
+          historyFailed: false,
+          historyTimedOut: false,
+          startedAt: 0,
+          finishedAt: 0
+        };
+      }
+      return state.relay.backfillState[relay];
+    }
+
+    function setRelayBackfillState(relay, patch) {
+      return Object.assign(getRelayBackfillState(relay), patch || {});
+    }
+
+    function markRelayBackfillTerminal(relay, terminalState, error, token) {
+      if (token != null && token !== state.relay.subscribeToken) return;
+      const normalized = terminalState === "done" ? "done" : terminalState === "timeout" ? "timeout" : "failed";
+      setRelayBackfillState(relay, {
+        loading: false,
+        error: String(error || ""),
+        terminal: true,
+        terminalState: normalized,
+        historyDone: normalized === "done",
+        historyFailed: normalized === "failed",
+        historyTimedOut: normalized === "timeout",
+        finishedAt: hotNow()
+      });
+    }
+
+    function allRelayBackfillsTerminal() {
+      const relays = window.WEBHOME_CONFIG.nostr.relays;
+      return relays.every((relay) => {
+        const value = state.relay.backfillState && state.relay.backfillState[relay];
+        return !!(value && value.terminal);
+      });
+    }
+
     function maybeFinishNostrRefresh(token) {
       if (!isNostrRefreshActive(token)) return;
       const relays = window.WEBHOME_CONFIG.nostr.relays;
       const busy = Object.keys(state.relay.backfillBusy || {}).length;
       const timers = Object.values(state.relay.backfillTimers || {}).filter(Boolean).length;
-      if (state.relay.subscribeDone < relays.length || busy || timers || state.hot.refreshTimer) return;
+      if (state.relay.subscribeDone < relays.length || !allRelayBackfillsTerminal() || busy || timers || state.hot.refreshTimer) return;
       updateNostrRefreshProgress({ active: false, phase: "完成", finishedAt: Date.now(), indexed: state.hot.items.length });
       toast(`榜单刷新完成：${state.hot.items.length}条`);
     }
@@ -19271,11 +19331,12 @@ utils.encode = function encode(arr, enc) {
     function finishRelaySubscribe(relay, status) {
       if (state.relay.subscribeFinished[relay]) return;
       state.relay.subscribeFinished[relay] = true;
-      if (status) setRelayStatus(relay, status);
+      if (status) {
+        setRelayStatus(relay, status);
+        markRelayBackfillTerminal(relay, status === "断开" ? "timeout" : "failed", status);
+      }
       state.relay.subscribeDone += 1;
       if (state.relay.subscribeDone >= window.WEBHOME_CONFIG.nostr.relays.length) {
-        const primary = choosePrimaryBackfillRelay(true);
-        if (primary) scheduleRelayBackfill(primary);
         if (preferenceItems().length === 0) {
           setStatus("nostr", relayFailedAll() ? "连接失败" : "无推荐数据");
           useFallbackRecommendations();
@@ -19382,7 +19443,23 @@ utils.encode = function encode(arr, enc) {
       return true;
     }
 
+    function abortRelayQuerySockets() {
+      Array.from(state.relay.queryAborters || []).forEach((abort) => {
+        try { abort(); } catch (e) {}
+      });
+      state.relay.queryAborters = new Set();
+    }
+
+    function abortRelaySubscriptionSockets() {
+      Array.from(state.relay.subscriptionAborters || []).forEach((abort) => {
+        try { abort(); } catch (e) {}
+      });
+      state.relay.subscriptionAborters = new Set();
+    }
+
     function clearRelayBackfillTimers() {
+      abortRelayQuerySockets();
+      abortRelaySubscriptionSockets();
       Object.values(state.relay.backfillTimers).forEach((timer) => clearTimeout(timer));
       state.relay.backfillTimers = {};
       clearTimeout(state.hot.refreshTimer);
@@ -19390,6 +19467,9 @@ utils.encode = function encode(arr, enc) {
     }
 
     function resetRelaySubscribeState() {
+      const generation = ++state.relay.subscribeToken;
+      abortRelayQuerySockets();
+      abortRelaySubscriptionSockets();
       Object.values(state.relay.backfillTimers || {}).forEach((timer) => clearTimeout(timer));
       state.relay.connected = 0;
       state.relay.subscribeDone = 0;
@@ -19397,9 +19477,9 @@ utils.encode = function encode(arr, enc) {
       state.relay.statuses = {};
       state.relay.backfillBusy = {};
       state.relay.backfillTimers = {};
-      state.relay.backfillCandidates = {};
-      state.relay.primaryBackfillRelay = "";
-      return ++state.relay.subscribeToken;
+      state.relay.backfillState = {};
+      window.WEBHOME_CONFIG.nostr.relays.forEach((relay) => getRelayBackfillState(relay));
+      return generation;
     }
 
     function connectionHistoryEntryActive() {
@@ -22100,14 +22180,16 @@ utils.encode = function encode(arr, enc) {
         setStatus("nostr", "刷新榜单中");
         toast("开始刷新 Nostr 榜单");
         updateNostrRefreshProgress({ active: true, phase: "清理索引", startedAt: Date.now(), finishedAt: 0, connected: 0, subscribeDone: 0, subEvents: 0, recentPages: 0, recentEvents: 0, historyPages: 0, historyEvents: 0, indexed: 0, relay: "" });
+        const generation = resetRelaySubscribeState();
         clearRelayBackfillTimers();
-        resetRelaySubscribeState();
+        const ingestBarrier = state.hot.ingestQueue;
+        await ingestBarrier.catch(() => {});
         await hotClearRankingIndexForRefresh();
         state.recommendationSource = "pending";
         renderMetrics();
         if (state.activeList === "all") renderActiveGrid();
         updateNostrRefreshProgress({ phase: "连接 relay", indexed: state.hot.items.length });
-        subscribeNostr();
+        subscribeNostr(generation);
       } catch (e) {
         setStatus("nostr", "刷新榜单失败");
         updateNostrRefreshProgress({ active: false, phase: "刷新失败", finishedAt: Date.now(), indexed: state.hot.items.length });
@@ -36647,9 +36729,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       });
     }
 
-    function subscribeNostr() {
+    function subscribeNostr(generation) {
       const relays = window.WEBHOME_CONFIG.nostr.relays;
-      const subscribeToken = resetRelaySubscribeState();
+      const subscribeToken = generation == null ? resetRelaySubscribeState() : generation;
+      if (subscribeToken !== state.relay.subscribeToken) return;
       state.relay.subscribeStarted = true;
       setStatus("nostr", "连接中");
       relays.forEach((relay, index) => {
@@ -36658,25 +36741,54 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           const ws = new WebSocket(relay);
           const subId = "fongmi_pref_" + index + "_" + Date.now();
           let backfillStarted = false;
-          let seenEvents = 0;
           let eventQueue = [];
           let flushTimer = 0;
+          let timer = 0;
+          let closed = false;
+          let registered = false;
+          let abort = null;
           const active = () => subscribeToken === state.relay.subscribeToken;
-          const flushQueue = () => {
-          clearTimeout(flushTimer);
-          flushTimer = 0;
-          if (!active()) {
+          const unregister = () => {
+            if (!registered) return;
+            const aborters = state.relay.subscriptionAborters;
+            if (aborters && abort) aborters.delete(abort);
+            registered = false;
+          };
+          const cleanup = (sendClose) => {
+            if (flushTimer) {
+              clearTimeout(flushTimer);
+              flushTimer = 0;
+            }
+            if (timer) {
+              clearTimeout(timer);
+              timer = 0;
+            }
             eventQueue = [];
-            maybeFinishNostrRefresh(subscribeToken);
-            return;
-          }
+            if (!closed) {
+              closed = true;
+              if (sendClose) {
+                try { ws.send(JSON.stringify(["CLOSE", subId])); } catch (e) {}
+              }
+              try { ws.close(); } catch (e) {}
+            }
+            unregister();
+          };
+          const flushQueue = () => {
+            if (flushTimer) {
+              clearTimeout(flushTimer);
+              flushTimer = 0;
+            }
+            if (!active()) {
+              eventQueue = [];
+              return;
+            }
             const batch = eventQueue;
             eventQueue = [];
             if (!batch.length) {
               maybeFinishNostrRefresh(subscribeToken);
               return;
             }
-            hotIngestEvents(batch).then((changed) => {
+            hotIngestEvents(batch, { generation: subscribeToken }).then((changed) => {
               if (changed && active()) {
                 scheduleHotRefresh(HOT_REFRESH_IDLE_MS);
                 if (isNostrRefreshActive(subscribeToken)) updateNostrRefreshProgress({ phase: "写入索引", indexed: state.hot.items.length });
@@ -36687,20 +36799,30 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           const startBackfill = () => {
             if (!active() || backfillStarted) return;
             backfillStarted = true;
-            state.relay.backfillCandidates[relay] = Math.max(Number(state.relay.backfillCandidates[relay] || 0), seenEvents);
-            choosePrimaryBackfillRelay(false);
             syncRelayBackfill(relay, subscribeToken).catch(() => {});
           };
-          const timer = setTimeout(() => {
-            if (!active()) return;
+          abort = () => cleanup(false);
+          if (!state.relay.subscriptionAborters) state.relay.subscriptionAborters = new Set();
+          state.relay.subscriptionAborters.add(abort);
+          registered = true;
+          if (!active()) {
+            abort();
+            return;
+          }
+          timer = setTimeout(() => {
+            if (!active()) {
+              cleanup(false);
+              return;
+            }
+            flushQueue();
             if (state.relay.statuses[relay] === "已连接") startBackfill();
             finishRelaySubscribe(relay, state.relay.statuses[relay] === "已连接" ? "" : "失败");
             maybeFinishNostrRefresh(subscribeToken);
-            try { ws.close(); } catch (e) {}
+            cleanup(false);
           }, 8000);
           ws.onopen = () => {
             if (!active()) {
-              try { ws.close(); } catch (e) {}
+              cleanup(false);
               return;
             }
             state.relay.connected += 1;
@@ -36708,46 +36830,61 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             setRelayStatus(relay, "已连接");
             setStatus("nostr", "已连接");
             renderMetrics();
-            ws.send(JSON.stringify(["REQ", subId, {
-              kinds: [window.WEBHOME_CONFIG.nostr.kind],
-              "#t": [window.WEBHOME_CONFIG.nostr.tag],
-              "#d": [HOT_VECTOR_D],
-              since: hotBackupWindowStart(),
-              limit: HOT_SUBSCRIBE_LIMIT
-            }]));
+            try {
+              ws.send(JSON.stringify(["REQ", subId, {
+                kinds: [window.WEBHOME_CONFIG.nostr.kind],
+                "#t": [window.WEBHOME_CONFIG.nostr.tag],
+                "#d": [HOT_VECTOR_D],
+                since: hotBackupWindowStart(),
+                limit: HOT_SUBSCRIBE_LIMIT
+              }]));
+            } catch (e) {
+              cleanup(false);
+              if (!active()) return;
+              finishRelaySubscribe(relay, "失败");
+              maybeFinishNostrRefresh(subscribeToken);
+            }
           };
           ws.onmessage = async (message) => {
-            if (!active()) return;
+            if (closed) return;
+            if (!active()) {
+              cleanup(false);
+              return;
+            }
             const data = safeJson(message.data, []);
             if (data[0] === "EOSE") {
-              clearTimeout(timer);
               flushQueue();
               finishRelaySubscribe(relay, "");
               if (isNostrRefreshActive(subscribeToken)) updateNostrRefreshProgress({ subscribeDone: state.relay.subscribeDone, indexed: state.hot.items.length });
               startBackfill();
               maybeFinishNostrRefresh(subscribeToken);
-              try {
-                ws.send(JSON.stringify(["CLOSE", subId]));
-                ws.close();
-              } catch (e) {}
+              cleanup(true);
+              return;
+            }
+            if (data[0] === "CLOSED") {
+              flushQueue();
+              finishRelaySubscribe(relay, "断开");
+              maybeFinishNostrRefresh(subscribeToken);
+              cleanup(false);
               return;
             }
             if (data[0] !== "EVENT" || !data[2]) return;
-            seenEvents += 1;
             if (isNostrRefreshActive(subscribeToken)) updateNostrRefreshProgress({ phase: "接收订阅", subEvents: Number(state.relay.refresh && state.relay.refresh.subEvents || 0) + 1, relay: shortRelay(relay) });
             eventQueue.push(data[2]);
             if (!flushTimer) flushTimer = setTimeout(flushQueue, 100);
           };
           ws.onclose = () => {
-            clearTimeout(timer);
+            if (closed) return;
             flushQueue();
+            cleanup(false);
             if (!active()) return;
-            if (state.relay.statuses[relay] !== "已连接") finishRelaySubscribe(relay, "断开");
+            finishRelaySubscribe(relay, "断开");
             maybeFinishNostrRefresh(subscribeToken);
           };
           ws.onerror = () => {
-            clearTimeout(timer);
+            if (closed) return;
             flushQueue();
+            cleanup(false);
             if (!active()) return;
             finishRelaySubscribe(relay, "失败");
             if (!Object.values(state.relay.statuses).includes("已连接")) setStatus("nostr", "连接失败");
@@ -36761,46 +36898,85 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       });
     }
 
-    function queryRelayHotPage(relay, filter, timeout) {
+    function queryRelayHotPage(relay, filter, timeout, generation) {
       return new Promise((resolve) => {
         const events = [];
+        const subId = "fongmi_hot_" + Date.now() + "_" + Math.random().toString(16).slice(2);
         let settled = false;
-        const done = (complete) => {
+        let closed = false;
+        let registered = false;
+        let timer = 0;
+        let ws = null;
+        let abort = null;
+        const unregister = () => {
+          if (!registered) return;
+          const aborters = state.relay.queryAborters;
+          if (aborters && abort) aborters.delete(abort);
+          registered = false;
+        };
+        const cleanup = (sendClose) => {
+          if (timer) {
+            clearTimeout(timer);
+            timer = 0;
+          }
+          if (!closed) {
+            closed = true;
+            if (sendClose && ws) {
+              try { ws.send(JSON.stringify(["CLOSE", subId])); } catch (e) {}
+            }
+            if (ws) {
+              try { ws.close(); } catch (e) {}
+            }
+          }
+          unregister();
+        };
+        const done = (complete, failureKind, sendClose) => {
           if (settled) return;
           settled = true;
+          cleanup(!!sendClose);
           events.complete = !!complete;
+          events.failureKind = String(failureKind || "");
           resolve(events);
         };
+        abort = () => done(false, "stale", false);
         try {
-          const ws = new WebSocket(relay);
-          const subId = "fongmi_hot_" + Date.now() + "_" + Math.random().toString(16).slice(2);
-          const timer = setTimeout(() => {
-            try { ws.close(); } catch (e) {}
-            done(false);
-          }, timeout || 9000);
-          ws.onopen = () => ws.send(JSON.stringify(["REQ", subId, filter]));
+          ws = new WebSocket(relay);
+          if (generation != null) {
+            if (!state.relay.queryAborters) state.relay.queryAborters = new Set();
+            state.relay.queryAborters.add(abort);
+            registered = true;
+            if (generation !== state.relay.subscribeToken) {
+              abort();
+              return;
+            }
+          }
+          timer = setTimeout(() => done(false, "timeout", false), timeout || 9000);
+          ws.onopen = () => {
+            if (settled) return;
+            if (generation != null && generation !== state.relay.subscribeToken) {
+              abort();
+              return;
+            }
+            ws.send(JSON.stringify(["REQ", subId, filter]));
+          };
           ws.onmessage = (message) => {
+            if (settled) return;
+            if (generation != null && generation !== state.relay.subscribeToken) {
+              abort();
+              return;
+            }
             const data = safeJson(message.data, []);
             if (data[0] === "EVENT" && data[2]) events.push(data[2]);
-            if (data[0] === "EOSE") {
-              clearTimeout(timer);
-              try {
-                ws.send(JSON.stringify(["CLOSE", subId]));
-                ws.close();
-              } catch (e) {}
-              done(true);
+            if (data[0] === "CLOSED") {
+              done(false, data[2] || "closed", false);
+              return;
             }
+            if (data[0] === "EOSE") done(true, "", true);
           };
-          ws.onclose = () => {
-            clearTimeout(timer);
-            done(false);
-          };
-          ws.onerror = () => {
-            clearTimeout(timer);
-            done(false);
-          };
+          ws.onclose = () => done(false, "closed", false);
+          ws.onerror = () => done(false, "error", false);
         } catch (e) {
-          done(false);
+          done(false, e && e.message || "error", false);
         }
       });
     }
@@ -37004,77 +37180,71 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const runToken = token == null ? state.relay.subscribeToken : token;
       if (runToken !== state.relay.subscribeToken) return;
       if (state.relay.backfillBusy[relay]) return;
+      const relayState = getRelayBackfillState(relay);
+      if (relayState.terminal) return;
       state.relay.backfillBusy[relay] = true;
+      setRelayBackfillState(relay, { loading: true, startedAt: hotNow() });
       let cursor = null;
       try {
         const db = await openHotDb();
         if (runToken !== state.relay.subscribeToken) return;
         if (!db) {
+          markRelayBackfillTerminal(relay, "failed", "本地索引不可用", runToken);
           if (isNostrRefreshActive(runToken)) updateNostrRefreshProgress({ active: false, phase: "本地索引不可用", finishedAt: Date.now() });
           return;
         }
-        const primary = selectPrimaryBackfillRelay(relay, runToken);
-        const isPrimary = primary === relay;
-        if (isNostrRefreshActive(runToken)) updateNostrRefreshProgress({ phase: isPrimary ? "回填历史" : "回填近7天", relay: shortRelay(relay) });
-        const since = isPrimary ? hotWindowStart() : hotBackupWindowStart();
+        if (isNostrRefreshActive(runToken)) updateNostrRefreshProgress({ phase: "回填近7天 + 90天历史", relay: shortRelay(relay) });
+        const since = hotWindowStart();
         const now = hotNow();
         cursor = normalizeRelayCursor(await hotStoreGet("relayCursor", relay), relay, since, now);
         if (runToken !== state.relay.subscribeToken) return;
         if (cursor.nextRetryAt && cursor.nextRetryAt > now) return;
         let changed = false;
         changed = await syncRelayRecent(relay, cursor, since, now, runToken) || changed;
-        if (isPrimary && !cursor.recentUntil) changed = await syncRelayHistory(relay, cursor, since, now, runToken) || changed;
-        if (runToken !== state.relay.subscribeToken) return;
-        if (!isPrimary) {
-          cursor.historyDone = true;
-          cursor.historyUntil = since - 1;
+        if (!cursor.recentUntil && !cursor.historyDone && !cursor.historyFailed && !cursor.historyTimedOut) {
+          changed = await syncRelayHistory(relay, cursor, since, now, runToken) || changed;
         }
+        if (runToken !== state.relay.subscribeToken) return;
         cursor.updatedAt = hotNow();
-        cursor.primary = isPrimary;
         const tx = db.transaction("relayCursor", "readwrite");
         tx.objectStore("relayCursor").put(cursor);
         await idbDone(tx).catch(() => {});
+        if (relayBackfillDone(cursor)) {
+          markRelayBackfillTerminal(relay, cursor.historyTimedOut ? "timeout" : cursor.historyFailed ? "failed" : "done", cursor.error, runToken);
+        }
         if (changed) {
           scheduleHotRefresh(HOT_REFRESH_BACKFILL_MS);
-          setStatus("nostr", `已同步 ${shortRelay(relay)}${isPrimary ? " 主" : " 近7天"}`);
+          setStatus("nostr", `已同步 ${shortRelay(relay)}`);
           if (isNostrRefreshActive(runToken)) updateNostrRefreshProgress({ phase: "写入索引", indexed: state.hot.items.length, relay: shortRelay(relay) });
+        }
+      } catch (e) {
+        if (runToken === state.relay.subscribeToken) {
+          const error = e && e.message || "回填失败";
+          if (cursor) {
+            cursor.recentUntil = 0;
+            cursor.recentHigh = 0;
+            cursor.recentTarget = 0;
+            cursor.historyUntil = Number(cursor.since || 0) - 1;
+            cursor.historyDone = false;
+            cursor.historyFailed = true;
+            cursor.historyTimedOut = false;
+            cursor.error = error;
+          }
+          markRelayBackfillTerminal(relay, "failed", error, runToken);
         }
       } finally {
         if (runToken === state.relay.subscribeToken) {
           delete state.relay.backfillBusy[relay];
-          if (cursor && !relayBackfillDone(cursor)) scheduleRelayBackfill(relay, relayBackfillDelay(cursor), runToken);
+          const current = getRelayBackfillState(relay);
+          current.loading = false;
+          if (cursor && !relayBackfillDone(cursor) && !current.terminal) scheduleRelayBackfill(relay, relayBackfillDelay(cursor), runToken);
           maybeFinishNostrRefresh(runToken);
         }
       }
     }
 
-    function selectPrimaryBackfillRelay(relay, token) {
-      const primary = choosePrimaryBackfillRelay(state.relay.subscribeDone >= window.WEBHOME_CONFIG.nostr.relays.length);
-      if (primary && primary !== relay && !state.relay.backfillBusy[primary]) scheduleRelayBackfill(primary, undefined, token);
-      return primary;
-    }
-
-    function choosePrimaryBackfillRelay(force) {
-      if (state.relay.primaryBackfillRelay) return state.relay.primaryBackfillRelay;
-      if (!force) return "";
-      const relays = window.WEBHOME_CONFIG.nostr.relays;
-      let best = "";
-      let bestScore = -1;
-      relays.forEach((relay) => {
-        const connected = state.relay.statuses[relay] === "已连接";
-        const score = Number(state.relay.backfillCandidates[relay] || 0);
-        if (!connected && !score) return;
-        if (score > bestScore) {
-          best = relay;
-          bestScore = score;
-        }
-      });
-      if (best) state.relay.primaryBackfillRelay = best;
-      return state.relay.primaryBackfillRelay;
-    }
-
     function relayBackfillDone(cursor) {
-      return !cursor.recentUntil && cursor.historyDone;
+      return !cursor.recentUntil && (cursor.historyDone || cursor.historyFailed || cursor.historyTimedOut);
     }
 
     function relayBackfillDelay(cursor) {
@@ -37083,18 +37253,38 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return HOT_BACKFILL_IDLE_MS;
     }
 
-    function markRelayBackfillRetry(cursor) {
-      cursor.failures = Math.min(12, Number(cursor.failures || 0) + 1);
+    function markRelayBackfillRetry(relay, cursor, phase, events, token) {
+      const failureKind = events && events.failureKind === "timeout" ? "timeout" : "failed";
+      const detail = events && events.failureKind ? `：${events.failureKind}` : "";
+      const error = `${phase || "回填"}${failureKind === "timeout" ? "超时" : "失败"}${detail}`;
+      cursor.failures = Math.min(HOT_BACKFILL_MAX_FAILURES, Number(cursor.failures || 0) + 1);
+      cursor.error = error;
+      if (cursor.failures >= HOT_BACKFILL_MAX_FAILURES) {
+        cursor.nextRetryAt = 0;
+        cursor.recentHigh = 0;
+        cursor.recentUntil = 0;
+        cursor.recentTarget = 0;
+        cursor.historyUntil = Number(cursor.since || 0) - 1;
+        cursor.historyDone = false;
+        cursor.historyFailed = failureKind === "failed";
+        cursor.historyTimedOut = failureKind === "timeout";
+        markRelayBackfillTerminal(relay, failureKind, error, token);
+        return true;
+      }
       const delay = Math.min(HOT_BACKFILL_RETRY_MAX_MS, HOT_BACKFILL_RETRY_MS * Math.pow(2, cursor.failures - 1));
       cursor.nextRetryAt = hotNow() + Math.ceil(delay / 1000);
+      setRelayBackfillState(relay, { error, terminal: false, terminalState: "retrying" });
+      return false;
     }
 
     function clearRelayBackfillRetry(cursor) {
       cursor.failures = 0;
       cursor.nextRetryAt = 0;
+      cursor.error = "";
     }
 
     function scheduleRelayBackfill(relay, delay, token) {
+      if (getRelayBackfillState(relay).terminal) return;
       clearTimeout(state.relay.backfillTimers[relay]);
       const runToken = token == null ? state.relay.subscribeToken : token;
       state.relay.backfillTimers[relay] = setTimeout(() => {
@@ -37116,6 +37306,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           recentTarget: 0,
           historyUntil: now,
           historyDone: false,
+          historyFailed: false,
+          historyTimedOut: false,
+          error: "",
           updatedAt: 0,
           failures: 0,
           nextRetryAt: 0
@@ -37138,6 +37331,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         recentTarget: Math.max(Number(cursor.recentTarget || 0), 0),
         historyUntil,
         historyDone,
+        historyFailed: false,
+        historyTimedOut: false,
+        error: "",
         updatedAt: Number(cursor.updatedAt || 0),
         failures: Number(cursor.failures || 0),
         nextRetryAt: Number(cursor.nextRetryAt || 0)
@@ -37161,7 +37357,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           since: cursor.recentTarget,
           until: cursor.recentUntil,
           limit: HOT_PAGE_LIMIT
-        }, 9000);
+        }, 9000, token);
         if (token != null && token !== state.relay.subscribeToken) break;
         if (isNostrRefreshActive(token)) {
           updateNostrRefreshProgress({
@@ -37173,22 +37369,27 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         }
         if (!events.length) {
           if (!events.complete) {
-            markRelayBackfillRetry(cursor);
+            markRelayBackfillRetry(relay, cursor, "近7天", events, token);
             break;
           }
           clearRelayBackfillRetry(cursor);
           finishRelayRecent(cursor);
           break;
         }
-        clearRelayBackfillRetry(cursor);
         let oldest = cursor.recentUntil;
         for (const event of events) oldest = Math.min(oldest, Number(event.created_at || oldest));
-        if (await hotIngestEvents(events)) {
+        const ingested = await hotIngestEvents(events, { generation: token });
+        if (token != null && token !== state.relay.subscribeToken) break;
+        if (ingested) {
           changed = true;
           if (isNostrRefreshActive(token)) updateNostrRefreshProgress({ phase: "写入索引", indexed: state.hot.items.length, relay: shortRelay(relay) });
         }
         cursor.recentUntil = oldest - 1;
-        if (!events.complete) break;
+        if (!events.complete) {
+          markRelayBackfillRetry(relay, cursor, "近7天", events, token);
+          break;
+        }
+        clearRelayBackfillRetry(cursor);
         if (events.length < HOT_PAGE_LIMIT || cursor.recentUntil < cursor.recentTarget) {
           finishRelayRecent(cursor);
           break;
@@ -37213,7 +37414,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     }
 
     async function syncRelayHistory(relay, cursor, since, now, token) {
-      if (cursor.historyDone) return false;
+      if (cursor.historyDone || cursor.historyFailed || cursor.historyTimedOut) return false;
       if (!cursor.historyUntil || cursor.historyUntil < since) cursor.historyUntil = Math.max(cursor.newest || 0, now);
       let changed = false;
       for (let page = 0; page < HOT_HISTORY_PAGES_PER_RELAY; page++) {
@@ -37229,7 +37430,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           since,
           until: cursor.historyUntil,
           limit: HOT_PAGE_LIMIT
-        }, 9000);
+        }, 9000, token);
         if (token != null && token !== state.relay.subscribeToken) break;
         if (isNostrRefreshActive(token)) {
           updateNostrRefreshProgress({
@@ -37241,22 +37442,27 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         }
         if (!events.length) {
           if (!events.complete) {
-            markRelayBackfillRetry(cursor);
+            markRelayBackfillRetry(relay, cursor, "历史90天", events, token);
             break;
           }
           clearRelayBackfillRetry(cursor);
           cursor.historyDone = true;
           break;
         }
-        clearRelayBackfillRetry(cursor);
         let oldest = cursor.historyUntil;
         for (const event of events) oldest = Math.min(oldest, Number(event.created_at || oldest));
-        if (await hotIngestEvents(events)) {
+        const ingested = await hotIngestEvents(events, { generation: token });
+        if (token != null && token !== state.relay.subscribeToken) break;
+        if (ingested) {
           changed = true;
           if (isNostrRefreshActive(token)) updateNostrRefreshProgress({ phase: "写入索引", indexed: state.hot.items.length, relay: shortRelay(relay) });
         }
         cursor.historyUntil = oldest - 1;
-        if (!events.complete) break;
+        if (!events.complete) {
+          markRelayBackfillRetry(relay, cursor, "历史90天", events, token);
+          break;
+        }
+        clearRelayBackfillRetry(cursor);
         cursor.historyDone = events.length < HOT_PAGE_LIMIT || cursor.historyUntil <= since;
         if (cursor.historyDone) break;
       }
