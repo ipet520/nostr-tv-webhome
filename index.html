@@ -33528,8 +33528,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     }
 
     // 用户触发播放时，健康检查只能作为有界的辅助信号；背景预热仍直接使用 probePanHealth。
-    // 超时后不等待原 Promise，也不把没有结果误记为 bad。原检查若稍后完成，最多更新缓存。
-    function playbackPanHealthPreflight(items, context, timeoutMs) {
+    // 超时后不等待原 Promise，也不把没有结果误记为 bad。Curated 可选地消费同一个原始 checkTask 的 late 结果。
+    function playbackPanHealthPreflight(items, context, timeoutMs, options) {
+      const opts = options || {};
       const preflightTimeout = timeoutMs == null
         ? PLAYBACK_PREFLIGHT_TIMEOUT_MS
         : Math.max(1, Number(timeoutMs) || 1);
@@ -33543,6 +33544,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       });
       return Promise.race([checkTask, timeoutTask]).then((result) => {
         clearTimeout(timer);
+        if (result && result.timedOut && opts.exposeLateResult === true) {
+          return Object.assign({}, result, { latePromise: checkTask });
+        }
         return result || { states: {}, timedOut: false, checkError: true };
       });
     }
@@ -36511,7 +36515,52 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return { ordered, batches };
     }
 
-    async function curatedProgressiveHealthCandidate(sourceState, item, run, startedAt) {
+    function curatedHealthBatchQualification(batch, item, sourceState, freshHealth) {
+      const candidates = Array.isArray(batch) ? batch : [];
+      const decision = panPreflightCandidates(candidates, freshHealth || {}, {}, { rejectAllBad: true });
+      const decisionCandidates = new Set(decision.candidates || []);
+      let selected = null;
+      let acceptedCount = 0;
+      let rejectedCount = 0;
+      let unconfirmedCount = 0;
+      candidates.forEach((candidate) => {
+        const mediaVerdict = automaticVideoCandidateVerdict(item, candidate);
+        if (!mediaVerdict.accepted) {
+          recordAutomaticMediaRejected("curated", sourceState.source.id, candidate, mediaVerdict);
+          rejectedCount++;
+          return;
+        }
+        const admission = panAutoHealthAdmission(candidate, freshHealth || {});
+        candidate.healthAdmission = admission.state;
+        if (!selected && admission.accepted && decisionCandidates.has(candidate)) {
+          selected = candidate;
+          acceptedCount++;
+        } else if (["bad", "locked", "unavailable"].includes(admission.state) || !decisionCandidates.has(candidate)) {
+          rejectedCount++;
+        } else if (admission.accepted) {
+          acceptedCount++;
+        } else {
+          unconfirmedCount++;
+        }
+      });
+      const allFreshBad = candidates.length > 0 && candidates.every((candidate) => {
+        const key = panHealthKey(candidate);
+        return Object.prototype.hasOwnProperty.call(freshHealth || {}, key)
+          && String(freshHealth[key] || "").toLowerCase() === "bad"
+          && isPanHealthBad(candidate);
+      });
+      return {
+        decision,
+        selected,
+        acceptedCount,
+        rejectedCount,
+        unconfirmedCount,
+        allFreshBad
+      };
+    }
+
+    async function curatedProgressiveHealthCandidate(sourceState, item, run, startedAt, options) {
+      const opts = options || {};
       const plan = curatedHealthBatchPlan(sourceState && sourceState.candidates, CURATED_MAX_AUTO_CHECK_PER_SOURCE);
       if (!plan.ordered.length) {
         return { candidate: null, sourceId: sourceState && sourceState.source && sourceState.source.id || "", sourceName: sourceState && sourceState.source && sourceState.source.name || "", stale: false, timedOut: false, checkError: false, freshStateCount: 0, healthAcceptedCount: 0, healthRejectedCount: 0, healthUnconfirmedCount: 0 };
@@ -36550,40 +36599,25 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         const checkable = batch.filter((candidate) => isPanCheckSupported(candidate));
         if (checkable.length && panCheckAvailable()) {
           const context = { raceRun: run, raceOwner: "curated", item };
-          const checked = await playbackPanHealthPreflight(batch, context, CURATED_PREFLIGHT_BUDGET_MS);
+          const checked = await playbackPanHealthPreflight(batch, context, CURATED_PREFLIGHT_BUDGET_MS, { exposeLateResult: opts.exposeLateResult === true });
           if (!detailPlaybackIsCurrent(run) || !panContextIsCurrent(context)) {
             return { candidate: null, sourceId: "", sourceName: "", stale: true, timedOut: false, checkError: false, preflightStartedAt, preflightDurationMs: Math.max(0, Date.now() - preflightStartedAt), freshStateCount: 0, healthAcceptedCount: totalAccepted, healthRejectedCount: totalRejected, healthUnconfirmedCount: totalUnconfirmed };
           }
           freshHealth = checked && checked.states || {};
           timedOut = !!(checked && checked.timedOut);
           checkError = !!(checked && checked.checkError);
+          if (timedOut && checked && checked.latePromise && typeof opts.registerLateHealth === "function") {
+            opts.registerLateHealth(sourceState, batchInfo, batch, checked.latePromise, {
+              preflightStartedAt,
+              preflightDurationMs: Math.max(0, Date.now() - preflightStartedAt)
+            });
+          }
         }
-        const decision = panPreflightCandidates(batch, freshHealth, {}, { rejectAllBad: true });
-        const decisionCandidates = new Set(decision.candidates || []);
-        let selected = null;
-        let acceptedCount = 0;
-        let rejectedCount = 0;
-        let unconfirmedCount = 0;
-        batch.forEach((candidate) => {
-          const mediaVerdict = automaticVideoCandidateVerdict(item, candidate);
-          if (!mediaVerdict.accepted) {
-            recordAutomaticMediaRejected("curated", sourceState.source.id, candidate, mediaVerdict);
-            rejectedCount++;
-            return;
-          }
-          const admission = panAutoHealthAdmission(candidate, freshHealth);
-          candidate.healthAdmission = admission.state;
-          if (!selected && admission.accepted && decisionCandidates.has(candidate)) {
-            selected = candidate;
-            acceptedCount++;
-          } else if (["bad", "locked", "unavailable"].includes(admission.state) || !decisionCandidates.has(candidate)) {
-            rejectedCount++;
-          } else if (admission.accepted) {
-            acceptedCount++;
-          } else {
-            unconfirmedCount++;
-          }
-        });
+        const qualified = curatedHealthBatchQualification(batch, item, sourceState, freshHealth);
+        const selected = qualified.selected;
+        const acceptedCount = qualified.acceptedCount;
+        const rejectedCount = qualified.rejectedCount;
+        const unconfirmedCount = qualified.unconfirmedCount;
         totalAccepted += acceptedCount;
         totalRejected += rejectedCount;
         totalUnconfirmed += unconfirmedCount;
@@ -36613,12 +36647,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           unconfirmedCount,
           remainingCandidateCount: Math.max(0, plan.ordered.length - batchInfo.startOffset - batch.length)
         });
-        const allFreshBad = batch.length > 0 && batch.every((candidate) => {
-          const key = panHealthKey(candidate);
-          return Object.prototype.hasOwnProperty.call(freshHealth || {}, key)
-            && String(freshHealth[key] || "").toLowerCase() === "bad"
-            && isPanHealthBad(candidate);
-        });
+        const allFreshBad = qualified.allFreshBad;
         recordPanPreflightResult(batch, freshHealth, panPreflightCheckErrorCount(checkable, freshHealth), selected, allFreshBad);
         if (selected) {
           return {
@@ -36766,6 +36795,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           healthAcceptedCount: Number(health.healthAcceptedCount || 0),
           healthRejectedCount: Number(health.healthRejectedCount || 0),
           healthUnconfirmedCount: Number(health.healthUnconfirmedCount || 0),
+          lateHealthPendingCount,
+          lateHealthResolvedCount,
+          lateHealthAcceptedCount,
+          selectedByLateHealth,
           selectedSource: String(health.sourceId || ""),
           selectedDiskType: String(health.candidate && health.candidate.diskType || ""),
           plannedSearchKeywords: curatedSearchKeywordVariants(item),
@@ -36805,7 +36838,11 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         qualificationDone: false,
         qualificationPromise: null,
         qualificationResult: null,
-        qualifiedCandidate: null
+        qualifiedCandidate: null,
+        lateHealthPendingCount: 0,
+        lateHealthResolvedCount: 0,
+        lateHealthAcceptedCount: 0,
+        lateHealthPromises: []
       }));
 
       sourceStates.forEach((sourceState) => {
@@ -36818,15 +36855,21 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
       let resolveCollection;
       let collectionDone = false;
+      let collectionReason = "";
       let firstCandidateAt = 0;
       let firstCandidateSource = "";
       let discoveryTimer = 0;
       let qualificationActive = false;
+      let lateHealthPendingCount = 0;
+      let lateHealthResolvedCount = 0;
+      let lateHealthAcceptedCount = 0;
+      let selectedByLateHealth = false;
       const collectionPromise = new Promise((resolve) => { resolveCollection = resolve; });
 
       const finishCollection = (reason) => {
         if (collectionDone) return;
         collectionDone = true;
+        collectionReason = String(reason || "");
         clearTimeout(discoveryTimer);
         sourceStates.forEach((sourceState) => { sourceState.context.active = false; });
         const doneAt = Date.now();
@@ -36855,6 +36898,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           finishCollection("STALE");
           return;
         }
+        const pendingLateHealth = sourceStates.some((sourceState) => Number(sourceState.lateHealthPendingCount || 0) > 0);
+        const beforeDiscoveryDeadline = Date.now() < discoveryDeadline;
         const strongAvailable = sourceStates.filter((sourceState) =>
           sourceState.terminal && sourceState.candidates.length && sourceState.candidateVerdict === "STRONG"
         );
@@ -36868,6 +36913,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         }
         if (!strongAvailable.length) {
           if (sourceStates.every((sourceState) => sourceState.terminal)) {
+            if (pendingLateHealth && beforeDiscoveryDeadline) return;
             finishCollection(tentativeAvailable.length
               ? "ALL_SOURCES_TERMINAL_NO_STRONG_CANDIDATE"
               : "ALL_SOURCES_TERMINAL_NO_CANDIDATE");
@@ -36876,8 +36922,142 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         }
         if (strongAvailable.some((sourceState) => !sourceState.qualificationDone) || qualificationActive) return;
         if (sourceStates.every((sourceState) => sourceState.terminal)) {
+          if (pendingLateHealth && beforeDiscoveryDeadline) return;
           finishCollection("ALL_SOURCES_TERMINAL_HEALTH_EXHAUSTED");
         }
+      };
+
+      const registerLateHealth = (sourceState, batchInfo, batch, latePromise, preflightInfo) => {
+        if (!sourceState || sourceState.candidateVerdict !== "STRONG" || !latePromise || collectionDone) return;
+        const batchIndex = Number(batchInfo && batchInfo.batchIndex || 0);
+        const entry = {
+          sourceState,
+          batchInfo,
+          batch: Array.isArray(batch) ? batch.slice() : [],
+          pending: true,
+          preflightStartedAt: Number(preflightInfo && preflightInfo.preflightStartedAt || Date.now()),
+          preflightDurationMs: Number(preflightInfo && preflightInfo.preflightDurationMs || 0)
+        };
+        sourceState.lateHealthPendingCount = Number(sourceState.lateHealthPendingCount || 0) + 1;
+        sourceState.lateHealthPromises.push(latePromise);
+        lateHealthPendingCount++;
+        recordCuratedRaceDiag("CURATED_LATE_HEALTH_PENDING", {
+          sourceId: sourceState.source.id,
+          batchIndex,
+          candidateCount: entry.batch.length,
+          elapsedMs: Math.max(0, Date.now() - startedAt),
+          remainingDiscoveryMs: Math.max(0, discoveryDeadline - Date.now())
+        });
+
+        const settleLateCounters = () => {
+          if (!entry.pending) return;
+          entry.pending = false;
+          sourceState.lateHealthPendingCount = Math.max(0, Number(sourceState.lateHealthPendingCount || 0) - 1);
+          sourceState.lateHealthResolvedCount = Number(sourceState.lateHealthResolvedCount || 0) + 1;
+          lateHealthPendingCount = Math.max(0, lateHealthPendingCount - 1);
+          lateHealthResolvedCount++;
+        };
+        const currentFreshHealthFor = (lateResult) => {
+          const lateStates = lateResult && lateResult.states && typeof lateResult.states === "object"
+            ? lateResult.states : {};
+          const checkError = !!(lateResult && lateResult.checkError);
+          const freshHealth = {};
+          entry.batch.forEach((candidate) => {
+            const key = panHealthKey(candidate);
+            if (!key) return;
+            if (checkError) {
+              if (isPanCheckSupported(candidate)) freshHealth[key] = "uncertain";
+              return;
+            }
+            if (Object.prototype.hasOwnProperty.call(lateStates, key)) {
+              freshHealth[key] = lateStates[key];
+              return;
+            }
+            const cached = getPanHealth(candidate);
+            if (isPanHealthFresh(candidate) && cached && ["ok", "bad", "locked", "unavailable"].includes(String(cached.state || "").toLowerCase())) {
+              freshHealth[key] = cached.state;
+            }
+          });
+          return freshHealth;
+        };
+        const handleLateHealth = (lateResult) => {
+          const elapsedMs = Math.max(0, Date.now() - startedAt);
+          const current = detailPlaybackIsCurrent(run) && !run.cancelled;
+          let ignoredReason = "";
+          if (!current) ignoredReason = "STALE_RUN";
+          else if (run.providerCommitted) ignoredReason = "PROVIDER_ALREADY_COMMITTED";
+          else if (collectionDone) ignoredReason = collectionReason === "DISCOVERY_DEADLINE" ? "DISCOVERY_DEADLINE" : "COLLECTION_DONE";
+          else if (Date.now() >= discoveryDeadline) ignoredReason = "DISCOVERY_DEADLINE";
+          if (ignoredReason) {
+            settleLateCounters();
+            recordCuratedRaceDiag("CURATED_LATE_HEALTH_IGNORED", {
+              sourceId: sourceState.source.id,
+              batchIndex,
+              elapsedMs,
+              reason: ignoredReason
+            });
+            maybeFinishCollection();
+            return;
+          }
+
+          const freshHealth = currentFreshHealthFor(lateResult);
+          const qualified = curatedHealthBatchQualification(entry.batch, item, sourceState, freshHealth);
+          const checkError = !!(lateResult && lateResult.checkError);
+          recordCuratedRaceDiag("CURATED_LATE_HEALTH_RESULT", {
+            sourceId: sourceState.source.id,
+            batchIndex,
+            elapsedMs,
+            freshStateCount: Object.keys(freshHealth).length,
+            acceptedCount: qualified.acceptedCount,
+            badCount: qualified.rejectedCount,
+            unconfirmedCount: qualified.unconfirmedCount
+          });
+          settleLateCounters();
+          if (qualified.selected && !checkError && sourceState.candidateVerdict === "STRONG") {
+            const lateQualification = {
+              candidate: qualified.selected,
+              sourceId: sourceState.source.id,
+              sourceName: sourceState.source.name,
+              identityVerdict: String(sourceState.candidateVerdict || ""),
+              stale: false,
+              timedOut: true,
+              lateHealth: true,
+              checkError: false,
+              preflightStartedAt: entry.preflightStartedAt,
+              preflightDurationMs: entry.preflightDurationMs,
+              freshStateCount: Object.keys(freshHealth).length,
+              healthAcceptedCount: qualified.acceptedCount,
+              healthRejectedCount: qualified.rejectedCount,
+              healthUnconfirmedCount: qualified.unconfirmedCount
+            };
+            sourceState.qualifiedCandidate = qualified.selected;
+            sourceState.qualificationResult = lateQualification;
+            sourceState.lateHealthAcceptedCount = Number(sourceState.lateHealthAcceptedCount || 0) + 1;
+            lateHealthAcceptedCount++;
+            selectedByLateHealth = true;
+            recordCuratedRaceDiag("CURATED_LATE_HEALTH_ACCEPTED", {
+              sourceId: sourceState.source.id,
+              batchIndex,
+              candidateLabel: String(qualified.selected.resourceTitle || qualified.selected.title || qualified.selected.fileName || "").slice(0, 160),
+              diskType: String(qualified.selected.diskType || ""),
+              elapsedMs
+            });
+            finishCollection("LATE_HEALTH_ACCEPTED");
+            return;
+          }
+          if (qualified.selected && sourceState.candidateVerdict !== "STRONG") {
+            recordCuratedRaceDiag("CURATED_LATE_HEALTH_IGNORED", {
+              sourceId: sourceState.source.id,
+              batchIndex,
+              elapsedMs,
+              reason: "NO_ACCEPTABLE_CANDIDATE"
+            });
+          }
+          maybeFinishCollection();
+        };
+        Promise.resolve(latePromise).then(handleLateHealth, () => {
+          handleLateHealth({ states: {}, checkError: true });
+        });
       };
 
       const startNextQualification = () => {
@@ -36895,7 +37075,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         next.qualificationStarted = true;
         qualificationActive = true;
         next.qualificationPromise = Promise.resolve()
-          .then(() => curatedProgressiveHealthCandidate(next, item, run, startedAt))
+          .then(() => curatedProgressiveHealthCandidate(next, item, run, startedAt, {
+            exposeLateResult: true,
+            registerLateHealth
+          }))
           .then((result) => {
             next.qualificationDone = true;
             next.qualificationResult = result || null;
@@ -43226,6 +43409,14 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const curatedHealthSource = String(curatedCentralHealthCandidate) + String(curatedProgressiveHealthCandidate);
       check("DETAIL_RACE_CURATED_PREFLIGHT_ISOLATED", String(probePanHealth).includes("raceRun") && String(panContextIsCurrent).includes("context.raceRun") && curatedHealthSource.includes('raceOwner: "curated"'), "Curated health validity uses the detail run, not Direct viewToken", "STATIC_HOOK");
       check("DETAIL_RACE_DIRECT_PREFLIGHT_SURVIVES", curatedHealthSource.includes("raceOwner: \"curated\"") && String(panContextIsCurrent).includes("state.pan.viewToken === context.token"), "Direct health context retains its own viewToken while Curated races", "STATIC_HOOK");
+      const lateHealthPreflightSource = String(playbackPanHealthPreflight);
+      const lateHealthCollectionSource = String(resolveCuratedPlaybackCandidate);
+      check("CURATED_LATE_HEALTH_RESULT_EXPOSED", lateHealthPreflightSource.includes("exposeLateResult") && lateHealthPreflightSource.includes("latePromise: checkTask"), "Curated can observe the original preflight task after the fast budget", "STATIC_HOOK");
+      check("CURATED_LATE_HEALTH_REUSES_ORIGINAL_CHECK", lateHealthPreflightSource.includes("latePromise: checkTask") && lateHealthCollectionSource.includes("registerLateHealth"), "late health reuses one original check task instead of issuing a second probe", "STATIC_HOOK");
+      check("CURATED_LATE_HEALTH_ACTIVE_LIFECYCLE", lateHealthCollectionSource.includes("CURATED_LATE_HEALTH_PENDING") && lateHealthCollectionSource.includes("CURATED_LATE_HEALTH_RESULT") && lateHealthCollectionSource.includes("CURATED_LATE_HEALTH_ACCEPTED"), "late results re-enter the active Curated qualification lifecycle", "STATIC_HOOK");
+      check("CURATED_LATE_HEALTH_PENDING_GATES_EXHAUSTED", lateHealthCollectionSource.includes("pendingLateHealth && beforeDiscoveryDeadline") && lateHealthCollectionSource.includes("lateHealthPendingCount"), "pending late health prevents premature Curated exhaustion", "STATIC_HOOK");
+      check("CURATED_LATE_HEALTH_DEADLINE_HARD_LIMIT", lateHealthCollectionSource.includes('finishCollection("DISCOVERY_DEADLINE")') && lateHealthCollectionSource.includes('reason: "DISCOVERY_DEADLINE"'), "the existing discovery deadline remains the hard upper bound", "STATIC_HOOK");
+      check("CURATED_LATE_HEALTH_STRONG_ONLY", lateHealthCollectionSource.includes('sourceState.candidateVerdict !== "STRONG"') && lateHealthCollectionSource.includes('sourceState.candidateVerdict === "STRONG"'), "late health cannot promote tentative identity into the race", "STATIC_HOOK");
       const wanouSource = CURATED_SOURCE_DEFINITIONS.find((source) => source.id === "wanou");
       const baXianItem = { mediaType: "movie", title: "八仙！", resourceSearchTitle: "八仙！", releaseDate: "2026-01-01" };
       const baXianVariants = curatedSearchKeywordVariants(baXianItem);
