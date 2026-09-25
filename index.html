@@ -16892,6 +16892,7 @@ utils.encode = function encode(arr, enc) {
       catalog: {},
       catalogPage: {},
       recent: { items: [], loading: false, loadingPromise: null, loaded: false, error: "", refreshedAt: 0, diag: null, nativeItems: [], nativeLoaded: false, nativeLoading: false, nativeRefreshedAt: 0, nativeKeyFlow: {}, runSeq: 0, activeRun: null, pendingRefresh: false, pendingRefreshSilent: true, pendingRefreshReconcileDetail: true },
+      movieDetail: { cache: {} },
       tvDetail: { cache: {}, cardTasks: {}, cardQueue: [], cardActive: 0, observer: null, scrollBound: false, scanTimer: 0, generation: 0 },
       homeLatest: { items: [], loading: false, loaded: false, error: "", loadedAt: 0, lastRefreshAt: 0, requestSeq: 0, diag: null, promise: null, cacheChecked: false, cacheHydrated: false, cacheWeekStart: "", cacheSavedAt: 0, cacheItemCount: 0, cacheHydratedAt: 0, networkRefreshReason: "", networkRefreshSucceeded: false, refreshStartedAt: 0, firstRenderableAt: 0 },
       gridRender: {},
@@ -17423,6 +17424,7 @@ utils.encode = function encode(arr, enc) {
     const HOME_WEEKLY_DETAIL_CONCURRENCY = 8;
     const HOME_WEEKLY_REFRESH_TTL_MS = 30 * 60 * 1000;
     const HOME_WEEKLY_TIMEZONE = "Asia/Shanghai";
+    const MOVIE_DETAIL_CACHE_TTL_MS = 45 * 60 * 1000;
     const TV_DETAIL_CACHE_TTL_MS = 45 * 60 * 1000;
     const TV_CARD_DETAIL_CONCURRENCY = 3;
     const TV_CARD_DETAIL_ROOT_MARGIN = "560px 0px";
@@ -20441,6 +20443,100 @@ utils.encode = function encode(arr, enc) {
       return url.toString();
     }
 
+    function recordMovieDetailSharedDiag(item, status, startedAt, extra) {
+      const diag = Object.assign({
+        status: String(status || ""),
+        mediaType: "movie",
+        tmdbId: String(item && (item.tmdbId || item.id) || "").trim(),
+        elapsedMs: startedAt ? Math.max(0, Date.now() - startedAt) : 0
+      }, extra || {});
+      if (state.tvDiag) state.tvDiag.movieDetailShared = diag;
+      if (isTvDiagnosticEnabled()) {
+        try { console.debug("[Nostr TV] TMDB_MOVIE_DETAIL_SHARED", diag); } catch (e) {}
+        updateTvDiagnostic();
+      }
+      return diag;
+    }
+
+    function movieDetailCacheId(itemOrId) {
+      const raw = itemOrId && typeof itemOrId === "object"
+        ? itemOrId.tmdbId != null ? itemOrId.tmdbId : itemOrId.id
+        : itemOrId;
+      const value = String(raw == null ? "" : raw).trim();
+      return /^\d+$/.test(value) && Number(value) > 0 ? value : "";
+    }
+
+    function movieDetailCacheKey(itemOrId) {
+      const id = movieDetailCacheId(itemOrId);
+      return id ? `movie:${id}` : "";
+    }
+
+    function movieDetailCacheValue(itemOrId) {
+      const runtime = state.movieDetail;
+      const key = movieDetailCacheKey(itemOrId);
+      const entry = runtime && key ? runtime.cache[key] : null;
+      if (!entry || !entry.detail || typeof entry.detail !== "object" || !entry.fetchedAt) return null;
+      if (Date.now() - Number(entry.fetchedAt) >= MOVIE_DETAIL_CACHE_TTL_MS) return null;
+      const expectedId = movieDetailCacheId(itemOrId);
+      const detailId = String(entry.detail.id || entry.detail.tmdbId || "").trim();
+      return expectedId && detailId === expectedId ? entry.detail : null;
+    }
+
+    function storeMovieDetailCache(itemOrId, detail) {
+      const runtime = state.movieDetail;
+      const key = movieDetailCacheKey(itemOrId);
+      const expectedId = movieDetailCacheId(itemOrId);
+      const detailId = String(detail && (detail.id || detail.tmdbId) || "").trim();
+      if (!runtime || !key || !expectedId || !detail || typeof detail !== "object" || detailId !== expectedId) return null;
+      const entry = runtime.cache[key] || (runtime.cache[key] = { detail: null, fetchedAt: 0, promise: null });
+      entry.detail = detail;
+      entry.fetchedAt = Date.now();
+      entry.promise = null;
+      return detail;
+    }
+
+    function requestMovieDetailShared(itemOrId, requestOverride) {
+      const runtime = state.movieDetail;
+      const id = movieDetailCacheId(itemOrId);
+      const key = id ? `movie:${id}` : "";
+      if (!runtime || !key) return Promise.resolve(null);
+      const request = typeof requestOverride === "function" ? requestOverride : requestJson;
+      const cached = movieDetailCacheValue(itemOrId);
+      if (cached) {
+        recordMovieDetailSharedDiag(itemOrId, "cache_hit", 0);
+        return Promise.resolve(cached);
+      }
+      const entry = runtime.cache[key] || (runtime.cache[key] = { detail: null, fetchedAt: 0, promise: null });
+      if (entry.promise) {
+        recordMovieDetailSharedDiag(itemOrId, "join_pending", 0);
+        return entry.promise;
+      }
+      const startedAt = Date.now();
+      recordMovieDetailSharedDiag(itemOrId, "network_start", startedAt);
+      const requestItem = { mediaType: "movie", tmdbId: id };
+      let requestResult;
+      try {
+        requestResult = request(tmdbDetailUrl(requestItem), 18);
+      } catch (error) {
+        if (runtime.cache[key] === entry) entry.promise = null;
+        recordMovieDetailSharedDiag(requestItem, "network_done", startedAt, { success: false });
+        return Promise.reject(error);
+      }
+      const promise = Promise.resolve(requestResult).then((body) => {
+        const detail = body && typeof body === "object" ? body : {};
+        const stored = storeMovieDetailCache(requestItem, detail);
+        if (runtime.cache[key] === entry && !stored) entry.promise = null;
+        recordMovieDetailSharedDiag(requestItem, "network_done", startedAt, { success: !!stored });
+        return detail;
+      }).catch((error) => {
+        if (runtime.cache[key] === entry) entry.promise = null;
+        recordMovieDetailSharedDiag(requestItem, "network_done", startedAt, { success: false });
+        throw error;
+      });
+      entry.promise = promise;
+      return promise;
+    }
+
     function tvDetailCacheId(itemOrId) {
       const raw = itemOrId && typeof itemOrId === "object"
         ? itemOrId.tmdbId != null ? itemOrId.tmdbId : itemOrId.id
@@ -21652,6 +21748,19 @@ utils.encode = function encode(arr, enc) {
       const previous = state.detailPlayback || {};
       const continueGate = opts.continueGate === true;
       cancelDetailPlaybackPreparation("new_detail_prepare");
+      const canonicalStartedAt = Number(opts.canonicalStartedAt || Date.now());
+      let canonicalPromise = opts.canonicalPromise;
+      if (!canonicalPromise) {
+        if (canonicalResourceKey(item)) {
+          try {
+            canonicalPromise = Promise.resolve(resolveCanonicalResourceTitle(item)).catch(() => item);
+          } catch (e) {
+            canonicalPromise = Promise.resolve(item);
+          }
+        } else {
+          canonicalPromise = Promise.resolve(item);
+        }
+      }
       const run = {
         seq: Number(previous.seq || 0) + 1,
         // 复用 Direct 状态使用的单调数字 token，保证诊断/状态提示不会被字符串 token 丢弃，
@@ -21659,6 +21768,12 @@ utils.encode = function encode(arr, enc) {
         token: ++_directPlayActionSeq,
         item,
         itemKey: panSearchItemKey(item),
+        canonicalPromise: null,
+        canonicalStartedAt,
+        canonicalResolved: false,
+        canonicalSuccess: false,
+        historyGateStartedAt: 0,
+        historyGateDone: !continueGate,
         active: true,
         promise: null,
         candidate: null,
@@ -21706,9 +21821,38 @@ utils.encode = function encode(arr, enc) {
       };
       state.detailPlayback = run;
       recordDetailPlaybackLifecycle(run, "START");
+      recordDetailRaceDiag("DETAIL_CANONICAL_START", run, {
+        mediaType: String(item && item.mediaType || ""),
+        tmdbId: String(item && item.tmdbId || "")
+      });
+      run.canonicalPromise = Promise.resolve(canonicalPromise).then((value) => {
+        run.canonicalResolved = true;
+        run.canonicalSuccess = true;
+        const canonicalEntry = canonicalResourceKey(item) && canonicalResourceTitleCache.has(canonicalResourceKey(item))
+          ? canonicalResourceCacheEntry(canonicalResourceTitleCache.get(canonicalResourceKey(item)))
+          : null;
+        recordDetailRaceDiag("DETAIL_CANONICAL_DONE", run, {
+          elapsedMs: Math.max(0, Date.now() - canonicalStartedAt),
+          success: true,
+          authority: canonicalEntry && canonicalEntry.authority === "EXACT_DETAIL"
+            ? "EXACT_DETAIL"
+            : "ITEM_FALLBACK"
+        });
+        return value || item;
+      }, () => {
+        run.canonicalResolved = true;
+        run.canonicalSuccess = false;
+        recordDetailRaceDiag("DETAIL_CANONICAL_DONE", run, {
+          elapsedMs: Math.max(0, Date.now() - canonicalStartedAt),
+          success: false,
+          authority: "ITEM_FALLBACK"
+        });
+        return item;
+      });
       run.promise = (async () => {
         let continueDecision = null;
         if (run.continuePending) {
+          run.historyGateStartedAt = Date.now();
           run.continueDecisionPromise = (async () => {
             const historyDecision = await verifyDetailNativeHistoryWithDeadline(item, run);
             const verifiedHistory = historyDecision && historyDecision.history;
@@ -21747,6 +21891,12 @@ utils.encode = function encode(arr, enc) {
             };
           })();
           continueDecision = await run.continueDecisionPromise.catch(() => null);
+          run.historyGateDone = true;
+          recordDetailRaceDiag("DETAIL_HISTORY_GATE_DONE", run, {
+            elapsedMs: Math.max(0, Date.now() - Number(run.historyGateStartedAt || Date.now())),
+            historyFound: !!(continueDecision && continueDecision.history),
+            timedOut: !!(continueDecision && continueDecision.timedOut)
+          });
           run.continuePending = false;
           if (!detailPlaybackCurrentOrRecord(run)) return null;
           if (continueDecision && detailContinueHistoryIsValid(continueDecision.history)) {
@@ -21774,6 +21924,13 @@ utils.encode = function encode(arr, enc) {
             return null;
           }
         }
+        await run.canonicalPromise.catch(() => item);
+        if (!detailPlaybackCurrentOrRecord(run)) return null;
+        recordDetailRaceDiag("DETAIL_FIRST_PLAY_BARRIER_RELEASED", run, {
+          elapsedMs: Math.max(0, Date.now() - Number(run.canonicalStartedAt || Date.now())),
+          historyGateDone: !!run.historyGateDone,
+          canonicalDone: !!run.canonicalResolved
+        });
         const knownNativeHistory = state.detailMode === "CONTINUE"
           && state.detailModeItemKey === panSearchItemKey(item)
           && detailContinueHistoryIsValid(state.detailHistory)
@@ -31287,6 +31444,7 @@ utils.encode = function encode(arr, enc) {
       const current = matches(state.detail);
       if (current) return current;
       if (mediaType === "tv") return matches(tvDetailCacheValue(item));
+      if (mediaType === "movie") return matches(movieDetailCacheValue(item));
       return null;
     }
 
@@ -31405,7 +31563,7 @@ utils.encode = function encode(arr, enc) {
             try {
               exactDetail = mediaType === "tv"
                 ? await requestTvDetailShared(item)
-                : await requestJson(canonicalExactDetailUrl(item), 18);
+                : await requestMovieDetailShared(item);
             } catch (e) {}
           }
           exactDetailContext = canonicalIdentityContextFromDetail(item, exactDetail);
@@ -32163,12 +32321,22 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return true;
     }
 
-    async function prepareDetailPlaybackForDetail(item, options) {
+    function prepareDetailPlaybackForDetail(item, options) {
+      const opts = options || {};
+      const canonicalStartedAt = Date.now();
+      let canonicalPromise = Promise.resolve(item);
       if (canonicalResourceKey(item)) {
-        try { await resolveCanonicalResourceTitle(item); } catch (e) {}
+        try {
+          canonicalPromise = Promise.resolve(resolveCanonicalResourceTitle(item)).catch(() => item);
+        } catch (e) {
+          canonicalPromise = Promise.resolve(item);
+        }
       }
-      if (state.selected !== item) return null;
-      return prepareDetailPlayback(item, options);
+      if (state.selected !== item) return Promise.resolve(null);
+      return Promise.resolve(prepareDetailPlayback(item, Object.assign({}, opts, {
+        canonicalPromise,
+        canonicalStartedAt
+      })));
     }
 
     function openDetail(item, options) {
@@ -32671,9 +32839,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
     async function loadDetail(item) {
       try {
-        const body = String(item && item.mediaType || "").toLowerCase() === "tv"
+        const mediaType = String(item && item.mediaType || "").toLowerCase();
+        const body = mediaType === "tv"
           ? await requestTvDetailShared(item)
-          : await requestJson(tmdbDetailUrl(item), 18);
+          : mediaType === "movie"
+            ? await requestMovieDetailShared(item)
+            : await requestJson(tmdbDetailUrl(item), 18);
         if (!body || state.selected !== item) return;
         state.detail = body;
         renderDetailExtras(item, body);
@@ -42320,6 +42491,62 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return { x: deltaX, y: deltaY };
     }
 
+    async function runMovieDetailSharedSelfTests() {
+      if (!isTvDiagnosticEnabled()) return [];
+      const results = [];
+      const check = (id, pass, detail) => results.push({ id, pass: !!pass, kind: "RUNTIME_MOCK", detail: detail || "" });
+      const previousRuntime = state.movieDetail;
+      const movieA = { mediaType: "movie", tmdbId: "910001", title: "Movie A" };
+      const movieB = { mediaType: "movie", tmdbId: "910002", title: "Movie B" };
+      try {
+        state.movieDetail = { cache: {} };
+        let pendingResolve = null;
+        let pendingRequestCount = 0;
+        const pendingRequest = () => {
+          pendingRequestCount++;
+          return new Promise((resolve) => { pendingResolve = resolve; });
+        };
+        const pendingA = requestMovieDetailShared(movieA, pendingRequest);
+        const pendingB = requestMovieDetailShared(movieA, pendingRequest);
+        check("MOVIE_DETAIL_PENDING_PROMISE_TEST", pendingRequestCount === 1 && pendingA === pendingB, "same movie joins one pending request");
+        pendingResolve({ id: Number(movieA.tmdbId), title: movieA.title });
+        await Promise.all([pendingA, pendingB]);
+        const cached = await requestMovieDetailShared(movieA, () => { pendingRequestCount++; return Promise.resolve({ id: movieA.tmdbId }); });
+        check("MOVIE_DETAIL_CACHE_REUSE_TEST", pendingRequestCount === 1 && !!cached && String(cached.id) === movieA.tmdbId, "successful detail is reused within TTL");
+
+        state.movieDetail = { cache: {} };
+        let failureRequestCount = 0;
+        const failureThenSuccess = () => {
+          failureRequestCount++;
+          return failureRequestCount === 1
+            ? Promise.reject(new Error("mock_failure"))
+            : Promise.resolve({ id: Number(movieA.tmdbId), title: movieA.title });
+        };
+        try { await requestMovieDetailShared(movieA, failureThenSuccess); } catch (e) {}
+        const retryDetail = await requestMovieDetailShared(movieA, failureThenSuccess);
+        check("MOVIE_DETAIL_FAILURE_RETRY_TEST", failureRequestCount === 2 && !!retryDetail && String(retryDetail.id) === movieA.tmdbId, "rejected promise is cleared and the next call retries");
+
+        state.movieDetail = { cache: {} };
+        let isolatedRequestCount = 0;
+        const isolatedRequest = (url) => {
+          isolatedRequestCount++;
+          const id = String(url).match(/\/movie\/(\d+)/);
+          return Promise.resolve({ id: id ? Number(id[1]) : 0, title: id && id[1] === movieA.tmdbId ? movieA.title : movieB.title });
+        };
+        const isolatedA = requestMovieDetailShared(movieA, isolatedRequest);
+        const isolatedB = requestMovieDetailShared(movieB, isolatedRequest);
+        await Promise.all([isolatedA, isolatedB]);
+        check("MOVIE_DETAIL_DIFFERENT_ID_ISOLATION_TEST", isolatedRequestCount === 2 && isolatedA !== isolatedB, "different movie IDs do not share cache or promise");
+      } catch (error) {
+        check("MOVIE_DETAIL_SHARED_SELF_TEST_ERROR", false, String(error && error.message || error || "unknown"));
+      } finally {
+        state.movieDetail = previousRuntime;
+        if (state.tvDiag) state.tvDiag.movieDetailSharedTests = results;
+        try { updateTvDiagnostic(); } catch (e) {}
+      }
+      return results;
+    }
+
     function runTvAdaptationSelfTests() {
       if (!isTvDiagnosticEnabled()) return [];
       const results = [];
@@ -42712,6 +42939,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const detailPlayStateSource = String(detailContinuePlayStateFor);
       const detailCanonicalPrepareSource = String(prepareDetailPlaybackForDetail);
       const detailCanonicalSource = String(resolveCanonicalResourceTitle);
+      const detailMovieSharedSource = String(requestMovieDetailShared);
+      const detailMovieLoadSource = String(loadDetail);
+      const detailCanonicalExactSource = String(canonicalExactDetailFor);
       const detailColorStyle = $("detail-action-colors-v1");
       const detailColorSource = detailColorStyle ? String(detailColorStyle.textContent || "") : "";
       const unreleasedGateAt = detailPrepareSource.indexOf("const unreleased = detailUnreleasedInfo(item);");
@@ -42833,8 +43063,19 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       check("DETAIL_PLAY_STATE_COLORS", detailColorSource.includes('[data-play-state="idle"]') && detailColorSource.includes('[data-play-state="unreleased"]') && detailColorSource.includes("#8FA3B8") && detailColorSource.includes('[data-play-state="preparing"]') && detailColorSource.includes("#F2B84B") && detailColorSource.includes('[data-play-state="ready"]') && detailColorSource.includes("#35E07A") && detailColorSource.includes('[data-play-state="failed"]') && detailColorSource.includes("#FF0000"), "five logical states use the requested four icon colors", "STATIC_HOOK");
       check("DETAIL_BUTTON_STAYS_FOCUSABLE", !detailRequestSource.includes('detailContinueBtn.disabled') && !detailRequestSource.includes('setAttribute("disabled"'), "unreleased only gates the action and does not disable the button", "STATIC_HOOK");
       const canonicalResolveAt = detailCanonicalPrepareSource.indexOf("resolveCanonicalResourceTitle");
-      const canonicalPrepareAt = detailCanonicalPrepareSource.indexOf("prepareDetailPlayback(item, options)");
-      check("CANONICAL_TITLE_RESOLUTION_BEFORE_GATE", canonicalResolveAt >= 0 && canonicalPrepareAt > canonicalResolveAt && String(openDetail).includes("continueGate: true"), "canonical identity/title enrichment remains before the Native History gate", "STATIC_HOOK");
+      const canonicalPrepareAt = detailCanonicalPrepareSource.indexOf("prepareDetailPlayback(item, Object.assign");
+      const historyGateAt = detailPrepareSource.indexOf("verifyDetailNativeHistoryWithDeadline");
+      const canonicalBarrierAt = detailPrepareSource.indexOf("await run.canonicalPromise");
+      const continueReadyAt = detailPrepareSource.indexOf('decision: "CONTINUE_READY"');
+      const continueReadyReturnAt = continueReadyAt >= 0 ? detailPrepareSource.indexOf("return null;", continueReadyAt) : -1;
+      const continueReadyBlock = continueReadyAt >= 0 && continueReadyReturnAt > continueReadyAt
+        ? detailPrepareSource.slice(historyGateAt, continueReadyReturnAt) : "";
+      check("CANONICAL_HISTORY_PARALLEL", canonicalResolveAt >= 0 && canonicalPrepareAt > canonicalResolveAt && !detailCanonicalPrepareSource.includes("await resolveCanonicalResourceTitle") && historyGateAt >= 0 && detailPrepareSource.includes("canonicalPromise") && String(openDetail).includes("continueGate: true"), "canonical starts before the run and the first History gate can proceed without awaiting it", "STATIC_HOOK");
+      check("VALID_HISTORY_DOES_NOT_WAIT_CANONICAL", continueReadyBlock && !continueReadyBlock.includes("await run.canonicalPromise"), "valid Native History settles Continue before the canonical barrier", "STATIC_HOOK");
+      check("NO_HISTORY_CANONICAL_BARRIER", canonicalBarrierAt >= 0 && canonicalBarrierAt < unreleasedGateAt && canonicalBarrierAt < curatedPrepareAt && canonicalBarrierAt < directPrepareAt, "no-History playback waits for canonical resolution before Unreleased and Race", "STATIC_HOOK");
+      check("MOVIE_DETAIL_SHARED_AUTHORITY", detailMovieSharedSource.includes("entry.promise") && detailMovieSharedSource.includes("return entry.promise") && detailMovieLoadSource.includes("requestMovieDetailShared(item)") && detailCanonicalSource.includes("requestMovieDetailShared(item)") && !detailCanonicalSource.includes("requestJson(canonicalExactDetailUrl"), "movie canonical and UI detail share one cache/pending request authority", "STATIC_HOOK");
+      check("MOVIE_EXACT_DETAIL_CACHE_REUSE", detailCanonicalExactSource.includes("movieDetailCacheValue(item)") && detailCanonicalExactSource.includes("canonicalDetailLooksRaw(item, detail)"), "canonical exact detail can reuse the validated movie raw-detail cache", "STATIC_HOOK");
+      check("MOVIE_DETAIL_FAILURE_CLEARS_PENDING", detailMovieSharedSource.includes("entry.promise = null") && detailMovieSharedSource.includes("catch"), "failed movie detail requests clear pending state for retry", "STATIC_HOOK");
       check("CANONICAL_TITLE_PURPOSE", detailCanonicalSource.includes("resourceSearchTitle") && detailCanonicalSource.includes("canonicalIdentityContextFromDetail") && !detailCanonicalSource.includes("playBestQuark") && !detailCanonicalSource.includes("resolveCuratedPlaybackCandidate"), "canonical resolution serves identity/resource-title enrichment, not playback", "STATIC_HOOK");
       check("NETWORK_RESOURCE_SEARCH_BEFORE_UNRELEASED_GATE", unreleasedGateAt < curatedPrepareAt && unreleasedGateAt < directPrepareAt && !detailCanonicalSource.includes("nativeSearch") && !detailCanonicalSource.includes("playBestQuark") && !detailCanonicalSource.includes("resolveCuratedPlaybackCandidate"), "no network resource search starts before the unreleased gate", "STATIC_HOOK");
       check("DETAIL_NORMAL_DATA_PATH_PRESERVED", typeof renderDetailBase === "function" && typeof openDetail === "function" && String(openDetail).includes("renderDetailBase(item)"), "normal detail metadata/data rendering remains available", "FROZEN_SOURCE_AUDIT");
@@ -43988,6 +44229,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       });
       await loadCatalog();
       runTvAdaptationSelfTests();
+      runMovieDetailSharedSelfTests().catch(() => {});
       const canRestoreUi = shouldRestoreUiSnapshot();
       const restored = canRestoreUi ? await restoreUiSnapshot(await readUiSnapshot()) : false;
       await ensureIdentity();
