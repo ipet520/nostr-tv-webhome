@@ -16800,7 +16800,7 @@ utils.encode = function encode(arr, enc) {
       "/search.html?wd={kw}"
     ];
     const CURATED_SOURCE_DEFINITIONS = [
-      { id: "wanou", name: "玩偶", domains: ["https://www.wogg.net"], searchApi: "https://woog.nxog.eu.org/api.php/provide/vod?ac=detail&wd={kw}" },
+      { id: "wanou", name: "玩偶", domains: ["https://www.wogg.net"], searchUrl: "/vodsearch/-------------.html?wd={kw}&page={p}", searchApi: "https://woog.nxog.eu.org/api.php/provide/vod?ac=detail&wd={kw}" },
       { id: "muou", name: "木偶", domains: ["https://666.666291.xyz"] },
       { id: "duoduo", name: "多多", domains: ["https://tv.yydsys.cc"] },
       { id: "huban", name: "虎斑", domains: ["http://xhban.xyz"] },
@@ -16814,6 +16814,7 @@ utils.encode = function encode(arr, enc) {
     const CURATED_PREFLIGHT_BUDGET_MS = 700;
     const CURATED_PREFLIGHT_PER_SOURCE = 2;
     const CURATED_PREFLIGHT_MAX_ITEMS = 10;
+    const CURATED_MAX_AUTO_CHECK_PER_SOURCE = 6;
     const DETAIL_CONTINUE_GATE_MAX_MS = 300;
     const DETAIL_NATIVE_HISTORY_GATE_MAX_MS = 800;
     const CURATED_REQUEST_TIMEOUT_SEC = 6;
@@ -21346,6 +21347,11 @@ utils.encode = function encode(arr, enc) {
         || !healthAccepted || identityVerdict !== "STRONG" && !finalTentative) {
         return false;
       }
+      const mediaVerdict = automaticVideoCandidateVerdict(run.item, candidate);
+      if (!mediaVerdict.accepted) {
+        recordAutomaticMediaRejected(normalizedProvider, info.sourceId || candidate.source || candidate.provider, candidate, mediaVerdict);
+        return false;
+      }
       if (!detailPlaybackIsCurrent(run) || run.cancelled) return false;
       if (run.providerCommitted) {
         recordDetailRaceDiag("PROVIDER_COMMIT_REJECTED", run, {
@@ -21388,11 +21394,17 @@ utils.encode = function encode(arr, enc) {
       const terminalKey = normalizedLane === "curated" ? "curatedTerminal" : "directTerminal";
       if (run[terminalKey]) return false;
       run[terminalKey] = true;
+      const safeTentative = tentative && automaticVideoCandidateVerdict(run.item, tentative).accepted
+        ? tentative
+        : null;
+      if (tentative && !safeTentative) {
+        recordAutomaticMediaRejected(normalizedLane === "curated" ? "curated" : "pan-direct", tentative.source || tentative.provider, tentative, automaticVideoCandidateVerdict(run.item, tentative));
+      }
       if (normalizedLane === "curated") {
-        run.curatedTentative = tentative || null;
+        run.curatedTentative = safeTentative;
         run.curatedFailure = String(reason || "");
       } else {
-        run.directTentative = tentative || null;
+        run.directTentative = safeTentative;
         run.directFailureType = ["NO_RESOURCE", "CONNECTION_FAILED"].includes(String(reason || ""))
           ? String(reason) : run.directFailureType || "";
       }
@@ -21400,9 +21412,9 @@ utils.encode = function encode(arr, enc) {
       recordDetailRaceDiag(event, run, Object.assign({
         elapsedMs: Math.max(0, Date.now() - Number(run.raceStartedAt || Date.now())),
         reason: String(reason || ""),
-        candidateLabel: detailRaceCandidateLabel(tentative),
-        identityVerdict: String(tentative && tentative.identityVerdict || ""),
-        healthState: String(tentative && tentative.healthAdmission || "")
+        candidateLabel: detailRaceCandidateLabel(safeTentative),
+        identityVerdict: String(safeTentative && safeTentative.identityVerdict || ""),
+        healthState: String(safeTentative && safeTentative.healthAdmission || "")
       }, details || {}));
       if (!(run.curatedTerminal && run.directTerminal) || run.providerCommitted) return true;
       const fallback = run.curatedTentative || run.directTentative;
@@ -21437,6 +21449,11 @@ utils.encode = function encode(arr, enc) {
       const item = action.item;
       const identityVerdict = String(candidate && candidate.identityVerdict || details && details.identityVerdict || "").toUpperCase();
       if (candidate && identityVerdict === "STRONG") {
+        const mediaVerdict = automaticVideoCandidateVerdict(item, candidate);
+        if (!mediaVerdict.accepted) {
+          recordAutomaticMediaRejected("pan-direct", candidate.source || candidate.provider, candidate, mediaVerdict);
+          return detailRaceLaneTerminal(run, "direct", null, "AUTOMATIC_MEDIA_REJECTED", details);
+        }
         const admission = panAutoHealthAdmission(candidate, {});
         if (admission.accepted) {
           recordDetailRaceDiag("DIRECT_QUALIFIED_READY", run, {
@@ -21561,6 +21578,14 @@ utils.encode = function encode(arr, enc) {
       const run = state.detailPlayback;
       const candidate = run && detailPlaybackIsCurrent(run) && run.candidate;
       if (!candidate) return null;
+      const mediaVerdict = automaticVideoCandidateVerdict(item, candidate);
+      if (!mediaVerdict.accepted) {
+        recordAutomaticMediaRejected(run.provider || "detail", run.sourceId || candidate.source || candidate.provider, candidate, mediaVerdict);
+        run.candidate = null;
+        run.error = "automatic_media_rejected";
+        updateDetailContinueButton();
+        return null;
+      }
       // Curated/direct candidates只有在本次详情生命周期内通过自动健康准入后才可 Ready。
       const admission = panAutoHealthAdmission(candidate, {});
       if (!admission.accepted) {
@@ -21591,6 +21616,16 @@ utils.encode = function encode(arr, enc) {
       if (episodeTarget) setDetailPlaybackTarget(item, episodeTarget);
       // 预检可能在等待 Native History 的期间晚到；handoff 前必须再读一次当前鲜活状态。
       const handoffAdmission = panAutoHealthAdmission(candidate, {});
+      const handoffMediaVerdict = automaticVideoCandidateVerdict(item, candidate);
+      if (!handoffMediaVerdict.accepted) {
+        recordAutomaticMediaRejected(run.provider || "detail", run.sourceId || candidate.source || candidate.provider, candidate, handoffMediaVerdict);
+        run.error = "automatic_media_rejected_at_native_handoff";
+        run.active = false;
+        run.handoffStarted = false;
+        showDirectPlayStatus(run.token, "FINAL_ERROR", DIRECT_PLAY_STATUS_TEXT.FINAL_ERROR, run.error);
+        updateDetailContinueButton();
+        return false;
+      }
       if (!handoffAdmission.accepted) {
         run.error = handoffAdmission.state === "bad" ? "fresh_bad_at_native_handoff" : "health_unconfirmed_at_native_handoff";
         run.active = false;
@@ -21976,6 +22011,11 @@ utils.encode = function encode(arr, enc) {
       if (!candidate) return false;
       const identity = panAutoIdentityVerdict(item, candidate);
       if (identity.verdict === "REJECT") return false;
+      const mediaVerdict = automaticVideoCandidateVerdict(item, candidate);
+      if (!mediaVerdict.accepted) {
+        recordAutomaticMediaRejected("pan-direct", candidate.source || candidate.provider, candidate, mediaVerdict);
+        return false;
+      }
       return panAutoHealthAdmission(candidate, {}).accepted;
     }
 
@@ -33369,10 +33409,59 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return verdict;
     }
 
+    function automaticVideoCandidateVerdict(item, candidate) {
+      const mediaType = String(item && (item.mediaType || item.media_type) || "").toLowerCase();
+      if (mediaType !== "movie" && mediaType !== "tv") {
+        return { accepted: true, reason: "NON_VIDEO_SCOPE", evidence: [] };
+      }
+      const evidence = [
+        candidate && candidate.title,
+        candidate && candidate.fileName,
+        candidate && candidate.file_name,
+        candidate && candidate.filename,
+        candidate && candidate.resourceTitle,
+        candidate && candidate.mediaTitle,
+        candidate && candidate.sourceEntryTitle,
+        candidate && candidate.remark,
+        candidate && candidate.url
+      ].map((value) => String(value || "").trim()).filter(Boolean);
+      const text = evidence.join(" ");
+      const extension = /\.(?:flac|mp3|wav|ape|m4a|aac|ogg|wma)(?:$|[?#\s)\]}，。；;])/i;
+      const audioFormat = /(?:\bFLAC\b|\bMP3\b|\bWAV\b|\bAPE\b|\bM4A\b|\bAAC\b|\bOGG\b|\bWMA\b|24\s*bit|48\s*khz|96\s*khz|192\s*khz|母带|臻品母带|无损音乐|Hi[- ]?Res|伴奏|和声伴奏)/i;
+      const soundtrack = /(?:\bOST\b|原声带|插曲|主题曲|片尾曲)/i;
+      const strongAudioEvidence = extension.test(text) || audioFormat.test(text)
+        || soundtrack.test(text) && (extension.test(text) || audioFormat.test(text));
+      return strongAudioEvidence
+        ? { accepted: false, reason: "AUDIO_ONLY_RESOURCE", evidence: evidence.slice(0, 8) }
+        : { accepted: true, reason: "VIDEO_RESOURCE", evidence: evidence.slice(0, 8) };
+    }
+
+    function recordAutomaticMediaRejected(provider, sourceId, candidate, verdict) {
+      if (!candidate || !verdict || verdict.accepted) return false;
+      if (candidate._automaticMediaRejectedLogged) return true;
+      candidate._automaticMediaRejectedLogged = true;
+      recordCuratedRaceDiag("AUTOMATIC_MEDIA_REJECTED", {
+        provider: String(provider || ""),
+        sourceId: String(sourceId || candidate.source || candidate.provider || ""),
+        candidateLabel: String(candidate.resourceTitle || candidate.title || candidate.fileName || "").slice(0, 160),
+        reason: String(verdict.reason || "AUTOMATIC_MEDIA_REJECTED"),
+        evidence: Array.isArray(verdict.evidence) ? verdict.evidence : []
+      });
+      return true;
+    }
+
     function panAutoCandidateTiers(item, candidates) {
-      const tiers = { strong: [], tentative: [], reject: [], identityStrongCount: 0, identityTentativeCount: 0, identityRejectCount: 0 };
+      const tiers = { strong: [], tentative: [], reject: [], identityStrongCount: 0, identityTentativeCount: 0, identityRejectCount: 0, mediaRejectCount: 0 };
       (candidates || []).forEach((candidate) => {
         const verdict = panAutoIdentityVerdict(item, candidate);
+        const mediaVerdict = automaticVideoCandidateVerdict(item, candidate);
+        candidate.automaticMediaVerdict = mediaVerdict;
+        if (!mediaVerdict.accepted) {
+          tiers.reject.push(candidate);
+          tiers.mediaRejectCount++;
+          recordAutomaticMediaRejected("pan-direct", candidate.source || candidate.provider, candidate, mediaVerdict);
+          return;
+        }
         if (verdict.verdict === "STRONG") {
           tiers.strong.push(candidate);
           tiers.identityStrongCount++;
@@ -34380,6 +34469,13 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         const readyCandidateKey = detailDirectPlayCandidateKey(pick);
         state.pan.directFailure = null;
         if (readyLifecycle.sameSession && readyLifecycle.origin === "direct" && readyCandidateKey) {
+          const readyMediaVerdict = automaticVideoCandidateVerdict(item, pick);
+          if (!readyMediaVerdict.accepted) {
+            recordAutomaticMediaRejected("pan-direct", pick.source || pick.provider, pick, readyMediaVerdict);
+            state.pan.directReady = null;
+            if (action.raceMode) reportDetailDirectRaceResult(action, null, "AUTOMATIC_MEDIA_REJECTED");
+            return;
+          }
           const readyAdmission = panAutoHealthAdmission(pick, {});
           state.pan.directReady = {
             itemKey: panSearchItemKey(item),
@@ -34805,7 +34901,11 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const raw = response && response.body != null ? response.body : response && response.data != null ? response.data : response;
       const html = typeof raw === "string" ? raw : raw && (raw.html || raw.content || raw.text) || "";
       if (!String(html || "").trim()) throw new Error("站源返回空页面");
-      return { html: String(html), base: String(response && response.url || url) };
+      return {
+        html: String(html),
+        base: String(response && response.url || url),
+        status: Number(response && response.status || 0)
+      };
     }
 
     async function requestCuratedJson(url, timeout, options) {
@@ -34829,7 +34929,11 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         try { body = JSON.parse(body); } catch (e) { throw new Error("站源返回无效 JSON"); }
       }
       if (!body || typeof body !== "object") throw new Error("站源返回无效 JSON");
-      return { body, base: String(response && response.url || url) };
+      return {
+        body,
+        base: String(response && response.url || url),
+        status: Number(response && response.status || 0)
+      };
     }
 
     function curatedDeadlineError(kind) {
@@ -34883,6 +34987,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         }
       } catch (e) {}
       return payload;
+    }
+
+    function recordWanouDiag(event, detail) {
+      return recordCuratedRaceDiag(event, Object.assign({ sourceId: "wanou" }, detail || {}));
     }
 
     function recordCuratedRaceSummary(run, detail) {
@@ -35176,7 +35284,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           const metaNode = node.querySelector(".module-item-note,.module-item-desc,.module-item-content,.remark,.year,.meta,.note");
           const remark = String(titleAnchor.getAttribute("data-remark") || metaNode && metaNode.textContent || "").replace(/\s+/g, " ").trim();
           const yearInfo = curatedEntryYear(node, titleAnchor, remark);
-          const idMatch = strictSource && href.match(/\/vod\/detail\/id\/([^/.]+)\.html/i);
+          const idMatch = strictSource
+            ? href.match(/\/vod\/detail\/id\/([^/.]+)\.html/i)
+            : String(source && source.id || "") === "wanou" && href.match(/\/voddetail\/([^/.]+)\.html/i);
           if (href && title) entries.push({
             href,
             title,
@@ -35194,7 +35304,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             const entryNode = anchor.parentElement || anchor;
             const remark = String(anchor.getAttribute("data-remark") || entryNode && entryNode.textContent || "").replace(/\s+/g, " ").trim();
             const yearInfo = curatedEntryYear(entryNode, anchor, remark);
-            if (href && title.length >= 2 && title.length <= 120) entries.push({ href, title, remark, year: yearInfo.year, yearTrusted: yearInfo.yearTrusted, yearSource: yearInfo.yearSource });
+            const idMatch = String(source && source.id || "") === "wanou" && href && href.match(/\/voddetail\/([^/.]+)\.html/i);
+            if (href && title.length >= 2 && title.length <= 120) entries.push({ href, title, remark, year: yearInfo.year, yearTrusted: yearInfo.yearTrusted, yearSource: yearInfo.yearSource, sourceEntryId: idMatch ? idMatch[1] : "" });
           });
         }
       }
@@ -35210,7 +35321,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             remark: "",
             year: curatedYear(title) || "",
             yearTrusted: false,
-            yearSource: curatedYear(title) ? "TITLE" : ""
+            yearSource: curatedYear(title) ? "TITLE" : "",
+            sourceEntryId: String(source && source.id || "") === "wanou" && href.match(/\/voddetail\/([^/.]+)\.html/i)
+              ? href.match(/\/voddetail\/([^/.]+)\.html/i)[1] : ""
           });
         }
       }
@@ -35330,7 +35443,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           sourceEntryTitle: String(entry && entry.title || "").trim(),
           sourceEntryId: String(entry && (entry.sourceEntryId || entry.id || entry.vod_id) || "").trim(),
           sourceEntryUrl: String(entry && entry.href || "").trim(),
-          extractionMethod: curatedHtmlSourceIsStrict(source) ? "DOWNLOAD_LIST" : "HTML_DETAIL",
+          extractionMethod: String(source && source.id || "") === "wanou"
+            ? "WOGG_HTML_DETAIL"
+            : curatedHtmlSourceIsStrict(source) ? "DOWNLOAD_LIST" : "HTML_DETAIL",
           fileName: title,
           index: candidates.length
         });
@@ -35434,6 +35549,40 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       });
     }
 
+    function curatedPunctuationFallback(value) {
+      return String(value || "")
+        .replace(/[!！?？,，。．.:：;；、\/\\|｜《》〈〉“”\"‘’'「」『』（）()【】\[\]{}<>—–_~`]+/g, " ")
+        .replace(/[-+]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+
+    function curatedSearchKeywordVariants(item) {
+      const values = mergeTitleAliases(
+        item && item.resourceSearchTitle,
+        item && item.title,
+        item && item.originalTitle,
+        item && item.original_title,
+        item && item.originalName,
+        item && item.original_name,
+        item && item.aliases
+      );
+      const result = [];
+      const seen = new Set();
+      const add = (value) => {
+        const text = String(value || "").trim().replace(/\s+/g, " ");
+        if (!text || seen.has(text)) return;
+        seen.add(text);
+        result.push(text);
+      };
+      values.forEach((value) => {
+        const raw = String(value || "").trim();
+        add(raw);
+        add(curatedPunctuationFallback(raw));
+      });
+      return result;
+    }
+
     function wanouDiskTypeForCode(value) {
       const key = String(value || "").trim().toUpperCase().replace(/[\s_-]+/g, "");
       return ({
@@ -35460,9 +35609,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       urls.forEach((rawUrl, index) => {
         const url = String(rawUrl || "").trim();
         const typeHint = wanouDiskTypeForCode(types[index]);
-        if (!typeHint || !url) return;
+        if (!url) return;
         const diskType = curatedVerifiedDiskTypeForUrl(url);
-        if (!diskType || diskType !== typeHint) return;
+        if (!diskType || typeHint && diskType !== typeHint) return;
         const normalized = normalizePanUrl(url);
         candidates.push({
           key: `${diskType}|${normalized}`,
@@ -35487,45 +35636,72 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return candidates;
     }
 
-    async function searchWanouSourceKeyword(source, item, run, context, keyword) {
+    async function searchWanouHtmlKeyword(source, item, run, context, keyword, variant) {
       const beforeRequest = curatedRequestStartState(context, run);
       if (beforeRequest) return curatedSourceResult(beforeRequest);
       const remainingSearchMs = curatedRemainingMs(context);
-      const template = curatedSearchPath(source.searchApi, keyword, 1);
+      const template = curatedSearchPath(source.searchUrl, keyword, 1);
       const url = curatedAbsoluteUrl(template, source.domains && source.domains[0]);
       if (!url) return curatedSourceResult("TRANSPORT_FAILURE", { terminalReason: "INVALID_REQUEST_URL" });
+      recordWanouDiag("WANOU_SEARCH_ATTEMPT", {
+        backend: "wogg-html",
+        keyword: String(keyword || ""),
+        variant: String(variant || "raw"),
+        httpState: "REQUEST_START",
+        resultState: "REQUEST_START",
+        entryCount: 0
+      });
       let response;
       try {
         response = await curatedRequestWithDeadline(
-          () => requestCuratedJson(url, curatedNativeTimeoutSec(remainingSearchMs), {
+          () => requestCuratedHtml(url, curatedNativeTimeoutSec(remainingSearchMs), {
             referer: source.domains && source.domains[0] || url
           }),
           context,
           "SOURCE_TIMEOUT"
         );
       } catch (e) {
-        if (e && e.curatedDeadline) return curatedSourceResult("SOURCE_TIMEOUT");
+        recordWanouDiag("WANOU_SEARCH_ATTEMPT", {
+          backend: "wogg-html",
+          keyword: String(keyword || ""),
+          variant: String(variant || "raw"),
+          httpState: e && e.curatedDeadline ? "TIMEOUT" : "TRANSPORT_FAILURE",
+          resultState: e && e.curatedDeadline ? "SOURCE_TIMEOUT" : "TRANSPORT_FAILURE",
+          entryCount: 0
+        });
+        if (e && e.curatedDeadline) return curatedSourceResult("SOURCE_TIMEOUT", { searchKeywordsTried: [keyword] });
         const afterFailure = curatedAttemptState(context, run);
-        return curatedSourceResult(afterFailure || "TRANSPORT_FAILURE");
+        return curatedSourceResult(afterFailure || "TRANSPORT_FAILURE", { searchKeywordsTried: [keyword] });
       }
       const afterSearch = curatedAttemptState(context, run);
-      if (afterSearch) return curatedSourceResult(afterSearch);
-      const list = response && response.body && Array.isArray(response.body.list) ? response.body.list : null;
-      if (!list) return curatedSourceResult("TRANSPORT_FAILURE", { terminalReason: "INVALID_RESPONSE" });
-      const sampleEntryTitles = list.slice(0, 3)
-        .map((entry) => String(entry && entry.vod_name || "").trim().slice(0, 80))
+      if (afterSearch) return curatedSourceResult(afterSearch, { searchKeywordsTried: [keyword] });
+      const entries = curatedSearchEntries(response && response.html, source, response && response.base || url);
+      const entryCount = entries.length;
+      const woggStructureRecognized = /(?:module-search-item|module-items|search-stat|mac_total)/i.test(String(response && response.html || ""));
+      recordWanouDiag("WANOU_SEARCH_ATTEMPT", {
+        backend: "wogg-html",
+        keyword: String(keyword || ""),
+        variant: String(variant || "raw"),
+        httpState: "HTTP_OK",
+        resultState: entryCount ? "ENTRIES" : woggStructureRecognized ? "NO_ENTRIES" : "PARSE_FAILURE",
+        entryCount,
+        status: Number(response && response.status || 0)
+      });
+      const sampleEntryTitles = entries.slice(0, 3)
+        .map((entry) => String(entry && entry.title || "").trim().slice(0, 80))
         .filter(Boolean);
-      const identityResults = list.map((vodItem) => {
-        const entry = Object.assign({}, vodItem, {
-          title: String(vodItem && vodItem.vod_name || "").trim(),
-          href: url,
-          sourceEntryId: String(vodItem && vodItem.vod_id || "").trim(),
-          sourceEntryUrl: url,
-          remark: String(vodItem && vodItem.vod_remarks || "").trim(),
-          year: String(vodItem && vodItem.vod_year || "").trim(),
-          yearTrusted: !!String(vodItem && vodItem.vod_year || "").trim(),
-          yearSource: "WANOU_VOD_YEAR"
-        });
+      const baseDiagnostics = {
+        entryCount,
+        matchedEntryCount: 0,
+        sampleEntryTitles,
+        searchKeywordsTried: [keyword]
+      };
+      if (!entryCount) {
+        return curatedSourceResult(woggStructureRecognized ? "NO_MATCH" : "PARSE_FAILURE", Object.assign({}, baseDiagnostics, {
+          terminalReason: woggStructureRecognized ? "NO_ENTRIES" : "UNRECOGNIZED_HTML"
+        }));
+      }
+      const identityResults = entries.map((entry) => {
         return {
           entry,
           searchUrl: url,
@@ -35539,9 +35715,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         .map((result) => String(result.verdict.reason || "").trim())
         .filter(Boolean))).slice(0, 12);
       const diagnostics = {
-        entryCount: list.length,
+        entryCount,
         matchedEntryCount: identityStrongCount + identityTentativeCount,
         sampleEntryTitles,
+        searchKeywordsTried: [keyword],
         identityStrongCount,
         identityTentativeCount,
         identityRejectCount,
@@ -35564,9 +35741,16 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         }, diagnostics));
       }
       const candidates = [];
-      strongMatches.forEach((match) => {
-        candidates.push(...curatedWanouCandidates(match.entry, source, item, match.searchUrl));
-      });
+      const detailResult = await curatedDetailCandidatesForMatches(
+        source,
+        item,
+        run,
+        context,
+        strongMatches,
+        diagnostics
+      );
+      if (detailResult.result) return detailResult.result;
+      candidates.push(...detailResult.candidates);
       if (candidates.length) {
         return curatedSourceResult("CANDIDATES", Object.assign({
           candidates,
@@ -35579,18 +35763,301 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       }, diagnostics));
     }
 
+    async function searchWanouNxogKeyword(source, item, run, context, keyword, variant) {
+      const beforeRequest = curatedRequestStartState(context, run);
+      if (beforeRequest) return curatedSourceResult(beforeRequest);
+      const remainingSearchMs = curatedRemainingMs(context);
+      const template = curatedSearchPath(source.searchApi, keyword, 1);
+      const url = curatedAbsoluteUrl(template, source.domains && source.domains[0]);
+      if (!url) return curatedSourceResult("TRANSPORT_FAILURE", { terminalReason: "INVALID_REQUEST_URL" });
+      recordWanouDiag("WANOU_SEARCH_ATTEMPT", {
+        backend: "nxog-json",
+        keyword: String(keyword || ""),
+        variant: String(variant || "raw"),
+        httpState: "REQUEST_START",
+        resultState: "REQUEST_START",
+        entryCount: 0
+      });
+      let response;
+      try {
+        response = await curatedRequestWithDeadline(
+          () => requestCuratedJson(url, curatedNativeTimeoutSec(remainingSearchMs), {
+            referer: source.domains && source.domains[0] || url
+          }),
+          context,
+          "SOURCE_TIMEOUT"
+        );
+      } catch (e) {
+        recordWanouDiag("WANOU_SEARCH_ATTEMPT", {
+          backend: "nxog-json",
+          keyword: String(keyword || ""),
+          variant: String(variant || "raw"),
+          httpState: e && e.curatedDeadline ? "TIMEOUT" : "TRANSPORT_FAILURE",
+          resultState: e && e.curatedDeadline ? "SOURCE_TIMEOUT" : "TRANSPORT_FAILURE",
+          entryCount: 0
+        });
+        if (e && e.curatedDeadline) return curatedSourceResult("SOURCE_TIMEOUT", { searchKeywordsTried: [keyword] });
+        const afterFailure = curatedAttemptState(context, run);
+        return curatedSourceResult(afterFailure || "TRANSPORT_FAILURE", { searchKeywordsTried: [keyword] });
+      }
+      const afterSearch = curatedAttemptState(context, run);
+      if (afterSearch) return curatedSourceResult(afterSearch, { searchKeywordsTried: [keyword] });
+      const list = response && response.body && Array.isArray(response.body.list) ? response.body.list : null;
+      if (!list) {
+        recordWanouDiag("WANOU_SEARCH_ATTEMPT", {
+          backend: "nxog-json",
+          keyword: String(keyword || ""),
+          variant: String(variant || "raw"),
+          httpState: "HTTP_OK",
+          resultState: "PARSE_FAILURE",
+          entryCount: 0,
+          status: Number(response && response.status || 0)
+        });
+        return curatedSourceResult("PARSE_FAILURE", { terminalReason: "INVALID_RESPONSE", searchKeywordsTried: [keyword] });
+      }
+      recordWanouDiag("WANOU_SEARCH_ATTEMPT", {
+        backend: "nxog-json",
+        keyword: String(keyword || ""),
+        variant: String(variant || "raw"),
+        httpState: "HTTP_OK",
+        resultState: list.length ? "ENTRIES" : "NO_ENTRIES",
+        entryCount: list.length,
+        status: Number(response && response.status || 0)
+      });
+      const sampleEntryTitles = list.slice(0, 3)
+        .map((entry) => String(entry && entry.vod_name || "").trim().slice(0, 80))
+        .filter(Boolean);
+      if (!list.length) {
+        return curatedSourceResult("NO_MATCH", {
+          terminalReason: "NO_ENTRIES",
+          entryCount: 0,
+          matchedEntryCount: 0,
+          sampleEntryTitles,
+          searchKeywordsTried: [keyword]
+        });
+      }
+      const identityResults = list.map((vodItem) => {
+        const entry = Object.assign({}, vodItem, {
+          title: String(vodItem && vodItem.vod_name || "").trim(),
+          href: url,
+          sourceEntryId: String(vodItem && vodItem.vod_id || "").trim(),
+          sourceEntryUrl: url,
+          remark: String(vodItem && vodItem.vod_remarks || "").trim(),
+          year: String(vodItem && vodItem.vod_year || "").trim(),
+          yearTrusted: !!String(vodItem && vodItem.vod_year || "").trim(),
+          yearSource: "WANOU_VOD_YEAR",
+          wanouBackend: "nxog-json",
+          wanouVodItem: vodItem
+        });
+        return {
+          backend: "nxog-json",
+          entry,
+          searchUrl: url,
+          verdict: mediaIdentityVerdict(item, entry.title, entry)
+        };
+      });
+      const identityStrongCount = identityResults.filter((result) => result.verdict.verdict === "STRONG").length;
+      const identityTentativeCount = identityResults.filter((result) => result.verdict.verdict === "TENTATIVE").length;
+      const identityRejectCount = identityResults.filter((result) => result.verdict.verdict === "REJECT").length;
+      const identityReasons = Array.from(new Set(identityResults
+        .map((result) => String(result.verdict.reason || "").trim())
+        .filter(Boolean))).slice(0, 12);
+      const diagnostics = {
+        entryCount: list.length,
+        matchedEntryCount: identityStrongCount + identityTentativeCount,
+        sampleEntryTitles,
+        searchKeywordsTried: [keyword],
+        identityStrongCount,
+        identityTentativeCount,
+        identityRejectCount,
+        identityReason: identityReasons[0] || "",
+        identityReasons
+      };
+      const strongMatches = identityResults
+        .filter((result) => result.verdict.verdict === "STRONG")
+        .slice(0, 5);
+      const tentativeMatches = identityResults
+        .filter((result) => result.verdict.verdict === "TENTATIVE")
+        .slice(0, 5);
+      if (!strongMatches.length && !tentativeMatches.length) {
+        return curatedSourceResult("NO_MATCH", Object.assign({ terminalReason: "TITLE_NO_MATCH" }, diagnostics));
+      }
+      if (!strongMatches.length) {
+        return curatedSourceResult("TENTATIVE_MATCHES", Object.assign({
+          terminalReason: "TENTATIVE_IDENTITY",
+          tentativeEntries: tentativeMatches
+        }, diagnostics));
+      }
+      const detailResult = await curatedDetailCandidatesForMatches(
+        source,
+        item,
+        run,
+        context,
+        strongMatches,
+        diagnostics
+      );
+      if (detailResult.result) return detailResult.result;
+      if (detailResult.candidates.length) {
+        return curatedSourceResult("CANDIDATES", Object.assign({
+          candidates: detailResult.candidates,
+          candidateVerdict: "STRONG"
+        }, diagnostics));
+      }
+      return curatedSourceResult("NO_RESOURCE", Object.assign({
+        terminalReason: "NO_CANDIDATE",
+        tentativeEntries: tentativeMatches
+      }, diagnostics));
+    }
+
+    async function searchWanouSource(source, item, run, context) {
+      const keywords = curatedSearchKeywordVariants(item);
+      const rawKeywordSet = new Set(mergeTitleAliases(
+        item && item.resourceSearchTitle,
+        item && item.title,
+        item && item.originalTitle,
+        item && item.original_title,
+        item && item.originalName,
+        item && item.original_name,
+        item && item.aliases
+      ).map((value) => String(value || "").trim().replace(/\s+/g, " ")).filter(Boolean));
+      const aggregate = {
+        entryCount: 0,
+        matchedEntryCount: 0,
+        sampleEntryTitles: [],
+        searchKeywordsTried: [],
+        identityStrongCount: 0,
+        identityTentativeCount: 0,
+        identityRejectCount: 0,
+        identityReason: "",
+        identityReasons: []
+      };
+      const tentativeEntries = [];
+      const tentativeKeys = new Set();
+      let lastResult = null;
+      const absorb = (result) => {
+        const tried = Array.isArray(result && result.searchKeywordsTried) && result.searchKeywordsTried.length
+          ? result.searchKeywordsTried : [];
+        tried.forEach((value) => {
+          const text = String(value || "").trim();
+          if (text && !aggregate.searchKeywordsTried.includes(text)) aggregate.searchKeywordsTried.push(text);
+        });
+        aggregate.entryCount += Number(result && result.entryCount || 0);
+        aggregate.matchedEntryCount += Number(result && result.matchedEntryCount || 0);
+        (result && result.sampleEntryTitles || []).forEach((title) => {
+          const value = String(title || "").trim();
+          if (value && !aggregate.sampleEntryTitles.includes(value) && aggregate.sampleEntryTitles.length < 3) {
+            aggregate.sampleEntryTitles.push(value);
+          }
+        });
+        aggregate.identityStrongCount += Number(result && result.identityStrongCount || 0);
+        aggregate.identityTentativeCount += Number(result && result.identityTentativeCount || 0);
+        aggregate.identityRejectCount += Number(result && result.identityRejectCount || 0);
+        if (!aggregate.identityReason && result && result.identityReason) aggregate.identityReason = result.identityReason;
+        (result && result.identityReasons || []).forEach((reason) => {
+          const value = String(reason || "").trim();
+          if (value && !aggregate.identityReasons.includes(value)) aggregate.identityReasons.push(value);
+        });
+        aggregate.identityReasons = aggregate.identityReasons.slice(0, 12);
+      };
+      const rememberTentative = (entries) => {
+        (entries || []).forEach((match) => {
+          const entry = match && match.entry;
+          const key = `${match && match.backend || "wogg-html"}\u001f${entry && entry.href || ""}\u001f${entry && entry.title || ""}`;
+          if (!entry || tentativeKeys.has(key)) return;
+          tentativeKeys.add(key);
+          tentativeEntries.push(match);
+        });
+      };
+      const variantName = (index, keyword) => rawKeywordSet.has(keyword) ? "raw" : "punctuation-fallback";
+      for (let index = 0; index < keywords.length; index++) {
+        const keyword = keywords[index];
+        const result = await searchWanouHtmlKeyword(source, item, run, context, keyword, variantName(index, keyword));
+        absorb(result);
+        lastResult = result;
+        rememberTentative(result && result.tentativeEntries);
+        if (result.kind === "CANDIDATES" && result.candidateVerdict === "STRONG") {
+          return curatedSourceResult("CANDIDATES", Object.assign({}, result, aggregate));
+        }
+        if (!["NO_MATCH", "NO_RESOURCE", "TENTATIVE_MATCHES", "SOURCE_TIMEOUT", "TRANSPORT_FAILURE", "PARSE_FAILURE"].includes(result.kind)) {
+          return curatedSourceResult(result.kind, Object.assign({}, result, aggregate));
+        }
+      }
+      if (tentativeEntries.length) {
+        const detailResult = await curatedDetailCandidatesForMatches(source, item, run, context, tentativeEntries, aggregate);
+        if (detailResult.result && !["SOURCE_TIMEOUT", "TRANSPORT_FAILURE"].includes(detailResult.result.kind)) {
+          return curatedSourceResult(detailResult.result.kind, Object.assign({}, detailResult.result, aggregate));
+        }
+        if (detailResult.candidates && detailResult.candidates.length) {
+          return curatedSourceResult("CANDIDATES", Object.assign({}, aggregate, {
+            kind: "CANDIDATES",
+            terminalReason: "CANDIDATES",
+            candidates: detailResult.candidates,
+            candidateVerdict: "TENTATIVE"
+          }));
+        }
+      }
+      recordWanouDiag("WANOU_FALLBACK_TO_NXOG", {
+        reason: aggregate.entryCount ? aggregate.matchedEntryCount ? "NO_PLAYABLE_WOGG_CANDIDATE" : "TITLE_NO_MATCH" : "NO_ENTRIES_OR_TRANSPORT"
+      });
+      for (let index = 0; index < keywords.length; index++) {
+        const keyword = keywords[index];
+        const result = await searchWanouNxogKeyword(source, item, run, context, keyword, variantName(index, keyword));
+        absorb(result);
+        lastResult = result;
+        rememberTentative(result && result.tentativeEntries);
+        if (result.kind === "CANDIDATES" && result.candidateVerdict === "STRONG") {
+          return curatedSourceResult("CANDIDATES", Object.assign({}, result, aggregate));
+        }
+        if (!["NO_MATCH", "NO_RESOURCE", "TENTATIVE_MATCHES", "SOURCE_TIMEOUT", "TRANSPORT_FAILURE", "PARSE_FAILURE"].includes(result.kind)) {
+          return curatedSourceResult(result.kind, Object.assign({}, result, aggregate));
+        }
+      }
+      if (tentativeEntries.length) {
+        const detailResult = await curatedDetailCandidatesForMatches(source, item, run, context, tentativeEntries, aggregate);
+        if (detailResult.candidates && detailResult.candidates.length) {
+          return curatedSourceResult("CANDIDATES", Object.assign({}, aggregate, {
+            kind: "CANDIDATES",
+            terminalReason: "CANDIDATES",
+            candidates: detailResult.candidates,
+            candidateVerdict: "TENTATIVE"
+          }));
+        }
+      }
+      if (lastResult && lastResult.kind === "NO_MATCH" && aggregate.entryCount === 0) {
+        return curatedSourceResult("NO_MATCH", Object.assign({}, lastResult, aggregate, { terminalReason: "NO_ENTRIES" }));
+      }
+      if (lastResult && lastResult.kind === "NO_MATCH") {
+        return curatedSourceResult("NO_MATCH", Object.assign({}, lastResult, aggregate, { terminalReason: "TITLE_NO_MATCH" }));
+      }
+      if (lastResult && lastResult.kind === "NO_RESOURCE") {
+        return curatedSourceResult("NO_RESOURCE", Object.assign({}, lastResult, aggregate));
+      }
+      return curatedSourceResult(lastResult && lastResult.kind || "TRANSPORT_FAILURE", Object.assign({}, lastResult || {}, aggregate));
+    }
+
     async function curatedDetailCandidatesForMatches(source, item, run, context, matches, diagnostics) {
       const candidates = [];
       for (const match of matches || []) {
-        if (String(source && source.id || "") === "wanou") {
+        const isWanouNxog = String(source && source.id || "") === "wanou"
+          && String(match && (match.backend || match.entry && match.entry.wanouBackend) || "") === "nxog-json";
+        if (isWanouNxog) {
           const currentState = curatedAttemptState(context, run);
           if (currentState) return { result: curatedSourceResult(currentState, diagnostics) };
-          candidates.push(...curatedWanouCandidates(
+          const extracted = curatedWanouCandidates(
             match && match.entry && match.entry.wanouVodItem || match && match.entry,
             source,
             item,
             match && match.searchUrl
-          ));
+          );
+          recordWanouDiag("WANOU_DETAIL_RESULT", {
+            backend: "nxog-json",
+            entryTitle: String(match && match.entry && match.entry.title || ""),
+            entryUrl: String(match && match.entry && match.entry.href || match && match.searchUrl || ""),
+            candidateCount: extracted.length,
+            diskTypes: Array.from(new Set(extracted.map((candidate) => String(candidate && candidate.diskType || "")).filter(Boolean))),
+            extractionMethod: "WANOU_JSON_VOD_DOWN"
+          });
+          candidates.push(...extracted);
           continue;
         }
         const beforeDetail = curatedRequestStartState(context, run);
@@ -35609,13 +36076,24 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           );
           const afterDetail = curatedAttemptState(context, run);
           if (afterDetail) return { result: curatedSourceResult(afterDetail, diagnostics) };
-          candidates.push(...curatedDetailCandidates(
+          const extracted = curatedDetailCandidates(
             detail.html,
             source,
             detail.base || entry.href,
             item,
             entry
-          ));
+          );
+          if (String(source && source.id || "") === "wanou") {
+            recordWanouDiag("WANOU_DETAIL_RESULT", {
+              backend: "wogg-html",
+              entryTitle: String(entry && entry.title || ""),
+              entryUrl: String(entry && entry.href || ""),
+              candidateCount: extracted.length,
+              diskTypes: Array.from(new Set(extracted.map((candidate) => String(candidate && candidate.diskType || "")).filter(Boolean))),
+              extractionMethod: "WOGG_HTML_DETAIL"
+            });
+          }
+          candidates.push(...extracted);
         } catch (e) {
           if (e && e.curatedDeadline) return { result: curatedSourceResult("SOURCE_TIMEOUT", diagnostics) };
           const afterFailure = curatedAttemptState(context, run);
@@ -35628,7 +36106,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
     async function searchCuratedSourceKeyword(source, item, run, context, keyword) {
       if (String(source && source.id || "") === "wanou") {
-        return searchWanouSourceKeyword(source, item, run, context, keyword);
+        return searchWanouHtmlKeyword(source, item, run, context, keyword, "raw");
       }
       const templates = curatedSourceTemplates(source);
       for (const template of templates) {
@@ -35730,6 +36208,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     }
 
     async function searchCuratedSource(source, item, run, context) {
+      if (String(source && source.id || "") === "wanou") {
+        return searchWanouSource(source, item, run, context);
+      }
       const keywords = curatedSearchKeywords(item);
       const aggregate = {
         entryCount: 0,
@@ -35846,165 +36327,197 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       });
     }
 
-    async function curatedCentralHealthCandidate(sourceStates, item, run, startedAt) {
-      const hasStrong = (sourceStates || []).some((state) =>
-        state
-        && state.candidates
-        && state.candidates.length
-        && state.candidateVerdict === "STRONG"
-      );
-      const sourcePools = (sourceStates || [])
-        .filter((state) =>
-          state
-          && state.kind === "CANDIDATES"
-          && Array.isArray(state.candidates)
-          && state.candidates.length
-          && (!hasStrong || state.candidateVerdict === "STRONG")
-          && (hasStrong || state.candidateVerdict === "TENTATIVE")
-        )
-        .map((state) => ({
-          index: state.index,
-          sourceId: state.source.id,
-          sourceName: state.source.name,
-          identityVerdict: String(state.candidateVerdict || ""),
-          candidates: curatedCandidateOrder(state.candidates).slice(0, CURATED_PREFLIGHT_PER_SOURCE)
-        }))
-        .filter((pool) => pool.candidates.length);
-      const preflightItems = [];
-      sourcePools.forEach((pool) => {
-        pool.candidates.forEach((candidate) => {
-          if (preflightItems.length < CURATED_PREFLIGHT_MAX_ITEMS) preflightItems.push(candidate);
+    function curatedHealthBatchPlan(candidates, maxCount) {
+      const ordered = curatedCandidateOrder(candidates).slice(0, Math.max(0, Number(maxCount || CURATED_MAX_AUTO_CHECK_PER_SOURCE)));
+      const batches = [];
+      for (let offset = 0; offset < ordered.length; offset += CURATED_PREFLIGHT_PER_SOURCE) {
+        batches.push({
+          batchIndex: batches.length,
+          startOffset: offset,
+          candidates: ordered.slice(offset, offset + CURATED_PREFLIGHT_PER_SOURCE)
         });
-      });
-      if (!preflightItems.length) {
-        return {
-          candidate: null,
-          sourceId: "",
-          sourceName: "",
-          stale: false,
-          timedOut: false,
-          checkError: false,
-          preflightStartedAt: 0,
-          preflightDurationMs: 0,
-          freshStateCount: 0
-        };
+      }
+      return { ordered, batches };
+    }
+
+    async function curatedProgressiveHealthCandidate(sourceState, item, run, startedAt) {
+      const plan = curatedHealthBatchPlan(sourceState && sourceState.candidates, CURATED_MAX_AUTO_CHECK_PER_SOURCE);
+      if (!plan.ordered.length) {
+        return { candidate: null, sourceId: sourceState && sourceState.source && sourceState.source.id || "", sourceName: sourceState && sourceState.source && sourceState.source.name || "", stale: false, timedOut: false, checkError: false, freshStateCount: 0, healthAcceptedCount: 0, healthRejectedCount: 0, healthUnconfirmedCount: 0 };
       }
       if (!detailPlaybackIsCurrent(run)) {
-        return {
-          candidate: null,
-          sourceId: "",
-          sourceName: "",
-          stale: true,
-          timedOut: false,
-          checkError: false,
-          preflightStartedAt: 0,
-          preflightDurationMs: 0,
-          freshStateCount: 0
-        };
+        return { candidate: null, sourceId: "", sourceName: "", stale: true, timedOut: false, checkError: false, freshStateCount: 0, healthAcceptedCount: 0, healthRejectedCount: 0, healthUnconfirmedCount: 0 };
       }
-
-      const preflightStartedAt = Date.now();
-      recordCuratedRaceDiag("CURATED_PREFLIGHT_START", {
-        elapsedMs: Math.max(0, preflightStartedAt - startedAt),
-        preflightStartMs: Math.max(0, preflightStartedAt - startedAt),
-        allowedMs: CURATED_PREFLIGHT_BUDGET_MS,
-        itemCount: preflightItems.length,
-        sourceCount: sourcePools.length
-      });
-
-      let freshHealth = {};
-      let timedOut = false;
-      let checkError = false;
-      const checkable = preflightItems.filter((candidate) => isPanCheckSupported(candidate));
-      if (checkable.length && panCheckAvailable()) {
-        const context = { raceRun: run, raceOwner: "curated", item };
-        const checked = await playbackPanHealthPreflight(preflightItems, context, CURATED_PREFLIGHT_BUDGET_MS);
-        if (!detailPlaybackIsCurrent(run) || !panContextIsCurrent(context)) {
-          return {
-            candidate: null,
-            sourceId: "",
-            sourceName: "",
-            stale: true,
-            timedOut: false,
-            checkError: false,
-            preflightStartedAt,
-            preflightDurationMs: Math.max(0, Date.now() - preflightStartedAt),
-            freshStateCount: 0
-          };
+      let totalAccepted = 0;
+      let totalRejected = 0;
+      let totalUnconfirmed = 0;
+      let lastPreflightStartedAt = 0;
+      let lastPreflightDurationMs = 0;
+      let lastTimedOut = false;
+      let lastCheckError = false;
+      let lastFreshStateCount = 0;
+      for (const batchInfo of plan.batches) {
+        if (!detailPlaybackIsCurrent(run)) {
+          return { candidate: null, sourceId: "", sourceName: "", stale: true, timedOut: lastTimedOut, checkError: lastCheckError, preflightStartedAt: lastPreflightStartedAt, preflightDurationMs: lastPreflightDurationMs, freshStateCount: lastFreshStateCount, healthAcceptedCount: totalAccepted, healthRejectedCount: totalRejected, healthUnconfirmedCount: totalUnconfirmed };
         }
-        freshHealth = checked && checked.states || {};
-        timedOut = !!(checked && checked.timedOut);
-        checkError = !!(checked && checked.checkError);
-      }
-
-      const preflightDoneAt = Date.now();
-      recordCuratedRaceDiag("CURATED_PREFLIGHT_DONE", {
-        elapsedMs: Math.max(0, preflightDoneAt - startedAt),
-        preflightDoneMs: Math.max(0, preflightDoneAt - startedAt),
-        preflightDurationMs: Math.max(0, preflightDoneAt - preflightStartedAt),
-        allowedMs: CURATED_PREFLIGHT_BUDGET_MS,
-        timedOut,
-        checkError,
-        freshStateCount: Object.keys(freshHealth).length
-      });
-
-      let selected = null;
-      let selectedSource = null;
-      let healthAcceptedCount = 0;
-      let healthRejectedCount = 0;
-      let healthUnconfirmedCount = 0;
-      for (const pool of sourcePools.sort((a, b) => a.index - b.index)) {
-        const decision = panPreflightCandidates(pool.candidates, freshHealth, {}, { rejectAllBad: true });
+        const batch = batchInfo.candidates;
+        const preflightStartedAt = Date.now();
+        lastPreflightStartedAt = preflightStartedAt;
+        recordCuratedRaceDiag("CURATED_PREFLIGHT_START", {
+          elapsedMs: Math.max(0, preflightStartedAt - startedAt),
+          preflightStartMs: Math.max(0, preflightStartedAt - startedAt),
+          allowedMs: CURATED_PREFLIGHT_BUDGET_MS,
+          itemCount: batch.length,
+          sourceCount: 1,
+          sourceId: sourceState.source.id,
+          batchIndex: batchInfo.batchIndex,
+          startOffset: batchInfo.startOffset
+        });
+        let freshHealth = {};
+        let timedOut = false;
+        let checkError = false;
+        const checkable = batch.filter((candidate) => isPanCheckSupported(candidate));
+        if (checkable.length && panCheckAvailable()) {
+          const context = { raceRun: run, raceOwner: "curated", item };
+          const checked = await playbackPanHealthPreflight(batch, context, CURATED_PREFLIGHT_BUDGET_MS);
+          if (!detailPlaybackIsCurrent(run) || !panContextIsCurrent(context)) {
+            return { candidate: null, sourceId: "", sourceName: "", stale: true, timedOut: false, checkError: false, preflightStartedAt, preflightDurationMs: Math.max(0, Date.now() - preflightStartedAt), freshStateCount: 0, healthAcceptedCount: totalAccepted, healthRejectedCount: totalRejected, healthUnconfirmedCount: totalUnconfirmed };
+          }
+          freshHealth = checked && checked.states || {};
+          timedOut = !!(checked && checked.timedOut);
+          checkError = !!(checked && checked.checkError);
+        }
+        const decision = panPreflightCandidates(batch, freshHealth, {}, { rejectAllBad: true });
         const decisionCandidates = new Set(decision.candidates || []);
-        const healthyCandidates = pool.candidates.filter((candidate) => {
+        let selected = null;
+        let acceptedCount = 0;
+        let rejectedCount = 0;
+        let unconfirmedCount = 0;
+        batch.forEach((candidate) => {
+          const mediaVerdict = automaticVideoCandidateVerdict(item, candidate);
+          if (!mediaVerdict.accepted) {
+            recordAutomaticMediaRejected("curated", sourceState.source.id, candidate, mediaVerdict);
+            rejectedCount++;
+            return;
+          }
           const admission = panAutoHealthAdmission(candidate, freshHealth);
           candidate.healthAdmission = admission.state;
-          if (admission.accepted && decisionCandidates.has(candidate)) {
-            healthAcceptedCount++;
-            return true;
-          }
-          if (["bad", "locked", "unavailable"].includes(admission.state) || !decisionCandidates.has(candidate)) {
-            healthRejectedCount++;
+          if (!selected && admission.accepted && decisionCandidates.has(candidate)) {
+            selected = candidate;
+            acceptedCount++;
+          } else if (["bad", "locked", "unavailable"].includes(admission.state) || !decisionCandidates.has(candidate)) {
+            rejectedCount++;
+          } else if (admission.accepted) {
+            acceptedCount++;
           } else {
-            healthUnconfirmedCount++;
+            unconfirmedCount++;
           }
-          return false;
         });
-        const candidate = curatedCandidateOrder(healthyCandidates)[0] || null;
-        if (candidate) {
-          selected = candidate;
-          selectedSource = pool;
-          break;
+        totalAccepted += acceptedCount;
+        totalRejected += rejectedCount;
+        totalUnconfirmed += unconfirmedCount;
+        const doneAt = Date.now();
+        lastPreflightDurationMs = Math.max(0, doneAt - preflightStartedAt);
+        lastTimedOut = timedOut;
+        lastCheckError = checkError;
+        lastFreshStateCount = Object.keys(freshHealth).length;
+        recordCuratedRaceDiag("CURATED_PREFLIGHT_DONE", {
+          elapsedMs: Math.max(0, doneAt - startedAt),
+          preflightDoneMs: Math.max(0, doneAt - startedAt),
+          preflightDurationMs: lastPreflightDurationMs,
+          allowedMs: CURATED_PREFLIGHT_BUDGET_MS,
+          timedOut,
+          checkError,
+          freshStateCount: lastFreshStateCount,
+          sourceId: sourceState.source.id,
+          batchIndex: batchInfo.batchIndex
+        });
+        recordCuratedRaceDiag("CURATED_HEALTH_BATCH", {
+          sourceId: sourceState.source.id,
+          batchIndex: batchInfo.batchIndex,
+          startOffset: batchInfo.startOffset,
+          candidateCount: batch.length,
+          acceptedCount,
+          badCount: rejectedCount,
+          unconfirmedCount,
+          remainingCandidateCount: Math.max(0, plan.ordered.length - batchInfo.startOffset - batch.length)
+        });
+        const allFreshBad = batch.length > 0 && batch.every((candidate) => {
+          const key = panHealthKey(candidate);
+          return Object.prototype.hasOwnProperty.call(freshHealth || {}, key)
+            && String(freshHealth[key] || "").toLowerCase() === "bad"
+            && isPanHealthBad(candidate);
+        });
+        recordPanPreflightResult(batch, freshHealth, panPreflightCheckErrorCount(checkable, freshHealth), selected, allFreshBad);
+        if (selected) {
+          return {
+            candidate: selected,
+            sourceId: sourceState.source.id,
+            sourceName: sourceState.source.name,
+            identityVerdict: String(sourceState.candidateVerdict || ""),
+            stale: false,
+            timedOut,
+            checkError,
+            preflightStartedAt,
+            preflightDurationMs: lastPreflightDurationMs,
+            freshStateCount: lastFreshStateCount,
+            healthAcceptedCount: totalAccepted,
+            healthRejectedCount: totalRejected,
+            healthUnconfirmedCount: totalUnconfirmed
+          };
+        }
+        if (batchInfo.batchIndex === 0 && allFreshBad && plan.ordered.length > batch.length) {
+          recordCuratedRaceDiag("CURATED_SOURCE_SECOND_CHANCE", {
+            sourceId: sourceState.source.id,
+            reason: "FIRST_BATCH_ALL_BAD",
+            remainingCandidateCount: plan.ordered.length - batch.length
+          });
         }
       }
-
-      const allFreshBad = preflightItems.length > 0 && preflightItems.every((candidate) => {
-        const key = panHealthKey(candidate);
-        return Object.prototype.hasOwnProperty.call(freshHealth || {}, key)
-          && String(freshHealth[key] || "").toLowerCase() === "bad"
-          && isPanHealthBad(candidate);
-      });
-      recordPanPreflightResult(
-        preflightItems,
-        freshHealth,
-        panPreflightCheckErrorCount(checkable, freshHealth),
-        selected,
-        allFreshBad
-      );
       return {
-        candidate: selected,
-        sourceId: selectedSource ? selectedSource.sourceId : "",
-        sourceName: selectedSource ? selectedSource.sourceName : "",
-        identityVerdict: selectedSource ? selectedSource.identityVerdict : "",
+        candidate: null,
+        sourceId: sourceState.source.id,
+        sourceName: sourceState.source.name,
+        identityVerdict: String(sourceState.candidateVerdict || ""),
         stale: false,
-        timedOut,
-        checkError,
-        preflightStartedAt,
-        preflightDurationMs: Math.max(0, preflightDoneAt - preflightStartedAt),
-        freshStateCount: Object.keys(freshHealth).length,
-        healthAcceptedCount,
-        healthRejectedCount,
-        healthUnconfirmedCount
+        timedOut: lastTimedOut,
+        checkError: lastCheckError,
+        preflightStartedAt: lastPreflightStartedAt,
+        preflightDurationMs: lastPreflightDurationMs,
+        freshStateCount: lastFreshStateCount,
+        healthAcceptedCount: totalAccepted,
+        healthRejectedCount: totalRejected,
+        healthUnconfirmedCount: totalUnconfirmed
+      };
+    }
+
+    async function curatedCentralHealthCandidate(sourceStates, item, run, startedAt) {
+      const hasStrong = (sourceStates || []).some((state) =>
+        state && state.candidates && state.candidates.length && state.candidateVerdict === "STRONG"
+      );
+      const pools = (sourceStates || [])
+        .filter((state) => state && state.kind === "CANDIDATES" && state.candidates && state.candidates.length
+          && (hasStrong ? state.candidateVerdict === "STRONG" : state.candidateVerdict === "TENTATIVE"))
+        .sort((a, b) => a.index - b.index);
+      for (const sourceState of pools) {
+        const result = await curatedProgressiveHealthCandidate(sourceState, item, run, startedAt);
+        if (result.stale) return result;
+        if (result.candidate) return result;
+      }
+      return {
+        candidate: null,
+        sourceId: "",
+        sourceName: "",
+        identityVerdict: "",
+        stale: false,
+        timedOut: false,
+        checkError: false,
+        preflightStartedAt: 0,
+        preflightDurationMs: 0,
+        freshStateCount: 0,
+        healthAcceptedCount: 0,
+        healthRejectedCount: 0,
+        healthUnconfirmedCount: 0
       };
     }
 
@@ -36084,7 +36597,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           healthUnconfirmedCount: Number(health.healthUnconfirmedCount || 0),
           selectedSource: String(health.sourceId || ""),
           selectedDiskType: String(health.candidate && health.candidate.diskType || ""),
-          plannedSearchKeywords: curatedSearchKeywords(item),
+          plannedSearchKeywords: curatedSearchKeywordVariants(item),
           selectedEntryTitle: String(health.candidate && health.candidate.sourceEntryTitle || ""),
           selectedExtractionMethod: String(health.candidate && health.candidate.extractionMethod || ""),
           selectedUrlHost: curatedUrlHost(health.candidate && health.candidate.url),
@@ -36116,7 +36629,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         identityReasons: [],
         candidateVerdict: "",
         candidates: [],
-        doneAt: 0
+        doneAt: 0,
+        qualificationStarted: false,
+        qualificationDone: false,
+        qualificationPromise: null,
+        qualificationResult: null,
+        qualifiedCandidate: null
       }));
 
       sourceStates.forEach((sourceState) => {
@@ -36131,16 +36649,14 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       let collectionDone = false;
       let firstCandidateAt = 0;
       let firstCandidateSource = "";
-      let candidateDeadline = 0;
       let discoveryTimer = 0;
-      let qualityTimer = 0;
+      let qualificationActive = false;
       const collectionPromise = new Promise((resolve) => { resolveCollection = resolve; });
 
       const finishCollection = (reason) => {
         if (collectionDone) return;
         collectionDone = true;
         clearTimeout(discoveryTimer);
-        clearTimeout(qualityTimer);
         sourceStates.forEach((sourceState) => { sourceState.context.active = false; });
         const doneAt = Date.now();
         const candidateSources = sourceStates
@@ -36169,47 +36685,67 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           return;
         }
         const strongAvailable = sourceStates.filter((sourceState) =>
-          sourceState.terminal
-          && sourceState.candidates.length
-          && sourceState.candidateVerdict === "STRONG"
+          sourceState.terminal && sourceState.candidates.length && sourceState.candidateVerdict === "STRONG"
         );
         const tentativeAvailable = sourceStates.filter((sourceState) =>
-          sourceState.terminal
-          && sourceState.candidates.length
-          && sourceState.candidateVerdict === "TENTATIVE"
+          sourceState.terminal && sourceState.candidates.length && sourceState.candidateVerdict === "TENTATIVE"
         );
+        const qualified = strongAvailable.find((sourceState) => sourceState.qualifiedCandidate);
+        if (qualified) {
+          finishCollection("HEALTH_ACCEPTED");
+          return;
+        }
         if (!strongAvailable.length) {
           if (sourceStates.every((sourceState) => sourceState.terminal)) {
-            finishCollection(
-              tentativeAvailable.length
-                ? "ALL_SOURCES_TERMINAL_NO_STRONG_CANDIDATE"
-                : "ALL_SOURCES_TERMINAL_NO_CANDIDATE"
-            );
+            finishCollection(tentativeAvailable.length
+              ? "ALL_SOURCES_TERMINAL_NO_STRONG_CANDIDATE"
+              : "ALL_SOURCES_TERMINAL_NO_CANDIDATE");
           }
           return;
         }
-        const best = strongAvailable.reduce((current, next) => next.index < current.index ? next : current);
-        if (best.index === 0) {
-          finishCollection("TOP_PRIORITY_READY");
-          return;
-        }
-        const higherPriorityTerminal = sourceStates
-          .slice(0, best.index)
-          .every((sourceState) =>
-            sourceState.terminal
-            && !(sourceState.candidates.length && sourceState.candidateVerdict === "STRONG")
-          );
-        if (higherPriorityTerminal) {
-          finishCollection("HIGHER_PRIORITY_TERMINAL");
-          return;
-        }
-        if (candidateDeadline && Date.now() >= candidateDeadline) {
-          finishCollection(Date.now() >= discoveryDeadline ? "DISCOVERY_DEADLINE" : "QUALITY_GRACE");
-          return;
-        }
+        if (strongAvailable.some((sourceState) => !sourceState.qualificationDone) || qualificationActive) return;
         if (sourceStates.every((sourceState) => sourceState.terminal)) {
-          finishCollection("HIGHER_PRIORITY_TERMINAL");
+          finishCollection("ALL_SOURCES_TERMINAL_HEALTH_EXHAUSTED");
         }
+      };
+
+      const startNextQualification = () => {
+        if (collectionDone || qualificationActive || !detailPlaybackIsCurrent(run)) return;
+        const next = sourceStates
+          .filter((sourceState) => sourceState.terminal
+            && sourceState.candidates.length
+            && sourceState.candidateVerdict === "STRONG"
+            && !sourceState.qualificationStarted)
+          .sort((a, b) => a.index - b.index)[0];
+        if (!next) {
+          maybeFinishCollection();
+          return;
+        }
+        next.qualificationStarted = true;
+        qualificationActive = true;
+        next.qualificationPromise = Promise.resolve()
+          .then(() => curatedProgressiveHealthCandidate(next, item, run, startedAt))
+          .then((result) => {
+            next.qualificationDone = true;
+            next.qualificationResult = result || null;
+            next.qualifiedCandidate = result && result.candidate || null;
+            qualificationActive = false;
+            if (next.qualifiedCandidate && !collectionDone) {
+              finishCollection("HEALTH_ACCEPTED");
+              return result;
+            }
+            startNextQualification();
+            maybeFinishCollection();
+            return result;
+          }, () => {
+            next.qualificationDone = true;
+            next.qualificationResult = null;
+            next.qualifiedCandidate = null;
+            qualificationActive = false;
+            startNextQualification();
+            maybeFinishCollection();
+            return null;
+          });
       };
 
       const completeSource = (sourceState, result) => {
@@ -36245,7 +36781,15 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         sourceState.context.active = false;
         sourceState.candidates = kind === "CANDIDATES"
           ? (Array.isArray(sourceResult.candidates) ? sourceResult.candidates : [])
-            .filter((candidate) => buildPanPlayPayload(candidate))
+            .filter((candidate) => {
+              if (!buildPanPlayPayload(candidate)) return false;
+              const mediaVerdict = automaticVideoCandidateVerdict(item, candidate);
+              if (!mediaVerdict.accepted) {
+                recordAutomaticMediaRejected("curated", sourceState.source.id, candidate, mediaVerdict);
+                return false;
+              }
+              return true;
+            })
           : [];
         recordCuratedRaceDiag("CURATED_SOURCE_DONE", {
           sourceId: sourceState.source.id,
@@ -36272,18 +36816,14 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         ) {
           firstCandidateAt = sourceState.doneAt;
           firstCandidateSource = sourceState.source.id;
-          candidateDeadline = Math.min(firstCandidateAt + CURATED_QUALITY_GRACE_MS, discoveryDeadline);
           recordCuratedRaceDiag("CURATED_FIRST_CANDIDATE", {
             sourceId: sourceState.source.id,
             elapsedMs: Math.max(0, firstCandidateAt - startedAt),
             firstCandidateMs: Math.max(0, firstCandidateAt - startedAt),
-            candidateDeadline
+            qualification: "PROGRESSIVE_HEALTH"
           });
-          qualityTimer = setTimeout(
-            maybeFinishCollection,
-            Math.max(1, candidateDeadline - Date.now())
-          );
         }
+        startNextQualification();
         maybeFinishCollection();
       };
 
@@ -36322,17 +36862,51 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         return null;
       }
 
-      let healthResult;
-      try {
-        healthResult = await curatedCentralHealthCandidate(
-          collection.sourceStates,
-          item,
-          run,
-          startedAt
+      const pendingQualifications = collection.sourceStates
+        .map((sourceState) => sourceState.qualificationPromise)
+        .filter((promise) => promise && typeof promise.then === "function");
+      if (pendingQualifications.length) await Promise.all(pendingQualifications);
+      let healthResult = collection.sourceStates
+        .map((sourceState) => sourceState.qualificationResult)
+        .find((result) => result && result.candidate) || null;
+      if (!healthResult) {
+        const strongStates = collection.sourceStates.filter((sourceState) =>
+          sourceState.candidates.length && sourceState.candidateVerdict === "STRONG" && !sourceState.qualificationStarted
         );
-      } catch (error) {
-        emitSummary({ collection, collectionReason: "PREFLIGHT_ERROR" });
-        throw error;
+        const hasStrong = collection.sourceStates.some((sourceState) =>
+          sourceState.candidates.length && sourceState.candidateVerdict === "STRONG"
+        );
+        const fallbackStates = strongStates.length
+          ? strongStates
+          : hasStrong
+            ? []
+            : collection.sourceStates.filter((sourceState) =>
+              sourceState.candidates.length && sourceState.candidateVerdict === "TENTATIVE" && !sourceState.qualificationStarted
+            );
+        if (fallbackStates.length) {
+          try {
+            healthResult = await curatedCentralHealthCandidate(fallbackStates, item, run, startedAt);
+          } catch (error) {
+            emitSummary({ collection, collectionReason: "PREFLIGHT_ERROR" });
+            throw error;
+          }
+        }
+      }
+      if (!healthResult) {
+        healthResult = {
+          candidate: null,
+          sourceId: "",
+          sourceName: "",
+          stale: false,
+          timedOut: false,
+          checkError: false,
+          preflightStartedAt: 0,
+          preflightDurationMs: 0,
+          freshStateCount: 0,
+          healthAcceptedCount: 0,
+          healthRejectedCount: 0,
+          healthUnconfirmedCount: 0
+        };
       }
       if (!detailPlaybackIsCurrent(run) || !healthResult || healthResult.stale) {
         recordCuratedRaceDiag("CURATED_NO_SELECTION", {
@@ -42408,8 +42982,76 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       check("DETAIL_RACE_PROVIDER_SINGLE_COMMIT", String(tryCommitDetailProvider).includes("providerCommitted") && String(tryCommitDetailProvider).includes("providerCommitCount") && String(detailRaceLaneTerminal).includes("run.providerCommitted"), "Provider Commit Authority is the single write gate", "STATIC_HOOK");
       check("DETAIL_RACE_LOSER_NO_RESET", !String(detailRaceLaneTerminal).includes("resetPanSearchState") && !String(detailRaceLaneTerminal).includes("cancelDetailPlaybackPreparation"), "loser completion does not clear Direct results/health or cancel the winning run", "STATIC_HOOK");
       check("DETAIL_RACE_STATUS_PREPARING", detailPlayStateSource.includes("racePreparing") && detailPlayStateSource.indexOf("racePreparing") < detailPlayStateSource.indexOf('return "preparing"'), "race keeps the main button in PREPARING until Provider Commit", "STATIC_HOOK");
-      check("DETAIL_RACE_CURATED_PREFLIGHT_ISOLATED", String(probePanHealth).includes("raceRun") && String(panContextIsCurrent).includes("context.raceRun") && String(curatedCentralHealthCandidate).includes('raceOwner: "curated"'), "Curated health validity uses the detail run, not Direct viewToken", "STATIC_HOOK");
-      check("DETAIL_RACE_DIRECT_PREFLIGHT_SURVIVES", String(resolveCuratedPlaybackCandidate).includes("raceOwner: \"curated\"") && String(panContextIsCurrent).includes("state.pan.viewToken === context.token"), "Direct health context retains its own viewToken while Curated races", "STATIC_HOOK");
+      const curatedHealthSource = String(curatedCentralHealthCandidate) + String(curatedProgressiveHealthCandidate);
+      check("DETAIL_RACE_CURATED_PREFLIGHT_ISOLATED", String(probePanHealth).includes("raceRun") && String(panContextIsCurrent).includes("context.raceRun") && curatedHealthSource.includes('raceOwner: "curated"'), "Curated health validity uses the detail run, not Direct viewToken", "STATIC_HOOK");
+      check("DETAIL_RACE_DIRECT_PREFLIGHT_SURVIVES", curatedHealthSource.includes("raceOwner: \"curated\"") && String(panContextIsCurrent).includes("state.pan.viewToken === context.token"), "Direct health context retains its own viewToken while Curated races", "STATIC_HOOK");
+      const wanouSource = CURATED_SOURCE_DEFINITIONS.find((source) => source.id === "wanou");
+      const baXianItem = { mediaType: "movie", title: "八仙！", resourceSearchTitle: "八仙！", releaseDate: "2026-01-01" };
+      const baXianVariants = curatedSearchKeywordVariants(baXianItem);
+      const baXianWoggSearchHtml = '<div class="module-search-item"><a class="video-title" href="/voddetail/130733.html" title="八仙！">八仙！</a></div>';
+      const baXianWoggEntries = typeof DOMParser === "function"
+        ? curatedSearchEntries(baXianWoggSearchHtml, wanou, "https://www.wogg.net/vodsearch/-------------.html?wd=%E5%85%AB%E4%BB%99%EF%BC%81&page=1")
+        : [];
+      const baXianWoggIdentity = baXianWoggEntries.length
+        ? mediaIdentityVerdict(baXianItem, baXianWoggEntries[0].title, baXianWoggEntries[0])
+        : { verdict: "REJECT" };
+      const baXianWoggDetailCandidates = typeof DOMParser === "function"
+        ? curatedDetailCandidates(
+          '<div class="module-row-info"><p>夸克 https://pan.quark.cn/s/ba-xian</p><p>百度 https://pan.baidu.com/s/ba-xian</p></div>',
+          wanou,
+          "https://www.wogg.net/voddetail/130733.html",
+          baXianItem,
+          baXianWoggEntries[0] || { title: "八仙！", href: "https://www.wogg.net/voddetail/130733.html" }
+        )
+        : [];
+      const baXianNxogVod = {
+        vod_name: "八仙！",
+        vod_id: "nxog-130733",
+        vod_down_from: "all",
+        vod_down_url: "https://www.alipan.com/s/ba-xian",
+        vod_remarks: ""
+      };
+      const baXianNxogCandidate = curatedWanouCandidates(baXianNxogVod, wanou, baXianItem, "https://woog.nxog.eu.org/api.php/provide/vod?ac=detail&wd=%E5%85%AB%E4%BB%99");
+      const healthMockCandidates = [1, 2, 3, 4].map((rank) => ({
+        diskType: "quark",
+        url: `https://pan.quark.cn/s/health-${rank}`,
+        title: `八仙！候选 ${rank}`,
+        resourceTitle: `八仙！候选 ${rank}`,
+        index: rank
+      }));
+      const healthMockPlan = curatedHealthBatchPlan(healthMockCandidates, CURATED_MAX_AUTO_CHECK_PER_SOURCE);
+      const healthMockStates = ["bad", "bad", "ok", "unknown"];
+      const firstHealthBatchAllBad = healthMockPlan.batches[0]
+        && healthMockPlan.batches[0].candidates.every((candidate) => healthMockStates[candidate.index - 1] === "bad");
+      const secondHealthBatchAccepted = healthMockPlan.batches[1]
+        && healthMockPlan.batches[1].candidates.some((candidate) => healthMockStates[candidate.index - 1] === "ok");
+      const audioOnlyMock = {
+        mediaType: "movie",
+        title: "王赫野 & 黄龄 过海 电影 八仙 插曲",
+        resourceTitle: "八仙 插曲 FLAC 24bit 48khz",
+        fileName: "八仙插曲.flac",
+        url: "https://pan.quark.cn/s/audio"
+      };
+      const normalVideoMock = {
+        mediaType: "movie",
+        title: "八仙 2026 2160P WEB-DL HEVC",
+        resourceTitle: "八仙 2026 2160P WEB-DL HEVC",
+        fileName: "八仙.2026.2160P.WEB-DL.HEVC.mkv",
+        url: "https://pan.quark.cn/s/video"
+      };
+      check("BA_XIAN_WOGG_PRIMARY_TEST", !!wanouSource && wanouSource.searchUrl === "/vodsearch/-------------.html?wd={kw}&page={p}" && baXianWoggEntries.length === 1 && baXianWoggIdentity.verdict === "STRONG" && baXianWoggDetailCandidates.length === 2 && baXianWoggDetailCandidates.every((candidate) => candidate.extractionMethod === "WOGG_HTML_DETAIL"), "Wogg HTML search/detail mock returns strong Wanou candidates", "RUNTIME_MOCK");
+      check("BA_XIAN_NXOG_FALLBACK_TEST", baXianVariants.includes("八仙！") && baXianVariants.includes("八仙") && curatedSearchPath(wanouSource.searchApi, "八仙", 1).includes("wd=%E5%85%AB%E4%BB%99") && baXianNxogCandidate.length === 1 && baXianNxogCandidate[0].diskType === "aliyun", "NXOG fallback keeps raw/clean literal queries and accepts URL-authority Alipan", "RUNTIME_MOCK");
+      check("BA_XIAN_WOGG_NO_DOUBLE_SEARCH", String(searchWanouSource).includes("searchWanouHtmlKeyword") && String(searchWanouSource).includes("searchWanouNxogKeyword") && String(searchWanouSource).indexOf("searchWanouNxogKeyword") > String(searchWanouSource).indexOf("WANOU_FALLBACK_TO_NXOG"), "NXOG is reached only after Wogg yields no usable candidate", "STATIC_HOOK");
+      check("BA_XIAN_HUBAN_SECOND_CHANCE_TEST", healthMockPlan.batches.length === 2 && healthMockPlan.batches[0].candidates.length === 2 && firstHealthBatchAllBad && secondHealthBatchAccepted && String(curatedProgressiveHealthCandidate).includes("CURATED_SOURCE_SECOND_CHANCE"), "two bad first candidates advance to the bounded second batch and can select candidate three", "RUNTIME_MOCK");
+      check("BA_XIAN_LOWER_SOURCE_TEST", !String(resolveCuratedPlaybackCandidate).includes("HIGHER_PRIORITY_TERMINAL") && String(resolveCuratedPlaybackCandidate).includes("startNextQualification") && String(resolveCuratedPlaybackCandidate).includes('finishCollection("HEALTH_ACCEPTED")'), "a bad high-priority source does not end collection before a lower healthy source qualifies", "STATIC_HOOK");
+      check("BA_XIAN_AUDIO_REJECT_TEST", automaticVideoCandidateVerdict(audioOnlyMock, audioOnlyMock).accepted === false && automaticVideoCandidateVerdict(audioOnlyMock, audioOnlyMock).reason === "AUDIO_ONLY_RESOURCE" && automaticVideoCandidateVerdict(normalVideoMock, normalVideoMock).accepted === true, "audio-only evidence is rejected while a normal WEB-DL remains eligible", "RUNTIME_MOCK");
+      check("WANOU_PRIMARY_NOT_NXOG", String(searchCuratedSource).includes("searchWanouSource(source, item, run, context)") && String(searchWanouSource).includes("searchWanouHtmlKeyword") && String(searchWanouSource).includes("searchWanouNxogKeyword"), "Wanou discovery starts with Wogg HTML and retains NXOG only as fallback", "STATIC_HOOK");
+      check("WANOU_HTML_DIAGNOSTICS", String(searchWanouHtmlKeyword).includes("WANOU_SEARCH_ATTEMPT") && String(curatedDetailCandidatesForMatches).includes("WANOU_DETAIL_RESULT") && String(searchWanouSource).includes("WANOU_FALLBACK_TO_NXOG"), "Wanou search/detail/fallback diagnostics carry the new backend states", "STATIC_HOOK");
+      check("WANOU_URL_AUTHORITY", String(curatedDetailCandidates).includes("curatedVerifiedDiskTypeForUrl") && String(curatedWanouCandidates).includes("curatedVerifiedDiskTypeForUrl") && baXianWoggDetailCandidates.every((candidate) => ["quark", "baidu"].includes(candidate.diskType)), "HTML and NXOG Wanou candidates use URL authority for disk type", "RUNTIME_MOCK");
+      check("CURATED_PROGRESSIVE_HEALTH", String(curatedProgressiveHealthCandidate).includes("CURATED_HEALTH_BATCH") && String(curatedProgressiveHealthCandidate).includes("CURATED_MAX_AUTO_CHECK_PER_SOURCE") && String(curatedProgressiveHealthCandidate).includes("CURATED_PREFLIGHT_PER_SOURCE"), "Curated qualification is bounded and progressive", "STATIC_HOOK");
+      check("AUTOMATIC_VIDEO_GATE_THREE_ENTRY_POINTS", String(panAutoCandidateTiers).includes("automaticVideoCandidateVerdict") && String(reportDetailDirectRaceResult).includes("automaticVideoCandidateVerdict") && String(tryCommitDetailProvider).includes("automaticVideoCandidateVerdict"), "Direct selection, Direct race and final Provider Commit all apply the media gate", "STATIC_HOOK");
+      check("TENTATIVE_AUDIO_FINAL_FALLBACK_REJECTED", String(detailRaceLaneTerminal).includes("safeTentative") && String(tryCommitDetailProvider).includes("allowTentativeFinal") && String(tryCommitDetailProvider).includes("automaticVideoCandidateVerdict"), "tentative final fallback repeats the automatic media gate", "STATIC_HOOK");
+      check("PAN_MANUAL_AUDIO_VISIBLE", !String(playPanResult).includes("automaticVideoCandidateVerdict") && String(panAutoCandidateTiers).includes("automaticVideoCandidateVerdict"), "manual Pan playback remains outside the automatic audio gate", "STATIC_HOOK");
       check("READY_COLOR", detailColorSource.includes('[data-play-state="ready"]') && detailColorSource.includes("#35E07A"), "existing ready color remains green", "FROZEN_SOURCE_AUDIT");
       check("FAILED_COLOR", detailColorSource.includes('[data-play-state="failed"]') && detailColorSource.includes("#FF0000"), "existing failed color remains red", "FROZEN_SOURCE_AUDIT");
       check("VARIETY_REGRESSION_PRESERVED", isReleaseFilteredCatalogId("variety") && typeof secondaryFullCatalogSources === "function" && Array.isArray(SECONDARY_FILTER_SCHEMA.variety), "variety classification/config path remains present", "FROZEN_SOURCE_AUDIT");
