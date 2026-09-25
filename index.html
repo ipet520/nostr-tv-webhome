@@ -6705,6 +6705,24 @@
       flex-basis: 9px !important;
     }
 
+    #home.home-root .home-rail > .card:not(.landscape-card) .rating-badge,
+    #home.home-root .home-rail > .card:not(.landscape-card) .card-people,
+    #secondaryCatalog .media-grid > .card:not(.landscape-card) .rating-badge,
+    #secondaryCatalog .media-grid > .card:not(.landscape-card) .card-people,
+    #secondaryCatalog .weekly-secondary-rail > .weekly-card:not(.landscape-card) .rating-badge,
+    #secondaryCatalog .weekly-secondary-rail > .weekly-card:not(.landscape-card) .card-people {
+      font-size: 9.5px !important;
+      gap: 3.25px !important;
+    }
+
+    #home.home-root .home-rail > .card:not(.landscape-card) .badge-icon,
+    #secondaryCatalog .media-grid > .card:not(.landscape-card) .badge-icon,
+    #secondaryCatalog .weekly-secondary-rail > .weekly-card:not(.landscape-card) .badge-icon {
+      width: 9.5px !important;
+      height: 9.5px !important;
+      flex-basis: 9.5px !important;
+    }
+
     #home.home-root .home-rail > .card.landscape-card .rating-badge,
     #home.home-root .home-rail > .card.landscape-card .card-people,
     #secondaryCatalog .media-grid > .card.landscape-card .rating-badge,
@@ -6732,16 +6750,16 @@
       #secondaryCatalog .weekly-secondary-rail > .weekly-card:not(.landscape-card) .rating-badge,
       #secondaryCatalog .weekly-secondary-rail > .weekly-card:not(.landscape-card) .card-people {
         top: 8px;
-        font-size: 8px !important;
-        gap: 2px !important;
+        font-size: 8.5px !important;
+        gap: 2.25px !important;
       }
 
       #home.home-root .home-rail > .card:not(.landscape-card) .badge-icon,
       #secondaryCatalog .media-grid > .card:not(.landscape-card) .badge-icon,
       #secondaryCatalog .weekly-secondary-rail > .weekly-card:not(.landscape-card) .badge-icon {
-        width: 8px !important;
-        height: 8px !important;
-        flex-basis: 8px !important;
+        width: 8.5px !important;
+        height: 8.5px !important;
+        flex-basis: 8.5px !important;
       }
     }
 
@@ -41677,11 +41695,19 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       check("PEOPLE_BACKGROUND_REMOVED", !peopleBadgeCss.includes("background:") && !metadataContractCss.includes("background: rgba(6, 9, 12, .48)") && metadataContractCss.includes("backdrop-filter: none !important"), "people is a frameless text/icon label", "STATIC_HOOK");
       check("PEOPLE_SUFFIX_REMOVED", portraitPeople4DigitValue && portraitPeople4DigitValue.textContent === "9999" && !String(portraitPeople4DigitValue.textContent).includes("人"), "people count has no visible 人 suffix", "RUNTIME_MOCK");
       check("TOP_META_INSET_REFINED", metadataContractCss.includes("top: 9px") && metadataContractCss.includes("left: 9px") && metadataContractCss.includes("right: 9px") && metadataContractCss.includes("top: 10px"), "top metadata has refined inset values", "STATIC_HOOK");
-      check("LANDSCAPE_TOP_META_NORMAL", layerLandscapeNostrMovie.rating && layerLandscapeNostrMovie.people && metadataContractCss.includes(".card.landscape-card") && metadataContractCss.includes("font-size: 11px !important") && metadataContractCss.includes("width: 14px !important"), "landscape cards keep the normal metadata scale", "RUNTIME_MOCK");
-      check("PORTRAIT_TOP_META_COMPACT", layerNostrMovie.rating && layerNostrMovie.people && metadataContractCss.includes(":not(.landscape-card)") && metadataContractCss.includes("font-size: 9px !important") && metadataContractCss.includes("width: 9px !important"), "portrait cards use the compact metadata scale", "RUNTIME_MOCK");
-      check("PORTRAIT_RATING_PEOPLE_GAP", metadataContractCss.includes("gap: 3px !important") && metadataContractCss.includes("left: 9px") && metadataContractCss.includes("right: 9px") && !metadataContractCss.includes("margin-left: -") && !metadataContractCss.includes("transform:"), "portrait metadata keeps a positive safe gap without forced compression", "STATIC_HOOK");
+      check("LANDSCAPE_TOP_META_NORMAL", layerLandscapeNostrMovie.rating && layerLandscapeNostrMovie.people && metadataContractCss.includes(".card.landscape-card") && metadataContractCss.includes("font-size: 11px !important") && metadataContractCss.includes("width: 14px !important") && metadataContractCss.includes("gap: 5px !important"), "landscape cards keep the normal metadata scale", "RUNTIME_MOCK");
+      check("LANDSCAPE_META_UNCHANGED", metadataContractCss.includes(".card.landscape-card") && metadataContractCss.includes("top: 10px") && metadataContractCss.includes("font-size: 11px !important") && metadataContractCss.includes("width: 14px !important") && metadataContractCss.includes("gap: 5px !important"), "landscape metadata remains unchanged", "STATIC_HOOK");
+      check("PORTRAIT_TOP_META_COMPACT", layerNostrMovie.rating && layerNostrMovie.people && metadataContractCss.includes(":not(.landscape-card)") && metadataContractCss.includes("font-size: 9.5px !important") && metadataContractCss.includes("width: 9.5px !important"), "portrait cards use the compact metadata scale", "RUNTIME_MOCK");
+      check("PORTRAIT_RATING_FONT_INCREASED", metadataContractCss.includes("font-size: 9.5px !important"), "portrait rating text is slightly enlarged", "STATIC_HOOK");
+      check("PORTRAIT_PEOPLE_FONT_INCREASED", metadataContractCss.includes("font-size: 9.5px !important"), "portrait people text is slightly enlarged", "STATIC_HOOK");
+      check("PORTRAIT_STAR_ICON_INCREASED_PROPORTIONALLY", cardRendererSource.includes("rating-icon") && metadataContractCss.includes("width: 9.5px !important") && metadataContractCss.includes("height: 9.5px !important"), "portrait star icon scales with the text", "STATIC_HOOK");
+      check("PORTRAIT_PERSON_ICON_INCREASED_PROPORTIONALLY", cardRendererSource.includes("people-icon") && metadataContractCss.includes("width: 9.5px !important") && metadataContractCss.includes("height: 9.5px !important"), "portrait person icon scales with the text", "STATIC_HOOK");
+      check("PORTRAIT_ICON_TEXT_RATIO_PRESERVED", metadataContractCss.includes("font-size: 9.5px !important") && metadataContractCss.includes("width: 9.5px !important") && metadataContractCss.includes("flex-basis: 9.5px !important"), "portrait icon and text retain their compact ratio", "STATIC_HOOK");
+      check("PORTRAIT_RATING_PEOPLE_GAP", metadataContractCss.includes("gap: 3.25px !important") && metadataContractCss.includes("left: 9px") && metadataContractCss.includes("right: 9px") && !metadataContractCss.includes("margin-left: -") && !metadataContractCss.includes("transform:"), "portrait metadata keeps a positive safe gap without forced compression", "STATIC_HOOK");
       check("PORTRAIT_META_NO_WRAP", ratingBadgeCss.includes("white-space: nowrap;") && peopleBadgeCss.includes("white-space: nowrap;") && metadataContractCss.includes("white-space: nowrap !important"), "rating and people remain single-line", "STATIC_HOOK");
       check("PORTRAIT_PEOPLE_4_DIGIT_SAFE", layerNostrMovie.rating && portraitPeople4DigitValue && portraitPeople4DigitValue.textContent === "9999" && !metadataContractCss.includes("width: 50%") && metadataContractCss.includes("min-width: 0 !important"), "four-digit people remains an unforced, non-wrapping value", "RUNTIME_MOCK");
+      check("TOP_META_COLOR_UNCHANGED", ratingBadgeCss.includes("color: #ffd98a;") && peopleBadgeCss.includes("color: #ffd98a;") && metadataContractCss.includes("color: #ffd98a !important;"), "top metadata keeps the current gold color", "STATIC_HOOK");
+      check("TOP_META_POSITION_UNCHANGED", metadataContractCss.includes("top: 9px") && metadataContractCss.includes("left: 9px") && metadataContractCss.includes("right: 9px"), "top metadata positions and insets remain unchanged", "STATIC_HOOK");
       check("HOME_BADGE_VISUAL_CONSISTENCY", cardRendererSource.includes("rating-badge .badge-icon") && cardRendererSource.includes("card-people .badge-icon") && metadataContractCss.includes("font-weight: 760 !important") && metadataContractCss.includes("padding: 0 !important") && metadataContractCss.includes("gap: 3px !important"), "Home badges share the frameless visual language", "STATIC_HOOK");
       check("SECONDARY_BADGE_VISUAL_CONSISTENCY", metadataContractCss.includes("#secondaryCatalog .media-grid > .card .rating-badge") && metadataContractCss.includes("#secondaryCatalog .media-grid > .card .card-people") && metadataContractCss.includes("border: 0 !important"), "Secondary badges share the same visual contract", "STATIC_HOOK");
       check("RATING_BADGE_NO_PEOPLE_OVERLAP", layerNostrMovie.ratingInPoster && layerNostrMovie.peopleInPoster && metadataContractCss.includes("left: 9px") && metadataContractCss.includes("right: 9px"), "rating and people occupy opposite top corners", "RUNTIME_MOCK");
