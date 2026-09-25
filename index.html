@@ -17033,7 +17033,7 @@ utils.encode = function encode(arr, enc) {
       detailReturn: null,
       detailPreload: null,
       detailHistoryHandoff: null,
-      detailPlayback: { seq: 0, token: "", itemKey: "", active: false, promise: null, candidate: null, sourceId: "", provider: "", playRequested: false, handoffStarted: false, history: null, historyVerified: false, episodeTarget: null, directAction: null, error: "" },
+      detailPlayback: { seq: 0, token: "", itemKey: "", active: false, promise: null, candidate: null, sourceId: "", provider: "", playRequested: false, handoffStarted: false, history: null, historyVerified: false, episodeTarget: null, directAction: null, error: "", raceActive: false, providerCommitted: false, providerCommitCount: 0 },
       detailEpisodeTarget: null,
       historyResume: null,
       detailMode: "FIRST_PLAY",
@@ -17078,6 +17078,8 @@ utils.encode = function encode(arr, enc) {
          searchIme: null,
          back: null,
          homeV14: null,
+         detailRace: null,
+         detailRaceLog: [],
          tests: []
       },
       remoteKeyGate: { key: "", at: 0 },
@@ -19908,6 +19910,8 @@ utils.encode = function encode(arr, enc) {
     function showDirectPlayStatus(actionId, phase, text, reason) {
       const id = Number(actionId || 0);
       const current = state.directPlayStatus || {};
+      const detailRun = state.detailPlayback;
+      if (detailRun && Number(detailRun.raceActionToken || 0) === id) return false;
       if (!id || current.actionId > id || current.actionId === id && !current.active) return false;
       clearTimeout(current.clearTimer);
       const textKey = directPlayStatusTextKey(phase) || String(phase || "");
@@ -19943,6 +19947,7 @@ utils.encode = function encode(arr, enc) {
     }
 
     function syncDirectPlayStatusFromStage(stage, item, action) {
+      if (action && action.raceMode) return;
       if (!action || !state.directPlayStatus || Number(state.directPlayStatus.actionId) !== Number(action.token) || !state.directPlayStatus.active) return;
       const value = String(stage || "");
       if (value === "CANCELLED") {
@@ -21257,6 +21262,199 @@ utils.encode = function encode(arr, enc) {
       return false;
     }
 
+    function detailRaceCandidateLabel(candidate) {
+      if (!candidate) return "";
+      return String(
+        candidate.resourceTitle
+        || candidate.sourceEntryTitle
+        || candidate.title
+        || candidate.fileName
+        || candidate.file_name
+        || candidate.url
+        || ""
+      ).slice(0, 160);
+    }
+
+    function recordDetailRaceDiag(event, run, detail) {
+      const payload = Object.assign({
+        event: String(event || ""),
+        runId: run && Number(run.seq || run.token || 0) || "",
+        itemKey: run && String(run.itemKey || "") || ""
+      }, detail || {});
+      try {
+        if (state.tvDiag) {
+          const log = Array.isArray(state.tvDiag.detailRaceLog) ? state.tvDiag.detailRaceLog : [];
+          log.push(payload);
+          if (log.length > 60) log.splice(0, log.length - 60);
+          state.tvDiag.detailRaceLog = log;
+          state.tvDiag.detailRace = payload;
+        }
+      } catch (e) {}
+      try { console.debug("[Nostr TV] " + String(event || "DETAIL_RACE"), payload); } catch (e) {}
+      try { updateTvDiagnostic(); } catch (e) {}
+      return payload;
+    }
+
+    function detailRaceResolveCompletion(run, value) {
+      if (!run || run.raceCompletionResolved) return false;
+      run.raceCompletionResolved = true;
+      if (typeof run.resolveRaceCompletion === "function") {
+        run.resolveRaceCompletion(value || null);
+      }
+      return true;
+    }
+
+    function detailRaceHandoffCommittedProvider(run) {
+      if (!run || !run.providerCommitted || !run.playRequested || run.handoffDispatching) return false;
+      if (!detailPlaybackIsCurrent(run) || run.cancelled || run.handoffStarted) return false;
+      run.handoffDispatching = true;
+      const item = run.item;
+      const button = $("detailContinueBtn");
+      const candidate = run.candidate;
+      run.handoffPromise = (async () => {
+        if (run.provider === "pan-direct" && run.historyPromise) {
+          await run.historyPromise.catch(() => null);
+          if (!detailPlaybackIsCurrent(run) || run.cancelled) return false;
+        }
+        return run.provider === "curated"
+          ? playPreparedDetailCandidate(item, candidate, button)
+          : playDetailDirectReadyCandidate(item, candidate, run.history || state.detailHistory, button);
+      })().catch(() => false).then((result) => {
+        run.handoffDispatching = false;
+        return result;
+      });
+      return true;
+    }
+
+    function tryCommitDetailProvider(run, provider, candidate, details) {
+      const info = details || {};
+      const normalizedProvider = String(provider || "");
+      const identityVerdict = String(
+        info.identityVerdict
+        || candidate && (candidate.identityVerdict || candidate.candidateVerdict)
+        || ""
+      ).toUpperCase();
+      const healthState = String(info.healthState || candidate && candidate.healthAdmission || "").toLowerCase();
+      const healthAccepted = info.healthAccepted === true
+        || info.healthState === "ok"
+        || ["ok", "unsupported"].includes(healthState)
+        || !!(candidate && panAutoHealthAdmission(candidate, {}).accepted);
+      const finalTentative = info.allowTentativeFinal === true
+        && identityVerdict === "TENTATIVE"
+        && !!(run && run.curatedTerminal && run.directTerminal);
+      if (!run || !candidate || !["curated", "pan-direct"].includes(normalizedProvider)
+        || !healthAccepted || identityVerdict !== "STRONG" && !finalTentative) {
+        return false;
+      }
+      if (!detailPlaybackIsCurrent(run) || run.cancelled) return false;
+      if (run.providerCommitted) {
+        recordDetailRaceDiag("PROVIDER_COMMIT_REJECTED", run, {
+          lateProvider: normalizedProvider,
+          winnerProvider: String(run.provider || ""),
+          elapsedMs: Math.max(0, Date.now() - Number(run.raceStartedAt || Date.now()))
+        });
+        return false;
+      }
+      run.providerCommitted = true;
+      run.providerCommitCount = Number(run.providerCommitCount || 0) + 1;
+      run.provider = normalizedProvider;
+      run.sourceId = String(info.sourceId || candidate.sourceId || run.sourceId || "");
+      run.candidate = candidate;
+      run.commitAt = Date.now();
+      run.phase = "READY";
+      run.raceActive = false;
+      run.raceFinalized = true;
+      recordDetailRaceDiag("PROVIDER_COMMIT", run, {
+        provider: normalizedProvider,
+        elapsedMs: Math.max(0, run.commitAt - Number(run.raceStartedAt || run.commitAt)),
+        candidateLabel: detailRaceCandidateLabel(candidate),
+        playRequested: !!run.playRequested,
+        identityVerdict,
+        healthState: healthState || "accepted",
+        commitCount: run.providerCommitCount
+      });
+      settleDetailPlayback(run, "READY", "provider_commit");
+      showDirectPlayStatus(run.token, "READY", DIRECT_PLAY_STATUS_TEXT.READY, "provider_commit");
+      updateDetailContinueButton();
+      detailRaceResolveCompletion(run, candidate);
+      detailRaceHandoffCommittedProvider(run);
+      return true;
+    }
+
+    function detailRaceLaneTerminal(run, lane, tentative, reason, details) {
+      if (!run || !detailPlaybackIsCurrent(run) || run.cancelled) return false;
+      if (run.providerCommitted) return false;
+      const normalizedLane = lane === "curated" ? "curated" : "direct";
+      const terminalKey = normalizedLane === "curated" ? "curatedTerminal" : "directTerminal";
+      if (run[terminalKey]) return false;
+      run[terminalKey] = true;
+      if (normalizedLane === "curated") {
+        run.curatedTentative = tentative || null;
+        run.curatedFailure = String(reason || "");
+      } else {
+        run.directTentative = tentative || null;
+        run.directFailureType = ["NO_RESOURCE", "CONNECTION_FAILED"].includes(String(reason || ""))
+          ? String(reason) : run.directFailureType || "";
+      }
+      const event = normalizedLane === "curated" ? "CURATED_RACE_TERMINAL" : "DIRECT_RACE_TERMINAL";
+      recordDetailRaceDiag(event, run, Object.assign({
+        elapsedMs: Math.max(0, Date.now() - Number(run.raceStartedAt || Date.now())),
+        reason: String(reason || ""),
+        candidateLabel: detailRaceCandidateLabel(tentative),
+        identityVerdict: String(tentative && tentative.identityVerdict || ""),
+        healthState: String(tentative && tentative.healthAdmission || "")
+      }, details || {}));
+      if (!(run.curatedTerminal && run.directTerminal) || run.providerCommitted) return true;
+      const fallback = run.curatedTentative || run.directTentative;
+      if (fallback) {
+        const fallbackProvider = run.curatedTentative ? "curated" : "pan-direct";
+        if (tryCommitDetailProvider(run, fallbackProvider, fallback, {
+          allowTentativeFinal: true,
+          sourceId: fallback.sourceId,
+          identityVerdict: String(fallback.identityVerdict || "TENTATIVE"),
+          healthState: String(fallback.healthAdmission || ""),
+          healthAccepted: true
+        })) return true;
+      }
+      run.raceFinalized = true;
+      run.raceActive = false;
+      const finalFailure = run.directFailureType || detailDirectFailureTypeAfterPrepare() || "NO_RESOURCE";
+      recordDetailRaceDiag("DETAIL_RACE_FINAL_FAILURE", run, {
+        elapsedMs: Math.max(0, Date.now() - Number(run.raceStartedAt || Date.now())),
+        failureType: finalFailure
+      });
+      settleDetailPlayback(run, finalFailure, "detail_race_final_failure");
+      if (run.playRequested) notifyCurrentDetailFinalFailure(run, finalFailure);
+      updateDetailContinueButton();
+      detailRaceResolveCompletion(run, null);
+      return true;
+    }
+
+    function reportDetailDirectRaceResult(action, candidate, reason, details) {
+      if (!action || !action.raceMode || !action.detailRun) return false;
+      const run = action.detailRun;
+      if (!detailPlaybackIsCurrent(run) || run.providerCommitted || run.cancelled) return false;
+      const item = action.item;
+      const identityVerdict = String(candidate && candidate.identityVerdict || details && details.identityVerdict || "").toUpperCase();
+      if (candidate && identityVerdict === "STRONG") {
+        const admission = panAutoHealthAdmission(candidate, {});
+        if (admission.accepted) {
+          recordDetailRaceDiag("DIRECT_QUALIFIED_READY", run, {
+            elapsedMs: Math.max(0, Date.now() - Number(run.raceStartedAt || Date.now())),
+            identityVerdict,
+            healthState: String(admission.state || ""),
+            candidateLabel: detailRaceCandidateLabel(candidate)
+          });
+          return tryCommitDetailProvider(run, "pan-direct", candidate, {
+            identityVerdict,
+            healthState: admission.state,
+            healthAccepted: true
+          });
+        }
+      }
+      return detailRaceLaneTerminal(run, "direct", candidate && identityVerdict === "TENTATIVE" ? candidate : null, reason || "NO_QUALIFIED_CANDIDATE", details);
+    }
+
     function settleDetailPlayback(run, result, reason) {
       if (!detailPlaybackCurrentOrRecord(run)) return false;
       const finalResult = String(result || "NO_RESOURCE");
@@ -21300,6 +21498,7 @@ utils.encode = function encode(arr, enc) {
       run.settledResult = "CANCELLED";
       run.cancelReason = cancelReason;
       run.error = cancelReason;
+      detailRaceResolveCompletion(run, null);
       if (run.directAction && typeof _directPlayPending !== "undefined" && _directPlayPending === run.directAction) {
         cancelPendingDirectPlay(cancelReason);
       }
@@ -21451,7 +21650,24 @@ utils.encode = function encode(arr, enc) {
         continueResource: null,
         continueResourcePromise: null,
         continueHistoryGateTimedOut: false,
-        continueHistoryGateResolved: false
+        continueHistoryGateResolved: false,
+        raceActive: false,
+        raceStartedAt: 0,
+        raceCompletionResolved: false,
+        resolveRaceCompletion: null,
+        raceFinalized: false,
+        raceActionToken: 0,
+        providerCommitted: false,
+        providerCommitCount: 0,
+        commitAt: 0,
+        curatedTerminal: false,
+        directTerminal: false,
+        curatedTentative: null,
+        directTentative: null,
+        curatedFailure: "",
+        directFailureType: "",
+        handoffDispatching: false,
+        handoffPromise: null
       };
       state.detailPlayback = run;
       recordDetailPlaybackLifecycle(run, "START");
@@ -21558,45 +21774,81 @@ utils.encode = function encode(arr, enc) {
         run.historyPromise = continueDecision && continueDecision.attempted
           ? Promise.resolve(continueDecision.history)
           : verifyDetailNativeHistory(item, run).catch(() => null);
-        let curated = null;
-        try {
-          curated = await resolveCuratedPlaybackCandidate(item, run);
-        } catch (e) {
-          run.error = String(e && e.message || e || "curated_failed");
-        }
-        if (!detailPlaybackCurrentOrRecord(run)) return null;
-        if (curated && curated.candidate) {
-          run.provider = "curated";
-          run.sourceId = curated.sourceId;
-          run.candidate = curated.candidate;
-          settleDetailPlayback(run, "READY", "curated_ready");
-          showDirectPlayStatus(run.token, "READY", DIRECT_PLAY_STATUS_TEXT.READY, "curated_ready");
-          updateDetailContinueButton();
-          if (run.playRequested) await playPreparedDetailCandidate(item, run.candidate, $("detailContinueBtn"));
-          return run.candidate;
-        }
-        if (!detailPlaybackCurrentOrRecord(run)) return null;
-        // 六站都未达到准入标准后，交给原有 Direct 3 次重试/轮询生命周期。
-        run.provider = "pan-direct";
+        run.raceActive = true;
+        run.raceStartedAt = Date.now();
+        run.phase = "PREPARING";
+        run.raceCompletionPromise = new Promise((resolve) => { run.resolveRaceCompletion = resolve; });
+        recordDetailRaceDiag("DETAIL_RACE_START", run, {
+          startedAt: run.raceStartedAt,
+          playRequested: !!run.playRequested
+        });
+
+        recordDetailRaceDiag("CURATED_RACE_START", run, {
+          startedAt: run.raceStartedAt,
+          discoveryWindowMs: CURATED_DISCOVERY_WINDOW_MS,
+          qualityGraceMs: CURATED_QUALITY_GRACE_MS
+        });
+        run.curatedTask = Promise.resolve()
+          .then(() => resolveCuratedPlaybackCandidate(item, run))
+          .then((curated) => {
+            if (!detailPlaybackIsCurrent(run) || run.providerCommitted || run.cancelled) return null;
+            if (curated && curated.candidate) {
+              const candidate = curated.candidate;
+              const identityVerdict = String(curated.identityVerdict || candidate.identityVerdict || candidate.candidateVerdict || "STRONG").toUpperCase();
+              const admission = panAutoHealthAdmission(candidate, {});
+              if (identityVerdict === "STRONG" && admission.accepted) {
+                recordDetailRaceDiag("CURATED_QUALIFIED_READY", run, {
+                  elapsedMs: Math.max(0, Date.now() - Number(run.raceStartedAt || Date.now())),
+                  identityVerdict,
+                  healthState: String(admission.state || candidate.healthAdmission || ""),
+                  candidateLabel: detailRaceCandidateLabel(candidate)
+                });
+                tryCommitDetailProvider(run, "curated", candidate, {
+                  sourceId: curated.sourceId,
+                  identityVerdict,
+                  healthState: admission.state,
+                  healthAccepted: true
+                });
+                return candidate;
+              }
+              return detailRaceLaneTerminal(run, "curated", identityVerdict === "TENTATIVE" ? candidate : null, "NO_QUALIFIED_CANDIDATE");
+            }
+            return detailRaceLaneTerminal(run, "curated", null, "NO_QUALIFIED_CANDIDATE");
+          }, (error) => {
+            if (detailPlaybackIsCurrent(run) && !run.providerCommitted && !run.cancelled) {
+              run.error = String(error && error.message || error || "curated_failed");
+              detailRaceLaneTerminal(run, "curated", null, "CURATED_FAILED");
+            }
+            return null;
+          });
+
+        recordDetailRaceDiag("DIRECT_RACE_START", run, {
+          startedAt: run.raceStartedAt,
+          origin: "direct",
+          mode: "direct",
+          prepareOnly: true
+        });
         run.phase = "PAN_DIRECT";
-        recordDetailPlaybackLifecycle(run, "entering PAN_DIRECT");
         const directTask = playBestQuark(item, {
           detailPrimary: true,
           suppressAutoPan: true,
+          mode: "direct",
+          origin: "direct",
           prepareOnly: true,
-          playRequested: !!run.playRequested
+          playRequested: false,
+          raceMode: true
         });
         run.directAction = typeof _directPlayPending !== "undefined" && _directPlayPending && _directPlayPending.item === item
           ? _directPlayPending
           : null;
-        await directTask;
-        if (!detailPlaybackCurrentOrRecord(run)) return null;
-        const directCandidate = detailDirectPlayCandidateFor(item);
-        const directFailure = directCandidate ? "READY" : (detailDirectFailureTypeFor(item) || "NO_RESOURCE");
-        run.directAction = null;
-        settleDetailPlayback(run, directFailure, "direct_prepare_settled");
-        updateDetailContinueButton();
-        return directCandidate;
+        run.directTask = Promise.resolve(directTask).catch((error) => {
+          if (detailPlaybackIsCurrent(run) && !run.providerCommitted && !run.cancelled) {
+            run.error = String(error && error.message || error || "direct_failed");
+            reportDetailDirectRaceResult(run.directAction, null, "DIRECT_FAILED");
+          }
+          return null;
+        });
+        return await run.raceCompletionPromise;
       })().catch((error) => {
         if (detailPlaybackCurrentOrRecord(run)) {
           run.error = String(error && error.message || error || "detail_prepare_failed");
@@ -21703,6 +21955,8 @@ utils.encode = function encode(arr, enc) {
       const detailRun = state.detailPlayback;
       if (detailRun && detailPlaybackIsCurrent(detailRun)
         && ["NO_RESOURCE", "CONNECTION_FAILED", "CANCELLED"].includes(String(detailRun.phase || ""))) return false;
+      if (detailRun && detailPlaybackIsCurrent(detailRun)
+        && detailRun.raceActive && !detailRun.providerCommitted) return false;
       if (detailPreparedCandidateFor(item)) return true;
       const pan = state.pan || {};
       const lifecycle = getPanSearchLifecycleFor(item);
@@ -21748,6 +22002,9 @@ utils.encode = function encode(arr, enc) {
 
     async function playDetailDirectReadyCandidate(item, candidate, history, button) {
       if (!item || !candidate || !detailDirectPlayReadyFor(item)) return false;
+      const detailRun = state.detailPlayback && detailPlaybackIsCurrent(state.detailPlayback)
+        && state.detailPlayback.item === item ? state.detailPlayback : null;
+      if (detailRun && detailRun.handoffStarted) return false;
       const effectiveHistory = history;
       const episodeTarget = detailContinuePlaybackTargetFor(item, effectiveHistory);
       if (episodeTarget) setDetailPlaybackTarget(item, episodeTarget);
@@ -21765,6 +22022,10 @@ utils.encode = function encode(arr, enc) {
         updateDetailContinueButton();
         toast(detailDirectFailureMessage("NO_RESOURCE"));
         return false;
+      }
+      if (detailRun) {
+        detailRun.handoffStarted = true;
+        detailRun.playRequested = false;
       }
       recordDirectReadyEvent("DIRECT_READY_CONSUMED", item, candidate, "ready_click", admission.state, null);
       await playPanResult(candidate, {
@@ -21943,6 +22204,16 @@ utils.encode = function encode(arr, enc) {
       if (mode === "CONTINUE" && history && detailContinueHistoryIsValid(history)) {
         if (await playDetailContinueHistoryFirst(item, history, button)) return;
       }
+      const racingDetailPlayback = state.detailPlayback && detailPlaybackIsCurrent(state.detailPlayback)
+        && state.detailPlayback.item === item && state.detailPlayback.raceActive
+        && !state.detailPlayback.providerCommitted ? state.detailPlayback : null;
+      if (racingDetailPlayback) {
+        racingDetailPlayback.playRequested = true;
+        showDirectPlayStatus(racingDetailPlayback.token, "REQUESTED_PREPARING", DIRECT_PLAY_STATUS_TEXT.REQUESTED_PREPARING, "play_requested_while_detail_race");
+        updateDetailContinueButton();
+        toast("资源正在准备，请稍候");
+        return;
+      }
       const prepared = detailPreparedCandidateFor(item);
       if (prepared) {
         playPreparedDetailCandidate(item, prepared, button).catch(() => {});
@@ -22007,7 +22278,8 @@ utils.encode = function encode(arr, enc) {
 
       const run = state.detailPlayback && detailPlaybackIsCurrent(state.detailPlayback)
         && state.detailPlayback.item === item ? state.detailPlayback : null;
-      const directReady = detailDirectPlayReadyFor(item);
+      const racePreparing = !!(run && run.raceActive && !run.providerCommitted);
+      const directReady = racePreparing ? false : detailDirectPlayReadyFor(item);
       if (directReady) return "ready";
 
       const runPhase = String(run && run.phase || "");
@@ -22024,6 +22296,7 @@ utils.encode = function encode(arr, enc) {
       if (run && (runPhase === "UNRELEASED" || run.settledResult === "UNRELEASED")) {
         return "unreleased";
       }
+      if (racePreparing) return "preparing";
       if (run && run.active && (run.preparationStarted || ["PREPARING", "PAN_DIRECT"].includes(runPhase))) return "preparing";
       if (action && (action.prepareOnly || action.playRequested || action.searchStarted)) return "preparing";
 
@@ -33016,8 +33289,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     async function probePanHealth(items, options) {
       const context = options && options.context;
       const curatedAttempt = context && context.curatedAttempt;
-      const isCurrent = () => !context || (state.pan.viewToken === context.token && state.selected === context.item
-        && (!curatedAttempt || (curatedAttempt.active && curatedRemainingMs(curatedAttempt) > 0)));
+      const raceRun = context && context.raceRun;
+      const isCurrent = () => raceRun
+        ? detailPlaybackIsCurrent(raceRun)
+          && (!curatedAttempt || (curatedAttempt.active && curatedRemainingMs(curatedAttempt) > 0))
+        : !context || (state.pan.viewToken === context.token && state.selected === context.item
+          && (!curatedAttempt || (curatedAttempt.active && curatedRemainingMs(curatedAttempt) > 0)));
       const list = (items || []).filter((it) => it && isPanCheckSupported(it));
       if (!list.length || !panCheckAvailable() || !isCurrent()) return {};
       try {
@@ -33874,6 +34151,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         detailPrimary: !!opts.detailPrimary,
         detailRun: opts.detailPrimary ? state.detailPlayback : null,
         suppressAutoPan: !!opts.suppressAutoPan,
+        raceMode: !!opts.raceMode,
         prepareOnly,
         history: continueHistory,
         episodeTarget: requestedTarget,
@@ -33885,14 +34163,18 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         finalFailureNotified: false,
         promise: null
       };
+      if (action.raceMode && action.detailRun) action.detailRun.raceActionToken = action.token;
       _directPlayPending = action;
       const initialStatusPhase = prepareOnly
         ? (action.playRequested ? "REQUESTED_PREPARING" : "BACKGROUND_PREPARING")
         : "SEARCHING";
-      showDirectPlayStatus(action.token, initialStatusPhase, DIRECT_PLAY_STATUS_TEXT[initialStatusPhase], prepareOnly ? "detail_prepare" : "play_click");
+      if (!action.raceMode) {
+        showDirectPlayStatus(action.token, initialStatusPhase, DIRECT_PLAY_STATUS_TEXT[initialStatusPhase], prepareOnly ? "detail_prepare" : "play_click");
+      }
       action.promise = (async () => {
         const keyword = action.keyword;
         if (!keyword || !panDirectPlayActionIsCurrent(action)) {
+          if (action.raceMode && panDirectPlayActionIsCurrent(action)) reportDetailDirectRaceResult(action, null, "NO_KEYWORD");
           action.playRequested = false;
           return;
         }
@@ -33950,7 +34232,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           if (shouldStartSearch) {
             action.sessionReuseDecision = "CREATE_FRESH_DIRECT";
             recordDirectPlaySessionDiag(action, action.sessionReuseDecision, lifecycle);
-            toast("正在搜索资源…");
+            if (!action.raceMode) toast("正在搜索资源…");
             if (state.pan.loading && state.pan.keyword !== keyword) resetPanSearchState(false);
             if (!panDirectPlayActionIsCurrent(action)) {
               action.playRequested = false;
@@ -33969,7 +34251,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           } else if (lifecycle.active) {
             action.sessionReuseDecision = "REUSE_ACTIVE_SEARCH";
             recordDirectPlaySessionDiag(action, action.sessionReuseDecision, lifecycle);
-            toast("正在继续搜索可播放资源…");
+            if (!action.raceMode) toast("正在继续搜索可播放资源…");
           } else if (lifecycle.hasResults) {
             action.sessionReuseDecision = "USE_EXISTING_RESULTS";
             recordDirectPlaySessionDiag(action, action.sessionReuseDecision, lifecycle);
@@ -33983,6 +34265,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           if (waited.result === "DIRECT_TRANSPORT_EXHAUSTED") {
             setDetailDirectFailureType(item, "CONNECTION_FAILED", waited.lifecycle || getPanSearchLifecycleFor(item));
             recordPanDirectPlayDiag("DIRECT_TRANSPORT_EXHAUSTED", item, waited.lifecycle || getPanSearchLifecycleFor(item), action.startedAt, null, action);
+            if (action.raceMode) {
+              reportDetailDirectRaceResult(action, null, "CONNECTION_FAILED");
+              return;
+            }
             suppressDirectPlayPanFallback(action, detailDirectFailureMessage("CONNECTION_FAILED"));
             return;
           }
@@ -33991,10 +34277,17 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             setDetailDirectFailureType(item, failureType, waited.lifecycle || getPanSearchLifecycleFor(item));
             const failureMessage = detailDirectFailureMessage(failureType);
             recordPanDirectPlayDiag("FINAL_ERROR", item, waited.lifecycle || getPanSearchLifecycleFor(item), action.startedAt, null, action);
+            if (action.raceMode) {
+              reportDetailDirectRaceResult(action, null, failureType);
+              return;
+            }
             suppressDirectPlayPanFallback(action, failureMessage);
             return;
           }
-          if (waited.result !== "FOUND_QB" && waited.result !== "TERMINAL_NO_QB") return;
+          if (waited.result !== "FOUND_QB" && waited.result !== "TERMINAL_NO_QB") {
+            if (action.raceMode) reportDetailDirectRaceResult(action, null, "DIRECT_FAILED");
+            return;
+          }
           lifecycle = waited.lifecycle || getPanSearchLifecycleFor(item);
           const waitedIdentityTiers = panAutoQBCandidateTiers(item, state.pan.results);
           const waitedHasStrong = waitedIdentityTiers.strong.length > 0;
@@ -34010,6 +34303,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             action.waitResult = "TERMINAL_NO_QB";
             recordPanDirectPlayDiag("TERMINAL_NO_QB", item, lifecycle, action.startedAt, null, action);
             recordPanDirectPlayDiag("FINAL_ERROR", item, lifecycle, action.startedAt, null, action);
+            if (action.raceMode) {
+              reportDetailDirectRaceResult(action, null, failureType);
+              return;
+            }
             suppressDirectPlayPanFallback(action, failureMessage);
             return;
           }
@@ -34072,6 +34369,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           const failureMessage = detailDirectFailureMessage(failureType);
           state.pan.directReady = null;
           recordPanDirectPlayDiag("FINAL_ERROR", item, getPanSearchLifecycleFor(item), action.startedAt, null, action);
+          if (action.raceMode) {
+            reportDetailDirectRaceResult(action, null, failureType);
+            return;
+          }
           suppressDirectPlayPanFallback(action, failureMessage);
           return;
         }
@@ -34092,6 +34393,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           recordDirectReadyEvent("DIRECT_READY_PUBLISHED", item, pick, "health_accepted", readyAdmission.state, action);
         } else {
           state.pan.directReady = null;
+        }
+        if (action.raceMode) {
+          reportDetailDirectRaceResult(action, pick, "DIRECT_QUALIFIED_READY", {
+            identityVerdict: String(pick && pick.identityVerdict || selectionTier || "")
+          });
+          return;
         }
         if (action.prepareOnly && !action.playRequested) {
           // 自动准备只把同一 lifecycle 留在 Ready 状态，绝不自动交给原生播放器。
@@ -35559,6 +35866,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           index: state.index,
           sourceId: state.source.id,
           sourceName: state.source.name,
+          identityVerdict: String(state.candidateVerdict || ""),
           candidates: curatedCandidateOrder(state.candidates).slice(0, CURATED_PREFLIGHT_PER_SOURCE)
         }))
         .filter((pool) => pool.candidates.length);
@@ -35609,7 +35917,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       let checkError = false;
       const checkable = preflightItems.filter((candidate) => isPanCheckSupported(candidate));
       if (checkable.length && panCheckAvailable()) {
-        const context = { token: state.pan.viewToken, item };
+        const context = { raceRun: run, raceOwner: "curated", item };
         const checked = await playbackPanHealthPreflight(preflightItems, context, CURATED_PREFLIGHT_BUDGET_MS);
         if (!detailPlaybackIsCurrent(run) || !panContextIsCurrent(context)) {
           return {
@@ -35687,6 +35995,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         candidate: selected,
         sourceId: selectedSource ? selectedSource.sourceId : "",
         sourceName: selectedSource ? selectedSource.sourceName : "",
+        identityVerdict: selectedSource ? selectedSource.identityVerdict : "",
         stale: false,
         timedOut,
         checkError,
@@ -36051,6 +36360,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         return {
           sourceId: healthResult.sourceId,
           sourceName: healthResult.sourceName,
+          identityVerdict: String(healthResult.identityVerdict || ""),
           candidate: healthResult.candidate
         };
       }
@@ -36084,7 +36394,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     }
 
     function panContextIsCurrent(context) {
-      return !context || (state.pan.viewToken === context.token && state.selected === context.item);
+      if (!context) return true;
+      if (context.raceRun) return detailPlaybackIsCurrent(context.raceRun) && state.selected === context.item;
+      return state.pan.viewToken === context.token && state.selected === context.item;
     }
 
     function invalidateAutomaticReadyForHealth(candidate, stateValue, context) {
@@ -36098,6 +36410,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (context && !panContextIsCurrent(context)) return false;
       const item = context && context.item || state.selected;
       if (!item) return false;
+      if (context && context.raceOwner === "curated") return false;
+      const currentRun = state.detailPlayback;
+      if (currentRun && currentRun.providerCommitted) return false;
       const candidateKey = detailDirectPlayCandidateKey(candidate);
       let invalidated = false;
       const ready = state.pan.directReady;
@@ -36109,7 +36424,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         state.pan.directReady = null;
         invalidated = true;
       }
-      const run = state.detailPlayback;
+      const run = currentRun;
       if (run && detailPlaybackIsCurrent(run) && run.candidate
         && detailDirectPlayCandidateKey(run.candidate) === candidateKey) {
         run.candidate = null;
@@ -40984,6 +41299,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const recoveryDiag = state.tvDiag.panForegroundRecovery;
       const handoffDiag = state.tvDiag.panForegroundHandoff;
       const directStatusDiag = state.tvDiag.directPlayStatus;
+      const detailRaceDiag = state.tvDiag.detailRace;
       const directSessionDiag = state.tvDiag.directPlaySession;
       const foregroundSessionDiag = state.tvDiag.foregroundSession;
       const topAnchorDiag = state.tvDiag.detailTopAnchor;
@@ -41027,6 +41343,13 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           directStatusDiag.textKey || "",
           "elapsed=" + Number(directStatusDiag.elapsedMs || 0) + "ms",
           directStatusDiag.reason || ""
+        ].filter(Boolean).join(" ") : "none"),
+        "detail race: " + (detailRaceDiag ? [
+          detailRaceDiag.event || "",
+          detailRaceDiag.provider || detailRaceDiag.lateProvider || "",
+          detailRaceDiag.identityVerdict || "",
+          detailRaceDiag.candidateLabel || "",
+          "elapsed=" + Number(detailRaceDiag.elapsedMs || 0) + "ms"
         ].filter(Boolean).join(" ") : "none"),
         "pan direct: " + (panDiag ? [
           panDiag.stage || "",
@@ -41944,6 +42267,149 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       check("DETAIL_CONTINUE_HISTORY", detailPrepareSource.includes('decision: "CONTINUE_READY"') && detailPrepareSource.includes("curatedStarted: false"), "valid Continue history still exits before first-play preparation", "FROZEN_SOURCE_AUDIT");
       check("DETAIL_CURATED_NORMAL", curatedPrepareAt > unreleasedGateAt && detailPrepareSource.includes("curated && curated.candidate"), "normal released detail can still use Curated", "FROZEN_SOURCE_AUDIT");
       check("DETAIL_DIRECT_FALLBACK_NORMAL", directPrepareAt > unreleasedGateAt && detailPrepareSource.includes('run.phase = "PAN_DIRECT"'), "normal released detail can still use Direct/Pan fallback", "FROZEN_SOURCE_AUDIT");
+      const raceStartAt = detailPrepareSource.indexOf('recordDetailRaceDiag("DETAIL_RACE_START"');
+      const raceCuratedStartAt = detailPrepareSource.indexOf('recordDetailRaceDiag("CURATED_RACE_START"');
+      const raceDirectStartAt = detailPrepareSource.indexOf('recordDetailRaceDiag("DIRECT_RACE_START"');
+      const raceRequestBlockAt = detailRequestSource.indexOf("const racingDetailPlayback");
+      const raceStateSnapshot = {
+        selected: state.selected,
+        detailPlayback: state.detailPlayback,
+        directPlayStatus: state.directPlayStatus,
+        detailRace: state.tvDiag && state.tvDiag.detailRace,
+        detailRaceLog: state.tvDiag && state.tvDiag.detailRaceLog
+      };
+      const raceTestItem = { mediaType: "movie", tmdbId: "race-test", title: "Race Test", releaseDate: "2020-01-01" };
+      let raceTestSeq = 0;
+      const newRaceTestRun = () => ({
+        seq: 9900 + (++raceTestSeq),
+        token: 9900 + raceTestSeq,
+        item: raceTestItem,
+        itemKey: panSearchItemKey(raceTestItem),
+        active: true,
+        phase: "PREPARING",
+        settledResult: "",
+        raceActive: true,
+        raceStartedAt: Date.now(),
+        raceCompletionResolved: false,
+        providerCommitted: false,
+        providerCommitCount: 0,
+        provider: "",
+        sourceId: "",
+        candidate: null,
+        playRequested: false,
+        handoffStarted: false,
+        handoffDispatching: false,
+        cancelled: false,
+        curatedTerminal: false,
+        directTerminal: false,
+        curatedTentative: null,
+        directTentative: null,
+        directFailureType: "",
+        staleLogged: false
+      });
+      const raceTestCandidate = (identityVerdict) => ({
+        diskType: "magnet",
+        url: "https://example.invalid/race.m3u8",
+        title: "Race Candidate",
+        identityVerdict: identityVerdict || "STRONG",
+        healthAdmission: "ok"
+      });
+      let raceDirectFirst = false;
+      let raceCuratedFirst = false;
+      let raceTentativeHold = false;
+      let raceOneLaneFailure = false;
+      let raceNearSimultaneous = false;
+      let raceBothTentative = false;
+      let raceBothFail = false;
+      let raceStaleExit = false;
+      let raceStaleAToB = false;
+      try {
+        let raceRun = newRaceTestRun();
+        state.selected = raceTestItem;
+        state.detailPlayback = raceRun;
+        const directCommitted = tryCommitDetailProvider(raceRun, "pan-direct", raceTestCandidate("STRONG"), { identityVerdict: "STRONG", healthState: "ok", healthAccepted: true });
+        const directLateCurated = tryCommitDetailProvider(raceRun, "curated", raceTestCandidate("STRONG"), { identityVerdict: "STRONG", healthState: "ok", healthAccepted: true });
+        raceDirectFirst = directCommitted && !directLateCurated && raceRun.provider === "pan-direct" && raceRun.providerCommitCount === 1;
+
+        raceRun = newRaceTestRun();
+        state.detailPlayback = raceRun;
+        const curatedCommitted = tryCommitDetailProvider(raceRun, "curated", raceTestCandidate("STRONG"), { identityVerdict: "STRONG", healthState: "ok", healthAccepted: true });
+        const curatedLateDirect = tryCommitDetailProvider(raceRun, "pan-direct", raceTestCandidate("STRONG"), { identityVerdict: "STRONG", healthState: "ok", healthAccepted: true });
+        raceCuratedFirst = curatedCommitted && !curatedLateDirect && raceRun.provider === "curated" && raceRun.providerCommitCount === 1;
+
+        raceRun = newRaceTestRun();
+        state.detailPlayback = raceRun;
+        detailRaceLaneTerminal(raceRun, "direct", raceTestCandidate("TENTATIVE"), "TENTATIVE_HELD");
+        raceTentativeHold = !raceRun.providerCommitted && raceRun.raceActive && !raceRun.curatedTerminal;
+
+        raceRun = newRaceTestRun();
+        state.detailPlayback = raceRun;
+        detailRaceLaneTerminal(raceRun, "curated", null, "CURATED_FAILED");
+        raceOneLaneFailure = !raceRun.providerCommitted && raceRun.phase === "PREPARING" && !raceRun.raceFinalized;
+
+        raceRun = newRaceTestRun();
+        state.detailPlayback = raceRun;
+        const nearFirst = tryCommitDetailProvider(raceRun, "curated", raceTestCandidate("STRONG"), { identityVerdict: "STRONG", healthState: "ok", healthAccepted: true });
+        const nearSecond = tryCommitDetailProvider(raceRun, "pan-direct", raceTestCandidate("STRONG"), { identityVerdict: "STRONG", healthState: "ok", healthAccepted: true });
+        raceNearSimultaneous = nearFirst && !nearSecond && raceRun.providerCommitCount === 1;
+
+        raceRun = newRaceTestRun();
+        state.detailPlayback = raceRun;
+        detailRaceLaneTerminal(raceRun, "curated", raceTestCandidate("TENTATIVE"), "TENTATIVE_HELD");
+        detailRaceLaneTerminal(raceRun, "direct", raceTestCandidate("TENTATIVE"), "TENTATIVE_FINAL");
+        raceBothTentative = raceRun.providerCommitted && raceRun.provider === "curated" && raceRun.providerCommitCount === 1;
+
+        raceRun = newRaceTestRun();
+        state.detailPlayback = raceRun;
+        detailRaceLaneTerminal(raceRun, "curated", null, "CURATED_FAILED");
+        detailRaceLaneTerminal(raceRun, "direct", null, "NO_RESOURCE");
+        raceBothFail = !raceRun.providerCommitted && raceRun.phase === "NO_RESOURCE" && raceRun.raceFinalized;
+
+        raceRun = newRaceTestRun();
+        state.selected = { mediaType: "movie", tmdbId: "closed-item", title: "Closed" };
+        state.detailPlayback = raceRun;
+        raceStaleExit = !tryCommitDetailProvider(raceRun, "curated", raceTestCandidate("STRONG"), { identityVerdict: "STRONG", healthState: "ok", healthAccepted: true })
+          && !raceRun.providerCommitted && state.detailPlayback === raceRun;
+
+        const runA = newRaceTestRun();
+        const itemB = { mediaType: "movie", tmdbId: "item-b", title: "Item B" };
+        state.selected = itemB;
+        const runB = newRaceTestRun();
+        runB.item = itemB;
+        runB.itemKey = panSearchItemKey(itemB);
+        state.detailPlayback = runB;
+        raceStaleAToB = !tryCommitDetailProvider(runA, "pan-direct", raceTestCandidate("STRONG"), { identityVerdict: "STRONG", healthState: "ok", healthAccepted: true })
+          && !runA.providerCommitted && state.detailPlayback.item === itemB;
+      } finally {
+        state.selected = raceStateSnapshot.selected;
+        state.detailPlayback = raceStateSnapshot.detailPlayback;
+        state.directPlayStatus = raceStateSnapshot.directPlayStatus;
+        if (state.tvDiag) {
+          state.tvDiag.detailRace = raceStateSnapshot.detailRace;
+          state.tvDiag.detailRaceLog = raceStateSnapshot.detailRaceLog;
+        }
+      }
+      const raceRequestBlock = raceRequestBlockAt >= 0 ? detailRequestSource.slice(raceRequestBlockAt, detailRequestSource.indexOf("const prepared", raceRequestBlockAt)) : "";
+      check("DETAIL_RACE_AFTER_HISTORY_GATE", raceStartAt > firstPlayPrepareAt && raceStartAt > preparationStartedAt, "Curated and Direct race starts only after History/first-play preparation gates", "STATIC_HOOK");
+      check("DETAIL_RACE_AFTER_UNRELEASED_GATE", raceStartAt > unreleasedGateAt && gateBlock.indexOf("recordDetailRaceDiag") < 0, "unreleased gate returns before either race lane starts", "STATIC_HOOK");
+      check("DETAIL_RACE_EQUAL_PRIORITY", raceCuratedStartAt >= 0 && raceDirectStartAt > raceCuratedStartAt && detailPrepareSource.includes("run.curatedTask") && detailPrepareSource.includes("run.directTask") && !detailPrepareSource.includes("await resolveCuratedPlaybackCandidate(item, run)"), "Curated and Direct are launched as peer tasks rather than a waterfall", "STATIC_HOOK");
+      check("DETAIL_RACE_DIRECT_ORIGIN_MODE", detailPrepareSource.includes('mode: "direct"') && detailPrepareSource.includes('origin: "direct"') && detailPrepareSource.includes('prepareOnly: true'), "Direct lane keeps the existing direct mode/origin and prepareOnly contract", "STATIC_HOOK");
+      check("DETAIL_RACE_DIRECT_FIRST", raceDirectFirst, "first qualified Direct candidate commits immediately", "RUNTIME_MOCK");
+      check("DETAIL_RACE_CURATED_FIRST", raceCuratedFirst, "first qualified Curated candidate commits immediately", "RUNTIME_MOCK");
+      check("DETAIL_RACE_TENTATIVE_HOLD", raceTentativeHold && detailPrepareSource.includes("allowTentativeFinal"), "tentative candidate waits for the other lane and is only final fallback", "RUNTIME_MOCK");
+      check("DETAIL_RACE_ONE_LANE_FAILURE", raceOneLaneFailure, "one lane failure leaves the shared UI in PREPARING", "RUNTIME_MOCK");
+      check("DETAIL_RACE_NEAR_SIMULTANEOUS", raceNearSimultaneous, "near-simultaneous qualified completions produce one provider commit", "RUNTIME_MOCK");
+      check("DETAIL_RACE_CLICK_DURING_RACE", raceRequestBlock.includes("racingDetailPlayback.playRequested = true") && !raceRequestBlock.includes("playBestQuark(item, directOptions)"), "click during race records intent without creating another action/search", "STATIC_HOOK");
+      check("DETAIL_RACE_SINGLE_HANDOFF", String(detailRaceHandoffCommittedProvider).includes("handoffDispatching") && String(playPreparedDetailCandidate).includes("handoffStarted") && String(playDetailDirectReadyCandidate).includes("handoffStarted"), "Provider Commit owns a single native handoff", "STATIC_HOOK");
+      check("DETAIL_RACE_EXIT_GUARD", raceStaleExit, "closed detail cannot accept a late provider", "RUNTIME_MOCK");
+      check("DETAIL_RACE_A_TO_B_GUARD", raceStaleAToB, "old A race cannot commit into new B detail", "RUNTIME_MOCK");
+      check("DETAIL_RACE_BOTH_TENTATIVE", raceBothTentative, "both tentative candidates use the existing Curated-first final fallback", "RUNTIME_MOCK");
+      check("DETAIL_RACE_BOTH_FAIL", raceBothFail, "only both terminal failures produce the final failed state", "RUNTIME_MOCK");
+      check("DETAIL_RACE_PROVIDER_SINGLE_COMMIT", String(tryCommitDetailProvider).includes("providerCommitted") && String(tryCommitDetailProvider).includes("providerCommitCount") && String(detailRaceLaneTerminal).includes("run.providerCommitted"), "Provider Commit Authority is the single write gate", "STATIC_HOOK");
+      check("DETAIL_RACE_LOSER_NO_RESET", !String(detailRaceLaneTerminal).includes("resetPanSearchState") && !String(detailRaceLaneTerminal).includes("cancelDetailPlaybackPreparation"), "loser completion does not clear Direct results/health or cancel the winning run", "STATIC_HOOK");
+      check("DETAIL_RACE_STATUS_PREPARING", detailPlayStateSource.includes("racePreparing") && detailPlayStateSource.indexOf("racePreparing") < detailPlayStateSource.indexOf('return "preparing"'), "race keeps the main button in PREPARING until Provider Commit", "STATIC_HOOK");
+      check("DETAIL_RACE_CURATED_PREFLIGHT_ISOLATED", String(probePanHealth).includes("raceRun") && String(panContextIsCurrent).includes("context.raceRun") && String(curatedCentralHealthCandidate).includes('raceOwner: "curated"'), "Curated health validity uses the detail run, not Direct viewToken", "STATIC_HOOK");
+      check("DETAIL_RACE_DIRECT_PREFLIGHT_SURVIVES", String(resolveCuratedPlaybackCandidate).includes("raceOwner: \"curated\"") && String(panContextIsCurrent).includes("state.pan.viewToken === context.token"), "Direct health context retains its own viewToken while Curated races", "STATIC_HOOK");
       check("READY_COLOR", detailColorSource.includes('[data-play-state="ready"]') && detailColorSource.includes("#35E07A"), "existing ready color remains green", "FROZEN_SOURCE_AUDIT");
       check("FAILED_COLOR", detailColorSource.includes('[data-play-state="failed"]') && detailColorSource.includes("#FF0000"), "existing failed color remains red", "FROZEN_SOURCE_AUDIT");
       check("VARIETY_REGRESSION_PRESERVED", isReleaseFilteredCatalogId("variety") && typeof secondaryFullCatalogSources === "function" && Array.isArray(SECONDARY_FILTER_SCHEMA.variety), "variety classification/config path remains present", "FROZEN_SOURCE_AUDIT");
