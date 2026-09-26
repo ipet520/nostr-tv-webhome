@@ -734,10 +734,6 @@
       const opts = options || {};
       const saved = state.pan.playbackReturn;
       if (!saved) return false;
-      if (Date.now() - Number(saved.at || 0) > PAN_PLAYBACK_RETURN_TTL_MS) {
-        state.pan.playbackReturn = null;
-        return false;
-      }
       const detail = $("detailSheet");
       const block = $("panSearchBlock");
       if (!detail || !detail.classList.contains("active") || !block || !block.classList.contains("active")) return false;
@@ -1343,10 +1339,6 @@
     function restoreDetailReturn() {
       const saved = state.detailReturn;
       if (!saved) return false;
-      if (Date.now() - Number(saved.at || 0) > 10 * 60 * 1000) {
-        state.detailReturn = null;
-        return false;
-      }
       const detail = $("detailSheet");
       if (!detail || !detail.classList.contains("active")) return false;
       const apply = () => {
@@ -1957,4 +1949,3 @@
       if (window.nostr && window.nostr.signEvent) return await window.nostr.signEvent(draft);
       return Object.assign({ id: HOT_VECTOR_D, pubkey: "" }, draft);
     }
-

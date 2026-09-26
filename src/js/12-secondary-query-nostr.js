@@ -440,9 +440,16 @@
         regions: Array.from(new Set(regions.map((item) => String(item).trim().toUpperCase()).filter(Boolean))),
         releaseDate: String(value.releaseDate != null ? value.releaseDate : value.release_date || "").trim(),
         voteAverage: Number.isFinite(voteAverageValue) && voteAverageValue > 0 ? voteAverageValue : 0,
+        posterPath: tmdbImagePath(value.posterPath != null ? value.posterPath : value.poster_path),
+        backdropPath: tmdbImagePath(value.backdropPath != null ? value.backdropPath : value.backdrop_path),
         fetchedAt,
         classification: value.classification === "valid" || value.classification === "invalid" ? value.classification : ""
       };
+    }
+
+    function nostrTmdbMetaHasCanonicalPoster(value) {
+      const entry = value && typeof value === "object" ? value : {};
+      return !!tmdbImagePath(entry.posterPath != null ? entry.posterPath : entry.poster_path);
     }
 
     function nostrTmdbMetaEnforceCapacity(runtime) {
@@ -567,7 +574,9 @@
       const genreValue = item.genreIds != null ? item.genreIds : item.genre_ids;
       const regionValue = item.originCountries != null ? item.originCountries : item.origin_country;
       const releaseValue = item.releaseDate != null ? item.releaseDate : mediaType === "tv" ? item.first_air_date : item.release_date;
-      if ((mediaType !== "movie" && mediaType !== "tv") || !Array.isArray(genreValue) || !Array.isArray(regionValue) || releaseValue == null) return null;
+      const posterPath = tmdbImagePath(item.pic);
+      const backdropPath = tmdbImagePath(item.landscape);
+      if ((mediaType !== "movie" && mediaType !== "tv") || !Array.isArray(genreValue) || !Array.isArray(regionValue) || releaseValue == null || !posterPath) return null;
       return normalizeNostrTmdbMetaEntry({
         version: NOSTR_TMDB_META_CACHE_VERSION,
         mediaType,
@@ -576,6 +585,8 @@
         regions: regionValue,
         releaseDate: releaseValue,
         voteAverage: item.voteAverage != null ? item.voteAverage : item.vote_average,
+        posterPath,
+        backdropPath,
         fetchedAt: Date.now()
       });
     }
@@ -610,6 +621,8 @@
         voteAverage: detail.vote_average != null
           ? detail.vote_average
           : hotItem.voteAverage != null ? hotItem.voteAverage : hotItem.vote_average,
+        posterPath: tmdbImagePath(detail.poster_path),
+        backdropPath: tmdbImagePath(detail.backdrop_path),
         fetchedAt: Date.now()
       });
     }
@@ -617,7 +630,7 @@
     function nostrTmdbItemFromMetadata(hotItem, metadata, listId, index) {
       const entry = normalizeNostrTmdbMetaEntry(metadata);
       const hotMediaType = String(hotItem && (hotItem.mediaType || hotItem.media_type) || "").toLowerCase();
-      if (!hotItem || !entry || hotMediaType !== entry.mediaType) return null;
+      if (!hotItem || !entry || hotMediaType !== entry.mediaType || !nostrTmdbMetaHasCanonicalPoster(entry)) return null;
       const raw = {
         id: entry.tmdbId,
         media_type: entry.mediaType,
@@ -629,6 +642,8 @@
         origin_country: entry.regions,
         release_date: entry.mediaType === "movie" ? entry.releaseDate : "",
         first_air_date: entry.mediaType === "tv" ? entry.releaseDate : "",
+        poster_path: entry.posterPath,
+        backdrop_path: entry.backdropPath,
         vote_average: entry.voteAverage
       };
       const item = normalizeTmdb(raw, { id: "secondary-nostr", title: listId, mediaType: entry.mediaType }, index);
@@ -636,8 +651,6 @@
       item.id = `tmdb:${entry.mediaType}:${entry.tmdbId}`;
       item.tmdbId = entry.tmdbId;
       item.mediaType = entry.mediaType;
-      item.pic = item.pic || hotItem.pic || hotItem.image || "";
-      item.image = item.image || hotItem.image || item.pic || "";
       item.title = item.title || hotItem.title || "未命名";
       item.listId = listId;
       return nostrHotSignalOverlay(item, hotItem, listId);
@@ -654,7 +667,16 @@
         if (Array.isArray(state.catalog[id])) pools.push(state.catalog[id]);
       });
       for (const pool of pools) {
-        const found = pool.find((item) => homeNostrSignalKey(item) === key);
+        const found = pool.find((item) => homeNostrSignalKey(item) === key
+          && String(item && item.source || "") !== "nostr-hot"
+          && !!tmdbImagePath(item && item.pic));
+        if (found) return found;
+      }
+      for (const pool of pools) {
+        const found = pool.find((item) => homeNostrSignalKey(item) === key
+          && String(item && item.source || "") === "nostr-hot"
+          && String(item && item.nostrMetadataSource || "").trim()
+          && !!tmdbImagePath(item && item.pic));
         if (found) return found;
       }
       return null;
@@ -684,11 +706,10 @@
           : hotItem.voteAverage != null ? hotItem.voteAverage : hotItem.vote_average
       });
       const item = normalizeTmdb(raw, { id: "secondary-nostr", title: listId, mediaType: hotItem.mediaType }, index);
+      if (!item || !tmdbImagePath(item.pic)) return null;
       item.id = `tmdb:${hotItem.mediaType}:${hotItem.tmdbId}`;
       item.tmdbId = String(hotItem.tmdbId || "");
       item.mediaType = String(hotItem.mediaType || "").toLowerCase();
-      item.pic = item.pic || hotItem.pic || hotItem.image || "";
-      item.image = item.image || hotItem.image || item.pic || "";
       item.title = item.title || hotItem.title || "未命名";
       item.listId = listId;
       return nostrHotSignalOverlay(item, hotItem, listId);
@@ -1316,9 +1337,7 @@
           const refreshed = memoryRecord.metadata
             ? nostrTmdbRecordFromMetadata(hotItem, memoryRecord.metadata, listId, index, "cache")
             : memoryRecord;
-          return refreshed.status === "valid"
-            ? nostrHotSignalOverlay(refreshed.item, hotItem, listId)
-            : null;
+          if (refreshed.status === "valid") return nostrHotSignalOverlay(refreshed.item, hotItem, listId);
         }
         if (memory[key] === memoryPromise) delete memory[key];
       }
@@ -1353,7 +1372,7 @@
       const key = homeNostrSignalKey(hotItem);
       const memory = secondaryNostrTmdbMemoryCache();
       const persistent = nostrTmdbMetaRuntime().entries[key];
-      return !!key && !memory[key] && !persistent;
+      return !!key && !memory[key] && (!persistent || !nostrTmdbMetaHasCanonicalPoster(persistent));
     }
 
     function secondaryNostrTaskIsCurrent(id, filters, query, generation) {
@@ -1510,4 +1529,3 @@
       secondaryLoadNostrHotItems(id, filters, query).catch(() => {});
       return true;
     }
-

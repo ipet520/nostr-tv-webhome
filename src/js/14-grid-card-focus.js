@@ -272,6 +272,7 @@
     function markHomeUserNavigation() {
       const home = state.homeV14;
       if (!home) return 0;
+      if (home.secondaryMediaFocusRestore) cancelSecondaryMediaFocusRestore();
       home.focusUserEpoch = Number(home.focusUserEpoch || 0) + 1;
       home.coldHomeFocusPending = false;
       home.coldHomeFallbackTarget = null;
@@ -578,4 +579,3 @@
       });
       return button;
     }
-

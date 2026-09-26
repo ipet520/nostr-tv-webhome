@@ -397,6 +397,7 @@
 
     function installRemoteKeys() {
       document.addEventListener("pointerdown", (event) => {
+        if (homeUiRoute() === "secondary") cancelSecondaryMediaFocusRestore();
         const recentDelete = state.recentDelete;
         if (!recentDelete || !(recentDelete.armedKey || recentDelete.pendingKey)) return;
         const card = recentWatchingCard(event.target);
@@ -431,7 +432,7 @@
           updateTvDiagnostic();
         }
         const el = document.activeElement;
-        if (isTvLikeDevice() && isHomeRouteActive() && focusScopeRoot() === document
+        if (isTvLikeDevice() && (isHomeRouteActive() || homeUiRoute() === "secondary") && focusScopeRoot() === document
           && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(key)) {
           markHomeUserNavigation();
         }
@@ -2334,4 +2335,3 @@
       });
       return tvDiagnosticsLoadPromise;
     }
-

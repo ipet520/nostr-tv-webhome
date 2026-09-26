@@ -291,6 +291,7 @@
         secondaryNostrVarietyResolver: null,
         secondaryNostrVarietyMetrics: null,
         secondaryFocusRestore: null,
+        secondaryMediaFocusRestore: null,
         secondaryWeeklyInitialFocusPending: false,
         secondaryReturn: null,
         secondaryHistoryBackPending: false,
@@ -449,7 +450,6 @@
     const HOT_PRUNE_BATCH = 1000;
     const HOT_RENDER_LIMIT = 1000;
     const UI_SNAPSHOT_TTL_MS = 2 * 60 * 60 * 1000;
-    const PAN_PLAYBACK_RETURN_TTL_MS = 10 * 60 * 1000;
     const HISTORY_CONTEXT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
     const DELETE_REPUBLISH_BLOCK_MS = 24 * 60 * 60 * 1000;
     const DELETE_TOMBSTONE_TTL_MS = HOT_WINDOW_MS + HOT_DAY_SECONDS * 1000;

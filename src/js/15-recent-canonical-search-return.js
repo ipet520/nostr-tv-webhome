@@ -2068,6 +2068,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const opts = options || {};
       const target = returnTarget && returnTarget.isConnected ? returnTarget : document.activeElement;
       const secondaryGrid = homeUiRoute() === "secondary" ? $("secondaryCatalogGrid") : null;
+      if (state.homeV14) state.homeV14.secondaryMediaFocusRestore = null;
       state.homeReturn = {
         scrollY: homeScrollTop(),
         activeList: state.activeList || "all",
@@ -2219,14 +2220,25 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     function restoreHomeReturn() {
       const saved = normalizeLegacySavedState(state.homeReturn);
       if (!saved) return false;
-      if (Date.now() - Number(saved.at || 0) > 10 * 60 * 1000) {
-        state.homeReturn = null;
-        return false;
-      }
-      state.homeReturn = null;
       if (state.homeV14 && saved.route === "home") state.homeV14.lastHomeFocusedRail = "";
       const focusEpoch = homeFocusUserEpoch();
       const restoreSecondary = saved.route === "secondary" && saved.secondaryListId;
+      const mediaReturn = !!(saved.focus && saved.focus.type === "media");
+      const restoreSecondaryMedia = !!(restoreSecondary && mediaReturn);
+      if (restoreSecondaryMedia) {
+        state.homeV14.secondaryMediaFocusRestore = {
+          listId: normalizeLegacyCategoryId(saved.secondaryListId),
+          queryKey: String(saved.secondaryQueryKey || ""),
+          mediaKey: String(saved.focus.key || saved.mediaKey || ""),
+          cardIndex: Number(saved.focus.cardIndex),
+          gridScrollTop: Math.max(0, Number(saved.secondaryGridScrollTop || 0)),
+          gridScrollLeft: Math.max(0, Number(saved.secondaryGridScrollLeft || 0)),
+          focusUserEpoch: focusEpoch,
+          frame: 0
+        };
+      } else {
+        state.homeReturn = null;
+      }
       if (restoreSecondary) {
         state.activeList = "all";
         state.homeV14.route = "secondary";
@@ -2239,11 +2251,20 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         renderAll({ deferContent: false });
       }
       const y = Math.max(0, Number(saved.scrollY || 0));
-      const mediaReturn = !!(saved.focus && saved.focus.type === "media");
       const apply = (withFocus, allowMissingSectionFallback) => {
         if (homeFocusUserEpoch() !== focusEpoch) return false;
         if ($("detailSheet") && $("detailSheet").classList.contains("active")) return;
+        if (restoreSecondaryMedia && !(state.homeV14 && state.homeV14.secondaryMediaFocusRestore)) return false;
         applyHomeScrollTop(y);
+        if (restoreSecondaryMedia) {
+          const grid = $("secondaryCatalogGrid");
+          if (grid) {
+            grid.scrollTop = Math.max(0, Number(saved.secondaryGridScrollTop || 0));
+            grid.scrollLeft = Math.max(0, Number(saved.secondaryGridScrollLeft || 0));
+          }
+          tryRestoreSecondaryMediaFocus();
+          return true;
+        }
         const heroReturn = !!(saved.focus && saved.focus.type === "id" && (saved.focus.key === "homeHero" || saved.focus.key === "homeHeroAction"));
         if (heroReturn && Number.isFinite(Number(saved.heroIndex))) setHomeHeroIndex(Number(saved.heroIndex), { resetTimer: false });
         const target = withFocus ? findHomeReturnTarget(saved) : null;
@@ -2272,4 +2293,3 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       }, 520);
       return true;
     }
-

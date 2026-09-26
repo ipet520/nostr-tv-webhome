@@ -152,7 +152,7 @@
       check("NATIVE_SEARCH_USES_CN_TITLE", canonicalMockIdentity && resourceSearchKeyword(canonicalMockIdentity) === "示例大陆名" && canonicalSearchSource.includes("nativeSearch(resourceSearchKeyword(state.selected))"), "详情原生搜索读取 canonical resourceSearchTitle", "RUNTIME_MOCK");
       check("CURATED_SEARCH_ALIASES_PRESERVED", canonicalMockIdentity && curatedSearchKeywords(canonicalMockIdentity).includes("示例大陆名") && curatedSearchKeywords(canonicalMockIdentity).includes("示例香港名"), "精选源仍使用完整 aliases 搜索集合", "RUNTIME_MOCK");
       const animeMockCandidate = (rank, id) => ({ mediaType: "tv", tmdbId: String(id || 7000 + rank), title: `Mock Anime ${rank}`, pic: "mock-poster", latest: "2026-01-01", people: 1000 - rank, nostrHotRank: rank });
-      const animeMockMetadata = (candidate, valid) => ({ version: NOSTR_TMDB_META_CACHE_VERSION, mediaType: candidate.mediaType, tmdbId: candidate.tmdbId, genreIds: valid ? ["16"] : ["18"], regions: ["CN"], releaseDate: "2020-01-01", fetchedAt: Date.now() });
+      const animeMockMetadata = (candidate, valid) => ({ version: NOSTR_TMDB_META_CACHE_VERSION, mediaType: candidate.mediaType, tmdbId: candidate.tmdbId, genreIds: valid ? ["16"] : ["18"], regions: ["CN"], releaseDate: "2020-01-01", posterPath: `/anime-${candidate.tmdbId}.jpg`, backdropPath: `/anime-${candidate.tmdbId}-backdrop.jpg`, fetchedAt: Date.now() });
       const animeMockScan = (candidates, validRanks, persistent, failures) => {
         const runtime = { candidates, statuses: {}, items: {}, failedKeys: {}, nextIndex: 0, metrics: { candidatesScanned: 0, lastScannedRank: 0, persistentHits: 0, newDetailRequests: 0 } };
         const store = persistent || {};
@@ -228,11 +228,11 @@
         return { detailRequests: 1, record };
       };
       const sharedMovieCandidate = { mediaType: "movie", tmdbId: "99001", title: "Shared Movie", pic: "mock-poster" };
-      const sharedMovieDetail = { id: 99001, genre_ids: [18], production_countries: [{ iso_3166_1: "CN" }], release_date: "2020-01-01" };
+      const sharedMovieDetail = { id: 99001, genre_ids: [18], production_countries: [{ iso_3166_1: "CN" }], poster_path: "/shared-movie.jpg", backdrop_path: "/shared-movie-backdrop.jpg", release_date: "2020-01-01" };
       const sharedTvCandidate = { mediaType: "tv", tmdbId: "99002", title: "Shared TV", pic: "mock-poster" };
-      const sharedTvDetail = { id: 99002, genre_ids: [18], origin_country: ["CN"], first_air_date: "2020-01-01" };
+      const sharedTvDetail = { id: 99002, genre_ids: [18], origin_country: ["CN"], poster_path: "/shared-tv.jpg", backdrop_path: "/shared-tv-backdrop.jpg", first_air_date: "2020-01-01" };
       const sharedAnimeCandidate = { mediaType: "tv", tmdbId: "99003", title: "Shared Anime", pic: "mock-poster" };
-      const sharedAnimeDetail = { id: 99003, genre_ids: [16], origin_country: ["CN"], first_air_date: "2020-01-01" };
+      const sharedAnimeDetail = { id: 99003, genre_ids: [16], origin_country: ["CN"], poster_path: "/shared-anime.jpg", backdrop_path: "/shared-anime-backdrop.jpg", first_air_date: "2020-01-01" };
       const sharedMovieCold = sharedMetaMockRun(sharedMovieCandidate, "movie", sharedMovieDetail);
       const sharedMovieWarm = sharedMetaMockRun(sharedMovieCandidate, "movie", sharedMovieDetail);
       const sharedTvCold = sharedMetaMockRun(sharedTvCandidate, "tv", sharedTvDetail);
@@ -249,6 +249,47 @@
       check("NOSTR_ANIME_PERSISTENT_META_READ_SHARED", sharedAnimeResolverSource.includes("secondaryNostrAnimeMemoryCache") && sharedAnimeResolverSource.includes("nostrTmdbMetaRuntime().entries") && sharedAnimeResolverSource.includes("ensureNostrTmdbMetaLoaded"), "anime reads the same runtime, memory, persistent sequence", "STATIC_HOOK");
       check("NOSTR_ANIME_PERSISTENT_META_WRITE_SHARED", sharedAnimeResolverSource.includes("nostrTmdbRecordFromDetail") && sharedAuthoritySource.includes("nostrTmdbMetaPut"), "anime detail writes through the shared metadata authority", "STATIC_HOOK");
       check("NOSTR_CROSS_CATEGORY_SINGLE_META_CACHE", sharedMovieCold.detailRequests === 1 && sharedMovieWarm.detailRequests === 0 && sharedTvCold.detailRequests === 1 && sharedTvWarm.detailRequests === 0 && sharedAnimeCold.detailRequests === 1 && sharedAnimeWarm.detailRequests === 0 && Object.keys(sharedMetaStore).length === 3, "movie/tv/anime use one metadata store with warm detail reuse", "RUNTIME_MOCK");
+      const badArtworkHotMock = { mediaType: "movie", tmdbId: "99006", title: "Bad Artwork Movie", pic: "https://third-party.invalid/landscape.jpg", image: "https://third-party.invalid/landscape.jpg", people: 66, nostrHotRank: 4 };
+      const canonicalArtworkDetailMock = { id: 99006, title: "Bad Artwork Movie", poster_path: "/canonical-poster.jpg", backdrop_path: "/canonical-backdrop.jpg", vote_average: 7.8, genre_ids: [18], production_countries: [{ iso_3166_1: "CN" }], release_date: "2020-01-01" };
+      const canonicalArtworkMetadata = nostrTmdbMetaFromDetail(badArtworkHotMock, canonicalArtworkDetailMock);
+      const canonicalArtworkItem = nostrTmdbItemFromMetadata(badArtworkHotMock, canonicalArtworkMetadata, "movie", 0);
+      const canonicalArtworkDetailItem = secondaryNostrItemFromDetail(badArtworkHotMock, canonicalArtworkDetailMock, "movie", 0);
+      const legacyArtworkMetadata = Object.assign({}, canonicalArtworkMetadata);
+      delete legacyArtworkMetadata.posterPath;
+      delete legacyArtworkMetadata.backdropPath;
+      const artworkMetaRuntimeBefore = state.homeV14.nostrTmdbMeta;
+      const artworkMemoryBefore = state.homeV14.secondaryNostrTmdbMemoryCache;
+      const artworkKey = homeNostrSignalKey(badArtworkHotMock);
+      let legacyArtworkNeedsDetail = false;
+      let completeArtworkAvoidsDetail = false;
+      try {
+        state.homeV14.nostrTmdbMeta = { version: NOSTR_TMDB_META_CACHE_VERSION, loaded: true, loading: false, promise: null, entries: {}, dirty: false, dirtyVersion: 0, saveTimer: 0, savePromise: null, lastLoadAt: 0, lastSaveAt: 0, expiredCount: 0, evictedCount: 0 };
+        state.homeV14.secondaryNostrTmdbMemoryCache = {};
+        state.homeV14.nostrTmdbMeta.entries[artworkKey] = legacyArtworkMetadata;
+        legacyArtworkNeedsDetail = secondaryNostrDetailRequestNeeded(badArtworkHotMock, "movie", { items: [] });
+        state.homeV14.nostrTmdbMeta.entries[artworkKey] = canonicalArtworkMetadata;
+        completeArtworkAvoidsDetail = !secondaryNostrDetailRequestNeeded(badArtworkHotMock, "movie", { items: [] });
+      } finally {
+        state.homeV14.nostrTmdbMeta = artworkMetaRuntimeBefore;
+        state.homeV14.secondaryNostrTmdbMemoryCache = artworkMemoryBefore;
+      }
+      const secondaryReturnSource = String(restoreHomeReturn) + String(tryRestoreSecondaryMediaFocus) + String(scheduleSecondaryMediaFocusRestore) + String(renderSecondaryCatalog);
+      const detailReturnSource = String(restoreDetailReturn) + String(restorePanPlaybackReturn);
+      check("MOVIE_NOSTR_BAD_HOT_POSTER_REPLACED", !!canonicalArtworkMetadata && !!canonicalArtworkItem && tmdbImagePath(canonicalArtworkItem.pic) === "/canonical-poster.jpg" && canonicalArtworkItem.pic !== badArtworkHotMock.pic && !!canonicalArtworkDetailItem && tmdbImagePath(canonicalArtworkDetailItem.pic) === "/canonical-poster.jpg", "Nostr movie cards use the TMDB poster rather than event artwork", "RUNTIME_MOCK");
+      check("DETAIL_METADATA_STORES_ARTWORK", canonicalArtworkMetadata && canonicalArtworkMetadata.posterPath === "/canonical-poster.jpg" && canonicalArtworkMetadata.backdropPath === "/canonical-backdrop.jpg", "TMDB detail metadata persists raw poster and backdrop paths", "RUNTIME_MOCK");
+      check("CACHED_SECONDARY_ITEM_USES_TMDB_POSTER", canonicalArtworkItem && tmdbImagePath(canonicalArtworkItem.pic) === "/canonical-poster.jpg" && tmdbImagePath(canonicalArtworkItem.landscape) === "/canonical-backdrop.jpg", "cached Secondary reconstruction restores TMDB poster/backdrop", "RUNTIME_MOCK");
+      check("BACKDROP_NEVER_USED_AS_PORTRAIT_POSTER", canonicalArtworkItem && tmdbImagePath(canonicalArtworkItem.pic) !== "/canonical-backdrop.jpg" && tmdbImagePath(canonicalArtworkItem.pic) === "/canonical-poster.jpg", "backdrop never becomes the portrait poster", "RUNTIME_MOCK");
+      check("LEGACY_META_ARTWORK_LAZY_UPGRADE", !nostrTmdbMetaHasCanonicalPoster(legacyArtworkMetadata) && nostrTmdbItemFromMetadata(badArtworkHotMock, legacyArtworkMetadata, "movie", 0) === null && legacyArtworkNeedsDetail, "legacy v2 metadata without artwork requests bounded detail enrichment", "RUNTIME_MOCK");
+      check("COMPLETE_META_CACHE_AVOIDS_REDUNDANT_DETAIL", nostrTmdbMetaHasCanonicalPoster(canonicalArtworkMetadata) && completeArtworkAvoidsDetail, "complete artwork metadata avoids a redundant detail request", "RUNTIME_MOCK");
+      check("NOSTR_ITEM_CANNOT_SELF_VALIDATE_BAD_POSTER", secondaryNostrKnownItem(badArtworkHotMock, { items: [badArtworkHotMock] }) === null, "an old Nostr item cannot certify its own event artwork", "RUNTIME_MOCK");
+      check("NOSTR_ITEM_WITHOUT_TMDB_POSTER_NOT_RENDERED_AS_BAD_CARD", secondaryNostrItemFromDetail(badArtworkHotMock, Object.assign({}, canonicalArtworkDetailMock, { poster_path: "" }), "movie", 0) === null, "a TMDB detail without poster is excluded rather than rendered with the hot image", "RUNTIME_MOCK");
+      check("DETAIL_REQUEST_BUDGET_STILL_ENFORCED", String(secondaryLoadNostrHotItems).includes("SECONDARY_NOSTR_HOT_MAX_NEW_DETAIL_REQUESTS") && String(secondaryNostrDetailRequestNeeded).includes("nostrTmdbMetaHasCanonicalPoster"), "artwork upgrades remain inside the existing detail budget", "STATIC_HOOK");
+      check("LONG_NATIVE_PLAYBACK_SECONDARY_FOCUS", secondaryReturnSource.includes("secondaryMediaFocusRestore") && !String(restoreHomeReturn).includes("10 * 60 * 1000") && secondaryReturnSource.includes("renderSecondaryCatalog"), "Secondary return keeps a pending media focus across delayed rendering", "STATIC_HOOK");
+      check("SECONDARY_FOCUS_MEMORY_SURVIVES", String(tryRestoreSecondaryMediaFocus).includes("document.activeElement !== target") && String(tryRestoreSecondaryMediaFocus).includes("state.homeReturn = null"), "media return is consumed only after the target receives focus", "STATIC_HOOK");
+      check("SECONDARY_FOCUS_RESTORE_AFTER_DELAYED_RENDER", String(renderSecondaryCatalog).includes("scheduleSecondaryMediaFocusRestore") && String(tryRestoreSecondaryMediaFocus).includes("appendGridItems"), "delayed grid rendering retries without starting a new page request", "STATIC_HOOK");
+      check("USER_NAVIGATION_CANCELS_LATE_RESTORE", String(cancelSecondaryMediaFocusRestore).includes("state.homeReturn = null") && String(markHomeUserNavigation).includes("secondaryMediaFocusRestore"), "user navigation cancels the pending media restore", "STATIC_HOOK");
+      check("NO_FOCUS_TRIGGERED_UNBOUNDED_PAGING", !String(tryRestoreSecondaryMediaFocus).includes("secondaryLoadNextPage") && !String(tryRestoreSecondaryMediaFocus).includes("loadSecondaryPage"), "media focus restore only appends already loaded grid items", "STATIC_HOOK");
+      check("LONG_DETAIL_RETURN_NO_WALL_CLOCK_TTL", !detailReturnSource.includes("10 * 60 * 1000") && !detailReturnSource.includes("PAN_PLAYBACK_RETURN_TTL_MS"), "detail/player return remains a navigation transaction after long playback", "STATIC_HOOK");
       const ratingHotMock = { mediaType: "movie", tmdbId: "99005", title: "Rating Movie", pic: "mock-poster", people: 88, nostrHotRank: 3 };
       const ratingDetailMock = { id: 99005, title: "Rating Movie", poster_path: "/mock-rating.jpg", vote_average: 8.6, genre_ids: [18], production_countries: [{ iso_3166_1: "CN" }], release_date: "2020-01-01" };
       const ratingMetadataMock = nostrTmdbMetaFromDetail(ratingHotMock, ratingDetailMock);
@@ -355,7 +396,7 @@
       check("ANIME_CARD_LAYER_REGRESSION", layerNostrAnime.rating && layerNostrAnime.people && layerNostrAnime.status && layerSecondaryNostrAnime.status, "anime Home/Secondary status and hot badges remain available", "FROZEN_SOURCE_AUDIT");
       check("VARIETY_CARD_LAYER_REGRESSION", layerNostrVariety.rating && layerNostrVariety.people && layerNostrVariety.status && layerSecondaryNostrVariety.status, "variety Home/Secondary status and hot badges remain available", "FROZEN_SOURCE_AUDIT");
       const varietyMockCandidate = (rank) => ({ mediaType: "tv", tmdbId: String(880000 + rank), title: `Mock Variety ${rank}`, pic: "mock-poster", people: 5000 - rank, nostrHotRank: rank });
-      const varietyMockMetadata = (candidate, valid, region) => ({ version: NOSTR_TMDB_META_CACHE_VERSION, mediaType: "tv", tmdbId: candidate.tmdbId, genreIds: valid ? ["10764"] : ["18"], regions: [region || "CN"], releaseDate: "2020-01-01", fetchedAt: Date.now() });
+      const varietyMockMetadata = (candidate, valid, region) => ({ version: NOSTR_TMDB_META_CACHE_VERSION, mediaType: "tv", tmdbId: candidate.tmdbId, genreIds: valid ? ["10764"] : ["18"], regions: [region || "CN"], releaseDate: "2020-01-01", posterPath: `/variety-${candidate.tmdbId}.jpg`, backdropPath: `/variety-${candidate.tmdbId}-backdrop.jpg`, fetchedAt: Date.now() });
       const varietyMockScan = (validRanks, discoverRanks, failureRanks, regionOverrides) => {
         const candidates = Array.from({ length: 150 }, (_, index) => varietyMockCandidate(index + 1));
         const valid = validRanks || new Set();
@@ -851,7 +892,7 @@
       const baXianVariants = curatedSearchKeywordVariants(baXianItem);
       const baXianWoggSearchHtml = '<div class="module-search-item"><a class="video-title" href="/voddetail/130733.html" title="八仙！">八仙！</a></div>';
       const baXianWoggEntries = typeof DOMParser === "function"
-        ? curatedSearchEntries(baXianWoggSearchHtml, wanou, "https://www.wogg.net/vodsearch/-------------.html?wd=%E5%85%AB%E4%BB%99%EF%BC%81&page=1")
+        ? curatedSearchEntries(baXianWoggSearchHtml, wanouSource, "https://www.wogg.net/vodsearch/-------------.html?wd=%E5%85%AB%E4%BB%99%EF%BC%81&page=1")
         : [];
       const baXianWoggIdentity = baXianWoggEntries.length
         ? mediaIdentityVerdict(baXianItem, baXianWoggEntries[0].title, baXianWoggEntries[0])
@@ -859,7 +900,7 @@
       const baXianWoggDetailCandidates = typeof DOMParser === "function"
         ? curatedDetailCandidates(
           '<div class="module-row-info"><p>夸克 https://pan.quark.cn/s/ba-xian</p><p>百度 https://pan.baidu.com/s/ba-xian</p></div>',
-          wanou,
+          wanouSource,
           "https://www.wogg.net/voddetail/130733.html",
           baXianItem,
           baXianWoggEntries[0] || { title: "八仙！", href: "https://www.wogg.net/voddetail/130733.html" }
@@ -872,7 +913,7 @@
         vod_down_url: "https://www.alipan.com/s/ba-xian",
         vod_remarks: ""
       };
-      const baXianNxogCandidate = curatedWanouCandidates(baXianNxogVod, wanou, baXianItem, "https://woog.nxog.eu.org/api.php/provide/vod?ac=detail&wd=%E5%85%AB%E4%BB%99");
+      const baXianNxogCandidate = curatedWanouCandidates(baXianNxogVod, wanouSource, baXianItem, "https://woog.nxog.eu.org/api.php/provide/vod?ac=detail&wd=%E5%85%AB%E4%BB%99");
       const healthMockCandidates = [1, 2, 3, 4].map((rank) => ({
         diskType: "quark",
         url: `https://pan.quark.cn/s/health-${rank}`,

@@ -228,6 +228,7 @@
     function applySecondaryFilter(id, group, value) {
       id = normalizeLegacyCategoryId(id);
       if (homeUiRoute() !== "secondary" || state.homeV14.secondaryListId !== id) return false;
+      cancelSecondaryMediaFocusRestore();
       const filters = secondaryFilterState(id), grid = $("secondaryCatalogGrid");
       filters[group] = value || (group === "sort" ? "hot" : "all");
       filters.lastFocused[group] = filters[group];
@@ -262,6 +263,86 @@
       });
     }
 
+    function secondaryMediaFocusReturnMatches(pending, saved) {
+      if (!pending || !saved || saved.route !== "secondary") return false;
+      const focus = saved.focus || {};
+      return normalizeLegacyCategoryId(saved.secondaryListId) === pending.listId
+        && String(saved.secondaryQueryKey || "") === pending.queryKey
+        && String(focus.key || saved.mediaKey || "") === pending.mediaKey;
+    }
+
+    function cancelSecondaryMediaFocusRestore() {
+      const home = state.homeV14;
+      const pending = home && home.secondaryMediaFocusRestore;
+      if (!pending) return false;
+      home.secondaryMediaFocusRestore = null;
+      const saved = normalizeLegacySavedState(state.homeReturn);
+      if (secondaryMediaFocusReturnMatches(pending, saved)) state.homeReturn = null;
+      return true;
+    }
+
+    function secondaryMediaFocusRestoreQueryTerminal(query) {
+      return !!(query && query.loaded && !query.loading && !query.error && !query.hasMore && !query.nostrHotLoading);
+    }
+
+    function secondaryMediaFocusCardForKey(grid, mediaKey) {
+      if (!grid || !mediaKey) return null;
+      return Array.from(grid.querySelectorAll(".card[data-media-key], .card")).find((card) => String(card.dataset.mediaKey || mediaDomKey(card.__mediaItem) || "") === String(mediaKey)) || null;
+    }
+
+    function tryRestoreSecondaryMediaFocus() {
+      const home = state.homeV14;
+      const pending = home && home.secondaryMediaFocusRestore;
+      if (!pending) return false;
+      if (homeFocusUserEpoch() !== Number(pending.focusUserEpoch || 0)) {
+        cancelSecondaryMediaFocusRestore();
+        return false;
+      }
+      if (homeUiRoute() !== "secondary" || normalizeLegacyCategoryId(home.secondaryListId) !== pending.listId) return false;
+      const query = secondaryActiveQuery(pending.listId) || secondaryGetQuery(pending.listId);
+      if (pending.queryKey && query && String(query.key || "") !== pending.queryKey) {
+        cancelSecondaryMediaFocusRestore();
+        return false;
+      }
+      const grid = $("secondaryCatalogGrid");
+      if (!grid) return false;
+      let target = secondaryMediaFocusCardForKey(grid, pending.mediaKey);
+      const info = state.gridRender[gridRenderId(grid)];
+      if (!target && info && Array.isArray(info.items)) {
+        const index = info.items.findIndex((item) => String(mediaDomKey(item) || "") === pending.mediaKey);
+        if (index >= 0 && Number(info.rendered || 0) <= index) {
+          appendGridItems(grid, info.items, index + 1);
+          target = secondaryMediaFocusCardForKey(grid, pending.mediaKey);
+        }
+      }
+      if (!target && secondaryMediaFocusRestoreQueryTerminal(query)) {
+        const cards = Array.from(grid.querySelectorAll(".card")).filter((card) => isVisibleFocusable(card));
+        if (cards.length) {
+          const index = Number.isFinite(Number(pending.cardIndex)) ? Math.max(0, Number(pending.cardIndex)) : 0;
+          target = cards[Math.min(index, cards.length - 1)] || cards[0];
+        }
+      }
+      if (!target || !isVisibleFocusable(target)) return false;
+      grid.scrollTop = pending.gridScrollTop;
+      grid.scrollLeft = pending.gridScrollLeft;
+      focusRemoteTarget(target);
+      if (document.activeElement !== target) return false;
+      home.secondaryMediaFocusRestore = null;
+      const saved = normalizeLegacySavedState(state.homeReturn);
+      if (secondaryMediaFocusReturnMatches(pending, saved)) state.homeReturn = null;
+      scheduleUiSnapshotSave();
+      return true;
+    }
+
+    function scheduleSecondaryMediaFocusRestore() {
+      const pending = state.homeV14 && state.homeV14.secondaryMediaFocusRestore;
+      if (!pending || pending.frame) return;
+      pending.frame = requestAnimationFrame(() => {
+        pending.frame = 0;
+        tryRestoreSecondaryMediaFocus();
+      });
+    }
+
     function openSecondaryCatalog(listId, options) {
       const opts = options || {};
       listId = normalizeLegacyCategoryId(listId);
@@ -272,6 +353,7 @@
         return true;
       }
       if (listId !== "recent" || !isRecentManagePage()) resetRecentManageState();
+      cancelSecondaryMediaFocusRestore();
       const enteringFromHome = homeUiRoute() === "home";
       if (enteringFromHome && !isSecondaryHistoryEntry()) {
         if (location.hash === "#secondary" || history.state && history.state.sheet === "secondary") {
@@ -295,6 +377,7 @@
       };
       state.homeV14.secondaryListId = listId;
       state.homeV14.secondaryFocusRestore = null;
+      state.homeV14.secondaryMediaFocusRestore = null;
       state.homeV14.secondaryWeeklyInitialFocusPending = listId === "now-playing";
       state.homeV14.secondaryHistoryBackPending = false;
       secondaryFilterState(listId);
@@ -534,6 +617,7 @@
         renderWeeklySecondaryCatalog(query, baseItems);
         if ($("secondaryCatalogTitle")) $("secondaryCatalogTitle").textContent = title;
         if ($("secondaryCatalogCount")) $("secondaryCatalogCount").textContent = query.snapshotReady || query.loaded ? `${baseItems.length} 部` : "";
+        scheduleSecondaryMediaFocusRestore();
         return;
       }
       syncSecondaryCatalogPresentation(listId);
@@ -578,6 +662,7 @@
       observeInfiniteScroll();
       requestAnimationFrame(ensureScrollablePage);
       scheduleSecondaryFilterFocusRestore();
+      scheduleSecondaryMediaFocusRestore();
     }
 
     function isSecondaryHistoryEntry() {
@@ -587,6 +672,7 @@
 
     function requestCloseSecondaryCatalog() {
       if (homeUiRoute() !== "secondary") return false;
+      cancelSecondaryMediaFocusRestore();
       const homeV14 = state.homeV14;
       if (!homeV14) return false;
       const manage = recentManageRuntime();
@@ -624,6 +710,7 @@
       state.homeV14.route = "home";
       state.homeV14.secondaryListId = "";
       state.homeV14.secondaryFocusRestore = null;
+      state.homeV14.secondaryMediaFocusRestore = null;
       state.homeV14.secondaryWeeklyInitialFocusPending = false;
       state.homeV14.secondaryReturn = null;
       state.activeList = "all";
@@ -789,4 +876,3 @@
       stack.appendChild(panel);
       return panel;
     }
-

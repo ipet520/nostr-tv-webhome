@@ -16957,6 +16957,7 @@ utils.encode = function encode(arr, enc) {
         secondaryNostrVarietyResolver: null,
         secondaryNostrVarietyMetrics: null,
         secondaryFocusRestore: null,
+        secondaryMediaFocusRestore: null,
         secondaryWeeklyInitialFocusPending: false,
         secondaryReturn: null,
         secondaryHistoryBackPending: false,
@@ -17115,7 +17116,6 @@ utils.encode = function encode(arr, enc) {
     const HOT_PRUNE_BATCH = 1000;
     const HOT_RENDER_LIMIT = 1000;
     const UI_SNAPSHOT_TTL_MS = 2 * 60 * 60 * 1000;
-    const PAN_PLAYBACK_RETURN_TTL_MS = 10 * 60 * 1000;
     const HISTORY_CONTEXT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
     const DELETE_REPUBLISH_BLOCK_MS = 24 * 60 * 60 * 1000;
     const DELETE_TOMBSTONE_TTL_MS = HOT_WINDOW_MS + HOT_DAY_SECONDS * 1000;
@@ -27456,9 +27456,16 @@ utils.encode = function encode(arr, enc) {
         regions: Array.from(new Set(regions.map((item) => String(item).trim().toUpperCase()).filter(Boolean))),
         releaseDate: String(value.releaseDate != null ? value.releaseDate : value.release_date || "").trim(),
         voteAverage: Number.isFinite(voteAverageValue) && voteAverageValue > 0 ? voteAverageValue : 0,
+        posterPath: tmdbImagePath(value.posterPath != null ? value.posterPath : value.poster_path),
+        backdropPath: tmdbImagePath(value.backdropPath != null ? value.backdropPath : value.backdrop_path),
         fetchedAt,
         classification: value.classification === "valid" || value.classification === "invalid" ? value.classification : ""
       };
+    }
+
+    function nostrTmdbMetaHasCanonicalPoster(value) {
+      const entry = value && typeof value === "object" ? value : {};
+      return !!tmdbImagePath(entry.posterPath != null ? entry.posterPath : entry.poster_path);
     }
 
     function nostrTmdbMetaEnforceCapacity(runtime) {
@@ -27583,7 +27590,9 @@ utils.encode = function encode(arr, enc) {
       const genreValue = item.genreIds != null ? item.genreIds : item.genre_ids;
       const regionValue = item.originCountries != null ? item.originCountries : item.origin_country;
       const releaseValue = item.releaseDate != null ? item.releaseDate : mediaType === "tv" ? item.first_air_date : item.release_date;
-      if ((mediaType !== "movie" && mediaType !== "tv") || !Array.isArray(genreValue) || !Array.isArray(regionValue) || releaseValue == null) return null;
+      const posterPath = tmdbImagePath(item.pic);
+      const backdropPath = tmdbImagePath(item.landscape);
+      if ((mediaType !== "movie" && mediaType !== "tv") || !Array.isArray(genreValue) || !Array.isArray(regionValue) || releaseValue == null || !posterPath) return null;
       return normalizeNostrTmdbMetaEntry({
         version: NOSTR_TMDB_META_CACHE_VERSION,
         mediaType,
@@ -27592,6 +27601,8 @@ utils.encode = function encode(arr, enc) {
         regions: regionValue,
         releaseDate: releaseValue,
         voteAverage: item.voteAverage != null ? item.voteAverage : item.vote_average,
+        posterPath,
+        backdropPath,
         fetchedAt: Date.now()
       });
     }
@@ -27626,6 +27637,8 @@ utils.encode = function encode(arr, enc) {
         voteAverage: detail.vote_average != null
           ? detail.vote_average
           : hotItem.voteAverage != null ? hotItem.voteAverage : hotItem.vote_average,
+        posterPath: tmdbImagePath(detail.poster_path),
+        backdropPath: tmdbImagePath(detail.backdrop_path),
         fetchedAt: Date.now()
       });
     }
@@ -27633,7 +27646,7 @@ utils.encode = function encode(arr, enc) {
     function nostrTmdbItemFromMetadata(hotItem, metadata, listId, index) {
       const entry = normalizeNostrTmdbMetaEntry(metadata);
       const hotMediaType = String(hotItem && (hotItem.mediaType || hotItem.media_type) || "").toLowerCase();
-      if (!hotItem || !entry || hotMediaType !== entry.mediaType) return null;
+      if (!hotItem || !entry || hotMediaType !== entry.mediaType || !nostrTmdbMetaHasCanonicalPoster(entry)) return null;
       const raw = {
         id: entry.tmdbId,
         media_type: entry.mediaType,
@@ -27645,6 +27658,8 @@ utils.encode = function encode(arr, enc) {
         origin_country: entry.regions,
         release_date: entry.mediaType === "movie" ? entry.releaseDate : "",
         first_air_date: entry.mediaType === "tv" ? entry.releaseDate : "",
+        poster_path: entry.posterPath,
+        backdrop_path: entry.backdropPath,
         vote_average: entry.voteAverage
       };
       const item = normalizeTmdb(raw, { id: "secondary-nostr", title: listId, mediaType: entry.mediaType }, index);
@@ -27652,8 +27667,6 @@ utils.encode = function encode(arr, enc) {
       item.id = `tmdb:${entry.mediaType}:${entry.tmdbId}`;
       item.tmdbId = entry.tmdbId;
       item.mediaType = entry.mediaType;
-      item.pic = item.pic || hotItem.pic || hotItem.image || "";
-      item.image = item.image || hotItem.image || item.pic || "";
       item.title = item.title || hotItem.title || "未命名";
       item.listId = listId;
       return nostrHotSignalOverlay(item, hotItem, listId);
@@ -27670,7 +27683,16 @@ utils.encode = function encode(arr, enc) {
         if (Array.isArray(state.catalog[id])) pools.push(state.catalog[id]);
       });
       for (const pool of pools) {
-        const found = pool.find((item) => homeNostrSignalKey(item) === key);
+        const found = pool.find((item) => homeNostrSignalKey(item) === key
+          && String(item && item.source || "") !== "nostr-hot"
+          && !!tmdbImagePath(item && item.pic));
+        if (found) return found;
+      }
+      for (const pool of pools) {
+        const found = pool.find((item) => homeNostrSignalKey(item) === key
+          && String(item && item.source || "") === "nostr-hot"
+          && String(item && item.nostrMetadataSource || "").trim()
+          && !!tmdbImagePath(item && item.pic));
         if (found) return found;
       }
       return null;
@@ -27700,11 +27722,10 @@ utils.encode = function encode(arr, enc) {
           : hotItem.voteAverage != null ? hotItem.voteAverage : hotItem.vote_average
       });
       const item = normalizeTmdb(raw, { id: "secondary-nostr", title: listId, mediaType: hotItem.mediaType }, index);
+      if (!item || !tmdbImagePath(item.pic)) return null;
       item.id = `tmdb:${hotItem.mediaType}:${hotItem.tmdbId}`;
       item.tmdbId = String(hotItem.tmdbId || "");
       item.mediaType = String(hotItem.mediaType || "").toLowerCase();
-      item.pic = item.pic || hotItem.pic || hotItem.image || "";
-      item.image = item.image || hotItem.image || item.pic || "";
       item.title = item.title || hotItem.title || "未命名";
       item.listId = listId;
       return nostrHotSignalOverlay(item, hotItem, listId);
@@ -28332,9 +28353,7 @@ utils.encode = function encode(arr, enc) {
           const refreshed = memoryRecord.metadata
             ? nostrTmdbRecordFromMetadata(hotItem, memoryRecord.metadata, listId, index, "cache")
             : memoryRecord;
-          return refreshed.status === "valid"
-            ? nostrHotSignalOverlay(refreshed.item, hotItem, listId)
-            : null;
+          if (refreshed.status === "valid") return nostrHotSignalOverlay(refreshed.item, hotItem, listId);
         }
         if (memory[key] === memoryPromise) delete memory[key];
       }
@@ -28369,7 +28388,7 @@ utils.encode = function encode(arr, enc) {
       const key = homeNostrSignalKey(hotItem);
       const memory = secondaryNostrTmdbMemoryCache();
       const persistent = nostrTmdbMetaRuntime().entries[key];
-      return !!key && !memory[key] && !persistent;
+      return !!key && !memory[key] && (!persistent || !nostrTmdbMetaHasCanonicalPoster(persistent));
     }
 
     function secondaryNostrTaskIsCurrent(id, filters, query, generation) {
@@ -28526,7 +28545,6 @@ utils.encode = function encode(arr, enc) {
       secondaryLoadNostrHotItems(id, filters, query).catch(() => {});
       return true;
     }
-
     function secondaryFilterItems(id, baseItems) {
       id = normalizeLegacyCategoryId(id);
       if (id === "now-playing") return filterBlocked(Array.isArray(baseItems) ? baseItems : []);
@@ -28757,6 +28775,7 @@ utils.encode = function encode(arr, enc) {
     function applySecondaryFilter(id, group, value) {
       id = normalizeLegacyCategoryId(id);
       if (homeUiRoute() !== "secondary" || state.homeV14.secondaryListId !== id) return false;
+      cancelSecondaryMediaFocusRestore();
       const filters = secondaryFilterState(id), grid = $("secondaryCatalogGrid");
       filters[group] = value || (group === "sort" ? "hot" : "all");
       filters.lastFocused[group] = filters[group];
@@ -28791,6 +28810,86 @@ utils.encode = function encode(arr, enc) {
       });
     }
 
+    function secondaryMediaFocusReturnMatches(pending, saved) {
+      if (!pending || !saved || saved.route !== "secondary") return false;
+      const focus = saved.focus || {};
+      return normalizeLegacyCategoryId(saved.secondaryListId) === pending.listId
+        && String(saved.secondaryQueryKey || "") === pending.queryKey
+        && String(focus.key || saved.mediaKey || "") === pending.mediaKey;
+    }
+
+    function cancelSecondaryMediaFocusRestore() {
+      const home = state.homeV14;
+      const pending = home && home.secondaryMediaFocusRestore;
+      if (!pending) return false;
+      home.secondaryMediaFocusRestore = null;
+      const saved = normalizeLegacySavedState(state.homeReturn);
+      if (secondaryMediaFocusReturnMatches(pending, saved)) state.homeReturn = null;
+      return true;
+    }
+
+    function secondaryMediaFocusRestoreQueryTerminal(query) {
+      return !!(query && query.loaded && !query.loading && !query.error && !query.hasMore && !query.nostrHotLoading);
+    }
+
+    function secondaryMediaFocusCardForKey(grid, mediaKey) {
+      if (!grid || !mediaKey) return null;
+      return Array.from(grid.querySelectorAll(".card[data-media-key], .card")).find((card) => String(card.dataset.mediaKey || mediaDomKey(card.__mediaItem) || "") === String(mediaKey)) || null;
+    }
+
+    function tryRestoreSecondaryMediaFocus() {
+      const home = state.homeV14;
+      const pending = home && home.secondaryMediaFocusRestore;
+      if (!pending) return false;
+      if (homeFocusUserEpoch() !== Number(pending.focusUserEpoch || 0)) {
+        cancelSecondaryMediaFocusRestore();
+        return false;
+      }
+      if (homeUiRoute() !== "secondary" || normalizeLegacyCategoryId(home.secondaryListId) !== pending.listId) return false;
+      const query = secondaryActiveQuery(pending.listId) || secondaryGetQuery(pending.listId);
+      if (pending.queryKey && query && String(query.key || "") !== pending.queryKey) {
+        cancelSecondaryMediaFocusRestore();
+        return false;
+      }
+      const grid = $("secondaryCatalogGrid");
+      if (!grid) return false;
+      let target = secondaryMediaFocusCardForKey(grid, pending.mediaKey);
+      const info = state.gridRender[gridRenderId(grid)];
+      if (!target && info && Array.isArray(info.items)) {
+        const index = info.items.findIndex((item) => String(mediaDomKey(item) || "") === pending.mediaKey);
+        if (index >= 0 && Number(info.rendered || 0) <= index) {
+          appendGridItems(grid, info.items, index + 1);
+          target = secondaryMediaFocusCardForKey(grid, pending.mediaKey);
+        }
+      }
+      if (!target && secondaryMediaFocusRestoreQueryTerminal(query)) {
+        const cards = Array.from(grid.querySelectorAll(".card")).filter((card) => isVisibleFocusable(card));
+        if (cards.length) {
+          const index = Number.isFinite(Number(pending.cardIndex)) ? Math.max(0, Number(pending.cardIndex)) : 0;
+          target = cards[Math.min(index, cards.length - 1)] || cards[0];
+        }
+      }
+      if (!target || !isVisibleFocusable(target)) return false;
+      grid.scrollTop = pending.gridScrollTop;
+      grid.scrollLeft = pending.gridScrollLeft;
+      focusRemoteTarget(target);
+      if (document.activeElement !== target) return false;
+      home.secondaryMediaFocusRestore = null;
+      const saved = normalizeLegacySavedState(state.homeReturn);
+      if (secondaryMediaFocusReturnMatches(pending, saved)) state.homeReturn = null;
+      scheduleUiSnapshotSave();
+      return true;
+    }
+
+    function scheduleSecondaryMediaFocusRestore() {
+      const pending = state.homeV14 && state.homeV14.secondaryMediaFocusRestore;
+      if (!pending || pending.frame) return;
+      pending.frame = requestAnimationFrame(() => {
+        pending.frame = 0;
+        tryRestoreSecondaryMediaFocus();
+      });
+    }
+
     function openSecondaryCatalog(listId, options) {
       const opts = options || {};
       listId = normalizeLegacyCategoryId(listId);
@@ -28801,6 +28900,7 @@ utils.encode = function encode(arr, enc) {
         return true;
       }
       if (listId !== "recent" || !isRecentManagePage()) resetRecentManageState();
+      cancelSecondaryMediaFocusRestore();
       const enteringFromHome = homeUiRoute() === "home";
       if (enteringFromHome && !isSecondaryHistoryEntry()) {
         if (location.hash === "#secondary" || history.state && history.state.sheet === "secondary") {
@@ -28824,6 +28924,7 @@ utils.encode = function encode(arr, enc) {
       };
       state.homeV14.secondaryListId = listId;
       state.homeV14.secondaryFocusRestore = null;
+      state.homeV14.secondaryMediaFocusRestore = null;
       state.homeV14.secondaryWeeklyInitialFocusPending = listId === "now-playing";
       state.homeV14.secondaryHistoryBackPending = false;
       secondaryFilterState(listId);
@@ -29063,6 +29164,7 @@ utils.encode = function encode(arr, enc) {
         renderWeeklySecondaryCatalog(query, baseItems);
         if ($("secondaryCatalogTitle")) $("secondaryCatalogTitle").textContent = title;
         if ($("secondaryCatalogCount")) $("secondaryCatalogCount").textContent = query.snapshotReady || query.loaded ? `${baseItems.length} 部` : "";
+        scheduleSecondaryMediaFocusRestore();
         return;
       }
       syncSecondaryCatalogPresentation(listId);
@@ -29107,6 +29209,7 @@ utils.encode = function encode(arr, enc) {
       observeInfiniteScroll();
       requestAnimationFrame(ensureScrollablePage);
       scheduleSecondaryFilterFocusRestore();
+      scheduleSecondaryMediaFocusRestore();
     }
 
     function isSecondaryHistoryEntry() {
@@ -29116,6 +29219,7 @@ utils.encode = function encode(arr, enc) {
 
     function requestCloseSecondaryCatalog() {
       if (homeUiRoute() !== "secondary") return false;
+      cancelSecondaryMediaFocusRestore();
       const homeV14 = state.homeV14;
       if (!homeV14) return false;
       const manage = recentManageRuntime();
@@ -29153,6 +29257,7 @@ utils.encode = function encode(arr, enc) {
       state.homeV14.route = "home";
       state.homeV14.secondaryListId = "";
       state.homeV14.secondaryFocusRestore = null;
+      state.homeV14.secondaryMediaFocusRestore = null;
       state.homeV14.secondaryWeeklyInitialFocusPending = false;
       state.homeV14.secondaryReturn = null;
       state.activeList = "all";
@@ -29318,7 +29423,6 @@ utils.encode = function encode(arr, enc) {
       stack.appendChild(panel);
       return panel;
     }
-
     function activateListPanel(id) {
       const stack = $("listStack");
       Array.from(stack.querySelectorAll(".list-panel")).forEach((panel) => {
@@ -29593,6 +29697,7 @@ utils.encode = function encode(arr, enc) {
     function markHomeUserNavigation() {
       const home = state.homeV14;
       if (!home) return 0;
+      if (home.secondaryMediaFocusRestore) cancelSecondaryMediaFocusRestore();
       home.focusUserEpoch = Number(home.focusUserEpoch || 0) + 1;
       home.coldHomeFocusPending = false;
       home.coldHomeFallbackTarget = null;
@@ -29899,7 +30004,6 @@ utils.encode = function encode(arr, enc) {
       });
       return button;
     }
-
     function normalizedPanHistoryName(value) {
       return String(value || "")
         .toLowerCase()
@@ -31970,6 +32074,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const opts = options || {};
       const target = returnTarget && returnTarget.isConnected ? returnTarget : document.activeElement;
       const secondaryGrid = homeUiRoute() === "secondary" ? $("secondaryCatalogGrid") : null;
+      if (state.homeV14) state.homeV14.secondaryMediaFocusRestore = null;
       state.homeReturn = {
         scrollY: homeScrollTop(),
         activeList: state.activeList || "all",
@@ -32121,14 +32226,25 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     function restoreHomeReturn() {
       const saved = normalizeLegacySavedState(state.homeReturn);
       if (!saved) return false;
-      if (Date.now() - Number(saved.at || 0) > 10 * 60 * 1000) {
-        state.homeReturn = null;
-        return false;
-      }
-      state.homeReturn = null;
       if (state.homeV14 && saved.route === "home") state.homeV14.lastHomeFocusedRail = "";
       const focusEpoch = homeFocusUserEpoch();
       const restoreSecondary = saved.route === "secondary" && saved.secondaryListId;
+      const mediaReturn = !!(saved.focus && saved.focus.type === "media");
+      const restoreSecondaryMedia = !!(restoreSecondary && mediaReturn);
+      if (restoreSecondaryMedia) {
+        state.homeV14.secondaryMediaFocusRestore = {
+          listId: normalizeLegacyCategoryId(saved.secondaryListId),
+          queryKey: String(saved.secondaryQueryKey || ""),
+          mediaKey: String(saved.focus.key || saved.mediaKey || ""),
+          cardIndex: Number(saved.focus.cardIndex),
+          gridScrollTop: Math.max(0, Number(saved.secondaryGridScrollTop || 0)),
+          gridScrollLeft: Math.max(0, Number(saved.secondaryGridScrollLeft || 0)),
+          focusUserEpoch: focusEpoch,
+          frame: 0
+        };
+      } else {
+        state.homeReturn = null;
+      }
       if (restoreSecondary) {
         state.activeList = "all";
         state.homeV14.route = "secondary";
@@ -32141,11 +32257,20 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         renderAll({ deferContent: false });
       }
       const y = Math.max(0, Number(saved.scrollY || 0));
-      const mediaReturn = !!(saved.focus && saved.focus.type === "media");
       const apply = (withFocus, allowMissingSectionFallback) => {
         if (homeFocusUserEpoch() !== focusEpoch) return false;
         if ($("detailSheet") && $("detailSheet").classList.contains("active")) return;
+        if (restoreSecondaryMedia && !(state.homeV14 && state.homeV14.secondaryMediaFocusRestore)) return false;
         applyHomeScrollTop(y);
+        if (restoreSecondaryMedia) {
+          const grid = $("secondaryCatalogGrid");
+          if (grid) {
+            grid.scrollTop = Math.max(0, Number(saved.secondaryGridScrollTop || 0));
+            grid.scrollLeft = Math.max(0, Number(saved.secondaryGridScrollLeft || 0));
+          }
+          tryRestoreSecondaryMediaFocus();
+          return true;
+        }
         const heroReturn = !!(saved.focus && saved.focus.type === "id" && (saved.focus.key === "homeHero" || saved.focus.key === "homeHeroAction"));
         if (heroReturn && Number.isFinite(Number(saved.heroIndex))) setHomeHeroIndex(Number(saved.heroIndex), { resetTimer: false });
         const target = withFocus ? findHomeReturnTarget(saved) : null;
@@ -32174,7 +32299,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       }, 520);
       return true;
     }
-
     function prepareDetailPlaybackForDetail(item, options) {
       const opts = options || {};
       const canonicalStartedAt = Date.now();
@@ -37761,10 +37885,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const opts = options || {};
       const saved = state.pan.playbackReturn;
       if (!saved) return false;
-      if (Date.now() - Number(saved.at || 0) > PAN_PLAYBACK_RETURN_TTL_MS) {
-        state.pan.playbackReturn = null;
-        return false;
-      }
       const detail = $("detailSheet");
       const block = $("panSearchBlock");
       if (!detail || !detail.classList.contains("active") || !block || !block.classList.contains("active")) return false;
@@ -38370,10 +38490,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     function restoreDetailReturn() {
       const saved = state.detailReturn;
       if (!saved) return false;
-      if (Date.now() - Number(saved.at || 0) > 10 * 60 * 1000) {
-        state.detailReturn = null;
-        return false;
-      }
       const detail = $("detailSheet");
       if (!detail || !detail.classList.contains("active")) return false;
       const apply = () => {
@@ -38984,7 +39100,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (window.nostr && window.nostr.signEvent) return await window.nostr.signEvent(draft);
       return Object.assign({ id: HOT_VECTOR_D, pubkey: "" }, draft);
     }
-
     function hotVectorItemFromSnapshot(snapshot, day) {
       if (!snapshot || (snapshot.mediaType !== "movie" && snapshot.mediaType !== "tv") || !snapshot.tmdbId) return null;
       return hotNormalizeWireItem([
@@ -40384,6 +40499,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
     function installRemoteKeys() {
       document.addEventListener("pointerdown", (event) => {
+        if (homeUiRoute() === "secondary") cancelSecondaryMediaFocusRestore();
         const recentDelete = state.recentDelete;
         if (!recentDelete || !(recentDelete.armedKey || recentDelete.pendingKey)) return;
         const card = recentWatchingCard(event.target);
@@ -40418,7 +40534,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           updateTvDiagnostic();
         }
         const el = document.activeElement;
-        if (isTvLikeDevice() && isHomeRouteActive() && focusScopeRoot() === document
+        if (isTvLikeDevice() && (isHomeRouteActive() || homeUiRoute() === "secondary") && focusScopeRoot() === document
           && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(key)) {
           markHomeUserNavigation();
         }
@@ -42321,7 +42437,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       });
       return tvDiagnosticsLoadPromise;
     }
-
     function keepFocusInView(target, options) {
       if (!target) return;
       if (isTvLikeDevice()) {
