@@ -1,0 +1,61 @@
+
+    /* 详情页三个操作按钮只收口颜色，不改变尺寸、间距或焦点几何。 */
+    html.tv-mode #detailSheet.detail-large > .actions > #detailContinueBtn,
+    html.tv-mode #detailSheet.detail-large > .actions > #detailSearchBtn,
+    html.tv-mode #detailSheet.detail-large > .actions > #panSearchBtn,
+    html.tv-preview #detailSheet.detail-large > .actions > #detailContinueBtn,
+    html.tv-preview #detailSheet.detail-large > .actions > #detailSearchBtn,
+    html.tv-preview #detailSheet.detail-large > .actions > #panSearchBtn {
+      background: rgba(52, 52, 54, .34) !important;
+      border-color: rgba(255, 255, 255, .20) !important;
+      color: rgba(255, 255, 255, .94) !important;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, .26) !important;
+      -webkit-backdrop-filter: blur(14px) saturate(1.4) !important;
+      backdrop-filter: blur(14px) saturate(1.4) !important;
+    }
+
+    html.tv-mode #detailSheet.detail-large > .actions > #detailContinueBtn:focus,
+    html.tv-mode #detailSheet.detail-large > .actions > #detailSearchBtn:focus,
+    html.tv-mode #detailSheet.detail-large > .actions > #panSearchBtn:focus,
+    html.tv-preview #detailSheet.detail-large > .actions > #detailContinueBtn:focus,
+    html.tv-preview #detailSheet.detail-large > .actions > #detailSearchBtn:focus,
+    html.tv-preview #detailSheet.detail-large > .actions > #panSearchBtn:focus {
+      background: #F7F7F7 !important;
+      border-color: rgba(255, 255, 255, .95) !important;
+      color: #171717 !important;
+      box-shadow: none !important;
+    }
+
+    #detailContinueBtn > .icon,
+    #detailContinueBtn[data-play-state="idle"] > .icon,
+    #detailContinueBtn[data-play-state="unreleased"] > .icon {
+      fill: #8FA3B8 !important;
+      stroke: none !important;
+      color: #8FA3B8 !important;
+    }
+
+    #detailContinueBtn[data-play-state="preparing"] > .icon {
+      fill: #F2B84B !important;
+      stroke: none !important;
+      color: #F2B84B !important;
+    }
+
+    #detailContinueBtn[data-play-state="ready"] > .icon {
+      fill: #35E07A !important;
+      stroke: none !important;
+      color: #35E07A !important;
+    }
+
+    #detailContinueBtn[data-play-state="failed"] > .icon {
+      fill: #FF0000 !important;
+      stroke: none !important;
+      color: #FF0000 !important;
+    }
+
+    #detailSearchBtn > .icon,
+    #panSearchBtn > .icon {
+      fill: none !important;
+      stroke: currentColor !important;
+      color: inherit !important;
+    }
+  

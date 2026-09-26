@@ -1,0 +1,49 @@
+
+    .direct-play-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 22px;
+      margin: -4px 0 12px;
+      color: rgba(232, 239, 247, .68);
+      font-size: 13px;
+      line-height: 1.35;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    .direct-play-status[hidden] {
+      display: none !important;
+    }
+
+    .direct-play-status-dot {
+      width: 8px;
+      height: 8px;
+      flex: 0 0 8px;
+      border-radius: 999px;
+      background: currentColor;
+      animation: direct-play-pulse 1.4s ease-in-out infinite;
+    }
+
+    @keyframes direct-play-pulse {
+      0%, 100% { opacity: .45; }
+      50% { opacity: 1; }
+    }
+
+    html.tv-mode #detailSheet.detail-large .direct-play-status {
+      max-width: min(760px, 54vw);
+      margin: -8px 0 16px;
+      font-size: clamp(16px, 1.35vw, 20px);
+    }
+
+    html.tv-mode #detailSheet.detail-large .direct-play-status-dot {
+      width: 10px;
+      height: 10px;
+      flex-basis: 10px;
+    }
+
+    /* 播放准备状态保留在内部诊断状态机，不再占用详情页操作区的可见空间。 */
+    #directPlayStatus {
+      display: none !important;
+    }
+  

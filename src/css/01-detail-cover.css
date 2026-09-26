@@ -1,0 +1,49 @@
+
+    /* ══ 封面图显示补丁 ══════════════════════════════════════════
+       手机端（≤719px）：隐藏 .detail-cover，显示 .detail-hero-bg
+       TV端（html.tv-mode）：覆盖恢复 .detail-cover 显示
+       desktop / detail-large：.detail-hero-bg 作为背景显示
+       ═══════════════════════════════════════════════════════════ */
+
+    /* 1. 手机端：隐藏 detail-cover，hero-bg 托底 */
+    @media (max-width: 719px) {
+      .detail-cover {
+        display: none;
+      }
+      .detail-hero-bg {
+        display: block;
+      }
+    }
+
+    /* 手机横屏：宽度超过 719px 但高度很低，同样隐藏封面 */
+    @media (orientation: landscape) and (max-height: 500px) {
+      html:not(.tv-mode) .detail-cover {
+        display: none;
+      }
+      html:not(.tv-mode) .detail-hero-bg {
+        display: block;
+      }
+    }
+
+    /* 2. TV端：无论屏宽，强制保持 detail-cover 可见 */
+    html.tv-mode .detail-cover {
+      display: block !important;
+    }
+
+    /* 3. TV端：关闭 hero-bg，避免全屏背景干扰 Netflix 双栏布局 */
+    html.tv-mode .detail-hero-bg {
+      display: none !important;
+      opacity: 0 !important;
+    }
+    html.tv-mode .sheet-blur-layer {
+      display: none !important;
+    }
+
+    /* 4. detail-large（平板横屏/大屏非TV）：detail-large 自身 ::before 承担背景，
+       隐藏独立的 hero-bg 元素和 blur 层，避免与 detail-cover 叠加出现双海报 */
+    body.detail-large-active .detail-hero-bg,
+    body.detail-large-active .sheet-blur-layer {
+      display: none !important;
+      opacity: 0 !important;
+    }
+  

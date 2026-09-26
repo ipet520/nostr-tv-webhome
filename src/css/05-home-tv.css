@@ -1,0 +1,1064 @@
+
+    html.tv-mode .focus-halo-edge-left:focus,
+    html.tv-preview .focus-halo-edge-left:focus {
+      transform-origin: left center;
+    }
+    html.tv-mode .focus-halo-edge-right:focus,
+    html.tv-preview .focus-halo-edge-right:focus {
+      transform-origin: right center;
+    }
+    html.tv-mode .focus-halo-edge-both:focus,
+    html.tv-preview .focus-halo-edge-both:focus {
+      transform: translateY(-1px) scale(1) translateZ(0) !important;
+      transform-origin: center center;
+    }
+
+    html.tv-mode #home.home-root #homeHero:focus,
+    html.tv-preview #home.home-root #homeHero:focus,
+    html.tv-mode #home.home-root .home-hero-content:focus,
+    html.tv-mode #home.home-root .home-hero-content:focus-within,
+    html.tv-preview #home.home-root .home-hero-content:focus,
+    html.tv-preview #home.home-root .home-hero-content:focus-within {
+      outline: 0 !important;
+      border: 0 !important;
+      box-shadow: none !important;
+      background: transparent !important;
+    }
+
+    /* TV landscape sections share the full-width Hero outer frame. */
+    @media (orientation: landscape) and (min-width: 901px) {
+      html.tv-mode #home.home-root,
+      html.tv-preview #home.home-root { --home-section-gut: 16px; }
+
+      html.tv-mode #home.home-root .home-hero-content,
+      html.tv-preview #home.home-root .home-hero-content {
+        transform: translateY(-25px);
+      }
+
+      html.tv-mode #home.home-root .home-hero-dots,
+      html.tv-preview #home.home-root .home-hero-dots {
+        bottom: calc(clamp(54px, 5.2vw, 78px) + 25px);
+      }
+
+      html.tv-mode #home.home-root .home-search-launcher-wrap,
+      html.tv-preview #home.home-root .home-search-launcher-wrap {
+        width: min(620px, calc(100% - (2 * var(--home-v14-gut))));
+      }
+
+      html.tv-mode #home.home-root .home-search-launcher,
+      html.tv-preview #home.home-root .home-search-launcher {
+        min-height: 56px;
+        padding: 0 22px;
+      }
+
+      /* The rail viewport is the same outer frame as the TV Hero.  Its
+         content gutter is intentional presentation spacing, not a centered
+         wrapper or a leading track spacer. */
+      html.tv-mode #home.home-root .home-rail,
+      html.tv-preview #home.home-root .home-rail {
+        width: 100%;
+        max-width: none;
+        margin-left: 0;
+        margin-right: 0;
+        padding-left: 16px !important;
+        padding-right: 16px !important;
+        scroll-padding-left: 16px;
+        scroll-padding-right: 16px;
+      }
+    }
+
+    .secondary-page {
+      width: 100%;
+      min-height: 100vh;
+      box-sizing: border-box;
+      padding: clamp(22px, 3vw, 52px) var(--home-v14-gut) var(--home-v14-safe-bottom);
+      background: var(--home-v14-bg);
+      color: var(--home-v14-text);
+    }
+
+    html.tv-mode .secondary-page,
+    html.tv-preview .secondary-page {
+      padding-inline: 16px;
+    }
+
+    /* Ordinary Home/Search/Secondary pages share #home's atmosphere.  The
+       Weekly immersive page keeps its own backdrop and remains excluded. */
+    #home.home-root .secondary-page:not(.weekly-secondary-page) {
+      background: transparent;
+    }
+
+    .secondary-page-head {
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .secondary-page-head h1 {
+      margin: 0;
+      font-size: clamp(22px, 1.7vw, 32px);
+      line-height: 1.2;
+    }
+
+    .secondary-page-back {
+      min-height: 40px;
+      padding: 0 14px;
+      border: 1px solid rgba(255, 255, 255, .14);
+      border-radius: 6px;
+      background: rgba(255, 255, 255, .08);
+      color: #fff;
+      font-size: 16px;
+    }
+
+    .secondary-page-back:focus {
+      outline: none;
+      outline-offset: 0;
+      border-color: rgba(255, 255, 255, .14);
+      background: rgba(191, 233, 255, .16);
+      box-shadow: none;
+    }
+
+    .secondary-page-count {
+      margin-left: auto;
+      color: var(--home-v14-muted);
+      font-size: 15px;
+    }
+
+    .recent-manage-controls,
+    .recent-manage-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .recent-manage-controls[hidden],
+    .recent-manage-actions[hidden] {
+      display: none !important;
+    }
+
+    .recent-manage-controls {
+      margin-left: auto;
+    }
+
+    .recent-manage-selected-count {
+      color: var(--home-v14-muted);
+      font-size: 14px;
+      white-space: nowrap;
+    }
+
+    .recent-manage-button,
+    .recent-manage-actions button {
+      min-height: 36px;
+      padding: 0 11px;
+      border: 1px solid rgba(255, 255, 255, .16);
+      border-radius: 7px;
+      background: rgba(255, 255, 255, .08);
+      color: rgba(255, 255, 255, .92);
+      font-size: 14px;
+      white-space: nowrap;
+    }
+
+    .recent-manage-button:disabled,
+    .recent-manage-actions button:disabled {
+      opacity: .42;
+    }
+
+    .recent-manage-button:focus,
+    .recent-manage-actions button:focus {
+      outline: none;
+      border-color: rgba(191, 233, 255, .88);
+      background: rgba(191, 233, 255, .16);
+    }
+
+    @media (pointer: coarse), (max-width: 719px) {
+      .secondary-page-head.recent-manage-head {
+        flex-wrap: wrap;
+      }
+
+      .recent-manage-controls {
+        margin-left: auto;
+        max-width: 100%;
+      }
+
+      .recent-manage-actions {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+    }
+
+    .secondary-catalog-filters {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      width: 100%;
+      min-width: 0;
+      margin: 0 0 20px;
+    }
+
+    .secondary-catalog-filters[hidden] { display: none !important; }
+
+    .secondary-filter-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      min-height: 38px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    .secondary-filter-row::-webkit-scrollbar { display: none; }
+
+    html.tv-mode .secondary-filter-row,
+    html.tv-preview .secondary-filter-row {
+      padding-inline-end: 24px;
+      scroll-padding-inline-end: 24px;
+    }
+
+    html.tv-mode .secondary-filter-options::after,
+    html.tv-preview .secondary-filter-options::after {
+      content: "";
+      flex: 0 0 24px;
+      width: 24px;
+      height: 1px;
+    }
+
+    .secondary-filter-label {
+      flex: 0 0 58px;
+      color: var(--home-v14-muted);
+      font-size: 14px;
+      line-height: 1.2;
+    }
+
+    .secondary-filter-options {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .secondary-filter-option {
+      flex: 0 0 auto;
+      min-height: 34px;
+      padding: 0 12px;
+      border: 1px solid rgba(255, 255, 255, .12);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .06);
+      color: var(--home-v14-muted);
+      font-size: 14px;
+      white-space: nowrap;
+    }
+
+    .secondary-filter-option[aria-pressed="true"] {
+      border-color: rgba(191, 233, 255, .7);
+      background: rgba(191, 233, 255, .16);
+      color: #fff;
+    }
+
+    .secondary-filter-option:focus {
+      outline: none;
+      outline-offset: 0;
+      border-color: rgba(255, 255, 255, .12);
+      background: rgba(191, 233, 255, .16);
+      color: #fff;
+      box-shadow: none;
+    }
+
+    .secondary-filter-option[aria-pressed="true"]:focus {
+      border-color: rgba(191, 233, 255, .7);
+      background: rgba(191, 233, 255, .16);
+    }
+
+    .secondary-catalog-scroll {
+      width: 100%;
+      min-width: 0;
+    }
+
+    .secondary-catalog-load-status {
+      min-height: 24px;
+      padding: 8px 0 32px;
+      color: var(--home-v14-muted);
+      font-size: 14px;
+      text-align: center;
+    }
+
+    #secondaryCatalogGrid {
+      width: 100%;
+      min-width: 0;
+      padding-bottom: 48px;
+    }
+
+    /* The existing now-playing Secondary route becomes the Weekly Feed
+       presentation in place.  It keeps the same page node, history entry,
+       Detail handoff, and focus scope as every other Secondary page. */
+    .weekly-secondary-backdrop,
+    .weekly-secondary-shade,
+    .weekly-secondary-copy {
+      display: none;
+    }
+
+    .secondary-page.weekly-secondary-page {
+      position: relative;
+      height: 100vh;
+      min-height: 100vh;
+      padding: 0;
+      overflow: hidden;
+      isolation: isolate;
+      background: #070a10;
+      --weekly-copy-top: clamp(96px, 15vh, 170px);
+      --weekly-rail-bottom: clamp(18px, 3vh, 38px);
+      --weekly-rail-height: calc(clamp(254px, 31vh, 340px) + 56px);
+    }
+
+    .secondary-page.weekly-secondary-page .weekly-secondary-backdrop {
+      display: block;
+      position: absolute;
+      z-index: 0;
+      inset: 0;
+      background-color: #10151d;
+      background-position: center center;
+      background-repeat: no-repeat;
+      background-size: cover;
+      opacity: 1;
+    }
+
+    .secondary-page.weekly-secondary-page .weekly-secondary-backdrop-next {
+      z-index: 1;
+      opacity: 0;
+      transition: opacity 220ms ease;
+    }
+
+    .secondary-page.weekly-secondary-page .weekly-secondary-backdrop-next.is-visible {
+      opacity: 1;
+    }
+
+    .secondary-page.weekly-secondary-page .weekly-secondary-shade {
+      display: block;
+      position: absolute;
+      z-index: 2;
+      inset: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(90deg, rgba(4, 7, 12, .94) 0%, rgba(4, 7, 12, .7) 38%, rgba(4, 7, 12, .18) 74%, rgba(4, 7, 12, .18) 100%),
+        linear-gradient(0deg, rgba(4, 7, 12, .98) 0%, rgba(4, 7, 12, .76) 19%, rgba(4, 7, 12, .12) 58%, rgba(4, 7, 12, .18) 100%);
+    }
+
+    .secondary-page.weekly-secondary-page .secondary-page-head {
+      position: absolute;
+      z-index: 6;
+      top: clamp(18px, 3vh, 34px);
+      right: clamp(22px, 3.8vw, 72px);
+      left: clamp(22px, 3.8vw, 72px);
+      min-height: 44px;
+      margin: 0;
+    }
+
+    .secondary-page.weekly-secondary-page .secondary-page-head h1 {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+
+    .secondary-page.weekly-secondary-page .secondary-page-back {
+      background: rgba(8, 12, 18, .5);
+      -webkit-backdrop-filter: blur(10px);
+      backdrop-filter: blur(10px);
+    }
+
+    .secondary-page.weekly-secondary-page .secondary-page-count {
+      color: rgba(255, 255, 255, .8);
+      text-shadow: 0 1px 8px rgba(0, 0, 0, .45);
+    }
+
+    .secondary-page.weekly-secondary-page .weekly-secondary-copy {
+      display: block;
+      position: absolute;
+      z-index: 4;
+      top: var(--weekly-copy-top);
+      left: clamp(22px, 3.8vw, 72px);
+      width: min(560px, 43vw);
+      max-width: calc(100% - 44px);
+      overflow: visible;
+      color: #fff;
+      text-shadow: 0 2px 16px rgba(0, 0, 0, .42);
+    }
+
+    .weekly-secondary-copy h2 {
+      max-width: 100%;
+      margin: 0 0 12px;
+      color: #fff;
+      font-size: clamp(30px, 3.5vw, 64px);
+      font-weight: 800;
+      line-height: 1.08;
+      letter-spacing: -.02em;
+    }
+
+    .weekly-secondary-meta,
+    .weekly-secondary-update {
+      min-height: 1.4em;
+      color: rgba(255, 255, 255, .82);
+      font-size: clamp(15px, 1.1vw, 21px);
+      line-height: 1.45;
+    }
+
+    .weekly-secondary-update {
+      margin-top: 3px;
+      color: rgba(191, 233, 255, .94);
+      font-weight: 650;
+    }
+
+    .weekly-secondary-overview {
+      display: -webkit-box;
+      max-width: 100%;
+      margin: 14px 0 0;
+      overflow: hidden;
+      color: rgba(255, 255, 255, .78);
+      font-size: clamp(14px, .95vw, 18px);
+      line-height: 1.65;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 3;
+    }
+
+    .secondary-page.weekly-secondary-page .secondary-catalog-filters {
+      display: none !important;
+    }
+
+    .secondary-page.weekly-secondary-page .secondary-catalog-scroll {
+      position: absolute;
+      z-index: 5;
+      right: 0;
+      bottom: var(--weekly-rail-bottom);
+      left: 0;
+      /* Keep the horizontal scrollport taller than the card plus its Home
+         focus lift.  The card remains bottom-aligned; the extra area is
+         only vertical paint headroom so the raised poster is not clipped by
+         the scroll container. */
+      height: var(--weekly-rail-height);
+      overflow: visible;
+    }
+
+    .secondary-page.weekly-secondary-page #secondaryCatalogGrid.weekly-secondary-rail {
+      display: flex;
+      align-items: flex-end;
+      width: 100%;
+      height: 100%;
+      min-width: 0;
+      gap: clamp(10px, 1vw, 18px);
+      padding: 28px clamp(22px, 3.8vw, 72px) 0 !important;
+      overflow-x: auto !important;
+      overflow-y: visible !important;
+      scrollbar-width: none;
+      scroll-padding-inline: clamp(22px, 3.8vw, 72px);
+      overscroll-behavior-x: contain;
+      touch-action: pan-x;
+      contain: layout style;
+    }
+
+    .secondary-page.weekly-secondary-page #secondaryCatalogGrid.weekly-secondary-rail::-webkit-scrollbar {
+      display: none;
+    }
+
+    .weekly-secondary-rail > .weekly-card {
+      position: relative;
+      flex: 0 0 clamp(132px, 10vw, 190px) !important;
+      width: clamp(132px, 10vw, 190px) !important;
+      max-width: none !important;
+      min-width: 0;
+      overflow: visible;
+      border: 0 !important;
+      border-radius: 0;
+      background: transparent !important;
+      box-shadow: none !important;
+      transform: translateZ(0);
+      transition: transform 180ms ease;
+    }
+
+    .weekly-secondary-rail > .weekly-card .poster-wrap {
+      width: 100%;
+      aspect-ratio: 2 / 3;
+      overflow: hidden;
+      border-radius: 8px;
+      background: rgba(0, 0, 0, .24);
+    }
+
+    .weekly-secondary-rail > .weekly-card .poster {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .weekly-secondary-rail > .weekly-card .card-body {
+      min-height: 38px;
+      padding: 8px 0 0;
+      border: 0 !important;
+      background: transparent !important;
+    }
+
+    .weekly-secondary-rail > .weekly-card .card-title {
+      overflow: hidden;
+      color: rgba(255, 255, 255, .9);
+      font-size: clamp(13px, .9vw, 17px);
+      line-height: 1.3;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .weekly-secondary-rail > .weekly-card .rating-badge {
+      top: 8px;
+      right: auto;
+      left: 8px;
+    }
+
+    .weekly-secondary-rail > .weekly-card:focus {
+      z-index: 7;
+      outline: none !important;
+      outline-offset: 0 !important;
+      border: 0 !important;
+      box-shadow: none !important;
+      background: transparent !important;
+      transform: translateY(-18px) translateZ(0) !important;
+    }
+
+    .secondary-page.weekly-secondary-page .secondary-catalog-load-status {
+      position: absolute;
+      right: 0;
+      bottom: 4px;
+      left: 0;
+      z-index: 6;
+      min-height: 20px;
+      padding: 0;
+      color: rgba(255, 255, 255, .72);
+      text-align: center;
+    }
+
+    /* Mobile landscape has less vertical space than the desktop composition
+       assumes.  Keep the Weekly copy and poster rail in separate bands so the
+       higher-z-index rail cannot cover the selected item's details. */
+    @media (orientation: landscape) and (max-height: 500px) {
+      html:not(.tv-mode) .secondary-page.weekly-secondary-page {
+        --weekly-mobile-copy-top: 56px;
+        --weekly-mobile-rail-bottom: 8px;
+        --weekly-mobile-rail-height: clamp(180px, 52vh, 212px);
+        height: 100vh;
+        min-height: 100vh;
+        overflow: hidden;
+      }
+
+      html:not(.tv-mode) .secondary-page.weekly-secondary-page .secondary-page-head {
+        top: 10px;
+        right: 16px;
+        left: 16px;
+        min-height: 38px;
+      }
+
+      html:not(.tv-mode) .secondary-page.weekly-secondary-page .weekly-secondary-copy {
+        top: var(--weekly-mobile-copy-top);
+        left: 16px;
+        width: min(54vw, 420px);
+        max-width: calc(100% - 32px);
+        max-height: calc(100vh - var(--weekly-mobile-copy-top) - var(--weekly-mobile-rail-height) - var(--weekly-mobile-rail-bottom) - 8px);
+        overflow: hidden;
+      }
+
+      html:not(.tv-mode) .weekly-secondary-copy h2 {
+        margin-bottom: 5px;
+        font-size: clamp(22px, 4.8vw, 30px);
+        line-height: 1.08;
+      }
+
+      html:not(.tv-mode) .weekly-secondary-meta,
+      html:not(.tv-mode) .weekly-secondary-update {
+        min-height: 0;
+        font-size: clamp(11px, 1.8vw, 14px);
+        line-height: 1.25;
+      }
+
+      html:not(.tv-mode) .weekly-secondary-update {
+        margin-top: 2px;
+      }
+
+      html:not(.tv-mode) .weekly-secondary-overview {
+        margin-top: 4px;
+        font-size: clamp(10px, 1.55vw, 12px);
+        line-height: 1.3;
+        -webkit-line-clamp: 2;
+      }
+
+      html:not(.tv-mode) .secondary-page.weekly-secondary-page .secondary-catalog-scroll {
+        bottom: var(--weekly-mobile-rail-bottom);
+        height: var(--weekly-mobile-rail-height);
+      }
+
+      html:not(.tv-mode) .secondary-page.weekly-secondary-page #secondaryCatalogGrid.weekly-secondary-rail {
+        gap: 10px;
+        padding: 20px 16px 0 !important;
+        scroll-padding-inline: 16px;
+      }
+
+      html:not(.tv-mode) .weekly-secondary-rail > .weekly-card {
+        flex-basis: clamp(78px, 10vw, 96px) !important;
+        width: clamp(78px, 10vw, 96px) !important;
+      }
+
+      html:not(.tv-mode) .weekly-secondary-rail > .weekly-card .card-body {
+        min-height: 30px;
+        padding: 4px 0 0;
+      }
+
+      html:not(.tv-mode) .weekly-secondary-rail > .weekly-card .card-title {
+        font-size: clamp(10px, 1.6vw, 12px);
+        line-height: 1.2;
+      }
+    }
+
+    @media (orientation: landscape) and (max-height: 360px) {
+      html:not(.tv-mode) .secondary-page.weekly-secondary-page {
+        --weekly-mobile-copy-top: 44px;
+        --weekly-mobile-rail-height: 180px;
+      }
+
+      html:not(.tv-mode) .secondary-page.weekly-secondary-page .weekly-secondary-copy {
+        max-height: calc(100vh - var(--weekly-mobile-copy-top) - var(--weekly-mobile-rail-height) - var(--weekly-mobile-rail-bottom) - 6px);
+      }
+
+      html:not(.tv-mode) .weekly-secondary-copy h2 {
+        margin-bottom: 4px;
+        font-size: clamp(20px, 4.8vw, 26px);
+      }
+
+      html:not(.tv-mode) .weekly-secondary-overview {
+        margin-top: 3px;
+        -webkit-line-clamp: 1;
+      }
+
+      html:not(.tv-mode) .secondary-page.weekly-secondary-page #secondaryCatalogGrid.weekly-secondary-rail {
+        padding-top: 16px !important;
+      }
+
+      html:not(.tv-mode) .weekly-secondary-rail > .weekly-card {
+        flex-basis: 72px !important;
+        width: 72px !important;
+      }
+    }
+
+    #searchPageFormHost {
+      width: min(880px, 100%);
+      margin: 0 auto 18px;
+    }
+
+    #searchHistorySection[hidden] { display: none !important; }
+
+    #searchHistorySection {
+      margin-top: 0;
+      margin-bottom: 18px;
+    }
+
+    #searchHistorySection .home-section-head {
+      padding-left: 0;
+      padding-right: 0;
+    }
+
+    #searchHistoryRail {
+      --home-section-gut: 0px;
+      gap: 10px;
+      padding: 2px 0 14px !important;
+      scroll-padding-inline: 0;
+    }
+
+    .search-history-item,
+    .search-history-clear {
+      flex: 0 0 auto;
+      min-width: 112px;
+      max-width: min(300px, 42vw);
+      min-height: 42px;
+      padding: 0 16px;
+      border: 1px solid rgba(255, 255, 255, .14);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .07);
+      color: var(--home-v14-muted);
+      font-size: clamp(13px, .85vw, 16px);
+      font-weight: 600;
+      line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .search-history-item:focus,
+    .search-history-clear:focus {
+      outline: none;
+      outline-offset: 0;
+      border-color: rgba(255, 255, 255, .14);
+      background: rgba(191, 233, 255, .16);
+      color: #fff;
+      box-shadow: none;
+    }
+
+    /* V1.4.6.11.1: TV focus is a state fill for controls.  Image cards keep
+       one inner frame; business states such as Recent delete remain distinct. */
+    html.tv-mode .focusable:focus:not(.card):not(.person-card),
+    html.tv-mode button:focus:not(.card):not(.person-card),
+    html.tv-preview .focusable:focus:not(.card):not(.person-card),
+    html.tv-preview button:focus:not(.card):not(.person-card) {
+      outline: none !important;
+      outline-offset: 0 !important;
+      box-shadow: none !important;
+    }
+
+    html.tv-mode .back-top:focus,
+    html.tv-preview .back-top:focus,
+    html.tv-mode .mobile-detail-back:focus,
+    html.tv-preview .mobile-detail-back:focus {
+      background: rgba(70, 85, 96, .72) !important;
+      border-color: var(--line) !important;
+      color: #fff !important;
+    }
+
+    html.tv-mode input:focus,
+    html.tv-mode textarea:focus,
+    html.tv-preview input:focus,
+    html.tv-preview textarea:focus {
+      border-color: var(--line) !important;
+      background: rgba(60, 76, 90, .82) !important;
+      box-shadow: none !important;
+    }
+
+    html.tv-mode .detail-style-option.active:focus,
+    html.tv-preview .detail-style-option.active:focus,
+    html.tv-mode .secondary-filter-option[aria-pressed="true"]:focus,
+    html.tv-preview .secondary-filter-option[aria-pressed="true"]:focus {
+      border-color: rgba(191, 233, 255, .7) !important;
+      background: rgba(191, 233, 255, .16) !important;
+    }
+
+    html.tv-mode .secondary-page button:focus:not(.card):not(.person-card),
+    html.tv-preview .secondary-page button:focus:not(.card):not(.person-card) {
+      background: rgba(255, 255, 255, .18);
+      color: #fff;
+      outline: 2px solid rgba(120, 210, 255, .95) !important;
+      outline-offset: 1px !important;
+      box-shadow: 0 0 0 1px rgba(120, 210, 255, .18), 0 0 12px rgba(80, 180, 255, .3) !important;
+      transform: scale(1.06);
+      z-index: 5;
+      transform-origin: center center;
+    }
+
+    html.tv-mode .card:focus,
+    html.tv-mode .person-card:focus,
+    html.tv-preview .card:focus,
+    html.tv-preview .person-card:focus {
+      outline: 2px solid rgba(255, 255, 255, .9) !important;
+      outline-offset: -2px !important;
+      border-color: var(--line) !important;
+      box-shadow: none !important;
+    }
+
+    html.tv-mode .card.recent-watching-card.recent-delete-armed:focus,
+    html.tv-preview .card.recent-watching-card.recent-delete-armed:focus {
+      outline: 2px solid rgba(255, 218, 218, .9) !important;
+      outline-offset: -2px !important;
+      border-color: var(--line) !important;
+      box-shadow: none !important;
+    }
+
+    .search-history-clear {
+      min-width: 104px;
+      color: rgba(255, 255, 255, .78);
+      background: rgba(255, 255, 255, .04);
+    }
+
+    .search-history-clear-top {
+      max-width: none;
+      min-height: 40px;
+    }
+
+    #searchPageFormHost #searchForm {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      margin: 0;
+    }
+
+    #searchPageFormHost #connectionDock { display: none !important; }
+    #searchPageFormHost #searchInput { display: block !important; min-height: 48px; }
+    #searchPageFormHost #searchSubmitBtn { position: static !important; min-height: 48px; }
+    #searchPageResultsHost { width: 100%; min-width: 0; }
+    #searchPageResultsHost > #searchSection { margin-top: 0; }
+
+    #searchHotSection[hidden],
+    #searchEmptyState[hidden] {
+      display: none !important;
+    }
+
+    #searchHotSection {
+      margin-top: 0;
+      margin-bottom: 18px;
+    }
+
+    #searchHotSection .home-section-head {
+      padding-left: 0;
+      padding-right: 0;
+    }
+
+    #searchHotRail {
+      --home-section-gut: 0px;
+      --home-card-width: clamp(124px, 9.3vw, 178px);
+      padding-left: 0 !important;
+      padding-right: 0 !important;
+      scroll-padding-left: 0;
+      scroll-padding-right: 0;
+    }
+
+    #searchEmptyState {
+      margin: 0 0 12px;
+      color: var(--home-v14-muted);
+      font-size: clamp(15px, 1vw, 19px);
+    }
+
+    /* Final Home-only focus contract: a media item floats upward without
+       resizing, outlining, filtering, or turning into a panel.  This rule
+       intentionally follows the shared TV card focus styles above. */
+    html.tv-mode #home.home-root .home-rail > .card:focus,
+    html.tv-preview #home.home-root .home-rail > .card:focus {
+      transform: translateY(-18px) translateZ(0) !important;
+      outline: none !important;
+      outline-offset: 0 !important;
+      border: 0 !important;
+      box-shadow: none !important;
+      background: transparent !important;
+    }
+
+    #home.home-root .home-rail > .card:focus img {
+      filter: none !important;
+    }
+
+    /* Keep the Home rating as a quiet in-poster label; the shared legacy
+       badge treatment must not turn a frameless poster into a panel. */
+    #home.home-root .home-rail > .card .rating-badge {
+      box-shadow: none !important;
+    }
+
+    /* Every Home and Secondary media card shares one information layer:
+       rating at the poster's upper-left, Nostr people at the upper-right,
+       and the air/episode status across the bottom. Top metadata is frameless;
+       portrait cards use a compact scale while landscape cards keep normal sizing. */
+    #home.home-root .home-rail > .card .rating-badge,
+    #secondaryCatalog .media-grid > .card .rating-badge,
+    #secondaryCatalog .weekly-secondary-rail > .weekly-card .rating-badge {
+      top: 9px;
+      right: auto;
+      left: 9px;
+      bottom: auto;
+    }
+
+    #home.home-root .home-rail > .card .card-people,
+    #secondaryCatalog .media-grid > .card .card-people,
+    #secondaryCatalog .weekly-secondary-rail > .weekly-card .card-people {
+      top: 9px;
+      right: 9px;
+      left: auto;
+      bottom: auto;
+    }
+
+    #home.home-root .home-rail > .card .rating-badge,
+    #home.home-root .home-rail > .card .card-people,
+    #secondaryCatalog .media-grid > .card .rating-badge,
+    #secondaryCatalog .media-grid > .card .card-people,
+    #secondaryCatalog .weekly-secondary-rail > .weekly-card .rating-badge,
+    #secondaryCatalog .weekly-secondary-rail > .weekly-card .card-people {
+      min-width: 0 !important;
+      min-height: 0 !important;
+      height: auto !important;
+      box-sizing: border-box !important;
+      padding: 0 !important;
+      gap: 3px !important;
+      border: 0 !important;
+      border-radius: 0 !important;
+      color: #ffd98a !important;
+      font-size: 9px !important;
+      font-weight: 760 !important;
+      line-height: 1 !important;
+      white-space: nowrap !important;
+      overflow: visible !important;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, .46) !important;
+      box-shadow: none !important;
+      -webkit-backdrop-filter: none !important;
+      backdrop-filter: none !important;
+    }
+
+    #home.home-root .home-rail > .card:not(.landscape-card) .rating-badge,
+    #home.home-root .home-rail > .card:not(.landscape-card) .card-people,
+    #secondaryCatalog .media-grid > .card:not(.landscape-card) .rating-badge,
+    #secondaryCatalog .media-grid > .card:not(.landscape-card) .card-people,
+    #secondaryCatalog .weekly-secondary-rail > .weekly-card:not(.landscape-card) .rating-badge,
+    #secondaryCatalog .weekly-secondary-rail > .weekly-card:not(.landscape-card) .card-people {
+      top: 9px;
+    }
+
+    #home.home-root .home-rail > .card:not(.landscape-card) .badge-icon,
+    #secondaryCatalog .media-grid > .card:not(.landscape-card) .badge-icon,
+    #secondaryCatalog .weekly-secondary-rail > .weekly-card:not(.landscape-card) .badge-icon {
+      width: 9px !important;
+      height: 9px !important;
+      flex-basis: 9px !important;
+    }
+
+    #home.home-root .home-rail > .card:not(.landscape-card) .rating-badge,
+    #home.home-root .home-rail > .card:not(.landscape-card) .card-people,
+    #secondaryCatalog .media-grid > .card:not(.landscape-card) .rating-badge,
+    #secondaryCatalog .media-grid > .card:not(.landscape-card) .card-people,
+    #secondaryCatalog .weekly-secondary-rail > .weekly-card:not(.landscape-card) .rating-badge,
+    #secondaryCatalog .weekly-secondary-rail > .weekly-card:not(.landscape-card) .card-people {
+      font-size: 9.5px !important;
+      gap: 3.25px !important;
+    }
+
+    #home.home-root .home-rail > .card:not(.landscape-card) .badge-icon,
+    #secondaryCatalog .media-grid > .card:not(.landscape-card) .badge-icon,
+    #secondaryCatalog .weekly-secondary-rail > .weekly-card:not(.landscape-card) .badge-icon {
+      width: 9.5px !important;
+      height: 9.5px !important;
+      flex-basis: 9.5px !important;
+    }
+
+    #home.home-root .home-rail > .card.landscape-card .rating-badge,
+    #home.home-root .home-rail > .card.landscape-card .card-people,
+    #secondaryCatalog .media-grid > .card.landscape-card .rating-badge,
+    #secondaryCatalog .media-grid > .card.landscape-card .card-people,
+    #secondaryCatalog .weekly-secondary-rail > .weekly-card.landscape-card .rating-badge,
+    #secondaryCatalog .weekly-secondary-rail > .weekly-card.landscape-card .card-people {
+      top: 10px;
+      font-size: 11px !important;
+      gap: 5px !important;
+    }
+
+    #home.home-root .home-rail > .card.landscape-card .badge-icon,
+    #secondaryCatalog .media-grid > .card.landscape-card .badge-icon,
+    #secondaryCatalog .weekly-secondary-rail > .weekly-card.landscape-card .badge-icon {
+      width: 14px !important;
+      height: 14px !important;
+      flex-basis: 14px !important;
+    }
+
+    @media (max-width: 719px) {
+      #home.home-root .home-rail > .card:not(.landscape-card) .rating-badge,
+      #home.home-root .home-rail > .card:not(.landscape-card) .card-people,
+      #secondaryCatalog .media-grid > .card:not(.landscape-card) .rating-badge,
+      #secondaryCatalog .media-grid > .card:not(.landscape-card) .card-people,
+      #secondaryCatalog .weekly-secondary-rail > .weekly-card:not(.landscape-card) .rating-badge,
+      #secondaryCatalog .weekly-secondary-rail > .weekly-card:not(.landscape-card) .card-people {
+        top: 8px;
+        font-size: 8.5px !important;
+        gap: 2.25px !important;
+      }
+
+      #home.home-root .home-rail > .card:not(.landscape-card) .badge-icon,
+      #secondaryCatalog .media-grid > .card:not(.landscape-card) .badge-icon,
+      #secondaryCatalog .weekly-secondary-rail > .weekly-card:not(.landscape-card) .badge-icon {
+        width: 8.5px !important;
+        height: 8.5px !important;
+        flex-basis: 8.5px !important;
+      }
+    }
+
+    @media (max-width: 719px), (pointer: coarse) {
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-rail > .card {
+        background: transparent !important;
+        border: 0 !important;
+        box-shadow: none !important;
+        -webkit-backdrop-filter: none !important;
+        backdrop-filter: none !important;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-rail > .card .card-body {
+        background: transparent !important;
+        border: 0 !important;
+        box-shadow: none !important;
+      }
+    }
+
+    @media (max-width: 900px) {
+      #searchHotRail { --home-card-width: clamp(112px, 28vw, 148px); }
+    }
+
+    /* Final media-card surface contract.  Keep this after the shared TV
+       focus rules so Home and Weekly cannot regain a panel frame. */
+    #home.home-root .home-rail > .card,
+    #home.home-root .home-rail > .card:focus,
+    #secondaryCatalog.weekly-secondary-page #secondaryCatalogGrid.weekly-secondary-rail > .weekly-card,
+    #secondaryCatalog.weekly-secondary-page #secondaryCatalogGrid.weekly-secondary-rail > .weekly-card:focus {
+      border: 0 !important;
+      border-color: transparent !important;
+      outline: 0 !important;
+      outline-offset: 0 !important;
+      box-shadow: none !important;
+      background: transparent !important;
+    }
+
+    #home.home-root .home-rail > .card .card-body,
+    #home.home-root .home-rail > .card .poster-wrap,
+    #home.home-root .home-rail > .card .poster,
+    #secondaryCatalog.weekly-secondary-page #secondaryCatalogGrid.weekly-secondary-rail > .weekly-card .card-body,
+    #secondaryCatalog.weekly-secondary-page #secondaryCatalogGrid.weekly-secondary-rail > .weekly-card .poster-wrap,
+    #secondaryCatalog.weekly-secondary-page #secondaryCatalogGrid.weekly-secondary-rail > .weekly-card .poster {
+      border: 0 !important;
+      border-color: transparent !important;
+      outline: 0 !important;
+      outline-offset: 0 !important;
+      box-shadow: none !important;
+      background: transparent !important;
+    }
+
+    #home.home-root .home-rail > .card .card-title,
+    #secondaryCatalog.weekly-secondary-page #secondaryCatalogGrid.weekly-secondary-rail > .weekly-card .card-title,
+    .secondary-page:not(.weekly-secondary-page) .media-grid > .card .card-title {
+      width: 100%;
+      text-align: center !important;
+    }
+
+    /* Keep every Home section header on one shared visual baseline.  The
+       middle rule is part of the header row, not an extra navigation item. */
+    #home.home-root .home-section-head {
+      align-items: center;
+      gap: 12px;
+    }
+
+    #home.home-root .home-section-line {
+      display: block;
+      flex: 1 1 auto;
+      min-width: 24px;
+      height: 1px;
+      align-self: center;
+      background: linear-gradient(90deg, rgba(255, 255, 255, .28), rgba(255, 255, 255, .1));
+      opacity: .8;
+    }
+
+    #home.home-root .home-section-more {
+      min-height: 30px;
+      padding: 0;
+      gap: 4px;
+      line-height: 1.2;
+    }
+
+    /* The Hero detail copy is a non-focusable, lightweight hint. */
+    html.tv-mode #home.home-root .home-hero-action:focus,
+    html.tv-preview #home.home-root .home-hero-action:focus {
+      outline: 0 !important;
+      outline-offset: 0 !important;
+      border: 0 !important;
+      box-shadow: none !important;
+      background: transparent !important;
+      color: rgba(255, 255, 255, .9) !important;
+      transform: none !important;
+    }
+
+  

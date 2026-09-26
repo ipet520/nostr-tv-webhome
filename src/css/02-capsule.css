@@ -1,0 +1,11 @@
+
+    /* ══ 胶囊形改造：只改形状，不动尺寸/布局（含 TV 模式） ══
+       目标：搜索框 / 盘搜按钮 / 搜索播放按钮 / 继续播放按钮
+       用 ID 选择器提高优先级以覆盖 .field / .btn 的 var(--radius) */
+    #searchInput,
+    #panSearchBtn,
+    #detailSearchBtn,
+    #detailContinueBtn {
+      border-radius: 999px !important;
+    }
+  

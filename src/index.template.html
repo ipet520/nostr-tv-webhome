@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101419">
+  <title>Nostr</title>
+  <script>__WEBHOME_BUILD_SCRIPT_HEAD__</script>
+  <style>__WEBHOME_BUILD_CSS_00__</style>
+  <style>__WEBHOME_BUILD_CSS_01__</style>
+  <style>__WEBHOME_BUILD_CSS_02__</style>
+  <style id="btn-frosted-glow-f">__WEBHOME_BUILD_CSS_03__</style>
+  <style id="dark-streaming-theme">__WEBHOME_BUILD_CSS_04__</style>
+  <style id="home-v145-style">__WEBHOME_BUILD_CSS_05__</style>
+  <style id="tv-diagnostic-v1">__WEBHOME_BUILD_CSS_06__</style>
+  <style id="direct-play-status-v1">__WEBHOME_BUILD_CSS_07__</style>
+  <style id="unified-return-controls-v1">__WEBHOME_BUILD_CSS_08__</style>
+  <style id="home-utility-controls-v1">__WEBHOME_BUILD_CSS_09__</style>
+  <style id="detail-action-colors-v1">__WEBHOME_BUILD_CSS_10__</style>
+</head>
+<body>
+  <main class="app home-root" id="home">
+    <div id="homeSidebarBackdrop" class="home-sidebar-backdrop" hidden aria-hidden="true"></div>
+    <div id="connectionOverlayHost" class="connection-overlay-host" hidden aria-hidden="true">
+      <div id="connectionOverlayBackdrop" class="connection-overlay-backdrop" hidden aria-hidden="true"></div>
+      <div class="connection-body" id="connectionBody" aria-hidden="true">
+        <div class="connection-grid">
+          <div class="connection-item"><b>App SDK</b><span id="statusSdk">检测中</span></div>
+          <div class="connection-item"><b>TMDB</b><span id="statusTmdb">等待请求</span></div>
+          <div class="connection-item"><b>Nostr</b><span id="statusNostr">等待连接</span></div>
+          <div class="connection-item"><b>盘搜</b><span id="statusPan">未搜索</span></div>
+          <div class="connection-item"><b>发布</b><span id="statusPublish">暂无发布</span></div>
+          <div class="connection-item"><b>身份</b><span class="mono" id="statusIdentity">未就绪</span></div>
+          <div class="connection-item refresh-progress"><b>刷新</b><span id="statusRefresh">未执行</span></div>
+          <div class="connection-item"><b>Relays</b><span id="statusRelays">未连接</span></div>
+          <div class="connection-item"><b>首页全屏</b><div class="detail-style-segmented" id="homeFullscreenSegmented" role="group" aria-label="首页全屏">
+            <button class="detail-style-option focusable" id="homeFullscreenOnBtn" type="button" data-home-fullscreen="on">开启</button>
+            <button class="detail-style-option focusable" id="homeFullscreenOffBtn" type="button" data-home-fullscreen="off">关闭</button>
+          </div></div>
+          <div class="connection-item"><b>热门来源</b><div class="detail-style-segmented" id="homeHotSourceSegmented" role="group" aria-label="热门来源">
+            <button class="detail-style-option focusable" id="homeHotSourceNostrBtn" type="button" data-home-hot-source="nostr">Nostr热榜</button>
+            <button class="detail-style-option focusable" id="homeHotSourceTmdbBtn" type="button" data-home-hot-source="tmdb">TMDB趋势</button>
+          </div></div>
+        </div>
+        <div class="pan-config">
+          <label for="tmdbKeyInput">TMDB Key
+            <input class="field focusable mono" id="tmdbKeyInput" type="password" inputmode="text" autocomplete="off" placeholder="TMDB API Key" readonly>
+          </label>
+          <label for="panBaseInput">盘搜地址
+            <input class="field focusable" id="panBaseInput" type="url" inputmode="url" placeholder="https://so.252035.xyz" readonly>
+          </label>
+          <label for="panChannelsInput">TG频道
+            <textarea class="field focusable" id="panChannelsInput" rows="2" placeholder="可选，多个频道用逗号或换行分隔" readonly></textarea>
+          </label>
+          <label for="panUserInput">账号
+            <input class="field focusable" id="panUserInput" type="text" autocomplete="username" placeholder="未启用认证可留空" readonly>
+          </label>
+          <label for="panPassInput">密码
+            <input class="field focusable" id="panPassInput" type="password" autocomplete="current-password" placeholder="未启用认证可留空" readonly>
+          </label>
+          <div class="pan-disk-grid" id="panDiskGrid"></div>
+          <div class="source-domains-config">
+            <button class="btn focusable source-domains-toggle" id="sourceDomainsToggle" type="button" aria-expanded="false" aria-controls="sourceDomainsBody">播放站源域名</button>
+            <div id="sourceDomainsBody" class="source-domains-body" hidden aria-hidden="true">
+              <label for="sourceDomainsWanou">玩偶
+                <textarea class="field focusable mono" id="sourceDomainsWanou" rows="2" readonly></textarea>
+              </label>
+              <label for="sourceDomainsMuou">木偶
+                <textarea class="field focusable mono" id="sourceDomainsMuou" rows="2" readonly></textarea>
+              </label>
+              <label for="sourceDomainsDuoduo">多多
+                <textarea class="field focusable mono" id="sourceDomainsDuoduo" rows="2" readonly></textarea>
+              </label>
+              <label for="sourceDomainsHuban">虎斑
+                <textarea class="field focusable mono" id="sourceDomainsHuban" rows="2" readonly></textarea>
+              </label>
+              <label for="sourceDomainsShandian">闪电
+                <textarea class="field focusable mono" id="sourceDomainsShandian" rows="2" readonly></textarea>
+              </label>
+              <button class="btn focusable" id="sourceDomainsResetBtn" type="button">恢复默认</button>
+            </div>
+          </div>
+          <button class="btn focusable" id="savePanConfigBtn" type="button">保存配置</button>
+        </div>
+        <div class="relay-mirror-config">
+          <label for="mirrorSourceInput">镜像源 Relays
+            <textarea class="field focusable mono" id="mirrorSourceInput" rows="3" placeholder="每行一个源 relay" readonly></textarea>
+          </label>
+          <label for="mirrorTargetInput">镜像目标 Relays
+            <textarea class="field focusable mono" id="mirrorTargetInput" rows="2" placeholder="每行一个目标 relay，例如 wss://your-relay.example" readonly></textarea>
+          </label>
+          <div class="relay-mirror-progress mono" id="mirrorProgress">镜像未执行</div>
+          <button class="btn focusable" id="mirrorRelayBtn" type="button">镜像榜单</button>
+        </div>
+        <div class="actions" style="margin-top:10px">
+          <button class="btn focusable" id="refreshNostrBtn" type="button">刷新榜单</button>
+          <button class="btn focusable" id="syncBtn" type="button">同步身份</button>
+          <button class="btn danger focusable" id="deleteDataBtn" type="button">删除数据</button>
+        </div>
+      </div>
+    </div>
+    <aside class="home-sidebar" id="homeSidebar" hidden aria-hidden="true" aria-label="主导航">
+      <nav class="home-sidebar-nav" id="homeSidebarNav" aria-label="内容导航"></nav>
+      <div class="home-sidebar-tools" id="homeSidebarTools" aria-label="工具"></div>
+    </aside>
+    <div class="home-search-launcher-wrap" id="homeSearchLauncherWrap">
+      <button class="home-search-launcher focusable" id="homeSearchLauncher" type="button" aria-controls="searchPage" aria-label="打开搜索">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m16.5 16.5 4 4"></path></svg>
+        <span>搜索电影、剧集…</span>
+      </button>
+      <button class="home-search-launcher home-menu-launcher focusable" id="homeMenuLauncher" type="button" aria-controls="homeSidebar" aria-expanded="false" aria-label="打开主菜单">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>
+      </button>
+    </div>
+    <form class="search home-search" id="searchForm" autocomplete="off" hidden>
+        <aside class="connection-dock" id="connectionDock">
+          <button class="connection-toggle focusable" id="connectionToggle" type="button" aria-expanded="false" aria-controls="connectionBody">
+            <span class="dot warn" id="connectionDot">
+              <span></span><span></span><span></span>
+              <span></span><span></span><span></span>
+              <span></span><span></span><span></span>
+            </span>
+            <span class="connection-title">基础设置</span>
+            <span class="connection-arrow">⌃</span>
+          </button>
+        </aside>
+      <input class="field focusable" id="searchInput" type="search" inputmode="search" enterkeyhint="search" placeholder="搜索关键词" aria-autocomplete="list" aria-controls="suggestPanel" readonly>
+      <button class="btn blue focusable" id="searchSubmitBtn" type="submit" aria-label="搜索" title="搜索">
+        <svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+        搜索
+      </button>
+      <div class="suggest-panel" id="suggestPanel" role="listbox"></div>
+    </form>
+
+    <section class="secondary-page search-page" id="searchPage" hidden aria-labelledby="searchPageTitle">
+      <div class="secondary-page-head">
+        <button class="secondary-page-back return-control focusable" id="searchPageBack" type="button" aria-label="返回">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+        </button>
+        <h1 id="searchPageTitle">搜索</h1>
+        <span class="secondary-page-count" aria-hidden="true"></span>
+        <button class="search-history-clear search-history-clear-top focusable" id="searchHistoryClear" type="button" hidden tabindex="-1" aria-label="清空搜索历史">清空历史</button>
+      </div>
+      <div class="search-page-form-host" id="searchPageFormHost"></div>
+      <section class="home-section search-history-section" id="searchHistorySection" hidden aria-labelledby="searchHistoryTitle">
+        <div class="home-section-head">
+          <h2 class="home-section-title" id="searchHistoryTitle">搜索历史</h2>
+          <span class="home-section-line" aria-hidden="true"></span>
+        </div>
+        <div class="home-rail rail search-history-rail" id="searchHistoryRail" data-rail-key="search:history"></div>
+      </section>
+      <section class="home-section search-hot-section" id="searchHotSection" hidden aria-labelledby="searchHotTitle">
+        <div class="home-section-head">
+          <h2 class="home-section-title" id="searchHotTitle">热门推荐</h2>
+          <span class="home-section-line" aria-hidden="true"></span>
+        </div>
+        <div class="home-rail rail search-hot-rail" id="searchHotRail" data-home-variant="portrait" data-rail-key="search:hot"></div>
+      </section>
+      <div class="search-empty-state" id="searchEmptyState" hidden aria-live="polite">未找到相关内容</div>
+      <div id="searchPageResultsHost"></div>
+    </section>
+
+    <section class="secondary-page secondary-catalog" id="secondaryCatalog" hidden aria-labelledby="secondaryCatalogTitle">
+      <div class="weekly-secondary-backdrop" id="weeklySecondaryBackdrop" aria-hidden="true"></div>
+      <div class="weekly-secondary-backdrop weekly-secondary-backdrop-next" id="weeklySecondaryBackdropNext" aria-hidden="true"></div>
+      <div class="weekly-secondary-shade" aria-hidden="true"></div>
+      <div class="secondary-page-head">
+        <button class="secondary-page-back return-control focusable" id="secondaryCatalogBack" type="button" aria-label="返回">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+        </button>
+        <h1 id="secondaryCatalogTitle">分类</h1>
+        <span class="secondary-page-count" id="secondaryCatalogCount"></span>
+        <div class="recent-manage-controls" id="recentManageControls" hidden>
+          <button class="recent-manage-button focusable" id="recentManageBtn" type="button">管理</button>
+          <div class="recent-manage-actions" id="recentManageActions" hidden>
+            <span class="recent-manage-selected-count" id="recentManageSelectedCount">已选择 0 项</span>
+            <button class="focusable" id="recentManageSelectAll" type="button">全选</button>
+            <button class="focusable" id="recentManageDelete" type="button">删除所选</button>
+            <button class="focusable" id="recentManageCancel" type="button">取消</button>
+          </div>
+        </div>
+      </div>
+      <div class="weekly-secondary-copy" aria-live="polite">
+        <h2 id="weeklySecondaryTitle"></h2>
+        <div class="weekly-secondary-meta" id="weeklySecondaryMeta"></div>
+        <div class="weekly-secondary-update" id="weeklySecondaryUpdate"></div>
+        <p class="weekly-secondary-overview" id="weeklySecondaryOverview"></p>
+      </div>
+      <div class="secondary-catalog-filters" id="secondaryCatalogFilters" hidden></div>
+      <div class="secondary-catalog-scroll">
+        <div class="media-grid" id="secondaryCatalogGrid" data-list-id="secondary"></div>
+        <div class="secondary-catalog-load-status" id="secondaryCatalogLoadStatus" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <section class="section" id="searchSection" style="display:none">
+      <div class="section-head">
+        <h3>搜索结果</h3>
+        <div class="section-actions">
+          <button class="mini-icon-btn focusable" id="clearSearchBtn" type="button" aria-label="清空搜索结果" title="清空搜索结果">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="rail" id="searchRail"></div>
+    </section>
+
+    <section class="home-hero focusable" id="homeHero" role="button" tabindex="0" aria-labelledby="homeHeroTitle">
+      <div class="home-hero-slides" id="homeHeroSlides" aria-live="polite"></div>
+      <div class="home-hero-shade" aria-hidden="true"></div>
+      <div class="home-hero-content">
+        <div class="home-hero-logo-wrap" id="homeHeroLogoWrap" hidden>
+          <img id="homeHeroLogo" class="home-hero-logo" alt="">
+        </div>
+        <h1 class="home-hero-title" id="homeHeroTitle">正在准备首页</h1>
+        <div class="home-hero-tagline" id="homeHeroTagline" hidden></div>
+        <div class="home-hero-meta" id="homeHeroMeta"></div>
+        <div class="home-hero-status" id="homeHeroStatus" hidden></div>
+        <p class="home-hero-overview" id="homeHeroOverview" hidden></p>
+        <div class="home-hero-action" id="homeHeroAction" aria-hidden="true">查看详情 <span aria-hidden="true">›</span></div>
+      </div>
+      <div class="home-hero-dots" id="homeHeroDots" aria-hidden="true"></div>
+    </section>
+
+    <section class="home-section home-recent-section" id="homeRecentSection" hidden aria-labelledby="homeRecentTitle">
+      <div class="home-section-head">
+        <h2 class="home-section-title" id="homeRecentTitle">最近观看</h2>
+        <span class="home-section-line" aria-hidden="true"></span>
+        <button class="home-section-more focusable" id="homeRecentMore" type="button" tabindex="0">查看更多</button>
+      </div>
+      <div class="home-rail rail" id="homeRecentRail" data-rail-key="home:recent" data-home-list-id="recent"></div>
+    </section>
+
+    <section class="home-section home-hot-section home-recommend-section" id="recommendSection" hidden aria-labelledby="recommendTitle" data-home-hot-section="1">
+      <div class="home-section-head">
+        <h2 class="home-section-title" id="recommendTitle">本周更新</h2>
+        <span class="home-section-line" aria-hidden="true"></span>
+        <button class="home-section-more focusable" id="homeHotMore" type="button" tabindex="0">查看更多</button>
+      </div>
+      <div class="block-select-hint home-block-select-hint" id="blockSelectHint">屏蔽选择模式：按 OK 切换屏蔽，按返回退出</div>
+      <div class="home-rail rail" id="recommendRail" data-rail-key="home:recommend" data-home-list-id="now-playing"></div>
+    </section>
+
+    <section class="home-section home-list-section" id="listSection" aria-label="首页内容">
+      <div class="home-section-list stack" id="listStack">
+        <div class="empty">正在加载片单...</div>
+      </div>
+    </section>
+
+    <div class="infinite-sentinel" id="infiniteSentinel" aria-hidden="true"></div>
+
+  </main>
+
+  <div class="detail-hero-bg" id="detailHeroBg"></div>
+  <div class="sheet-blur-layer" id="detailBlurLayer"><span></span><span></span><span></span><span></span></div>
+  <section class="sheet" id="detailSheet" aria-hidden="true">
+    <div class="detail-spacer"></div>
+    <div class="detail-cover">
+      <img id="detailImage" alt="">
+    </div>
+    <div class="detail-info">
+      <div class="detail-logo-wrap" id="detailLogoWrap" style="display:none">
+        <img id="detailLogoImg" class="detail-logo-img" alt="">
+      </div>
+      <div class="detail-title-row">
+        <h2 id="detailTitle"></h2>
+        <span class="detail-title-meta" id="detailTitleMeta"></span>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn primary focusable" id="detailContinueBtn" type="button" aria-hidden="false">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M8 5v14l11-7Z"/></svg>
+        <span id="detailContinueText">播放</span>
+      </button>
+      <button class="btn primary focusable" id="detailSearchBtn" type="button">
+        <svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+        <span id="detailSearchText">聚搜</span>
+      </button>
+      <button class="btn focusable" id="panSearchBtn" type="button">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M6.2 18.3h11.6a4.1 4.1 0 0 0 .42-8.18 6.2 6.2 0 0 0-11.9 1.68A3.28 3.28 0 0 0 6.2 18.3Z"/></svg>
+        盘搜
+      </button>
+      <button class="btn return-control focusable" id="closeDetailBtn" type="button" aria-label="返回" style="display:none">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+        返回
+      </button>
+    </div>
+    <div class="direct-play-status" id="directPlayStatus" aria-live="polite" aria-atomic="true" hidden>
+      <span class="direct-play-status-dot" aria-hidden="true"></span>
+      <span id="directPlayStatusText"></span>
+    </div>
+    <div class="detail-meta" id="detailMeta"></div>
+    <div class="detail-info" style="margin-top:0">
+      <p id="detailText" tabindex="-1"></p>
+      <button class="btn link focusable" id="detailMoreBtn" type="button">更多</button>
+    </div>
+    <div class="detail-block pan-search-block" id="panSearchBlock" style="display:none">
+      <div class="subsection-head">
+        <h4>盘搜资源</h4>
+        <span id="panSearchHint"></span>
+      </div>
+      <div id="panSearchProgress" class="pan-search-progress" aria-hidden="true"><span></span></div>
+      <div class="chips pan-tabs" id="panTabs"></div>
+      <div class="pan-result-list" id="panResultList"></div>
+    </div>
+    <div class="detail-block" id="castBlock" style="display:none">
+      <h3>演职员表</h3>
+      <div class="rail" id="castRail"></div>
+    </div>
+    <div class="detail-block" id="personWorkBlock" style="display:none">
+      <h3 id="personWorkTitle">简介</h3>
+      <div id="personInfo"></div>
+      <h3 style="margin-top:16px">关联作品</h3>
+      <div class="rail" id="personWorkRail"></div>
+    </div>
+    <div class="detail-block" id="recommendBlock" style="display:none">
+      <h3>相关推荐</h3>
+      <div class="rail" id="recommendWorkRail"></div>
+    </div>
+  </section>
+
+  <section class="sheet" id="syncSheet" aria-hidden="true">
+    <button class="btn return-control focusable" id="closeSyncBtn" type="button" aria-label="返回">
+      <svg class="icon" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+      返回
+    </button>
+    <div class="sync-panel" style="margin-top:14px">
+      <h3 style="margin:0">Nostr 同步身份</h3>
+      <p class="hint">页面会自动生成本机身份并把有效观看偏好签名发布到 relay。手机和电脑如果想同步同一个用户的推荐，请导入同一个 nsec。只看全网热度时不需要导入。</p>
+      <div>
+        <label class="hint" for="nsecInput">nsec 私钥</label>
+        <textarea class="field focusable mono" id="nsecInput" placeholder="nsec1..."></textarea>
+      </div>
+      <div class="actions">
+        <button class="btn primary focusable" id="saveNsecBtn" type="button">导入身份</button>
+        <button class="btn focusable" id="newNsecBtn" type="button">生成新身份</button>
+      </div>
+      <p class="hint mono" id="identityText">身份未就绪</p>
+      <p class="hint" id="relayText">relay 未连接</p>
+    </div>
+  </section>
+
+  <div class="toast" id="toast"></div>
+  <button class="back-top focusable" id="backTopBtn" type="button" aria-label="返回顶部">
+    <svg class="icon" viewBox="0 0 24 24"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>
+  </button>
+  <aside class="tv-diagnostic" id="tvDiagnostic" aria-hidden="true">
+    <div class="tv-diagnostic-title">TV Diagnostic</div>
+    <pre id="tvDiagnosticText"></pre>
+  </aside>
+
+  <script>__WEBHOME_BUILD_SCRIPT_NOSTR__</script>
+  <script>__WEBHOME_BUILD_SCRIPT_APPLICATION__</script>
+</body>
+</html>

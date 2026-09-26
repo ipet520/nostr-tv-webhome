@@ -1,0 +1,1593 @@
+
+    /* ══════════════════════════════════════════════════════════════
+       暗黑高级流媒体风（Netflix/HBO Max 调性）整体换肤
+       原则：只改颜色 / 字体 / 阴影 / 渐变 / 圆角等视觉属性，
+       不修改任何 display / grid / flex / 宽高 / 间距 / 定位，
+       不新增 / 删除 / 移动任何 DOM 结构，保持原排版布局不变。
+       ══════════════════════════════════════════════════════════════ */
+
+    :root {
+      /* 单一强调色（暗红）用于主按钮/CTA，保持点击辨识度；
+         新增青色 / 品红作为点缀色，让评分、悬浮光晕、进度条等细节更丰富、更有科幻感 */
+      --accent: #e0463e;
+      --accent-soft: rgba(224, 70, 62, .20);
+      --gold: #d9b66a;
+      --accent-cyan: #34e3ff;
+      --accent-cyan-soft: rgba(52, 227, 255, .22);
+      --accent-magenta: #ff4fd8;
+      --accent-magenta-soft: rgba(255, 79, 216, .22);
+
+      /* 面板色系：由偏蓝灰改为更纯粹的炭黑，去掉灰蒙感 */
+      --panel-rgb: 18, 18, 20;
+      --panel: rgba(var(--panel-rgb), .72);
+      --panel-soft: rgba(var(--panel-rgb), .58);
+      --panel-strong: rgba(var(--panel-rgb), .88);
+      --panel-2: rgba(var(--panel-rgb), .74);
+
+      --text: #f3f3f4;
+      --muted: rgba(255, 255, 255, .56);
+      --line: rgba(255, 255, 255, .10);
+      --line-strong: rgba(255, 255, 255, .22);
+
+      --control: rgba(255, 255, 255, .05);
+      --control-active: rgba(224, 70, 62, .16);
+
+      --accent-2: rgba(224, 70, 62, .55);
+      --focus-line: rgba(224, 70, 62, .85);
+      --focus-line-soft: rgba(224, 70, 62, .45);
+      --focus-glow: rgba(224, 70, 62, .28);
+      --focus-surface: rgba(224, 70, 62, .14);
+
+      --ok: #7fd99a;
+      --danger: #ff6b6b;
+      --shadow: 0 18px 46px rgba(0, 0, 0, .55);
+      --radius: 6px;
+
+      /* 字体：标题更接近流媒体平台常用的粗体无衬线 */
+      font-family: "Helvetica Neue", -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    /* 去掉斜纹格占位背景，统一为纯黑 + 多彩氛围光晖（红/金/青/品红，更丰富） */
+    html:not(.fm-native),
+    html:not(.fm-native) body {
+      background-color: #0a0a0c;
+      background-image:
+        radial-gradient(900px 480px at 8% -8%, rgba(224, 70, 62, .12), transparent 58%),
+        radial-gradient(800px 460px at 102% 4%, rgba(52, 227, 255, .10), transparent 56%),
+        radial-gradient(760px 420px at 96% 86%, rgba(255, 79, 216, .09), transparent 55%),
+        radial-gradient(700px 380px at 6% 92%, rgba(217, 182, 106, .08), transparent 55%);
+      background-position: 0 0;
+      background-size: auto;
+    }
+
+    /* 分类 chip 选中态：呼吸光晕改为暗红色调，整体改为反白底强调 */
+    .chip.active {
+      background: var(--text) !important;
+      color: #0a0a0c !important;
+      border-color: var(--text) !important;
+    }
+
+    html:not(.tv-mode) .chip.active::before {
+      background: radial-gradient(ellipse at 50% 120%,
+        rgba(224, 70, 62, .50) 0%,
+        rgba(217, 182, 106, .28) 32%,
+        rgba(52, 227, 255, .22) 58%,
+        transparent 75%);
+    }
+
+    /* 主按钮：从蓝紫柔光改为强调色实底，提升点击优先级辨识度 */
+    .btn.primary,
+    .btn.blue {
+      background: linear-gradient(180deg, rgba(255, 255, 255, .10), rgba(255, 255, 255, 0)), var(--accent) !important;
+      border-color: var(--accent) !important;
+      color: #fff !important;
+      box-shadow: 0 10px 26px rgba(224, 70, 62, .30), inset 0 1px 0 rgba(255, 255, 255, .22) !important;
+    }
+
+    .btn.link {
+      color: var(--gold);
+    }
+
+    /* 卡片：去掉偏蓝灰的面板色，改为更深的炭黑，强调悬浮反馈 */
+    .card {
+      background: var(--panel-soft);
+      border-color: var(--line);
+      transition: transform .22s cubic-bezier(.2, .9, .3, 1), box-shadow .22s ease, border-color .22s ease;
+    }
+
+    .card-body {
+      background: rgba(var(--panel-rgb), .5);
+    }
+
+    .card-title {
+      font-weight: 800;
+      letter-spacing: -.1px;
+    }
+
+    .section-head h3,
+    #detailTitle {
+      font-weight: 850;
+      letter-spacing: -.2px;
+    }
+
+    /* Rating and Nostr people use one neutral badge treatment.  Their
+       semantic distinction is carried by the icon and corner placement. */
+
+    /* 最近播放卡的进度条改为红→品红渐变，比纯色更有层次 */
+    .recent-progress span {
+      background: linear-gradient(90deg, var(--accent), var(--accent-magenta)) !important;
+    }
+
+    /* 桌面/移动端 hover：卡片轻微放大 + 青色发光描边（TV 端聚焦态保持原逻辑不变） ──
+       仅限真实鼠标悬浮设备生效，避免触屏点击后卡片"卡在"放大态不恢复。 */
+    @media (hover: hover) and (pointer: fine) {
+      html:not(.tv-mode) .card:hover {
+        transform: translateY(-4px) scale(1.035);
+        border-color: rgba(52, 227, 255, .55);
+        box-shadow: 0 20px 40px rgba(0, 0, 0, .55), 0 0 0 1px rgba(52, 227, 255, .45), 0 0 26px var(--accent-cyan-soft);
+        z-index: 2;
+      }
+    }
+
+    /* 链接型“更多”按钮、徽章等小细节统一暖白/金色基调 */
+    .suggest-item span {
+      color: var(--muted);
+    }
+
+    .pill {
+      background: var(--accent-cyan-soft) !important;
+      border-color: rgba(52, 227, 255, .40) !important;
+      color: var(--accent-cyan) !important;
+    }
+
+    /* 详情页元信息标签（年代/分级等强调项）改为青色点缀，呼应整体丰富配色 */
+    .meta-pill.strong {
+      color: var(--accent-cyan) !important;
+      border-color: rgba(52, 227, 255, .40) !important;
+      background: var(--accent-cyan-soft) !important;
+    }
+
+    /* ── 全局按钮去玻璃化：覆盖「磨砂玻璃+柔光游走」方案，改为预览版的扁平实色风格 ──
+       仅覆盖 background / border / shadow / backdrop-filter 等视觉属性，
+       不改尺寸、内外间距、排版，按钮的位置/大小保持不变。
+       背景改为半透明深色，搭配浅色壁纸时不会变成一块块突兀的黑色实底。 */
+    .btn,
+    .icon-btn,
+    .mini-icon-btn,
+    .connection-toggle,
+    .back-top {
+      background: rgba(20, 20, 24, .42) !important;
+      -webkit-backdrop-filter: blur(14px) saturate(1.4) !important;
+      backdrop-filter: blur(14px) saturate(1.4) !important;
+      border: 1px solid var(--line) !important;
+      box-shadow: none !important;
+      transition: background .18s ease, border-color .18s ease, transform .12s ease !important;
+    }
+
+    /* 关闭原有的旋转柔光层 */
+    .btn::after,
+    .icon-btn::after,
+    .mini-icon-btn::after,
+    .connection-toggle::after,
+    .back-top::after {
+      display: none !important;
+      content: none !important;
+      animation: none !important;
+    }
+
+    /* 主按钮：强调色实底（对齐预览版「继续观看」按钮） */
+    .btn.primary,
+    .btn.blue {
+      background: var(--accent) !important;
+      border-color: var(--accent) !important;
+      color: #fff !important;
+      box-shadow: 0 8px 20px rgba(224, 70, 62, .28) !important;
+    }
+
+    /* 次要按钮：透明 ghost 风格（对齐预览版「盘搜」按钮） */
+    .btn:not(.primary):not(.blue):not(.danger):not(.link) {
+      background: rgba(255, 255, 255, .03) !important;
+      border-color: rgba(255, 255, 255, .22) !important;
+    }
+
+    .btn.danger {
+      background: rgba(255, 107, 107, .12) !important;
+      border-color: rgba(255, 150, 150, .38) !important;
+      color: #ffd2d2 !important;
+    }
+
+    .btn:hover,
+    .icon-btn:hover,
+    .mini-icon-btn:hover,
+    .connection-toggle:hover,
+    .back-top:hover {
+      background: rgba(255, 255, 255, .08) !important;
+      border-color: var(--line-strong) !important;
+    }
+
+    /* 主按钮（搜索播放/继续播放等）：hover / 按下时仍保持强调色实底，不被上面的悬浮态覆盖成透明 */
+    .btn.primary:hover,
+    .btn.blue:hover,
+    .btn.primary:active,
+    .btn.blue:active {
+      background: var(--accent) !important;
+      border-color: var(--accent) !important;
+      color: #fff !important;
+    }
+
+    .btn:active,
+    .icon-btn:active,
+    .mini-icon-btn:active,
+    .connection-toggle:active,
+    .back-top:active {
+      transform: scale(.98);
+    }
+
+    /* ── 分类 chip / 搜索框 / 连接状态按钮：原扁平纯黑底在浅色壁纸下显得突兀 ──
+       改为半透明深色毛玻璃，让壁纸能透出来，同时文字依旧清晰可读。
+       不改尺寸/间距/排版，只换"质感"。 */
+    .chip:not(.active),
+    .field,
+    .connection-toggle {
+      background: rgba(20, 20, 24, .42) !important;
+      -webkit-backdrop-filter: blur(14px) saturate(1.4) !important;
+      backdrop-filter: blur(14px) saturate(1.4) !important;
+      border: 1px solid rgba(255, 255, 255, .09) !important;
+      box-shadow: none !important;
+      text-shadow: none !important;
+    }
+
+    .chip:not(.active):hover,
+    .connection-toggle:hover {
+      background: rgba(35, 35, 39, .52) !important;
+      border-color: rgba(255, 255, 255, .16) !important;
+    }
+
+    .field:focus {
+      border-color: var(--accent-2) !important;
+      box-shadow: 0 0 0 3px var(--accent-soft) !important;
+    }
+
+    /* 搜索按钮（放大镜）：跟随主按钮的实色强调风格 */
+    #searchSubmitBtn {
+      background: var(--accent) !important;
+      border-color: var(--accent) !important;
+      color: #fff !important;
+      box-shadow: 0 6px 16px rgba(224, 70, 62, .26) !important;
+    }
+
+    /* chip 图标保持原有彩色识别（如直播/热映等图标自带色），不做改动 */
+    .chip .chip-icon {
+      opacity: .9;
+    }
+    .chip.active .chip-icon {
+      opacity: 1;
+    }
+
+    /* ── 卡片背景全部改为透明（演员表 / 详情页关联卡片 / 海报卡片），适配浅色壁纸 ── */
+    .card,
+    html:not(.tv-mode) .card {
+      background: transparent !important;
+      -webkit-backdrop-filter: none !important;
+      backdrop-filter: none !important;
+      border: 1px solid rgba(255, 255, 255, .08) !important;
+      box-shadow: none !important;
+    }
+
+    html:not(.tv-mode) .person-card {
+      background: transparent !important;
+      -webkit-backdrop-filter: none !important;
+      backdrop-filter: none !important;
+      border: 1px solid rgba(255, 255, 255, .08) !important;
+      box-shadow: none !important;
+    }
+
+    .card-body {
+      background: transparent !important;
+      -webkit-backdrop-filter: none !important;
+      backdrop-filter: none !important;
+      border-top: 1px solid rgba(255, 255, 255, .06) !important;
+    }
+
+    .card.recent-card,
+    .card.recent-card .card-body {
+      background: transparent !important;
+      border: 1px solid rgba(255, 255, 255, .08) !important;
+    }
+
+    @media (hover: hover) and (pointer: fine) {
+      html:not(.tv-mode) .card:hover {
+        background: #1b1b21 !important;
+      }
+    }
+
+    /* ── 修复：横向滑动列表(rail)最后一张卡片贴边，滑到底时显示不全 ──
+       原 .rail 只有上下 padding，没有右侧缓冲区，这里补一条右侧留白，
+       不改变卡片尺寸/间距/排列方式，只是让最后一项能完整滑入视口。 */
+    .rail {
+      padding-right: 14px !important;
+    }
+    html.tv-mode .rail {
+      padding-right: 5px !important;
+    }
+
+    /* ── 「关联作品」「相关推荐」横向单排滑动（参考 pomo-cyberpunk_ui 的 .filmogrid-inline / .reco 方案） ──
+       与剧集、演职员等其他 rail 保持一致，单排横向滑动，卡片宽度固定，
+       不再使用网格换行布局。 */
+    #personWorkRail.rail,
+    #recommendWorkRail.rail {
+      display: flex !important;
+      overflow-x: auto !important;
+      overflow-y: visible !important;
+      flex-wrap: nowrap !important;
+    }
+    #personWorkRail .card,
+    #recommendWorkRail .card {
+      width: auto !important;
+      max-width: none !important;
+      /* 手机竖屏：约 3 张/屏 */
+      flex: 0 0 clamp(112px, calc((100vw - var(--sheet-x) * 2 - 20px) / 3), 156px) !important;
+    }
+
+    /* 横屏 / 宽屏：与首页一致，整行正好铺满 7 张，不再出现“六个半”半张卡片 */
+    @media (min-width: 720px) {
+      #personWorkRail .card,
+      #recommendWorkRail .card {
+        /* rail 间距 14px：7 张卡片 + 6 个间距 = 整行宽度 */
+        flex: 0 0 calc((100% - 6 * 14px) / 7) !important;
+      }
+      #detailSheet.detail-large #personWorkRail .card,
+      #detailSheet.detail-large #recommendWorkRail .card {
+        /* detail-large 下 rail 间距为 18px */
+        flex: 0 0 calc((100% - 6 * 18px) / 7) !important;
+      }
+    }
+
+    /* ============================================================
+       V1.4.2 Home presentation：在唯一 #home 内原地重构为 vvee 信息架构。
+       数据、业务卡片、焦点和加载仍由 Nostr 原有内核提供。
+       ============================================================ */
+    :root {
+      --home-v14-bg: #080b10;
+      --home-v14-surface: transparent;
+      --home-v14-text: #f4f4f4;
+      --home-v14-muted: rgba(255, 255, 255, .62);
+      --home-v14-accent: #bfe9ff;
+      --home-v14-nav-h: 54px;
+      --home-v14-gut: clamp(18px, 4.6vw, 88px);
+      --home-tv-safe-x: 16px;
+      --home-v14-gap: clamp(14px, .95vw, 18px);
+      --home-v14-safe-bottom: max(24px, var(--fm-safe-bottom, 0px), env(safe-area-inset-bottom, 0px));
+    }
+
+    #home.home-root {
+      position: relative;
+      isolation: isolate;
+      width: 100%;
+      max-width: none;
+      min-width: 0;
+      min-height: var(--fm-web-height);
+      padding: 0 0 var(--home-v14-safe-bottom);
+      overflow-x: hidden;
+      color: var(--home-v14-text);
+      background-color: #070b12;
+      background-image:
+        radial-gradient(ellipse 90% 55% at 8% -8%, rgba(125, 244, 255, .16) 0%, transparent 58%),
+        radial-gradient(ellipse 70% 48% at 98% 12%, rgba(196, 92, 255, .14) 0%, transparent 52%),
+        radial-gradient(ellipse 80% 50% at 50% 108%, rgba(56, 189, 248, .10) 0%, transparent 55%),
+        linear-gradient(165deg, #070b12 0%, #0c1420 42%, #080e18 100%);
+      background-repeat: no-repeat;
+    }
+
+    /* Shared ordinary-page texture.  It stays behind Home and ordinary
+       Secondary content without relying on body pseudo-elements. */
+    #home.home-root::after {
+      content: "";
+      position: absolute;
+      z-index: -1;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        radial-gradient(circle at 20% 30%, rgba(255, 255, 255, .035), transparent 36%),
+        repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0, 0, 0, .03) 3px, rgba(0, 0, 0, .03) 4px);
+      background-repeat: no-repeat;
+      opacity: .9;
+    }
+
+    #home.home-root[hidden],
+    #home.home-root [hidden] {
+      display: none !important;
+    }
+
+    .home-search {
+      flex: 0 1 clamp(250px, 24vw, 390px);
+      width: clamp(250px, 24vw, 390px);
+      min-width: 220px;
+      margin: 0;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 7px;
+      align-items: center;
+      z-index: 85;
+    }
+
+    .home-search .field,
+    .home-search .btn,
+    .home-search .icon-btn,
+    .home-search .connection-toggle {
+      min-height: 38px;
+    }
+
+    .home-search .field {
+      min-width: 0;
+      padding: 0 10px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, .08);
+      border-color: rgba(255, 255, 255, .1);
+      font-size: clamp(12px, .8vw, 16px);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+
+    .home-search .btn.blue {
+      min-width: 38px;
+      padding: 0 10px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, .12);
+      border-color: rgba(255, 255, 255, .12);
+      font-size: clamp(12px, .8vw, 16px);
+    }
+
+    .home-search .btn.blue .icon { width: 17px; height: 17px; }
+    .home-search .icon-btn { width: 38px; min-width: 38px; border-radius: 6px; }
+    .home-search #connectionDock { width: 38px; min-width: 38px; height: 38px; }
+    .home-search #connectionToggle { min-height: 38px; }
+    .home-search .suggest-panel { top: calc(100% + 7px); }
+
+    /* Home header overrides the legacy in-field search presentation in place;
+       the form and all of its event handlers remain the same element. */
+    #home.home-root #searchSubmitBtn {
+      position: static !important;
+      top: auto !important;
+      right: auto !important;
+      width: auto !important;
+      height: auto !important;
+      min-height: 38px;
+      transform: none !important;
+      display: inline-flex !important;
+      margin: 0;
+      padding: 0 10px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, .12) !important;
+      border-color: rgba(255, 255, 255, .12) !important;
+      color: #fff !important;
+      box-shadow: none !important;
+    }
+
+    #home.home-root #searchSubmitBtn:focus,
+    #home.home-root #searchSubmitBtn:active {
+      transform: none !important;
+      background: rgba(191, 233, 255, .18) !important;
+    }
+
+    .home-search:focus-within { z-index: 95; }
+
+    /* Phase 3 Sidebar: a lightweight, real navigation overlay on the same
+       immersive canvas.  It never participates in Home layout sizing. */
+    .home-sidebar {
+      position: fixed;
+      z-index: 120;
+      top: 50%;
+      bottom: auto;
+      left: clamp(20px, 1.4vw, 30px);
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      width: clamp(160px, 8.5vw, 172px);
+      height: auto;
+      max-height: calc(100vh - 96px);
+      max-height: calc(100dvh - 96px);
+      padding: 10px 8px;
+      pointer-events: auto;
+      transform: translateY(-50%);
+      box-sizing: border-box;
+      border: 1px solid rgba(255, 255, 255, .12);
+      border-radius: 18px;
+      background: rgba(10, 14, 20, .82);
+      -webkit-backdrop-filter: blur(18px) saturate(1.15);
+      backdrop-filter: blur(18px) saturate(1.15);
+      box-shadow: 0 16px 42px rgba(0, 0, 0, .30);
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
+
+    .home-sidebar-backdrop {
+      display: none;
+    }
+
+    .home-sidebar-backdrop[hidden] {
+      display: none !important;
+    }
+
+    .home-sidebar[hidden] { display: none !important; }
+    .home-sidebar-nav,
+    .home-sidebar-tools {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .home-sidebar-tools {
+      margin-top: 14px;
+      padding-top: 10px;
+    }
+    .home-sidebar-item {
+      display: grid;
+      grid-template-columns: 20px 4em;
+      align-items: center;
+      justify-content: center;
+      column-gap: 6px;
+      width: 100%;
+      min-height: 46px;
+      margin: 0;
+      padding: 0 10px;
+      border: 0;
+      border-radius: 7px;
+      color: rgba(255, 255, 255, .72);
+      background: transparent;
+      box-shadow: none;
+      text-align: left;
+      font-size: clamp(13px, .86vw, 16px);
+      font-weight: 600;
+      white-space: nowrap;
+      transition: background-color 140ms ease, color 140ms ease, transform 140ms ease;
+    }
+    .home-sidebar-item .home-sidebar-icon {
+      display: block;
+      width: 20px;
+      height: 20px;
+      flex: 0 0 20px;
+      color: currentColor;
+    }
+    .home-sidebar-item .home-sidebar-label {
+      width: 4em;
+      min-width: 4em;
+      max-width: 4em;
+      overflow: visible;
+      white-space: nowrap;
+      text-align: left;
+    }
+    .home-sidebar-item:focus,
+    .home-sidebar-item:active {
+      outline: none;
+      color: #fff;
+      background: rgba(255, 255, 255, .14);
+      box-shadow: none;
+      transform: translateX(5px);
+    }
+    /* The original HTML basic-settings control keeps its DOM and handlers;
+       these are only the minimum presentation overrides needed after moving
+       that one control into the existing Sidebar tools group. */
+    .home-sidebar #connectionDock {
+      width: 100%;
+      min-width: 0;
+      height: auto;
+      align-self: stretch;
+      margin: 0;
+      border-radius: 8px;
+    }
+    .home-sidebar #connectionToggle {
+      display: flex;
+      min-height: 46px;
+      height: auto;
+      width: 100%;
+      justify-content: center;
+      gap: 0;
+      padding: 0 6px;
+      border-radius: 8px;
+    }
+    .home-sidebar #connectionDock .connection-title {
+      display: none !important;
+    }
+    .home-sidebar #connectionDock .connection-arrow { display: none; }
+    .home-sidebar #connectionToggle .dot {
+      width: 22px;
+      height: 22px;
+      flex: 0 0 22px;
+      margin: 0;
+    }
+    .home-sidebar #connectionToggle:focus,
+    .home-sidebar #connectionToggle:active {
+      color: #fff;
+      background: rgba(255, 255, 255, .14) !important;
+      box-shadow: none !important;
+      transform: translateX(5px);
+    }
+    html.tv-mode .home-sidebar-item { transition: none; }
+    html.tv-mode #home.home-root .home-sidebar {
+      background: rgba(10, 14, 20, .82);
+    }
+    html.tv-mode #home.home-root .home-sidebar,
+    html.tv-preview #home.home-root .home-sidebar {
+      width: clamp(120px, 6.4vw, 130px);
+      padding-left: 6px;
+      padding-right: 6px;
+    }
+    html.tv-mode #home.home-root .home-sidebar-item,
+    html.tv-preview #home.home-root .home-sidebar-item {
+      grid-template-columns: 22px 4em;
+      column-gap: 6px;
+      padding-left: 6px;
+      padding-right: 6px;
+    }
+    html.tv-mode #home.home-root .home-sidebar-item .home-sidebar-icon,
+    html.tv-preview #home.home-root .home-sidebar-item .home-sidebar-icon {
+      justify-self: center;
+    }
+    html.tv-mode #home.home-root .home-sidebar-item .home-sidebar-label,
+    html.tv-preview #home.home-root .home-sidebar-item .home-sidebar-label {
+      justify-self: start;
+    }
+    html.tv-mode #home.home-root .home-sidebar-item:focus,
+    html.tv-mode #home.home-root .home-sidebar-item:active,
+    html.tv-preview #home.home-root .home-sidebar-item:focus,
+    html.tv-preview #home.home-root .home-sidebar-item:active,
+    html.tv-mode #home.home-root .home-sidebar #connectionToggle:focus,
+    html.tv-mode #home.home-root .home-sidebar #connectionToggle:active,
+    html.tv-preview #home.home-root .home-sidebar #connectionToggle:focus,
+    html.tv-preview #home.home-root .home-sidebar #connectionToggle:active {
+      transform: none;
+    }
+
+    /* Home exposes one launcher only.  The real Search form is moved into
+       #searchPageFormHost by openSearchPage(), so Search keeps its existing
+       input, IME, submit, and suggestion behavior. */
+    .home-search-launcher-wrap {
+      position: absolute;
+      z-index: 12;
+      top: clamp(24px, 1.55vw, 32px);
+      left: 50%;
+      width: min(680px, calc(100% - (2 * var(--home-v14-gut))));
+      transform: translateX(-50%);
+    }
+
+    .home-search-launcher-wrap[hidden],
+    .home-search-launcher[hidden],
+    .home-menu-launcher[hidden] {
+      display: none !important;
+    }
+
+    .home-menu-launcher {
+      display: none !important;
+    }
+
+    .home-search-launcher {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      width: 100%;
+      min-height: 60px;
+      padding: 0 24px;
+      border: 1px solid rgba(255, 255, 255, .16);
+      border-radius: 999px;
+      background: rgba(16, 22, 31, .56);
+      color: rgba(255, 255, 255, .7);
+      font-size: clamp(16px, 1.05vw, 20px);
+      text-align: left;
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+      transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease;
+    }
+
+    .home-search-launcher .icon {
+      width: 22px;
+      height: 22px;
+      flex: 0 0 22px;
+      color: rgba(255, 255, 255, .82);
+    }
+
+    .home-search-launcher:focus {
+      outline: none;
+      border-color: rgba(191, 233, 255, .72);
+      background: rgba(22, 32, 45, .78);
+      color: #fff;
+      transform: translateY(-4px);
+      box-shadow: none;
+    }
+
+    #home.home-root.home-route-active #searchForm {
+      display: none !important;
+    }
+
+    #home.home-root:not(.home-route-active) .home-search-launcher-wrap {
+      display: none !important;
+    }
+
+    .home-search-section {
+      margin-top: clamp(18px, 2vw, 30px);
+      overflow: visible;
+    }
+
+    #homeHero {
+      position: relative;
+      width: 100%;
+      min-height: clamp(610px, 36.5vw, 720px);
+      max-height: 720px;
+      overflow: hidden;
+      isolation: isolate;
+      background: transparent;
+    }
+
+    .home-hero-slides,
+    .home-hero-slide,
+    .home-hero-slide-bg {
+      position: absolute;
+      inset: 0;
+    }
+
+    .home-hero-slides { z-index: 0; }
+
+    .home-hero-slide {
+      opacity: 0;
+      pointer-events: none;
+      background: #111;
+      transition: opacity 260ms ease;
+    }
+
+    .home-hero-slide.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .home-hero-slide-bg {
+      background-color: #111820;
+      background-position: center 18%;
+      background-repeat: no-repeat;
+      background-size: cover;
+    }
+
+    .home-hero-shade {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      background:
+        linear-gradient(90deg, rgba(8, 11, 16, .94) 0%, rgba(8, 11, 16, .7) 24%, rgba(8, 11, 16, .27) 46%, rgba(8, 11, 16, .05) 68%, transparent 100%),
+        linear-gradient(0deg, rgba(8, 11, 16, .78) 0%, rgba(8, 11, 16, .38) 13%, rgba(8, 11, 16, .12) 38%, rgba(8, 11, 16, .03) 68%, transparent 100%);
+    }
+
+    .home-hero-content {
+      position: absolute;
+      z-index: 2;
+      top: calc(clamp(220px, 13vw, 270px) + 108px);
+      left: var(--home-v14-gut);
+      max-width: min(700px, 48vw);
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 12px;
+      border: 0;
+      outline: 0;
+      box-shadow: none;
+      background: transparent;
+    }
+
+    .home-hero-logo-wrap {
+      min-height: 42px;
+      max-width: min(340px, 70%);
+      margin-bottom: 0;
+    }
+
+    .home-hero-logo-wrap[hidden] { display: none !important; }
+
+    .home-hero-logo {
+      display: block;
+      width: auto;
+      max-width: 100%;
+      max-height: clamp(56px, 12vw, 108px);
+      object-fit: contain;
+      object-position: left center;
+    }
+
+    .home-hero-title {
+      max-width: 100%;
+      margin: 0;
+      color: #fff;
+      font-size: clamp(30px, 3.1vw, 60px);
+      font-weight: 800;
+      line-height: 1.1;
+      letter-spacing: -.02em;
+    }
+
+    .home-hero-title.has-logo { display: none; }
+
+    .home-hero-meta {
+      color: rgba(255, 255, 255, .75);
+      font-size: clamp(14px, 1.05vw, 20px);
+      line-height: 1.4;
+    }
+
+    .home-hero-tagline,
+    .home-hero-status {
+      max-width: 100%;
+      color: rgba(255, 255, 255, .84);
+      font-size: clamp(14px, 1.02vw, 19px);
+      line-height: 1.35;
+    }
+
+    .home-hero-tagline {
+      font-weight: 600;
+      color: rgba(255, 255, 255, .9);
+    }
+
+    .home-hero-overview {
+      max-width: min(650px, 100%);
+      margin: 0;
+      color: rgba(255, 255, 255, .78);
+      font-size: clamp(14px, .98vw, 18px);
+      line-height: 1.55;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 3;
+      overflow: hidden;
+    }
+
+    .home-hero-tagline[hidden],
+    .home-hero-status[hidden],
+    .home-hero-overview[hidden] {
+      display: none !important;
+    }
+
+    .home-hero-action {
+      min-height: 0;
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: rgba(255, 255, 255, .9);
+      font-size: clamp(14px, .95vw, 18px);
+      font-weight: 600;
+      line-height: 1.35;
+      text-shadow: 0 1px 10px rgba(0, 0, 0, .28);
+      transition: color 160ms ease, opacity 160ms ease;
+    }
+
+    .home-hero-action:focus {
+      outline: none;
+      outline-offset: 0;
+      border: 0;
+      background: transparent;
+      color: rgba(255, 255, 255, .9);
+      box-shadow: none;
+      transform: none;
+    }
+
+    .home-hero-dots {
+      position: absolute;
+      right: var(--home-v14-gut);
+      bottom: clamp(54px, 5.2vw, 78px);
+      z-index: 3;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .home-hero-dot {
+      width: 22px;
+      height: 3px;
+      border-radius: 2px;
+      background: rgba(255, 255, 255, .42);
+      transition: width 180ms ease, background-color 180ms ease;
+    }
+
+    .home-hero-dot.active {
+      width: 42px;
+      height: 4px;
+      background: #fff;
+    }
+
+    .home-section {
+      width: 100%;
+      min-width: 0;
+      margin: clamp(20px, 1.3vw, 26px) 0 0;
+      overflow: visible;
+    }
+
+    /* The first rail belongs to the Hero canvas; its header/rail starts
+       inside the bottom fade instead of opening a separate panel. */
+    .home-recent-section {
+      margin-top: clamp(16px, 1.1vw, 22px);
+    }
+
+    .home-section[hidden] { display: none !important; }
+
+    .home-section-head {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-height: 36px;
+      padding: 0 var(--home-section-gut, var(--home-v14-gut)) 8px;
+    }
+
+    .home-section-title {
+      flex: 0 0 auto;
+      margin: 0;
+      color: #fff;
+      font-size: clamp(20px, 1.45vw, 28px);
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .home-section-line {
+      display: none;
+    }
+
+    .home-section-more {
+      display: inline-flex;
+      align-items: center;
+      flex: 0 0 auto;
+      gap: 5px;
+      min-height: 32px;
+      padding: 0 0 0 10px;
+      border: 0;
+      border-radius: 4px;
+      color: var(--home-v14-muted);
+      font-size: clamp(13px, .9vw, 17px);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .home-section-more::after {
+      content: "›";
+      display: inline-block;
+      margin-left: 0;
+      color: #fff;
+      font-size: 1.35em;
+      line-height: 1;
+    }
+
+    .home-section-more:focus {
+      color: #fff;
+      outline: none;
+      outline-offset: 0;
+      background: transparent;
+      border-color: transparent;
+      box-shadow: none;
+    }
+
+    .home-more-card {
+      display: flex;
+      align-items: stretch;
+      justify-content: stretch;
+      padding: 0 !important;
+      color: var(--home-v14-muted);
+    }
+
+    .home-more-card-body {
+      width: 100%;
+      aspect-ratio: 2 / 3;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, .07);
+      color: currentColor;
+    }
+
+    .home-more-card.landscape-card .home-more-card-body {
+      aspect-ratio: 16 / 9;
+    }
+
+    .home-more-card-icon {
+      font-size: clamp(30px, 2.2vw, 44px);
+      line-height: 1;
+      color: #fff;
+    }
+
+    .home-more-card-label {
+      font-size: clamp(13px, .9vw, 17px);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .home-more-card:focus .home-more-card-body {
+      background: rgba(191, 233, 255, .16);
+      color: #fff;
+    }
+
+    .home-rail {
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+      display: flex;
+      flex-wrap: nowrap !important;
+      align-items: flex-start;
+      gap: var(--home-v14-gap);
+      padding: 22px var(--home-section-gut, var(--home-v14-gut)) 0 !important;
+      scroll-padding-inline: var(--home-section-gut, var(--home-v14-gut));
+      overflow-x: auto !important;
+      overflow-y: visible !important;
+      scrollbar-width: none;
+      overscroll-behavior-x: contain;
+      scroll-snap-type: none;
+      touch-action: pan-x pan-y;
+      contain: layout style;
+    }
+
+    .home-rail::-webkit-scrollbar { display: none; }
+
+    .home-rail > .card {
+      flex: 0 0 var(--home-card-width, 142px) !important;
+      width: var(--home-card-width, 142px) !important;
+      max-width: none !important;
+      min-width: 0;
+      contain: layout style;
+      border: 0 !important;
+      border-radius: 0;
+      background: transparent !important;
+      box-shadow: none !important;
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+      overflow: visible;
+      transition: transform 160ms ease;
+      transform: translateZ(0);
+    }
+
+    .home-rail > .card:focus {
+      z-index: 3;
+      outline: none !important;
+      border: 0 !important;
+      box-shadow: none !important;
+      transform: translateY(-18px) translateZ(0) !important;
+    }
+
+    .home-rail > .card .poster-wrap,
+    .home-rail > .card > .poster {
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .home-rail > .card .poster-wrap {
+      width: 100%;
+      max-width: 100%;
+      margin: 0;
+    }
+
+    .home-rail > .card > .poster {
+      width: 100%;
+      max-width: 100%;
+      margin: 0;
+    }
+
+    .home-rail > .card .card-title {
+      min-height: 1.25em;
+      margin-top: 0;
+      font-size: clamp(14px, .92vw, 18px);
+      line-height: 1.25;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .home-rail > .card:not(.recent-card) .card-meta { display: none !important; }
+
+    .home-rail > .card:not(.recent-card) .card-body,
+    .home-rail > .card.recent-card .card-body {
+      padding: 7px 8px 8px;
+      padding-left: 0;
+      padding-right: 0;
+      border: 0 !important;
+      background: transparent !important;
+    }
+
+    .home-rail > .card .rating-badge {
+      top: 8px;
+      right: auto;
+      left: 7px;
+      min-width: 28px;
+      height: 22px;
+      font-size: 10px;
+    }
+
+    .home-rail > .card.landscape-card .poster,
+    .home-rail > .card.landscape-card .poster-wrap {
+      aspect-ratio: 16 / 9;
+    }
+
+    .home-rail > .card.landscape-card .poster { height: auto; object-fit: cover; }
+    .home-rail > .card.landscape-card .card-meta { display: none !important; }
+
+    .home-rail-skeleton,
+    .home-rail-status,
+    .home-rail-empty {
+      flex: 0 0 var(--home-card-width, 142px);
+      min-height: 170px;
+      display: grid;
+      place-items: center;
+      padding: 12px;
+      border: 0;
+      border-radius: 0;
+      color: var(--home-v14-muted);
+      background: transparent;
+      font-size: clamp(12px, .8vw, 16px);
+      text-align: center;
+    }
+
+    .home-rail-skeleton {
+      min-height: 205px;
+      background: linear-gradient(110deg, rgba(255, 255, 255, .05) 8%, rgba(255, 255, 255, .1) 18%, rgba(255, 255, 255, .05) 33%);
+    }
+
+    .home-rail-skeleton.landscape { min-height: 126px; }
+    .home-block-select-hint { margin: 2px var(--home-v14-gut) 0; }
+
+    .home-section-list {
+      width: 100%;
+      min-width: 0;
+    }
+
+    .home-dynamic-section { margin-top: clamp(20px, 1.3vw, 26px); }
+
+    body.block-select-active .home-rail .card {
+      outline: 1px solid rgba(255, 255, 255, .18);
+      outline-offset: -1px;
+    }
+
+    body.block-select-active .home-rail .card::after {
+      content: "按 OK 屏蔽";
+      position: absolute;
+      top: 7px;
+      left: 7px;
+      z-index: 5;
+      min-height: 22px;
+      display: inline-flex;
+      align-items: center;
+      padding: 0 7px;
+      border-radius: 999px;
+      background: rgba(8, 8, 8, .72);
+      color: #fff;
+      font-size: 10px;
+      pointer-events: none;
+    }
+
+    html.tv-mode #home.home-root,
+    html.tv-preview #home.home-root {
+      --home-section-gut: clamp(16px, 2vw, 36px);
+    }
+
+    html.tv-mode #home.home-root #homeHero,
+    html.tv-preview #home.home-root #homeHero {
+      width: 100%;
+      margin-left: 0;
+      margin-right: 0;
+    }
+
+    html.tv-mode #home.home-root *,
+    html.tv-preview #home.home-root * {
+      animation: none !important;
+    }
+
+    html.tv-mode #home.home-root .home-rail > .card,
+    html.tv-preview #home.home-root .home-rail > .card {
+      transform: translateZ(0);
+      backface-visibility: hidden;
+      -webkit-backdrop-filter: none !important;
+      backdrop-filter: none !important;
+    }
+
+    html.tv-mode #home.home-root .home-rail > .card:focus,
+    html.tv-preview #home.home-root .home-rail > .card:focus {
+      transform: translateY(-18px) translateZ(0) !important;
+    }
+
+    /* V1.4.5.7: make the existing TV Home rails denser without changing the
+       Home DOM, card semantics, or focus/reveal engine. */
+    html.tv-mode #home.home-root .home-section,
+    html.tv-preview #home.home-root .home-section {
+      margin-top: clamp(20px, 1.3vw, 26px);
+    }
+
+    html.tv-mode #home.home-root .home-section-head,
+    html.tv-preview #home.home-root .home-section-head {
+      min-height: 30px;
+      padding-top: 0;
+      padding-bottom: 8px;
+    }
+
+    html.tv-mode #home.home-root .home-rail,
+    html.tv-preview #home.home-root .home-rail {
+      padding-top: 22px !important;
+      padding-bottom: 0 !important;
+    }
+
+    @media (max-width: 900px) {
+      .home-search { flex-basis: 245px; width: 245px; min-width: 205px; }
+      .home-search .btn.blue { font-size: 0; padding: 0; }
+      .home-search .btn.blue .icon { width: 18px; height: 18px; }
+      :root { --home-v14-gut: 18px; }
+    }
+
+    @media (max-width: 600px) {
+      .home-search { grid-column: 1 / -1; width: 100%; min-width: 0; margin: 0 0 8px; }
+      #homeHero { min-height: 300px; max-height: 390px; }
+      .home-search-launcher-wrap { top: 20px; width: calc(100% - 36px); }
+      .home-search-launcher { min-height: 52px; padding: 0 18px; }
+      .home-hero-content { left: 18px; right: 18px; top: auto; bottom: 28px; max-width: 86%; }
+      .home-recent-section { margin-top: 24px; }
+      .home-section-head { padding-left: 18px; padding-right: 18px; }
+      .home-rail { padding-left: 18px !important; padding-right: 18px !important; }
+    }
+
+    /* Mobile Home uses the same Search launcher in two orientations: a
+       compact icon in portrait and the existing expanded pill in landscape.
+       The actual Search form, IME, and submit handlers remain unchanged. */
+    @media (orientation: portrait) and (max-width: 719px),
+           (orientation: portrait) and (pointer: coarse) {
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-search-launcher-wrap {
+        top: 16px;
+        left: auto;
+        right: 16px;
+        width: auto;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transform: none;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-search-launcher {
+        flex: 0 0 46px;
+        width: 46px;
+        min-height: 46px;
+        height: 46px;
+        justify-content: center;
+        gap: 0;
+        padding: 0;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-search-launcher > span {
+        display: none;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-menu-launcher {
+        display: flex !important;
+        flex: 0 0 46px;
+        width: 46px;
+        min-height: 46px;
+        height: 46px;
+        justify-content: center;
+        gap: 0;
+        padding: 0;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-menu-launcher .icon {
+        width: 22px;
+        height: 22px;
+      }
+    }
+
+    @media (orientation: landscape) and (pointer: coarse),
+           (orientation: landscape) and (max-width: 719px) {
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-search-launcher-wrap {
+        top: 16px;
+        left: 50%;
+        right: auto;
+        width: min(620px, calc(100% - 32px));
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transform: translateX(-50%);
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-search-launcher {
+        flex: 1 1 auto;
+        width: auto;
+        min-width: 0;
+        min-height: 50px;
+        gap: 12px;
+        padding: 0 20px;
+        font-size: 16px;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-menu-launcher {
+        display: flex !important;
+        flex: 0 0 50px;
+        width: 50px;
+        min-height: 50px;
+        height: 50px;
+        justify-content: center;
+        gap: 0;
+        padding: 0;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-menu-launcher .icon {
+        width: 22px;
+        height: 22px;
+      }
+    }
+
+    @media (pointer: coarse), (max-width: 719px) {
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar {
+        left: 10px;
+        top: 50%;
+        bottom: auto;
+        transform: translateY(-50%);
+        width: clamp(152px, 38vw, 164px);
+        max-width: 164px;
+        height: auto;
+        max-height: calc(100vh - 96px);
+        max-height: calc(100dvh - 96px);
+        padding-top: 16px;
+        padding-top: max(10px, env(safe-area-inset-top, 0px));
+        padding-right: 8px;
+        padding-bottom: 16px;
+        padding-bottom: max(10px, env(safe-area-inset-bottom, 0px));
+        padding-left: 8px;
+        justify-content: flex-start;
+        border-radius: 20px;
+        box-sizing: border-box;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+        touch-action: pan-y;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar-nav,
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar-tools {
+        gap: 4px;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar-tools {
+        margin-top: 14px;
+        padding-top: 10px;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar-item {
+        display: grid;
+        grid-template-columns: 20px 4em;
+        min-height: 44px;
+        column-gap: 6px;
+        padding: 0 10px;
+        transition: background-color 140ms ease, color 140ms ease;
+        touch-action: manipulation;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar #connectionToggle {
+        display: flex;
+        min-height: 44px;
+        width: 100%;
+        justify-content: center;
+        gap: 0;
+        padding: 0 6px;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar #connectionDock .connection-title {
+        display: none !important;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar #connectionDock .connection-arrow {
+        display: none !important;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar-item:focus,
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar-item:active,
+      html:not(.tv-mode):not(.tv-preview) #home.home-root #connectionToggle:focus,
+      html:not(.tv-mode):not(.tv-preview) #home.home-root #connectionToggle:active {
+        transform: none;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root #homeSidebarBackdrop:not([hidden]) {
+        position: fixed;
+        z-index: 119;
+        inset: 0;
+        display: block;
+        pointer-events: auto;
+        background: rgba(0, 0, 0, .20);
+        touch-action: none;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root.mobile-sidebar-open .home-search-launcher-wrap {
+        z-index: 122;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root.mobile-sidebar-open #homeSearchLauncher {
+        pointer-events: none;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root.mobile-sidebar-open #homeMenuLauncher {
+        pointer-events: auto;
+      }
+
+    }
+
+    @media (orientation: portrait) and (max-width: 719px),
+           (orientation: portrait) and (pointer: coarse) {
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar {
+        width: clamp(152px, 38vw, 164px);
+        max-width: 164px;
+      }
+
+    }
+
+    @media (orientation: landscape) and (pointer: coarse),
+           (orientation: landscape) and (max-width: 719px) {
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar {
+        max-height: calc(100vh - 48px);
+        max-height: calc(100dvh - 48px);
+        width: clamp(152px, 18vw, 164px);
+        max-width: 164px;
+      }
+
+    }
+
+    /* 基础设置是 Home 层级的独立浮层，不再参与 Sidebar 的尺寸和滚动。 */
+    .connection-overlay-host {
+      position: fixed;
+      inset: 0;
+      z-index: 124;
+      display: block;
+      pointer-events: none;
+    }
+
+    .connection-overlay-host[hidden],
+    .connection-overlay-backdrop[hidden] {
+      display: none !important;
+    }
+
+    .connection-overlay-host.open {
+      pointer-events: auto;
+    }
+
+    .connection-overlay-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 124;
+      display: block;
+      background: rgba(0, 0, 0, .31);
+      pointer-events: auto;
+      touch-action: none;
+    }
+
+    #connectionOverlayHost #connectionBody {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      right: auto;
+      bottom: auto;
+      z-index: 126;
+      width: max-content;
+      min-width: 480px;
+      max-width: min(720px, calc(100vw - 48px));
+      max-height: min(80vh, 760px);
+      box-sizing: border-box;
+      margin: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+      transform: translate(-50%, -50%) !important;
+      scrollbar-width: thin;
+    }
+
+    #connectionOverlayHost #connectionBody.open {
+      display: block;
+    }
+
+    #connectionOverlayHost .connection-item > b,
+    #connectionOverlayHost .connection-item > span:not(.mono),
+    #connectionOverlayHost .pan-config > label,
+    #connectionOverlayHost .relay-mirror-config > label,
+    #connectionOverlayHost .pan-disk-grid > label,
+    #connectionOverlayHost .connection-body .btn,
+    #connectionOverlayHost .detail-style-option {
+      white-space: nowrap;
+    }
+
+    #connectionOverlayHost .connection-item > span:not(.mono) {
+      overflow-wrap: normal;
+      word-break: normal;
+    }
+
+    #connectionOverlayHost .connection-item > .mono,
+    #connectionOverlayHost #statusRelays,
+    #connectionOverlayHost #statusRefresh,
+    #connectionOverlayHost .relay-mirror-progress,
+    #connectionOverlayHost textarea.field,
+    #connectionOverlayHost .mono {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    #connectionOverlayHost .connection-item,
+    #connectionOverlayHost .pan-config > label,
+    #connectionOverlayHost .relay-mirror-config > label,
+    #connectionOverlayHost .source-domains-body > label {
+      min-width: 0;
+      box-sizing: border-box;
+    }
+
+    #connectionOverlayHost .connection-item > .detail-style-segmented {
+      width: 100%;
+      min-width: 0;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(max-content, 1fr));
+      box-sizing: border-box;
+    }
+
+    #connectionOverlayHost .detail-style-option {
+      min-width: 0;
+      overflow: visible;
+      text-overflow: clip;
+    }
+
+    #connectionOverlayHost .pan-config .field,
+    #connectionOverlayHost .relay-mirror-config .field,
+    #connectionOverlayHost .source-domains-body .field {
+      width: 100%;
+      min-width: 0;
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+
+    #connectionOverlayHost .pan-disk-grid {
+      grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+    }
+
+    #connectionOverlayHost .pan-disk-grid > label {
+      min-width: 0;
+    }
+
+    #connectionOverlayHost .connection-body .actions {
+      grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+    }
+
+    @media (pointer: coarse), (max-width: 719px) {
+      html:not(.tv-mode):not(.tv-preview) #connectionOverlayHost #connectionBody {
+        border-radius: 20px;
+      }
+    }
+
+    @media (orientation: portrait) and (pointer: coarse),
+           (orientation: portrait) and (max-width: 719px) {
+      html:not(.tv-mode):not(.tv-preview) #connectionOverlayHost #connectionBody {
+        width: min(calc(100vw - 32px), 420px);
+        min-width: 0;
+        max-width: calc(100vw - 32px);
+        max-height: calc(100vh - 80px);
+        max-height: calc(100dvh - 80px);
+      }
+    }
+
+    @media (orientation: landscape) and (pointer: coarse),
+           (orientation: landscape) and (max-width: 719px) {
+      html:not(.tv-mode):not(.tv-preview) #connectionOverlayHost #connectionBody {
+        width: min(480px, 64vw, calc(100vw - 40px));
+        min-width: 0;
+        max-width: calc(100vw - 40px);
+        max-height: calc(100vh - 32px);
+        max-height: calc(100dvh - 32px);
+      }
+    }
+
+    html.tv-mode #connectionOverlayHost #connectionBody,
+    html.tv-preview #connectionOverlayHost #connectionBody {
+      width: max-content;
+      min-width: 560px;
+      max-width: min(760px, calc(100vw - 120px));
+      max-height: calc(100vh - 120px);
+    }
+
+    .home-sidebar {
+      overflow-x: hidden;
+    }
+
+    html.tv-mode #home.home-root #homeMenuLauncher,
+    html.tv-preview #home.home-root #homeMenuLauncher,
+    html.tv-mode #home.home-root #homeSidebarBackdrop,
+    html.tv-preview #home.home-root #homeSidebarBackdrop {
+      display: none !important;
+    }
+
+  

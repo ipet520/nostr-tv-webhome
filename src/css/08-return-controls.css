@@ -1,0 +1,66 @@
+
+    /* 所有页面返回入口统一为左上角的小型箭头按钮；“返回顶部”仍是独立的滚动控制。 */
+    .return-control {
+      box-sizing: border-box;
+      width: 44px !important;
+      min-width: 44px !important;
+      height: 44px !important;
+      min-height: 44px !important;
+      flex: 0 0 44px;
+      padding: 0 !important;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      border: 1px solid rgba(255, 255, 255, .22) !important;
+      border-radius: 50% !important;
+      background: rgba(8, 13, 20, .54) !important;
+      color: rgba(255, 255, 255, .96) !important;
+      font-size: 0 !important;
+      line-height: 1;
+      text-shadow: none;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, .28), inset 0 1px 0 rgba(255, 255, 255, .12) !important;
+      -webkit-backdrop-filter: blur(14px) saturate(1.08) !important;
+      backdrop-filter: blur(14px) saturate(1.08) !important;
+      transition: background .18s ease, border-color .18s ease, box-shadow .18s ease, transform .12s ease;
+    }
+
+    .return-control .icon {
+      width: 21px !important;
+      height: 21px !important;
+      stroke-width: 2.35;
+    }
+
+    .return-control:hover,
+    .return-control:focus {
+      background: rgba(24, 34, 45, .78) !important;
+      border-color: rgba(255, 255, 255, .46) !important;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, .34), 0 0 0 2px rgba(184, 226, 255, .22) !important;
+    }
+
+    .return-control:active {
+      transform: scale(.96);
+    }
+
+    .secondary-page-back.return-control,
+    #closeSyncBtn.return-control {
+      display: inline-flex !important;
+    }
+
+    .secondary-page-head .secondary-page-back.return-control {
+      align-self: flex-start;
+      margin: 0;
+    }
+
+    /* 详情页的小屏返回入口若被恢复显示，也固定在与其它入口相同的左上角。 */
+    html:not(.tv-mode) #detailSheet:not(.detail-large) #closeDetailBtn.return-control {
+      position: fixed;
+      top: max(14px, var(--safe-t));
+      left: 16px;
+      z-index: 95;
+    }
+
+    html.no-css-functions:not(.tv-mode) #detailSheet:not(.detail-large) #closeDetailBtn.return-control {
+      top: calc(14px + var(--fm-safe-top, 0px));
+    }
+
+  

@@ -1,0 +1,94 @@
+
+    /* ══ 按钮统一改造：磨砂玻璃 + 内部柔光游走（方案 F） ══
+       厚磨砂玻璃为主体，内部叠加一团模糊的彩色柔光缓慢旋转流动，
+       像光线透过液态玻璃折射；文字/图标始终在玻璃表面之上保持清晰。 */
+    @property --glow-ang {
+      syntax: '<angle>';
+      initial-value: 0deg;
+      inherits: false;
+    }
+    @keyframes btn-glow-spin {
+      to { --glow-ang: 360deg; }
+    }
+
+    .btn,
+    .icon-btn,
+    .mini-icon-btn,
+    .connection-toggle,
+    .back-top {
+      position: relative;
+      isolation: isolate;
+      overflow: hidden;
+      background: rgba(255, 255, 255, .05) !important;
+      -webkit-backdrop-filter: blur(18px) saturate(150%) !important;
+      backdrop-filter: blur(18px) saturate(150%) !important;
+      border: 1px solid rgba(255, 255, 255, .12) !important;
+      box-shadow: 0 8px 22px rgba(0, 0, 0, .22), inset 0 1px 0 rgba(255, 255, 255, .12) !important;
+      transition: border-color .2s ease, background .2s ease, box-shadow .2s ease, transform .12s ease;
+    }
+
+    .btn::after,
+    .icon-btn::after,
+    .mini-icon-btn::after,
+    .connection-toggle::after,
+    .back-top::after {
+      content: "";
+      position: absolute;
+      z-index: -1;
+      top: -30%; right: -30%; bottom: -30%; left: -30%;
+      inset: -30%;
+      border-radius: inherit;
+      background: conic-gradient(from var(--glow-ang, 0deg) at 50% 50%,
+        transparent 0deg,
+        rgba(140, 200, 255, .22) 60deg,
+        rgba(180, 140, 255, .18) 140deg,
+        transparent 220deg,
+        rgba(255, 170, 210, .16) 300deg,
+        transparent 360deg);
+      filter: blur(8px);
+      animation: btn-glow-spin 10s linear infinite;
+      pointer-events: none;
+    }
+
+    /* 主要/选中态：底色微微提亮，柔光更明显 */
+    .btn.primary,
+    .btn.blue {
+      background: rgba(120, 180, 255, .10) !important;
+      border-color: rgba(160, 205, 255, .25) !important;
+      box-shadow: 0 10px 26px rgba(80, 140, 255, .20), inset 0 1px 0 rgba(255, 255, 255, .18) !important;
+    }
+
+    .btn.danger {
+      background: rgba(255, 120, 120, .08) !important;
+      border-color: rgba(255, 170, 170, .20) !important;
+    }
+
+    /* Hover / Active 微调，保留原有 focus 态规则 */
+    .btn:hover,
+    .icon-btn:hover,
+    .mini-icon-btn:hover,
+    .connection-toggle:hover,
+    .back-top:hover {
+      background: rgba(255, 255, 255, .09) !important;
+      border-color: rgba(255, 255, 255, .18) !important;
+    }
+
+    .btn:active,
+    .icon-btn:active,
+    .mini-icon-btn:active,
+    .connection-toggle:active,
+    .back-top:active {
+      transform: scale(.98);
+    }
+
+    /* 减少动态效果偏好：停止旋转动画，仅保留静态柔光 */
+    @media (prefers-reduced-motion: reduce) {
+      .btn::after,
+      .icon-btn::after,
+      .mini-icon-btn::after,
+      .connection-toggle::after,
+      .back-top::after {
+        animation: none;
+      }
+    }
+  
