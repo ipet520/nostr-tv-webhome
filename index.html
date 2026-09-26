@@ -17127,9 +17127,9 @@ utils.encode = function encode(arr, enc) {
     const HOME_V14_MAX_CONCURRENT = 2;
     const HOME_V14_SECTION_ROOT_MARGIN = "760px 0px";
     const HOME_V14_IMAGE_ROOT_MARGIN = "700px 250px";
-    // The current TV Home presentation reserves a 54px navigation band;
-    // keep a 16px visual gap below it when a new rail becomes authoritative.
-    const HOME_RAIL_ANCHOR_OFFSET = 70;
+    // Keep only a minimal safety gap above the active Home section.  The
+    // section itself, rather than its title or card row, is the anchor.
+    const HOME_RAIL_ANCHOR_OFFSET = 8;
 
     let nativeSdkWait = null;
 
@@ -42607,7 +42607,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (!context || !context.rail || !context.rail.getBoundingClientRect) return { x: 0, y: 0 };
       const root = document.scrollingElement || document.documentElement;
       const height = window.innerHeight || document.documentElement.clientHeight || 0;
-      const anchor = context.head && context.head.getBoundingClientRect ? context.head : context.rail;
+      const anchor = context.section && context.section.getBoundingClientRect ? context.section : context.rail;
       const anchorRect = anchor.getBoundingClientRect();
       const before = homeScrollTop();
       const max = Math.max(0, Number(root.scrollHeight || document.documentElement.scrollHeight || 0) - Number(root.clientHeight || height || 0));
