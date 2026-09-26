@@ -54,7 +54,7 @@
       return results;
     }
 
-    function runTvAdaptationSelfTests() {
+    async function runTvAdaptationSelfTests() {
       if (!isTvDiagnosticEnabled()) return [];
       const results = [];
       const check = (id, pass, detail, kind) => results.push({ id, pass: !!pass, kind: kind || "STATIC_HOOK", detail: detail || "" });
@@ -445,6 +445,82 @@
       check("NOSTR_VARIETY_CANONICAL_DISCOVER", varietyResolverSource.includes('secondaryFullCatalogSources("variety")') && varietyResolverSource.includes("page <= 3") && varietyResolverSource.includes("with_genres") === false && String(secondaryFullCatalogSources).includes('with_genres: "10764|10767"'), "variety resolver reuses the canonical OR Discover source with a three-page cap", "STATIC_HOOK");
       check("NOSTR_VARIETY_DETAIL_BUDGET", varietyResolverSource.includes("SECONDARY_NOSTR_VARIETY_MAX_NEW_DETAIL_REQUESTS") && SECONDARY_NOSTR_VARIETY_MAX_NEW_DETAIL_REQUESTS < SECONDARY_NOSTR_VARIETY_MAX_SCAN_CANDIDATES, "variety detail fallback has a bounded adaptive budget", "STATIC_HOOK");
       check("NOSTR_VARIETY_SHARED_HOME_SECONDARY", String(loadHomeCategoryNostrPool).includes("secondaryLoadNostrVarietyPool") && String(secondaryLoadNostrHotItems).includes("secondaryLoadNostrVarietyPool"), "Home and Secondary use the shared variety resolver", "STATIC_HOOK");
+      const runVarietyLegacyDiscoverUpgrade = async () => {
+        const home = state.homeV14;
+        const previousMeta = home.nostrTmdbMeta;
+        const previousMemory = home.secondaryNostrTmdbMemoryCache;
+        const previousResolver = home.secondaryNostrVarietyResolver;
+        const previousRequestJson = requestJson;
+        const candidates = Array.from({ length: 18 }, (_, index) => varietyMockCandidate(200 + index));
+        const legacyEntries = {};
+        candidates.forEach((candidate) => {
+          const legacy = varietyMockMetadata(candidate, true, "CN");
+          delete legacy.posterPath;
+          delete legacy.backdropPath;
+          legacyEntries[homeNostrSignalKey(candidate)] = legacy;
+        });
+        const discoverResults = candidates.map((candidate) => ({
+          id: Number(candidate.tmdbId),
+          media_type: "tv",
+          name: candidate.title,
+          original_name: candidate.title,
+          genre_ids: ["10764"],
+          origin_country: ["CN"],
+          first_air_date: "2020-01-01",
+          poster_path: `/discover-${candidate.tmdbId}.jpg`,
+          backdrop_path: `/discover-${candidate.tmdbId}-backdrop.jpg`
+        }));
+        let discoverRequests = 0;
+        let detailRequests = 0;
+        try {
+          home.nostrTmdbMeta = {
+            version: NOSTR_TMDB_META_CACHE_VERSION,
+            loaded: true,
+            loading: false,
+            promise: null,
+            entries: legacyEntries,
+            dirty: false,
+            dirtyVersion: 0,
+            saveTimer: 0,
+            savePromise: null,
+            lastLoadAt: Date.now(),
+            lastSaveAt: 0,
+            expiredCount: 0,
+            evictedCount: 0
+          };
+          home.secondaryNostrTmdbMemoryCache = {};
+          home.secondaryNostrVarietyResolver = null;
+          requestJson = (url) => {
+            if (String(url).includes("/discover/")) discoverRequests += 1;
+            else detailRequests += 1;
+            return Promise.resolve({ results: discoverResults });
+          };
+          const runtime = secondaryNostrVarietyResolverState(candidates);
+          await secondaryNostrVarietyPrimeDiscover(runtime);
+          const records = await Promise.all(candidates.map((candidate, index) => secondaryNostrVarietyResolveCandidate(candidate, { items: [] }, index, runtime)));
+          const upgradedCacheEntries = candidates.filter((candidate) => nostrTmdbMetaHasCanonicalPoster(nostrTmdbMetaRuntime().entries[homeNostrSignalKey(candidate)])).length;
+          return {
+            resultCount: records.filter((record) => record && record.status === "valid" && record.item && nostrTmdbMetaHasCanonicalPoster(record.metadata)).length,
+            upgradedCacheEntries,
+            discoverRequests,
+            detailRequests
+          };
+        } catch (error) {
+          return { resultCount: 0, upgradedCacheEntries: 0, discoverRequests, detailRequests, error: String(error && error.message || error || "unknown") };
+        } finally {
+          const runtime = home.nostrTmdbMeta;
+          if (runtime && runtime.saveTimer) clearTimeout(runtime.saveTimer);
+          requestJson = previousRequestJson;
+          home.nostrTmdbMeta = previousMeta;
+          home.secondaryNostrTmdbMemoryCache = previousMemory;
+          home.secondaryNostrVarietyResolver = previousResolver;
+        }
+      };
+      const varietyLegacyDiscoverUpgrade = await runVarietyLegacyDiscoverUpgrade();
+      check("VARIETY_LEGACY_V2_CACHE_DISCOVER_UPGRADE", varietyLegacyDiscoverUpgrade.resultCount === 18 && varietyLegacyDiscoverUpgrade.upgradedCacheEntries === 18 && varietyLegacyDiscoverUpgrade.discoverRequests > 0 && varietyLegacyDiscoverUpgrade.detailRequests === 0, "Discover metadata upgrades all 18 legacy artwork-incomplete v2 entries without detail requests", "RUNTIME_MOCK");
+      check("VARIETY_LEGACY_CACHE_RESULT_COUNT", varietyLegacyDiscoverUpgrade.resultCount === 18, "legacy v2 variety cache still resolves all 18 Discover matches", "RUNTIME_MOCK");
+      check("VARIETY_LEGACY_CACHE_DETAIL_REQUESTS", varietyLegacyDiscoverUpgrade.detailRequests === 0, "canonical Discover upgrade consumes no fallback detail request", "RUNTIME_MOCK");
+      check("VARIETY_DISCOVER_UPGRADES_LEGACY_CACHE", String(secondaryNostrVarietyPrimeDiscover).includes("nostrTmdbMetaFromItem") && String(secondaryNostrVarietyPrimeDiscover).includes("nostrTmdbMetaPut") && String(secondaryNostrVarietyPrimeDiscover).includes("nostrTmdbMetaHasCanonicalPoster"), "Discover takes precedence over incomplete legacy cache while complete cache can short-circuit", "STATIC_HOOK");
       const overlayMock = nostrHotSignalOverlay({ source: "tmdb", mediaType: "tv", tmdbId: "99004", title: "Signal Variety", pic: "mock-poster" }, { people: 321, count: 321, latest: "2026-09-24", lastEventAt: "2026-09-24T00:00:00Z", nostrHotRank: 7 }, "variety");
       check("NOSTR_SIGNAL_OVERLAY_PRESERVED", overlayMock && overlayMock.source === "nostr-hot" && overlayMock.people === 321 && overlayMock.count === 321 && overlayMock.nostrHotRank === 7 && varietyCardSource.includes('item.source === "nostr-hot"'), "Nostr people/count/latest/rank survive metadata enrichment and gate the badge", "RUNTIME_MOCK");
       check("VARIETY_REGION_COMPOUND_MATCH", secondaryRegionMatches({ originCountries: ["HK"] }, "HK|TW") && secondaryRegionMatches({ originCountries: ["TW"] }, "HK|TW") && !secondaryRegionMatches({ originCountries: ["US"] }, "HK|TW") && String(secondaryFullCatalogSources("variety")[0].params.with_genres) === "10764|10767", "港台 is an item-level OR match and canonical variety uses genre OR", "RUNTIME_MOCK");

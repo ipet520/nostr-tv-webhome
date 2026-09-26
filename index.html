@@ -28172,19 +28172,18 @@ utils.encode = function encode(arr, enc) {
               const key = homeNostrSignalKey(normalized);
               const candidate = key && candidateMap.get(key);
               if (!candidate || matched.has(key)) return;
-              const persistent = nostrTmdbMetaRuntime().entries[key];
-              if (memory[key] || persistent) {
+              const metadata = nostrTmdbMetaFromItem(candidate, normalized);
+              if (metadata) {
+                const record = secondaryNostrVarietyRecordFromMetadata(candidate, metadata, Number(candidate.nostrHotRank || 0) - 1, "discover");
+                if (record.status !== "valid" && record.status !== "invalid") return;
+                runtime.metrics.discoverMetadataMatches = Number(runtime.metrics.discoverMetadataMatches || 0) + 1;
                 matched.add(key);
+                memory[key] = Promise.resolve(record);
+                nostrTmdbMetaPut(record.metadata, record.status);
                 return;
               }
-              const metadata = nostrTmdbMetaFromItem(candidate, normalized);
-              if (!metadata) return;
-              const record = secondaryNostrVarietyRecordFromMetadata(candidate, metadata, Number(candidate.nostrHotRank || 0) - 1, "discover");
-              if (record.status !== "valid" && record.status !== "invalid") return;
-              runtime.metrics.discoverMetadataMatches = Number(runtime.metrics.discoverMetadataMatches || 0) + 1;
-              matched.add(key);
-              memory[key] = Promise.resolve(record);
-              nostrTmdbMetaPut(record.metadata, record.status);
+              const persistent = nostrTmdbMetaRuntime().entries[key];
+              if (persistent && nostrTmdbMetaHasCanonicalPoster(persistent)) matched.add(key);
             });
           }
         }
