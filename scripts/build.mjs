@@ -25,7 +25,31 @@ const cssFiles = [
 const scriptFiles = [
   ["__WEBHOME_BUILD_SCRIPT_HEAD__", "js/00-head-bootstrap.js"],
   ["__WEBHOME_BUILD_SCRIPT_NOSTR__", "js/01-nostr-tools-shim.js"],
-  ["__WEBHOME_BUILD_SCRIPT_APPLICATION__", "js/02-application.js"],
+];
+
+const applicationSlot = "__WEBHOME_BUILD_SCRIPT_APPLICATION__";
+const applicationFiles = [
+  "02-runtime-config-device.js",
+  "03-weekly-tmdb-pan-config.js",
+  "04-nostr-hot-storage.js",
+  "05-relay-network-pan-session.js",
+  "06-tmdb-history-model.js",
+  "07-detail-playback-race.js",
+  "08-catalog-recent-management.js",
+  "09-route-search.js",
+  "10-sidebar-navigation.js",
+  "11-home-rendering-data.js",
+  "12-secondary-query-nostr.js",
+  "13-secondary-catalog-render.js",
+  "14-grid-card-focus.js",
+  "15-recent-canonical-search-return.js",
+  "16-detail-rendering.js",
+  "17-pan-direct-health.js",
+  "18-curated-discovery-health.js",
+  "19-pan-results-handoff-return.js",
+  "20-nostr-publish-relays.js",
+  "21-bindings-focus-anchor.js",
+  "22-snapshot-resume-boot.js",
 ];
 
 function countOccurrences(source, token) {
@@ -39,25 +63,52 @@ function countOccurrences(source, token) {
   }
 }
 
+function readExact(relativePath) {
+  return readFileSync(resolve(sourceRoot, relativePath), "utf8");
+}
+
+function replaceSlot(output, slot, content) {
+  const count = countOccurrences(output, slot);
+  if (count !== 1) {
+    throw new Error(`Build slot ${slot} expected exactly once, found ${count}`);
+  }
+  return output.replace(slot, () => content);
+}
+
+function applicationSource() {
+  if (applicationFiles.length !== 21) {
+    throw new Error(`Application manifest expected 21 fragments, found ${applicationFiles.length}`);
+  }
+  const seenFiles = new Set();
+  for (const relativePath of applicationFiles) {
+    if (relativePath === "02-application.js") {
+      throw new Error("Application manifest must not contain 02-application.js");
+    }
+    if (seenFiles.has(relativePath)) {
+      throw new Error(`Duplicate application fragment: ${relativePath}`);
+    }
+    seenFiles.add(relativePath);
+  }
+  return applicationFiles.map((relativePath) => readExact(`js/${relativePath}`)).join("");
+}
+
 function build() {
   let output = readFileSync(templatePath, "utf8");
-  const slots = [...cssFiles, ...scriptFiles];
   const seenSlots = new Set();
 
-  for (const [slot, relativePath] of slots) {
+  for (const [slot, relativePath] of [...cssFiles, ...scriptFiles]) {
     if (seenSlots.has(slot)) {
       throw new Error(`Duplicate manifest slot: ${slot}`);
     }
     seenSlots.add(slot);
-
-    const count = countOccurrences(output, slot);
-    if (count !== 1) {
-      throw new Error(`Build slot ${slot} expected exactly once, found ${count}`);
-    }
-
-    const content = readFileSync(resolve(sourceRoot, relativePath), "utf8");
-    output = output.replace(slot, () => content);
+    output = replaceSlot(output, slot, readExact(relativePath));
   }
+
+  if (seenSlots.has(applicationSlot)) {
+    throw new Error(`Duplicate manifest slot: ${applicationSlot}`);
+  }
+  seenSlots.add(applicationSlot);
+  output = replaceSlot(output, applicationSlot, applicationSource());
 
   const unknownSlots = output.match(/__WEBHOME_BUILD_[A-Z0-9_]+__/g);
   if (unknownSlots) {
