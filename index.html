@@ -21423,6 +21423,35 @@ utils.encode = function encode(arr, enc) {
       return true;
     }
 
+    function terminalizeDirectDiscoveryAfterProviderCommit(run, provider) {
+      const pan = state.pan;
+      const action = run && run.directAction;
+      if (action) {
+        action.cancelReason = "provider_committed";
+        action.waitResult = "CANCELLED";
+      }
+      const sameDirectSession = !!(run && pan && state.selected === run.item
+        && pan.sessionItemKey === run.itemKey
+        && pan.sessionOrigin === "direct"
+        && pan.searchMode === "direct"
+        && Number(pan.sessionId || 0) > 0
+        && pan.viewToken);
+      if (!sameDirectSession) return false;
+      clearPanPollTimers();
+      if (isPanSearchSessionCurrent(run.item, pan.viewToken, pan.sessionId, true)) {
+        terminalizePanSearchSession(pan.viewToken, run.item, pan.sessionId, "provider_committed", { render: false });
+      } else {
+        pan.loading = false;
+        pan.retryRemaining = 0;
+        if (!pan.sessionTerminal) endPanSearchSession("provider_committed");
+      }
+      recordDetailRaceDiag("DIRECT_DISCOVERY_TERMINATED", run, {
+        provider: String(provider || run.provider || ""),
+        reason: "PROVIDER_COMMITTED"
+      });
+      return true;
+    }
+
     function tryCommitDetailProvider(run, provider, candidate, details) {
       const info = details || {};
       const normalizedProvider = String(provider || "");
@@ -21475,6 +21504,7 @@ utils.encode = function encode(arr, enc) {
         healthState: healthState || "accepted",
         commitCount: run.providerCommitCount
       });
+      terminalizeDirectDiscoveryAfterProviderCommit(run, normalizedProvider);
       settleDetailPlayback(run, "READY", "provider_commit");
       showDirectPlayStatus(run.token, "READY", DIRECT_PLAY_STATUS_TEXT.READY, "provider_commit");
       updateDetailContinueButton();
@@ -33504,7 +33534,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const isCurrent = () => raceRun
         ? detailPlaybackIsCurrent(raceRun)
           && (!curatedAttempt || (curatedAttempt.active && curatedRemainingMs(curatedAttempt) > 0))
-        : !context || (state.pan.viewToken === context.token && state.selected === context.item
+        : !context || (panContextIsCurrent(context)
           && (!curatedAttempt || (curatedAttempt.active && curatedRemainingMs(curatedAttempt) > 0)));
       const list = (items || []).filter((it) => it && isPanCheckSupported(it));
       if (!list.length || !panCheckAvailable() || !isCurrent()) return {};
@@ -33691,7 +33721,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const checkable = top5.filter(isPanCheckSupported);
       if (handoffAction) recordPanDirectHandoffStage("HEALTH_CHECK_START", item, handoffAction, { healthCheckCandidateCount: checkable.length });
       if (healthCheckAvailable) {
-        const context = { token: state.pan.viewToken, item: state.selected };
+        const context = { token: state.pan.viewToken, item: state.selected, directAction: handoffAction };
         if (checkable.length) {
           const preflight = await playbackPanHealthPreflight(checkable, context);
           freshHealth = preflight.states || {};
@@ -33991,6 +34021,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
     function panDirectPlayActionIsCurrent(action) {
       return !!(action && _directPlayPending === action && action.token === _directPlayPending.token && state.selected === action.item
+        && !action.cancelReason
         && (!action.viewTokenBound || action.viewToken === state.pan.viewToken));
     }
 
@@ -37323,6 +37354,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
     function panContextIsCurrent(context) {
       if (!context) return true;
+      if (context.directAction && context.directAction.cancelReason === "provider_committed") return false;
       if (context.raceRun) return detailPlaybackIsCurrent(context.raceRun) && state.selected === context.item;
       return state.pan.viewToken === context.token && state.selected === context.item;
     }
@@ -43276,6 +43308,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         detailRace: state.tvDiag && state.tvDiag.detailRace,
         detailRaceLog: state.tvDiag && state.tvDiag.detailRaceLog
       };
+      const racePanSnapshot = state.pan;
+      const raceDirectPlayPendingSnapshot = _directPlayPending;
+      const racePanSessionDiagSnapshot = state.tvDiag && state.tvDiag.panSearchSession;
       const raceTestItem = { mediaType: "movie", tmdbId: "race-test", title: "Race Test", releaseDate: "2020-01-01" };
       let raceTestSeq = 0;
       const newRaceTestRun = () => ({
@@ -43321,6 +43356,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       let raceBothFail = false;
       let raceStaleExit = false;
       let raceStaleAToB = false;
+      let directDiscoveryTerminated = false;
+      let directRetryGuard = false;
+      let directPollGuard = false;
+      let directHealthGuard = false;
+      let curatedWinnerPreserved = false;
+      let directWinnerPreserved = false;
       try {
         let raceRun = newRaceTestRun();
         state.selected = raceTestItem;
@@ -43378,13 +43419,96 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         state.detailPlayback = runB;
         raceStaleAToB = !tryCommitDetailProvider(runA, "pan-direct", raceTestCandidate("STRONG"), { identityVerdict: "STRONG", healthState: "ok", healthAccepted: true })
           && !runA.providerCommitted && state.detailPlayback.item === itemB;
+
+        const directTerminationPan = Object.assign({}, racePanSnapshot, {
+          pollTimers: [],
+          pollRoundStarted: {},
+          progress: Object.assign({}, racePanSnapshot.progress || {}),
+          results: [],
+          health: {},
+          pending: {},
+          queued: new Map(),
+          inFlight: new Set()
+        });
+        state.pan = directTerminationPan;
+        const directTerminationItem = { mediaType: "movie", tmdbId: "direct-stop", title: "Direct Stop", releaseDate: "2020-01-01" };
+        const directTerminationCandidate = raceTestCandidate("STRONG");
+        directTerminationCandidate.key = "magnet|https://example.invalid/direct-stop.m3u8";
+        state.selected = directTerminationItem;
+        state.pan.sessionId = 9911;
+        state.pan.sessionOrigin = "direct";
+        state.pan.sessionItemKey = panSearchItemKey(directTerminationItem);
+        state.pan.sessionStartedAt = Date.now();
+        state.pan.sessionTerminal = false;
+        state.pan.sessionTerminalReason = "";
+        state.pan.sessionEndRecorded = false;
+        state.pan.keyword = panKeyword(directTerminationItem);
+        state.pan.viewToken = "pan-direct-stop";
+        state.pan.searchMode = "direct";
+        state.pan.loading = true;
+        state.pan.results = [directTerminationCandidate];
+        state.pan.health = { [panHealthKey(directTerminationCandidate)]: { state: "ok", checkedAt: Date.now(), expiresAt: Date.now() + 60000 } };
+        state.pan.progress = { active: true, phase: "polling", round: 1, totalRounds: 2 };
+        state.pan.pollTimers = [setTimeout(() => {}, 60000)];
+        const directStopRun = newRaceTestRun();
+        directStopRun.item = directTerminationItem;
+        directStopRun.itemKey = panSearchItemKey(directTerminationItem);
+        directStopRun.directAction = { token: 9911, item: directTerminationItem, viewToken: "pan-direct-stop", viewTokenBound: true, raceMode: true, cancelReason: "" };
+        state.detailPlayback = directStopRun;
+        _directPlayPending = directStopRun.directAction;
+        const directStopResults = state.pan.results;
+        const curatedCommittedAfterDirectStart = tryCommitDetailProvider(directStopRun, "curated", directTerminationCandidate, { identityVerdict: "STRONG", healthState: "ok", healthAccepted: true });
+        directDiscoveryTerminated = curatedCommittedAfterDirectStart
+          && state.pan.sessionTerminal
+          && state.pan.sessionTerminalReason === "provider_committed"
+          && !isPanSearchSessionActive(directTerminationItem, state.pan.viewToken, state.pan.sessionId)
+          && directStopRun.directAction.cancelReason === "provider_committed"
+          && state.pan.results === directStopResults;
+        directRetryGuard = !panDirectPlayActionIsCurrent(directStopRun.directAction);
+        directPollGuard = state.pan.pollTimers.length === 0;
+        directHealthGuard = !panContextIsCurrent({ token: state.pan.viewToken, item: directTerminationItem, directAction: directStopRun.directAction });
+        curatedWinnerPreserved = directStopRun.provider === "curated"
+          && directStopRun.phase === "READY"
+          && directStopRun.candidate === directTerminationCandidate
+          && directStopRun.providerCommitCount === 1;
+
+        state.pan.sessionId = 9912;
+        state.pan.sessionOrigin = "direct";
+        state.pan.sessionItemKey = panSearchItemKey(directTerminationItem);
+        state.pan.sessionStartedAt = Date.now();
+        state.pan.sessionTerminal = false;
+        state.pan.sessionTerminalReason = "";
+        state.pan.sessionEndRecorded = false;
+        state.pan.viewToken = "pan-direct-own-win";
+        state.pan.searchMode = "direct";
+        state.pan.loading = true;
+        state.pan.directReady = { itemKey: panSearchItemKey(directTerminationItem), sessionId: 9912, candidateKey: directTerminationCandidate.key, candidate: directTerminationCandidate };
+        state.pan.pollTimers = [setTimeout(() => {}, 60000)];
+        const directWinnerRun = newRaceTestRun();
+        directWinnerRun.item = directTerminationItem;
+        directWinnerRun.itemKey = panSearchItemKey(directTerminationItem);
+        directWinnerRun.directAction = { token: 9912, item: directTerminationItem, viewToken: "pan-direct-own-win", viewTokenBound: true, raceMode: true, cancelReason: "" };
+        state.detailPlayback = directWinnerRun;
+        _directPlayPending = directWinnerRun.directAction;
+        const directOwnCommit = tryCommitDetailProvider(directWinnerRun, "pan-direct", directTerminationCandidate, { identityVerdict: "STRONG", healthState: "ok", healthAccepted: true });
+        directWinnerPreserved = directOwnCommit
+          && directWinnerRun.provider === "pan-direct"
+          && directWinnerRun.phase === "READY"
+          && directWinnerRun.candidate === directTerminationCandidate
+          && state.pan.directReady
+          && state.pan.directReady.candidate === directTerminationCandidate
+          && state.pan.sessionTerminal
+          && state.pan.pollTimers.length === 0;
       } finally {
         state.selected = raceStateSnapshot.selected;
         state.detailPlayback = raceStateSnapshot.detailPlayback;
         state.directPlayStatus = raceStateSnapshot.directPlayStatus;
+        state.pan = racePanSnapshot;
+        _directPlayPending = raceDirectPlayPendingSnapshot;
         if (state.tvDiag) {
           state.tvDiag.detailRace = raceStateSnapshot.detailRace;
           state.tvDiag.detailRaceLog = raceStateSnapshot.detailRaceLog;
+          state.tvDiag.panSearchSession = racePanSessionDiagSnapshot;
         }
       }
       const raceRequestBlock = raceRequestBlockAt >= 0 ? detailRequestSource.slice(raceRequestBlockAt, detailRequestSource.indexOf("const prepared", raceRequestBlockAt)) : "";
@@ -43404,7 +43528,20 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       check("DETAIL_RACE_BOTH_TENTATIVE", raceBothTentative, "both tentative candidates use the existing Curated-first final fallback", "RUNTIME_MOCK");
       check("DETAIL_RACE_BOTH_FAIL", raceBothFail, "only both terminal failures produce the final failed state", "RUNTIME_MOCK");
       check("DETAIL_RACE_PROVIDER_SINGLE_COMMIT", String(tryCommitDetailProvider).includes("providerCommitted") && String(tryCommitDetailProvider).includes("providerCommitCount") && String(detailRaceLaneTerminal).includes("run.providerCommitted"), "Provider Commit Authority is the single write gate", "STATIC_HOOK");
-      check("DETAIL_RACE_LOSER_NO_RESET", !String(detailRaceLaneTerminal).includes("resetPanSearchState") && !String(detailRaceLaneTerminal).includes("cancelDetailPlaybackPreparation"), "loser completion does not clear Direct results/health or cancel the winning run", "STATIC_HOOK");
+      check("DETAIL_RACE_LOSER_NO_RESET", !String(detailRaceLaneTerminal).includes("resetPanSearchState") && !String(detailRaceLaneTerminal).includes("cancelDetailPlaybackPreparation") && !String(terminalizeDirectDiscoveryAfterProviderCommit).includes("resetPanSearchState"), "loser completion does not clear Direct results/health or cancel the winning run", "STATIC_HOOK");
+      check("DETAIL_RACE_LOSER_DISCOVERY_TERMINATED", directDiscoveryTerminated && String(terminalizeDirectDiscoveryAfterProviderCommit).includes("terminalizePanSearchSession") && String(terminalizeDirectDiscoveryAfterProviderCommit).includes("clearPanPollTimers"), "Provider Commit terminalizes only future Direct discovery while preserving its state", "RUNTIME_MOCK");
+      check("DIRECT_RESULT_CANNOT_COMMIT", directRetryGuard && String(reportDetailDirectRaceResult).includes("run.providerCommitted"), "a Direct result after Provider Commit cannot commit", "RUNTIME_MOCK");
+      check("DIRECT_NO_NEW_RETRY_AFTER_PROVIDER_COMMIT", directRetryGuard && String(requestPanSearchWithRetry).includes("isPanSearchSessionActive"), "the existing active-session guard blocks later Direct retry attempts", "RUNTIME_MOCK");
+      check("DIRECT_RETRY_WAIT_INTERRUPTED_OR_GUARDED", directRetryGuard && String(waitForPanRetry).includes("isCurrent"), "a retry delay rechecks the Direct session before starting the next attempt", "RUNTIME_MOCK");
+      check("DIRECT_ATTEMPT_2_NOT_STARTED", directRetryGuard && String(requestPanSearchWithRetry).includes("if (!isCurrent()) return null"), "a retry attempt cannot start after the session becomes terminal", "RUNTIME_MOCK");
+      check("DIRECT_NO_NEW_POLL_AFTER_PROVIDER_COMMIT", directPollGuard && String(terminalizeDirectDiscoveryAfterProviderCommit).includes("clearPanPollTimers"), "scheduled Direct polling is cleared when a provider commits", "RUNTIME_MOCK");
+      check("DIRECT_POLL_TIMER_CANCELLED_OR_GUARDED", directPollGuard && String(pollPanResources).includes("isPanSearchSessionActive"), "poll timers are cleared and the poll entry guard remains in place", "RUNTIME_MOCK");
+      check("DIRECT_POLL_REQUEST_COUNT_AFTER_COMMIT", directPollGuard && String(pollPanResources).indexOf("isPanSearchSessionActive") < String(pollPanResources).indexOf("requestPanSearchWithRetry"), "a poll cannot issue a request after Provider Commit", "STATIC_HOOK");
+      check("DIRECT_NO_HEALTH_AFTER_PROVIDER_COMMIT", directHealthGuard && String(probePanHealth).includes("panContextIsCurrent") && String(pickQuarkBaiduTop5).includes("directAction"), "an in-flight Direct health result is discarded after Provider Commit", "RUNTIME_MOCK");
+      check("DIRECT_WINNER_PRESERVED_AFTER_OWN_COMMIT", directWinnerPreserved, "Direct can commit itself without clearing its Ready winner or play payload", "RUNTIME_MOCK");
+      check("DIRECT_NO_FUTURE_POLL_AFTER_OWN_COMMIT", directWinnerPreserved && String(terminalizeDirectDiscoveryAfterProviderCommit).includes('"provider_committed"'), "Direct self-commit also terminates only its future polling", "RUNTIME_MOCK");
+      check("DIRECT_FULL_LIFECYCLE_WITHOUT_PROVIDER_COMMIT", String(searchPanResources).includes("PAN_INITIAL_SEARCH_MAX_ATTEMPTS") && String(schedulePanPolling).includes("setTimeout") && String(pollPanResources).includes("PAN_POLL_MAX_ATTEMPTS"), "without a Provider Commit, the existing initial plus polling lifecycle remains", "STATIC_HOOK");
+      check("DIRECT_MAX_REQUESTS_STILL_7", PAN_INITIAL_SEARCH_MAX_ATTEMPTS === 3 && PAN_POLL_MAX_ATTEMPTS === 2 && panSearchPollIntervals().length === 2, "the default Direct lifecycle remains 3 initial attempts plus two 2-attempt polling rounds", "RUNTIME_MOCK");
       check("DETAIL_RACE_STATUS_PREPARING", detailPlayStateSource.includes("racePreparing") && detailPlayStateSource.indexOf("racePreparing") < detailPlayStateSource.indexOf('return "preparing"'), "race keeps the main button in PREPARING until Provider Commit", "STATIC_HOOK");
       const curatedHealthSource = String(curatedCentralHealthCandidate) + String(curatedProgressiveHealthCandidate);
       check("DETAIL_RACE_CURATED_PREFLIGHT_ISOLATED", String(probePanHealth).includes("raceRun") && String(panContextIsCurrent).includes("context.raceRun") && curatedHealthSource.includes('raceOwner: "curated"'), "Curated health validity uses the detail run, not Direct viewToken", "STATIC_HOOK");
