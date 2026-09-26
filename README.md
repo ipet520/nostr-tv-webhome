@@ -10,6 +10,14 @@ V1.4.0
 
 `index.html` is always the current official release.
 
+## Development / Build
+
+- Edit CSS under `src/css/` and application JavaScript under `src/js/` fragments; do not use the generated root `index.html` as the primary source.
+- Run `node scripts/build.mjs` to generate the self-contained root `index.html`.
+- Run `node scripts/verify-build.mjs` to verify the current root artifact against the source manifest.
+- `tests/tv-diagnostics.js` is diagnostic-only and is loaded only in diagnostic mode.
+- Runtime remains a single HTML file and does not load `src/` files.
+
 ## Version archive
 
 `versions/` contains permanent snapshots of published releases.
