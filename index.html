@@ -16806,14 +16806,11 @@ utils.encode = function encode(arr, enc) {
       { id: "huban", name: "虎斑", domains: ["http://xhban.xyz"] },
       { id: "shandian", name: "闪电", domains: ["http://shandian.blog"] }
     ];
-    const CURATED_SOURCE_BUDGET_MS = 3000;
-    const CURATED_CHAIN_BUDGET_MS = 15000;
     const CURATED_DISCOVERY_WINDOW_MS = 3000;
     const CURATED_QUALITY_GRACE_MS = 700;
     const CURATED_MIN_REQUEST_START_MS = 1000;
     const CURATED_PREFLIGHT_BUDGET_MS = 700;
     const CURATED_PREFLIGHT_PER_SOURCE = 2;
-    const CURATED_PREFLIGHT_MAX_ITEMS = 10;
     const CURATED_MAX_AUTO_CHECK_PER_SOURCE = 6;
     const DETAIL_CONTINUE_GATE_MAX_MS = 300;
     const DETAIL_NATIVE_HISTORY_GATE_MAX_MS = 800;
@@ -16883,7 +16880,6 @@ utils.encode = function encode(arr, enc) {
     }
 
     const state = {
-      site: null,
       config: null,
       identity: null,
       selected: null,
@@ -17022,7 +17018,7 @@ utils.encode = function encode(arr, enc) {
       tmdb: { config: null, configDirty: false },
       uiPrefs: { loaded: false, homeFullscreenEnabled: true, homeHotSource: "tmdb" },
       blocked: { loaded: false, items: {}, selecting: false, holdTimer: 0, holdTarget: null, longPressFired: false, pointer: null, suppressClickUntil: 0 },
-      pan: { config: null, configDirty: false, loading: false, keyword: "", activeType: "", results: [], health: {}, pending: {}, queued: new Map(), inFlight: new Set(), observer: null, flushTimer: 0, pollTimers: [], pollRound: 0, pollRoundStarted: {}, panSnapshotSeq: 0, requestSeq: 0, actualRequestAttempts: 0, lifecycleSeq: 0, sessionId: 0, sessionOrigin: "", sessionItemKey: "", sessionStartedAt: 0, sessionTerminal: false, sessionTerminalReason: "", sessionEndRecorded: false, sessionStartCount: 0, sessionEndCount: 0, sessionTimer: 0, initialAttempts: 0, pollRoundsStarted: 0, pollRoundsCompleted: 0, foregroundRecoveryCount: 0, preloadKey: "", viewToken: "", searchMode: "", initialSucceeded: false, initialResultState: "", lastFailureKind: "", retryRemaining: 0, finalFailure: false, directTransportExhausted: false, renderKeys: "", tabKeys: "", checkEnabled: false, focusKey: "", focusMode: "", playbackReturn: null, progress: { active: false, phase: "", round: 0, totalRounds: 0 }, preflight: null, directReady: null, directFailure: null, sessionDiag: null, isPlaying: false },
+      pan: { config: null, configDirty: false, loading: false, keyword: "", activeType: "", results: [], health: {}, pending: {}, queued: new Map(), inFlight: new Set(), observer: null, flushTimer: 0, pollTimers: [], pollRound: 0, pollRoundStarted: {}, panSnapshotSeq: 0, requestSeq: 0, actualRequestAttempts: 0, lifecycleSeq: 0, sessionId: 0, sessionOrigin: "", sessionItemKey: "", sessionStartedAt: 0, sessionTerminal: false, sessionTerminalReason: "", sessionEndRecorded: false, sessionStartCount: 0, sessionEndCount: 0, sessionTimer: 0, initialAttempts: 0, pollRoundsStarted: 0, pollRoundsCompleted: 0, foregroundRecoveryCount: 0, viewToken: "", searchMode: "", initialSucceeded: false, initialResultState: "", lastFailureKind: "", retryRemaining: 0, finalFailure: false, directTransportExhausted: false, renderKeys: "", tabKeys: "", checkEnabled: false, focusKey: "", focusMode: "", playbackReturn: null, progress: { active: false, phase: "", round: 0, totalRounds: 0 }, preflight: null, directReady: null, directFailure: null, sessionDiag: null, isPlaying: false },
       directPlayStatus: { active: false, actionId: 0, phase: "", text: "", startedAt: 0, clearTimer: 0 },
       watch: { item: null, timer: 0, bestMs: 0, durationMs: 0, lastAt: 0, published: false, intentAction: "", playbackTarget: null, playbackOrigin: "", nativeHistoryIdentity: null },
       historyContexts: { loaded: false, loading: false, promise: null, entries: [], diag: null },
@@ -17034,7 +17030,6 @@ utils.encode = function encode(arr, enc) {
       previewMode: false,
       tvFullscreen: false,
       detailReturn: null,
-      detailPreload: null,
       detailHistoryHandoff: null,
       detailPlayback: { seq: 0, token: "", itemKey: "", active: false, promise: null, candidate: null, sourceId: "", provider: "", playRequested: false, handoffStarted: false, history: null, historyVerified: false, episodeTarget: null, directAction: null, error: "", raceActive: false, providerCommitted: false, providerCommitCount: 0 },
       detailEpisodeTarget: null,
@@ -17440,11 +17435,6 @@ utils.encode = function encode(arr, enc) {
       const parts = date.split("-").map((value) => Number(value));
       const parsed = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
       return Number.isNaN(parsed.getTime()) || parsed.getUTCFullYear() !== parts[0] || parsed.getUTCMonth() !== parts[1] - 1 || parsed.getUTCDate() !== parts[2] ? "" : date;
-    }
-
-    function latestReleaseDate(item) {
-      if (!item) return "";
-      return latestDateOnly(item.releaseDate || item.release_date || item.first_air_date || "");
     }
 
     function isReleasedAsOfToday(item) {
@@ -20012,10 +20002,6 @@ utils.encode = function encode(arr, enc) {
       return ["timeout", "network", "http_transient"].includes(String(kind || ""));
     }
 
-    function isPanTransientError(error) {
-      return panRequestFailureIsRetryable(classifyPanRequestError(error));
-    }
-
     function panRetryStatusText(kind) {
       switch (String(kind || "")) {
         case "timeout": return "盘搜响应超时，正在重新请求…";
@@ -20133,16 +20119,6 @@ utils.encode = function encode(arr, enc) {
       return !!(startedAt && Date.now() - startedAt >= PAN_SEARCH_SESSION_MAX_MS);
     }
 
-    function isPanLifecycleTerminal(item) {
-      const keyword = panKeyword(item);
-      const sameItem = !!(item && state.pan && state.pan.sessionId
-        && state.pan.sessionItemKey === panSearchItemKey(item));
-      const phase = String(state.pan && state.pan.progress && state.pan.progress.phase || "");
-      return !!(sameItem && keyword && state.pan.keyword === keyword
-        && (state.pan.sessionTerminal || isPanSearchSessionHardExpired(state.pan)
-          || ["complete", "complete-empty", "initial-failed", "session-timeout", "error"].includes(phase)));
-    }
-
     function recordPanSearchSessionDiag(event, reason) {
       const pan = state.pan;
       if (!pan || !pan.sessionId) return null;
@@ -20217,7 +20193,6 @@ utils.encode = function encode(arr, enc) {
       pan.retryRemaining = 0;
       pan.finalFailure = false;
       pan.directTransportExhausted = false;
-      if (pan.sessionOrigin === "direct" || pan.sessionOrigin === "foreground_recovery") pan.preloadKey = "";
       pan.sessionDiag = null;
       recordPanSearchSessionDiag("SESSION_START", "");
       return sessionId;
@@ -20606,13 +20581,6 @@ utils.encode = function encode(arr, enc) {
       return url.toString();
     }
 
-    function tmdbPersonUrl(personId) {
-      const url = new URL(`${window.WEBHOME_CONFIG.tmdb.apiBase}/person/${personId}/combined_credits`);
-      url.searchParams.set("api_key", tmdbApiKey());
-      url.searchParams.set("language", window.WEBHOME_CONFIG.tmdb.language);
-      return url.toString();
-    }
-
     function tmdbPersonDetailUrl(personId) {
       const url = new URL(`${window.WEBHOME_CONFIG.tmdb.apiBase}/person/${personId}`);
       url.searchParams.set("api_key", tmdbApiKey());
@@ -20872,10 +20840,6 @@ utils.encode = function encode(arr, enc) {
 
     function isVisibleRecentHistory(history) {
       return historyVisibilityInfo(history).visible;
-    }
-
-    function isExpiredHistory(history) {
-      return historyVisibilityInfo(history).hiddenReason === "EXPLICIT_EXPIRED";
     }
 
     function historyReplayKind(history, parts, restorable) {
@@ -22087,36 +22051,6 @@ utils.encode = function encode(arr, enc) {
       return run.promise;
     }
 
-    function detailPreloadKeyFor(item) {
-      if (!item || (item.mediaType !== "tv" && item.mediaType !== "movie")) return "";
-      const keyword = panKeyword(item);
-      return keyword ? `${panSearchItemKey(item)}|${keyword}` : "";
-    }
-
-    function beginDetailPreload(item) {
-      const key = detailPreloadKeyFor(item);
-      if (!key) return null;
-      const current = state.detailPreload;
-      if (current && current.key === key && current.task) return current.task;
-      const entry = { key, itemKey: panSearchItemKey(item), pending: true, task: null };
-      const task = Promise.resolve(preloadPanForSeries(item)).catch(() => {});
-      entry.task = task;
-      state.detailPreload = entry;
-      task.then(() => {
-        if (state.detailPreload !== entry) return;
-        entry.pending = false;
-        if (state.selected === item && $("detailSheet") && $("detailSheet").classList.contains("active")) {
-          updateDetailContinueButton();
-        }
-      });
-      return task;
-    }
-
-    function detailPreloadPendingFor(item) {
-      const key = detailPreloadKeyFor(item);
-      return !!(key && state.detailPreload && state.detailPreload.key === key && state.detailPreload.pending);
-    }
-
     function detailDirectPlayCandidateKey(candidate) {
       if (!candidate) return "";
       const url = String(candidate.url || "").trim();
@@ -22677,7 +22611,6 @@ utils.encode = function encode(arr, enc) {
     async function loadInfo() {
       try {
         await detectDeviceMode();
-        state.site = await sdk().site();
         state.config = await sdk().config();
         state.pan.checkEnabled = !!(state.config && state.config.driveCheck);
         setStatus("sdk", window.fm ? "App SDK 已连接" : "浏览器预览模式");
@@ -22685,7 +22618,6 @@ utils.encode = function encode(arr, enc) {
         state.pan.renderKeys = "";
         renderPanResults();
       } catch (e) {
-        state.site = { name: "推荐首页" };
         state.pan.checkEnabled = false;
         setStatus("sdk", "SDK 获取失败：" + (e.message || "unknown"));
       }
@@ -22976,16 +22908,8 @@ utils.encode = function encode(arr, enc) {
       return Object.values(state.catalog).flat().filter(hasPoster);
     }
 
-    function findItem(id) {
-      return allItems().concat(state.searchItems).find((item) => item.id === id);
-    }
-
     function scoreItem(item) {
       return Math.max(0, 18 - item.baseRank) + (item.voteAverage || 0) * 1.2 + Math.min(item.popularity || 0, 200) * .04;
-    }
-
-    function qualifiesHeat(content) {
-      return watchedTenMinutes(content) && hasHeatIntent(content);
     }
 
     function watchedTenMinutes(content) {
@@ -26955,12 +26879,6 @@ utils.encode = function encode(arr, enc) {
       });
     }
 
-    function ensureActiveListData(id) {
-      if (!id || state.activeList !== id) return;
-      if (id === "recent") loadRecentList({ refresh: shouldRefreshRecentList() });
-      else if (id !== "all" && id !== "live") loadCatalogList(id);
-    }
-
     function scheduleRender() {
       clearTimeout(state.renderTimer);
       const delay = Date.now() < state.scrollingUntil ? 700 : 160;
@@ -27322,16 +27240,6 @@ utils.encode = function encode(arr, enc) {
         } else client.push("sort");
       }
       return { entry, server, client };
-    }
-
-    function secondaryLatestSources() {
-      // The old 60-day Discover catalog is intentionally retired for this
-      // route.  `now-playing` is served by the finite Weekly Feed loader.
-      return [];
-    }
-
-    function sortSecondaryLatestItems(items) {
-      return sortWeeklyItems(items);
     }
 
     function secondaryQuerySourceLists(id, filters, query) {
@@ -27722,10 +27630,6 @@ utils.encode = function encode(arr, enc) {
       });
     }
 
-    function secondaryNostrAnimeMetadataFromDetail(hotItem, detail) {
-      return nostrTmdbMetaFromDetail(hotItem, detail);
-    }
-
     function nostrTmdbItemFromMetadata(hotItem, metadata, listId, index) {
       const entry = normalizeNostrTmdbMetaEntry(metadata);
       const hotMediaType = String(hotItem && (hotItem.mediaType || hotItem.media_type) || "").toLowerCase();
@@ -27753,10 +27657,6 @@ utils.encode = function encode(arr, enc) {
       item.title = item.title || hotItem.title || "未命名";
       item.listId = listId;
       return nostrHotSignalOverlay(item, hotItem, listId);
-    }
-
-    function secondaryNostrAnimeItemFromMetadata(hotItem, metadata, listId, index) {
-      return nostrTmdbItemFromMetadata(hotItem, metadata, listId, index);
     }
 
     function secondaryNostrKnownItem(hotItem, query) {
@@ -28871,13 +28771,6 @@ utils.encode = function encode(arr, enc) {
       return true;
     }
 
-    function secondaryCatalogItems(listId) {
-      listId = normalizeLegacyCategoryId(listId);
-      if (listId === "recent") return state.recent && Array.isArray(state.recent.items) ? state.recent.items : [];
-      const query = homeUiRoute() === "secondary" ? secondaryActiveQuery(listId) : null;
-      return secondaryFilterItems(listId, query && query.loaded ? query.items : secondaryCatalogBaseItems(listId));
-    }
-
     function scheduleSecondaryFilterFocusRestore() {
       const pending = state.homeV14 && state.homeV14.secondaryFocusRestore;
       if (!pending || pending.frame) return;
@@ -29320,11 +29213,6 @@ utils.encode = function encode(arr, enc) {
     // Compatibility alias for the existing Nostr recommendation refresh path.
     // The Home presentation now exposes one Hot rail, while the underlying
     // preference/heat engine remains unchanged.
-    function renderRecommendations(options) {
-      const opts = options || {};
-      if (opts.home) return renderHomeHot(opts);
-    }
-
     function renderActiveGrid() {
       if (state.activeList === "all") renderHome();
       else renderLists();
@@ -29711,13 +29599,6 @@ utils.encode = function encode(arr, enc) {
       return home.focusUserEpoch;
     }
 
-    function cancelColdHomeFocusOnUserNavigation(key) {
-      if (!isTvLikeDevice() || !isHomeRouteActive() || focusScopeRoot() !== document
-        || !["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(key)) return false;
-      markHomeUserNavigation();
-      return true;
-    }
-
     function ensureRemoteInitialFocus(options) {
       const opts = options || {};
       const active = document.activeElement;
@@ -29812,11 +29693,6 @@ utils.encode = function encode(arr, enc) {
       state.homeV14.initialHomeFocusPending = true;
       try { focusHomeTopTarget(target, options); }
       finally { state.homeV14.initialHomeFocusPending = false; }
-    }
-
-    function focusCurrentHomeTop(options) {
-      const target = currentHomeFocus() || initialHomeFocus();
-      focusHomeTopTarget(target, options);
     }
 
     function focusHomeTopTarget(target, options) {
@@ -30156,24 +30032,6 @@ utils.encode = function encode(arr, enc) {
       return false;
     }
 
-    async function resumePanHistoryPlayback(item, resume, preloadTask) {
-      if (!item || !resume || state.selected !== item || !state.historyResume) return false;
-      const target = normalizePlaybackTarget(item, resume.context || resume.history);
-      if (target) setDetailPlaybackTarget(item, target);
-      const directItem = buildDirectPanHistoryItem(target);
-      if (directItem) {
-        state.historyResume = null;
-        toast("正在恢复上次播放资源…");
-        await playPanResult(directItem, {
-          episodeTarget: target,
-          historyResume: true,
-          prechecked: true
-        });
-        return true;
-      }
-      return resumePanHistoryFromSearch(item, target, preloadTask);
-    }
-
     async function playNativeHistoryExact(item, options) {
       const opts = options || {};
       if (!item) return false;
@@ -30237,12 +30095,6 @@ utils.encode = function encode(arr, enc) {
       }
     }
 
-    async function openDetailContinueHistory() {
-      const item = state.selected;
-      if (!item) return false;
-      await requestDetailPlayback(item);
-      return true;
-    }
     function mediaDomKey(item) {
       if (!item) return "";
       return item.id || (item.tmdbId && item.mediaType ? `tmdb:${item.mediaType}:${item.tmdbId}` : item.title || "");
@@ -30723,31 +30575,6 @@ utils.encode = function encode(arr, enc) {
       if (parsed && parsed.data && Array.isArray(parsed.data)) return parsed.data;
       if (parsed && parsed.data && Array.isArray(parsed.data.list)) return parsed.data.list;
       return [];
-    }
-
-    async function loadNativeRecentHistory(options) {
-      const opts = options || {};
-      const recent = state.recent;
-      if (!recent) return [];
-      if (recent.nativeLoading) return recent.nativeItems || [];
-      if (recent.nativeLoaded && !opts.refresh) return recent.nativeItems || [];
-      recent.nativeLoading = true;
-      try {
-        const api = sdk();
-        const raw = api && typeof api.history === "function" ? await api.history() : [];
-        const nativeList = extractNativeHistoryList(raw);
-        const normalized = normalizeHistoryList(nativeList);
-        normalized.forEach((item) => recordRecentNativeKeyFlow("RECENT_NATIVE_KEY_AT_LOAD", item));
-        recent.nativeItems = normalized.map((item) => Object.assign({}, item, { recentWatching: true }));
-        recent.nativeLoaded = true;
-        recent.nativeRefreshedAt = Date.now();
-      } catch (e) {
-        recent.nativeItems = [];
-        recent.nativeLoaded = true;
-      } finally {
-        recent.nativeLoading = false;
-      }
-      return recent.nativeItems;
     }
 
     function refreshRecentWatchingViews(now) {
@@ -31653,14 +31480,6 @@ utils.encode = function encode(arr, enc) {
         .trim();
     }
 
-    function findMediaByContent(content) {
-      const title = normalizeTitle(content.title || content.query || "");
-      return allItems().concat(state.searchItems).find((item) => {
-        if (content.tmdbId && item.tmdbId && String(content.tmdbId) === String(item.tmdbId)) return true;
-        return title && normalizeTitle(item.title) === title;
-      });
-    }
-
     function resolveHistoryMedia(history) {
       const context = historyPlaybackContext(history);
       const pool = allItems().concat(state.searchItems || []).filter(Boolean);
@@ -32384,9 +32203,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         cancelPendingDirectPlay("selected_change");
         cancelDetailPlaybackPreparation("selected_change");
         state.detailHistoryHandoff = null;
-      }
-      if (!detailWasActive || !sameSelected || !opts.keepPan) {
-        state.detailPreload = null;
       }
       const restorePlaybackReturn = opts.playerReturnRestore === true
         && opts.panSnapshot && opts.panSnapshot.playbackReturn;
@@ -33131,24 +32947,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       }
     }
 
-    function measureDetailMoreHeight(more) {
-      const display = more.style.display;
-      const visibility = more.style.visibility;
-      more.style.display = "inline-flex";
-      more.style.visibility = "hidden";
-      const height = more.offsetHeight || 30;
-      more.style.display = display;
-      more.style.visibility = visibility;
-      return height;
-    }
-
     function detailTextClampLimit() {
       return useLargeDetailLayout() ? DETAIL_TEXT_CLAMP_LIMIT_LARGE : DETAIL_TEXT_CLAMP_LIMIT;
-    }
-
-    function detailTextShouldClampByLength(text) {
-      const plain = detailTextPlain(text);
-      return plain.length > detailTextClampLimit();
     }
 
     function updateDetailTextClamp() {
@@ -33400,7 +33200,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         state.pan.focusKey = "";
         state.pan.focusMode = "";
       }
-      if (hideBlock) state.pan.preloadKey = "";
       state.pan.lastTypeSelect = null;
       state.pan.keepBlockPositionUntil = 0;
       if (!preservePlaybackReturn) state.pan.playbackReturn = null;
@@ -33797,86 +33596,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
     function panKeyword(item) {
       return resourceSearchKeyword(item);
-    }
-
-    // 进入剧集（tv）详情页即后台静默预搜盘搜资源，缩短主播放准备时间。
-    // 仅预加载、不弹盘搜页、不抢焦点；已有同剧结果时直接复用。
-    async function preloadPanForSeries(item) {
-      if (!item || (item.mediaType !== "tv" && item.mediaType !== "movie")) return;  // 剧集 + 电影
-      if (state.selected !== item) return;              // 详情页已切走则放弃
-      if (canonicalResourceKey(item)) {
-        try { await resolveCanonicalResourceTitle(item); } catch (e) {}
-        if (state.selected !== item) return;
-      }
-      const keyword = panKeyword(item);
-      if (!keyword) return;
-      const warm = () => (item.mediaType === "movie" ? warmMoviePanHealth(item) : warmEpisodePanHealth(item));
-      const preloadKey = `${panSearchItemKey(item)}|${keyword}`;
-      // 同一影片、同一标题、同一详情生命周期只允许一次自动预搜。
-      if (state.pan.preloadKey === preloadKey) {
-        if (state.pan.keyword === keyword && (state.pan.results || []).length) warm();
-        return;
-      }
-      state.pan.preloadKey = preloadKey;
-      const lifecycle = getPanSearchLifecycleFor(item);
-      if (lifecycle.sameSession || state.pan.keyword === keyword && (state.pan.results || []).length) {
-        warm();
-        return;
-      }
-      if (state.pan.loading) return;                    // 已有搜索在进行
-      try {
-        await searchPanResources(item, { silent: true, origin: "preload", preloadKey });
-      } catch (e) {}
-      warm();                                           // 搜完立刻预热，详情主播放/手动盘搜即可复用
-    }
-
-    // 预热健康检查：进详情页后先把最可能用到的候选（115 单集 + 115/夸克/百度全集包）
-    // 的有效性查好并缓存（5 分钟内有效），详情主播放或手动盘搜可直接复用，
-    // 不必现场等待网盘探活。一次最多探 ~15 条，避免占用过多请求。
-    async function warmEpisodePanHealth(item) {
-      if (!item || state.selected !== item) return;
-      if (!panCheckAvailable()) return;
-      const results = state.pan.results || [];
-      if (!results.length) return;
-      const is115   = (it) => normalizePanDiskType(it && it.diskType) === "115";
-      const isQuark = (it) => normalizePanDiskType(it && it.diskType) === "quark";
-      const isBaidu = (it) => normalizePanDiskType(it && it.diskType) === "baidu";
-      const isPack  = (it) => panItemIsRangePack(String(it && it.title || ""));
-      const singles115 = [], packs115 = [], packsQuark = [], packsBaidu = [];
-      results.forEach((it) => {
-        if (is115(it)) (isPack(it) ? packs115 : singles115).push(it);
-        else if (isQuark(it) && isPack(it)) packsQuark.push(it);
-        else if (isBaidu(it) && isPack(it)) packsBaidu.push(it);
-      });
-      const warm = []
-        .concat(rankPanCandidates(singles115).slice(0, 8))   // 115 单集最常用，多预热几条
-        .concat(rankPanPacks(packs115).slice(0, 3))          // 115 全集兜底
-        .concat(rankQuarkPacks(packsQuark).slice(0, 2))      // 夸克全集兜底
-        .concat(rankQuarkPacks(packsBaidu).slice(0, 2))      // 百度全集兜底
-        .filter((it) => it && isPanCheckSupported(it) && !isPanHealthFresh(it))
-        .slice(0, 15);
-      if (warm.length && state.selected === item) {
-        probePanHealth(warm, { context: { token: state.pan.viewToken, item } }).catch(() => {});
-      }
-    }
-
-    // 电影预热：把画质最高的夸克/百度 + 115 资源先探活缓存，配合"搜索播放"短按秒开。
-    async function warmMoviePanHealth(item) {
-      if (!item || state.selected !== item || !panCheckAvailable()) return;
-      const results = state.pan.results || [];
-      if (!results.length) return;
-      const isQuark = (it) => normalizePanDiskType(it && it.diskType) === "quark";
-      const isBaidu = (it) => normalizePanDiskType(it && it.diskType) === "baidu";
-      const is115   = (it) => normalizePanDiskType(it && it.diskType) === "115";
-      const warm = []
-        .concat(rankQuarkPacks(results.filter(isQuark)).slice(0, 6))   // 夸克按画质+关键字择优
-        .concat(rankQuarkPacks(results.filter(isBaidu)).slice(0, 6))   // 百度按画质+关键字择优
-        .concat(rankPanCandidates(results.filter(is115)).slice(0, 4))  // 115 兜底
-        .filter((it) => it && isPanCheckSupported(it) && !isPanHealthFresh(it))
-        .slice(0, 16);
-      if (warm.length && state.selected === item) {
-        probePanHealth(warm, { context: { token: state.pan.viewToken, item } }).catch(() => {});
-      }
     }
 
     function openPanFallback(item, message) {
@@ -34323,28 +34042,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       recordPanForegroundRecoveryDiag("direct_transport_exhausted", previousFailureKind, started);
       if (searchTask && typeof searchTask.catch === "function") searchTask.catch(() => {});
       return started;
-    }
-
-    function openPanForDirectPlay(item, message, options) {
-      if (options && options.transportExhausted) {
-        const started = startPanForegroundRecovery(item, message, options.previousFailureKind, options.actionId);
-        clearDirectPlayStatusAfterPanOpen(options.actionId, "pan_open");
-        return started;
-      }
-      if (message) toast(message);
-      if (!item) return false;
-      const lifecycle = getPanSearchLifecycleFor(item);
-      if (lifecycle.sameSession) {
-        openPanBlockIfNeeded();
-        updatePostPanFocusState();
-        renderPanResults();
-        focusFirstPanTab();
-        clearDirectPlayStatusAfterPanOpen(options && options.actionId, "pan_open");
-        return true;
-      }
-      const opened = openPanFallback(item);
-      if (opened) clearDirectPlayStatusAfterPanOpen(options && options.actionId, "pan_open");
-      return opened;
     }
 
     function currentDetailFailureRunFor(action) {
@@ -35315,10 +35012,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       };
     }
 
-    function curatedItemYear(item) {
-      return curatedYear(item && (item.releaseDate || item.firstAirDate || item.release_date || item.first_air_date || ""));
-    }
-
     function mediaIdentityMarkers(value) {
       const text = String(value || "");
       return {
@@ -35447,10 +35140,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         normalizedCandidate,
         conflicts
       };
-    }
-
-    function curatedTitleMatches(item, value, metadata) {
-      return !!(item && mediaIdentityVerdict(item, value, metadata).verdict !== "REJECT");
     }
 
     function curatedHtmlSourceIsStrict(source) {
@@ -38068,33 +37757,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return result;
     }
 
-    function rememberPanPlaybackReturnBestEffort(item, handoffAction, episodeTarget) {
-      let timer = 0;
-      let task;
-      try {
-        task = rememberPanPlaybackReturn(item, episodeTarget);
-      } catch (error) {
-        task = Promise.reject(error);
-      }
-      const saveTask = Promise.resolve(task)
-        .then(() => ({ status: "ok" }))
-        .catch((error) => ({ status: "error", error: String(error && error.message || error || "") }));
-      const timeoutTask = new Promise((resolve) => {
-        timer = setTimeout(() => resolve({ status: "timeout" }), PLAYBACK_SNAPSHOT_TIMEOUT_MS);
-      });
-      return Promise.race([saveTask, timeoutTask]).then((result) => {
-        clearTimeout(timer);
-        const outcome = result || { status: "error" };
-        if (handoffAction) {
-          recordPanDirectHandoffStage(outcome.status === "ok" ? "SNAPSHOT_OK" : "SNAPSHOT_TIMEOUT", handoffAction.item, handoffAction, {
-            snapshotOutcome: outcome.status,
-            snapshotError: outcome.status === "error"
-          });
-        }
-        return outcome;
-      });
-    }
-
     function restorePanPlaybackReturn(options) {
       const opts = options || {};
       const saved = state.pan.playbackReturn;
@@ -38327,17 +37989,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       recordPanPreflightResult([item], states, available ? 0 : 1, item, false);
       if (!available) return { available: false, cancelled: false, timedOut: !!checked.timedOut, checkError: !!checked.checkError };
       return { available: true, cancelled: false, state: states[key] || "uncertain", timedOut: false, checkError: false };
-    }
-
-    function keepPanResultFocusAfterInvalid(item) {
-      const key = item && (item.key || panHealthKey(item));
-      if (key) state.pan.focusKey = key;
-      state.pan.focusMode = "results";
-      renderPanResults();
-      const list = $("panResultList");
-      const target = key && list ? findByDataset(list, "panKey", key) : null;
-      const fallback = list && list.querySelector(".pan-result-item");
-      if (target || fallback) requestAnimationFrame(() => focusPanTarget(target || fallback, { keepBlockPosition: true }));
     }
 
     async function playPanResult(item, options) {
@@ -38644,11 +38295,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         throw e;
       }
       toast("已发起原生搜索");
-    }
-
-    async function nativeHomeSearch(keyword) {
-      await sdk().search(String(keyword || "").trim(), { direct: false });
-      toast("已打开原生搜索");
     }
 
     async function openLiveHome() {
@@ -38973,78 +38619,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         toleranceMs: tolerance,
         error: lastError
       };
-    }
-
-    async function syncNativeHistoryProgress(watch, status, options) {
-      const opts = options || {};
-      if (!watch || state.watch !== watch) return false;
-      const payload = buildNativeHistoryProgressPayload(watch, status);
-      if (!payload) return false;
-      const identityKey = payload.siteKey + "\u001f" + payload.vodId;
-      const write = watch.nativeHistoryWrite || (watch.nativeHistoryWrite = {
-        key: "",
-        positionMs: 0,
-        durationMs: 0,
-        completed: false,
-        inFlight: false,
-        lastAt: 0,
-        promise: null
-      });
-      if (write.inFlight) return write.promise || false;
-      const minAdvanceMs = Math.max(15000, Math.round(payload.durationMs * 0.01));
-      if (write.key === identityKey && (write.completed || (!payload.completed && payload.positionMs <= write.positionMs + minAdvanceMs))) {
-        if (opts.verifyNativeHistory && write.positionMs > 0) {
-          const readback = await verifyNativeHistoryProgressVisible(payload, write.positionMs);
-          if (state.watch === watch && opts.refreshRecent !== false) await loadRecentList({ refresh: true, silent: true });
-          return readback.ok;
-        }
-        if (state.watch === watch && opts.refreshRecent !== false) await loadRecentList({ refresh: true, silent: true });
-        return false;
-      }
-      write.inFlight = true;
-      const task = (async () => {
-        let requestContext = null;
-        try {
-          requestContext = await nativeHistoryProgressRequestContext();
-          if (!requestContext) {
-            recordNativeHistoryProgressDiag(payload, "", null, {}, "unavailable");
-            return false;
-          }
-          const response = await requestContext.request(requestContext.endpoint, {
-            method: "POST",
-            responseType: "json",
-            timeout: 24,
-            headers: { "Content-Type": "application/json; charset=utf-8" },
-            body: JSON.stringify(payload)
-          });
-          const data = nativeHistoryProgressBody(response);
-          const statusCode = Number(response && (response.status || response.code) || 0);
-          if (response && response.error || response && response.ok === false || statusCode >= 400) {
-            recordNativeHistoryProgressDiag(payload, requestContext.endpoint, response, data, "http_error");
-            return false;
-          }
-          const action = nativeHistoryProgressAction(data);
-          const accepted = action === "created" || action === "updated";
-          recordNativeHistoryProgressDiag(payload, requestContext.endpoint, response, data, accepted ? action : "not_applied");
-          if (!accepted) return false;
-          write.key = identityKey;
-          write.positionMs = payload.positionMs;
-          write.durationMs = payload.durationMs;
-          write.completed = !!payload.completed;
-          write.lastAt = Date.now();
-          if (opts.verifyNativeHistory) await verifyNativeHistoryProgressVisible(payload, payload.positionMs);
-          if (state.watch === watch && opts.refreshRecent !== false) await loadRecentList({ refresh: true, silent: true });
-          return true;
-        } catch (e) {
-          recordNativeHistoryProgressDiag(payload, requestContext && requestContext.endpoint, null, {}, "request_failed", String(e && e.message || e || ""));
-          return false;
-        } finally {
-          write.inFlight = false;
-          if (write.promise === task) write.promise = null;
-        }
-      })();
-      write.promise = task;
-      return task;
     }
 
     function startWatchTracking(item, playbackTarget, nativeIdentity) {
@@ -40763,10 +40337,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       }, 260);
     }
 
-    function visibleChipItems(root) {
-      return root ? Array.from(root.children || []).filter((item) => item.classList && item.classList.contains("chip") && isVisibleFocusable(item)) : [];
-    }
-
     function wrappedFocusable(root, current, delta, selector) {
       if (!root || !current) return null;
       const items = Array.from(root.querySelectorAll(selector || ".focusable,button,input,textarea")).filter(isVisibleFocusable);
@@ -40795,41 +40365,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const rail = $("searchHotRail");
       if (!section || !rail || section.hidden || !isVisibleFocusable(rail.querySelector(".card"))) return null;
       return Array.from(rail.querySelectorAll(".card")).find(isVisibleFocusable) || null;
-    }
-
-    function hasVisibleSearchResults() {
-      return !!firstSearchResultFocusTarget();
-    }
-
-    function homeContentFocusTarget() {
-      if (state.activeList === "all" && homeUiRoute() !== "home") {
-        const activeRoot = homeUiRoute() === "secondary" ? $("secondaryCatalogGrid") : $("searchPage");
-        const target = activeRoot && Array.from(activeRoot.querySelectorAll(".focusable,button,input,textarea")).find(isVisibleFocusable);
-        if (target) return target;
-      }
-      const searchResult = firstSearchResultFocusTarget();
-      if (searchResult) return searchResult;
-      if (state.activeList === "all" && isVisibleFocusable($("homeHero"))) {
-        return $("homeHero");
-      }
-      if (state.activeList === "all" && typeof homeFirstTarget === "function") {
-        const homeTarget = homeFirstTarget();
-        if (homeTarget && homeTarget !== document.activeElement) return homeTarget;
-      }
-      const grid = activeMediaGrid();
-      if (grid) {
-        const first = Array.from(grid.querySelectorAll(".card")).find(isVisibleFocusable);
-        if (first) return first;
-      }
-      const live = $("listStack") && $("listStack").querySelector(".live-entry-card");
-      if (isVisibleFocusable(live)) return live;
-      const search = $("searchRail");
-      if (search && $("searchSection") && $("searchSection").style.display !== "none") {
-        const first = Array.from(search.querySelectorAll(".card")).find(isVisibleFocusable);
-        if (first) return first;
-      }
-      const recommend = $("recommendRail");
-      return recommend ? Array.from(recommend.querySelectorAll(".card")).find(isVisibleFocusable) || null : null;
     }
 
     function handleHomeHeroDirectionalKey(key, event) {
@@ -43883,7 +43418,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (!pan || !pan.keyword && !(pan.results || []).length) return;
       state.pan.loading = false;
       state.pan.keyword = pan.keyword || "";
-      state.pan.preloadKey = state.selected ? `${panSearchItemKey(state.selected)}|${state.pan.keyword}` : "";
       state.pan.sessionItemKey = "";
       state.pan.sessionTerminal = true;
       state.pan.initialResultState = pan.results && pan.results.length ? "restored" : "restored_empty";
