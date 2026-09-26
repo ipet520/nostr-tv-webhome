@@ -16978,6 +16978,7 @@ utils.encode = function encode(arr, enc) {
         coldHomeFallbackTarget: null,
         focusUserEpoch: 0,
         homeSectionEntryTarget: null,
+        lastHomeFocusedRail: "",
         snapshotBound: {}
       },
       searchItems: [],
@@ -17126,6 +17127,9 @@ utils.encode = function encode(arr, enc) {
     const HOME_V14_MAX_CONCURRENT = 2;
     const HOME_V14_SECTION_ROOT_MARGIN = "760px 0px";
     const HOME_V14_IMAGE_ROOT_MARGIN = "700px 250px";
+    // The current TV Home presentation reserves a 54px navigation band;
+    // keep a 16px visual gap below it when a new rail becomes authoritative.
+    const HOME_RAIL_ANCHOR_OFFSET = 70;
 
     let nativeSdkWait = null;
 
@@ -32303,6 +32307,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         return false;
       }
       state.homeReturn = null;
+      if (state.homeV14 && saved.route === "home") state.homeV14.lastHomeFocusedRail = "";
       const focusEpoch = homeFocusUserEpoch();
       const restoreSecondary = saved.route === "secondary" && saved.secondaryListId;
       if (restoreSecondary) {
@@ -41805,6 +41810,22 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return Array.from(home.querySelectorAll("#homeRecentSection, #recommendSection, #listStack > .home-dynamic-section")).filter((section) => !section.hidden && !section.closest("[hidden]"));
     }
 
+    function homeRailContextForTarget(target) {
+      if (!isTvLikeDevice() || !isHomeRouteActive() || isSidebarOpen() || !target || !target.closest) return null;
+      const home = $("home");
+      if (!home || !home.contains(target)) return null;
+      const section = target.closest(".home-section");
+      if (!section || section.hidden || section.closest("[hidden]")) return null;
+      const rail = section.querySelector(".home-rail");
+      if (!rail) return null;
+      return {
+        key: String(rail.dataset.railKey || rail.dataset.homeListId || rail.id || section.id || ""),
+        section,
+        rail,
+        head: section.querySelector(".home-section-head")
+      };
+    }
+
     function homeSectionCards(section) {
       return section ? Array.from(section.querySelectorAll(".home-rail > .card")).filter((card) => !card.classList.contains("home-more-card") && canFastHomeFocus(card)) : [];
     }
@@ -42582,14 +42603,37 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return { x: 0, y: next - before };
     }
 
+    function alignHomeRailToAnchor(context) {
+      if (!context || !context.rail || !context.rail.getBoundingClientRect) return { x: 0, y: 0 };
+      const root = document.scrollingElement || document.documentElement;
+      const height = window.innerHeight || document.documentElement.clientHeight || 0;
+      const anchor = context.head && context.head.getBoundingClientRect ? context.head : context.rail;
+      const anchorRect = anchor.getBoundingClientRect();
+      const before = homeScrollTop();
+      const max = Math.max(0, Number(root.scrollHeight || document.documentElement.scrollHeight || 0) - Number(root.clientHeight || height || 0));
+      const desired = before + anchorRect.top - HOME_RAIL_ANCHOR_OFFSET;
+      const next = Math.max(0, Math.min(max, desired));
+      if (Math.abs(next - before) > .5) applyHomeScrollTop(next);
+      return { x: 0, y: next - before };
+    }
+
     function revealHomeFocusedTarget(target, options) {
       const opts = options || {};
       const root = document.scrollingElement || document.documentElement;
       const homeHero = $("homeHero");
       if (isHomeRouteActive() && target === homeHero) {
+        if (state.homeV14) state.homeV14.lastHomeFocusedRail = "";
         const beforeTop = homeScrollTop();
         if (beforeTop > 0) applyHomeScrollTop(0);
         return { x: 0, y: -beforeTop };
+      }
+      const homeRail = homeRailContextForTarget(target);
+      if (homeRail && homeRail.key) {
+        const lastRail = String(state.homeV14 && state.homeV14.lastHomeFocusedRail || "");
+        if (homeRail.key === lastRail) return { x: 0, y: 0 };
+        const anchorDelta = alignHomeRailToAnchor(homeRail);
+        if (state.homeV14) state.homeV14.lastHomeFocusedRail = homeRail.key;
+        return anchorDelta;
       }
       const itemRect = focusOuterBounds(target);
       const height = window.innerHeight || document.documentElement.clientHeight || 0;
@@ -43926,6 +43970,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         state.homeV14.route = "secondary";
       } else {
         state.homeV14.route = "home";
+        state.homeV14.lastHomeFocusedRail = "";
       }
       if (legacyHomeRoute) state.activeList = "all";
       else if (snapshot.activeList) state.activeList = normalizeLegacyCategoryId(snapshot.activeList);
