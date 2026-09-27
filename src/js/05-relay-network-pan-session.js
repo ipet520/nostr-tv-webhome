@@ -533,12 +533,6 @@
       }
     }
 
-    function clearDirectPlayStatusAfterPanOpen(actionId, reason) {
-      const block = $("panSearchBlock");
-      if (!block || !block.classList.contains("active") || block.style.display === "none") return false;
-      return clearDirectPlayStatus(actionId, reason || "pan_open");
-    }
-
     function clearDirectPlayStatusOnNativeTakeover(reason) {
       const status = state.directPlayStatus || {};
       if (!status.active || !state.pan || !state.pan.isPlaying) return false;

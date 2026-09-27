@@ -297,12 +297,6 @@
       return Math.max(0, 18 - item.baseRank) + (item.voteAverage || 0) * 1.2 + Math.min(item.popularity || 0, 200) * .04;
     }
 
-    function watchedTenMinutes(content) {
-      if (!content || content.action !== "watch") return false;
-      const watchMs = Math.max(0, Number(content.watchMs || content.position || 0));
-      return watchMs >= WATCH_HEAT_MS;
-    }
-
     function hasHeatIntent(content) {
       const intent = String(content.intentAction || content.intent || "");
       return intent === "view" || intent === "search" || content.clicked === true || content.searched === true;

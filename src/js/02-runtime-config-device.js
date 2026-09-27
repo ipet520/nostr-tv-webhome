@@ -185,8 +185,6 @@
     const RECENT_MAX_AGE_DAYS = 180;
     const RECENT_MAX_AGE_MS = RECENT_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
     const RECENT_DOUBLE_PRESS_WINDOW_MS = 350;
-    const DETAIL_TEXT_CLAMP_LIMIT = 150;
-    const DETAIL_TEXT_CLAMP_LIMIT_LARGE = 210;
     const canonicalResourceTitleCache = new Map();
     const canonicalResourceTitlePromises = new Map();
 

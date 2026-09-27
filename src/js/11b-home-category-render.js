@@ -113,21 +113,6 @@
       };
     }
 
-
-    function commitHomeCategoryTmdbItems(id, feed, key, requestSeq, items) {
-      if (!homeCategoryFeedIsCurrent(feed, key, requestSeq)) return false;
-      const tmdbItems = uniqueMedia(Array.isArray(items) ? items : []);
-      feed.source = "tmdb";
-      feed.items = filterBlocked(tmdbItems);
-      feed.dataVersion = key;
-      feed.signature = key;
-      const section = Array.from(document.querySelectorAll("#listStack > .home-dynamic-section")).find((entry) => entry.dataset.homeListId === normalizeLegacyCategoryId(id));
-      const config = homeSectionConfig().find((entry) => entry.listId === normalizeLegacyCategoryId(id));
-      if (section && config && tmdbItems.length) renderHomeDynamicSection(section, config);
-      recordHomeV14Diag();
-      return true;
-    }
-
     function homeCategoryFeedLimit(id) {
       const config = homeSectionConfig().find((entry) => entry.listId === normalizeLegacyCategoryId(id));
       return Number(config && config.initialLimit || homeRailLimit("portrait"));

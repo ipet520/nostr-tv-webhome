@@ -255,23 +255,6 @@
       return true;
     }
 
-    function refreshSidebarSourceVisibility() {
-      const nav = $("homeSidebarNav");
-      if (!nav || !isSidebarOpen()) return false;
-      const allowed = new Set(sidebarNavigationItems().map((item) => item.key));
-      const children = Array.from(nav.querySelectorAll(".home-sidebar-item"));
-      const stale = children.filter((item) => item.dataset.sidebarKey && !allowed.has(item.dataset.sidebarKey));
-      if (!stale.length) return false;
-      const active = document.activeElement;
-      const activeIndex = children.indexOf(active);
-      const fallback = activeIndex >= 0
-        ? children.slice(0, activeIndex).reverse().concat(children.slice(activeIndex + 1)).find((item) => !stale.includes(item) && isVisibleFocusable(item))
-        : null;
-      stale.forEach((item) => item.remove());
-      if (active && stale.includes(active) && fallback) focusRemoteTarget(fallback);
-      return true;
-    }
-
     function sidebarReturnContext() {
       const home = state.homeV14 || {};
       return {

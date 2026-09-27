@@ -683,10 +683,6 @@
       return !!(document.documentElement.classList.contains("native-mobile-app") && target && target.classList.contains("active") && !target.classList.contains("detail-large"));
     }
 
-    function detailTextPlain(text) {
-      return String(text && text.textContent || "").replace(/\s+/g, "").trim();
-    }
-
     function setDetailTextContent(value) {
       const text = $("detailText");
       if (!text) return;
@@ -768,10 +764,6 @@
         more.style.visibility = "";
         more.textContent = "更多";
       }
-    }
-
-    function detailTextClampLimit() {
-      return useLargeDetailLayout() ? DETAIL_TEXT_CLAMP_LIMIT_LARGE : DETAIL_TEXT_CLAMP_LIMIT;
     }
 
     function updateDetailTextClamp() {
@@ -1065,19 +1057,10 @@
       return reSE.test(t) || reEP.test(t) || reE.test(t) || reCN.test(t);
     }
 
-    // 候选排序：115 优先，其次其它单集源，同源按画质分
     function panDiskOrder(item) {
       const order = { "115": 0, "quark": 1, "aliyun": 1, "uc": 1, "123": 1, "tianyi": 1, "mobile": 1, "xunlei": 2, "baidu": 2 };
       var _o = order[normalizePanDiskType(item && item.diskType)]; return _o != null ? _o : 3;
     }
-    function rankPanCandidates(arr) {
-      return arr.slice().sort((a, b) => {
-        const d = panDiskOrder(a) - panDiskOrder(b);
-        if (d) return d;
-        return panQualityInfo(b).score - panQualityInfo(a).score;
-      });
-    }
-
     // 「全集/全包」字眼评分：标题越像完整合集分越高（优先选带「全集」字样的）
     function panPackScore(item) {
       const t = String(item && item.title || "");
@@ -1089,17 +1072,6 @@
       if (/S?\d{1,2}\s*E\d{1,3}\s*[-~～]\s*E?\d{1,3}/i.test(t)) score += 2; // S01E01-E24
       if (/第\s*\d{1,3}\s*[-~～]\s*\d{1,3}\s*集/.test(t)) score += 2;        // 第1-24集
       return score;
-    }
-
-    // 全集包排序：不限网盘、择优——优先「全集」字眼，其次画质，网盘仅作次要 tiebreak
-    function rankPanPacks(arr) {
-      return arr.slice().sort((a, b) => {
-        const ps = panPackScore(b) - panPackScore(a);
-        if (ps) return ps;
-        const q = panQualityInfo(b).score - panQualityInfo(a).score;
-        if (q) return q;
-        return panDiskOrder(a) - panDiskOrder(b);
-      });
     }
 
     // 当前搜索关键字拆词（用于「标题命中关键字越多越贴合本剧」的判断）

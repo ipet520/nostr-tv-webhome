@@ -16924,8 +16924,6 @@ utils.encode = function encode(arr, enc) {
     const RECENT_MAX_AGE_DAYS = 180;
     const RECENT_MAX_AGE_MS = RECENT_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
     const RECENT_DOUBLE_PRESS_WINDOW_MS = 350;
-    const DETAIL_TEXT_CLAMP_LIMIT = 150;
-    const DETAIL_TEXT_CLAMP_LIMIT_LARGE = 210;
     const canonicalResourceTitleCache = new Map();
     const canonicalResourceTitlePromises = new Map();
 
@@ -19971,12 +19969,6 @@ utils.encode = function encode(arr, enc) {
       }
     }
 
-    function clearDirectPlayStatusAfterPanOpen(actionId, reason) {
-      const block = $("panSearchBlock");
-      if (!block || !block.classList.contains("active") || block.style.display === "none") return false;
-      return clearDirectPlayStatus(actionId, reason || "pan_open");
-    }
-
     function clearDirectPlayStatusOnNativeTakeover(reason) {
       const status = state.directPlayStatus || {};
       if (!status.active || !state.pan || !state.pan.isPlaying) return false;
@@ -22789,12 +22781,6 @@ utils.encode = function encode(arr, enc) {
       return Math.max(0, 18 - item.baseRank) + (item.voteAverage || 0) * 1.2 + Math.min(item.popularity || 0, 200) * .04;
     }
 
-    function watchedTenMinutes(content) {
-      if (!content || content.action !== "watch") return false;
-      const watchMs = Math.max(0, Number(content.watchMs || content.position || 0));
-      return watchMs >= WATCH_HEAT_MS;
-    }
-
     function hasHeatIntent(content) {
       const intent = String(content.intentAction || content.intent || "");
       return intent === "view" || intent === "search" || content.clicked === true || content.searched === true;
@@ -24841,23 +24827,6 @@ utils.encode = function encode(arr, enc) {
       return true;
     }
 
-    function refreshSidebarSourceVisibility() {
-      const nav = $("homeSidebarNav");
-      if (!nav || !isSidebarOpen()) return false;
-      const allowed = new Set(sidebarNavigationItems().map((item) => item.key));
-      const children = Array.from(nav.querySelectorAll(".home-sidebar-item"));
-      const stale = children.filter((item) => item.dataset.sidebarKey && !allowed.has(item.dataset.sidebarKey));
-      if (!stale.length) return false;
-      const active = document.activeElement;
-      const activeIndex = children.indexOf(active);
-      const fallback = activeIndex >= 0
-        ? children.slice(0, activeIndex).reverse().concat(children.slice(activeIndex + 1)).find((item) => !stale.includes(item) && isVisibleFocusable(item))
-        : null;
-      stale.forEach((item) => item.remove());
-      if (active && stale.includes(active) && fallback) focusRemoteTarget(fallback);
-      return true;
-    }
-
     function sidebarReturnContext() {
       const home = state.homeV14 || {};
       return {
@@ -26271,21 +26240,6 @@ utils.encode = function encode(arr, enc) {
         items: uniqueMedia(filterReleasedCatalogItems(id, incoming)),
         error: goodCount ? "" : "加载失败"
       };
-    }
-
-
-    function commitHomeCategoryTmdbItems(id, feed, key, requestSeq, items) {
-      if (!homeCategoryFeedIsCurrent(feed, key, requestSeq)) return false;
-      const tmdbItems = uniqueMedia(Array.isArray(items) ? items : []);
-      feed.source = "tmdb";
-      feed.items = filterBlocked(tmdbItems);
-      feed.dataVersion = key;
-      feed.signature = key;
-      const section = Array.from(document.querySelectorAll("#listStack > .home-dynamic-section")).find((entry) => entry.dataset.homeListId === normalizeLegacyCategoryId(id));
-      const config = homeSectionConfig().find((entry) => entry.listId === normalizeLegacyCategoryId(id));
-      if (section && config && tmdbItems.length) renderHomeDynamicSection(section, config);
-      recordHomeV14Diag();
-      return true;
     }
 
     function homeCategoryFeedLimit(id) {
@@ -30298,12 +30252,6 @@ utils.encode = function encode(arr, enc) {
       return null;
     }
 
-    function canonicalExactDetailUrl(item) {
-      const url = new URL(tmdbDetailUrl(item));
-      url.searchParams.set("language", "zh-CN");
-      return url.toString();
-    }
-
     function canonicalIdentityContextFromDetail(item, detail) {
       if (!detail || typeof detail !== "object") return {};
       const mediaType = normalizeHistoryMediaType(item && (item.mediaType || item.media_type));
@@ -30502,7 +30450,6 @@ utils.encode = function encode(arr, enc) {
       }
       return null;
     }
-
     function renderMetrics() {
       const localKey = state.identity ? hotUserKey(state.identity.pubkey) : "";
       const localVector = localKey ? state.hot.users.get(localKey) : null;
@@ -31869,10 +31816,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return !!(document.documentElement.classList.contains("native-mobile-app") && target && target.classList.contains("active") && !target.classList.contains("detail-large"));
     }
 
-    function detailTextPlain(text) {
-      return String(text && text.textContent || "").replace(/\s+/g, "").trim();
-    }
-
     function setDetailTextContent(value) {
       const text = $("detailText");
       if (!text) return;
@@ -31954,10 +31897,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         more.style.visibility = "";
         more.textContent = "更多";
       }
-    }
-
-    function detailTextClampLimit() {
-      return useLargeDetailLayout() ? DETAIL_TEXT_CLAMP_LIMIT_LARGE : DETAIL_TEXT_CLAMP_LIMIT;
     }
 
     function updateDetailTextClamp() {
@@ -32251,19 +32190,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return reSE.test(t) || reEP.test(t) || reE.test(t) || reCN.test(t);
     }
 
-    // 候选排序：115 优先，其次其它单集源，同源按画质分
     function panDiskOrder(item) {
       const order = { "115": 0, "quark": 1, "aliyun": 1, "uc": 1, "123": 1, "tianyi": 1, "mobile": 1, "xunlei": 2, "baidu": 2 };
       var _o = order[normalizePanDiskType(item && item.diskType)]; return _o != null ? _o : 3;
     }
-    function rankPanCandidates(arr) {
-      return arr.slice().sort((a, b) => {
-        const d = panDiskOrder(a) - panDiskOrder(b);
-        if (d) return d;
-        return panQualityInfo(b).score - panQualityInfo(a).score;
-      });
-    }
-
     // 「全集/全包」字眼评分：标题越像完整合集分越高（优先选带「全集」字样的）
     function panPackScore(item) {
       const t = String(item && item.title || "");
@@ -32275,17 +32205,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (/S?\d{1,2}\s*E\d{1,3}\s*[-~～]\s*E?\d{1,3}/i.test(t)) score += 2; // S01E01-E24
       if (/第\s*\d{1,3}\s*[-~～]\s*\d{1,3}\s*集/.test(t)) score += 2;        // 第1-24集
       return score;
-    }
-
-    // 全集包排序：不限网盘、择优——优先「全集」字眼，其次画质，网盘仅作次要 tiebreak
-    function rankPanPacks(arr) {
-      return arr.slice().sort((a, b) => {
-        const ps = panPackScore(b) - panPackScore(a);
-        if (ps) return ps;
-        const q = panQualityInfo(b).score - panQualityInfo(a).score;
-        if (q) return q;
-        return panDiskOrder(a) - panDiskOrder(b);
-      });
     }
 
     // 当前搜索关键字拆词（用于「标题命中关键字越多越贴合本剧」的判断）
@@ -41592,15 +41511,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       });
     }
 
-    function isNostrDocumentarySecondaryReturn(savedHomeReturn) {
-      return false;
-    }
-
-    function snapshotHomeReturnForCurrentSource(snapshot) {
-      const savedHomeReturn = normalizeLegacySavedState(snapshot && snapshot.homeReturn || null);
-      return isNostrDocumentarySecondaryReturn(savedHomeReturn) ? null : savedHomeReturn;
-    }
-
     async function restoreUiSnapshot(snapshot) {
       if (!snapshot) return false;
       state.detailReturn = snapshot.detailReturn || null;
@@ -41747,7 +41657,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           // 情况2：尝试从 snapshot 恢复（WebView 被系统回收后重建）
           try {
             const snapshot = await readUiSnapshot();
-            if (snapshot && snapshot.homeReturn) state.homeReturn = snapshotHomeReturnForCurrentSource(snapshot);
+            if (snapshot && snapshot.homeReturn) state.homeReturn = normalizeLegacySavedState(snapshot.homeReturn);
             if (snapshot && snapshot.selected && snapshot.route === "detail") {
               if (snapshot.detailReturn) state.detailReturn = snapshot.detailReturn;
               state.detailEpisodeTarget = snapshot.detailEpisodeTarget && normalizePlaybackTarget(snapshot.selected, snapshot.detailEpisodeTarget) || null;

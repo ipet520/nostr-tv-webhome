@@ -100,12 +100,6 @@
       return null;
     }
 
-    function canonicalExactDetailUrl(item) {
-      const url = new URL(tmdbDetailUrl(item));
-      url.searchParams.set("language", "zh-CN");
-      return url.toString();
-    }
-
     function canonicalIdentityContextFromDetail(item, detail) {
       if (!detail || typeof detail !== "object") return {};
       const mediaType = normalizeHistoryMediaType(item && (item.mediaType || item.media_type));
@@ -304,4 +298,3 @@
       }
       return null;
     }
-

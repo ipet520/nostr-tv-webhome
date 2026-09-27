@@ -251,15 +251,6 @@
       });
     }
 
-    function isNostrDocumentarySecondaryReturn(savedHomeReturn) {
-      return false;
-    }
-
-    function snapshotHomeReturnForCurrentSource(snapshot) {
-      const savedHomeReturn = normalizeLegacySavedState(snapshot && snapshot.homeReturn || null);
-      return isNostrDocumentarySecondaryReturn(savedHomeReturn) ? null : savedHomeReturn;
-    }
-
     async function restoreUiSnapshot(snapshot) {
       if (!snapshot) return false;
       state.detailReturn = snapshot.detailReturn || null;
@@ -406,7 +397,7 @@
           // 情况2：尝试从 snapshot 恢复（WebView 被系统回收后重建）
           try {
             const snapshot = await readUiSnapshot();
-            if (snapshot && snapshot.homeReturn) state.homeReturn = snapshotHomeReturnForCurrentSource(snapshot);
+            if (snapshot && snapshot.homeReturn) state.homeReturn = normalizeLegacySavedState(snapshot.homeReturn);
             if (snapshot && snapshot.selected && snapshot.route === "detail") {
               if (snapshot.detailReturn) state.detailReturn = snapshot.detailReturn;
               state.detailEpisodeTarget = snapshot.detailEpisodeTarget && normalizePlaybackTarget(snapshot.selected, snapshot.detailEpisodeTarget) || null;
