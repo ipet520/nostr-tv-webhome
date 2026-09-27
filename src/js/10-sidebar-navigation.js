@@ -2,9 +2,13 @@
       return state.activeList === "all" && homeUiRoute() === "home";
     }
 
+    function isSidebarRouteActive() {
+      return state.activeList === "all" && (homeUiRoute() === "home" || homeUiRoute() === "secondary");
+    }
+
     function isSidebarOpen() {
       const sidebar = $("homeSidebar");
-      return !!(sidebar && state.homeV14 && state.homeV14.sidebarOpen && !sidebar.hidden);
+      return !!(sidebar && state.homeV14 && state.homeV14.sidebarOpen && !sidebar.hidden && isSidebarRouteActive());
     }
 
     function isMobileSidebarDevice() {
@@ -18,17 +22,39 @@
       const sidebar = $("homeSidebar");
       const backdrop = $("homeSidebarBackdrop");
       const menu = $("homeMenuLauncher");
-      const open = !!(sidebar && state.homeV14 && state.homeV14.sidebarOpen && !sidebar.hidden && isHomeRouteActive());
+      const secondaryMenu = $("secondaryMenuLauncher");
+      const open = !!(sidebar && state.homeV14 && state.homeV14.sidebarOpen && !sidebar.hidden && isSidebarRouteActive());
       const mobileOpen = open && isMobileSidebarDevice();
       const mobileConnectionOpen = mobileOpen && isConnectionPanelOpen();
       if (home) home.classList.toggle("mobile-sidebar-open", mobileOpen);
       if (home) home.classList.toggle("mobile-connection-open", mobileConnectionOpen);
       if (sidebar) sidebar.classList.toggle("mobile-connection-open", mobileConnectionOpen);
       if (backdrop) {
-        backdrop.hidden = !mobileOpen;
-        backdrop.setAttribute("aria-hidden", mobileOpen ? "false" : "true");
+        if (mobileOpen) {
+          clearTimeout(backdrop.__closeTimer || 0);
+          backdrop.__closeTimer = 0;
+          backdrop.hidden = false;
+          backdrop.setAttribute("aria-hidden", "false");
+          backdrop.classList.remove("is-closing");
+          if (!backdrop.classList.contains("is-open")) {
+            requestAnimationFrame(() => {
+              if (state.homeV14 && state.homeV14.sidebarOpen && isSidebarRouteActive()) backdrop.classList.add("is-open");
+            });
+          }
+        } else if (!backdrop.hidden) {
+          backdrop.classList.remove("is-open");
+          backdrop.classList.add("is-closing");
+          backdrop.setAttribute("aria-hidden", "true");
+          clearTimeout(backdrop.__closeTimer || 0);
+          backdrop.__closeTimer = setTimeout(() => {
+            if (state.homeV14 && state.homeV14.sidebarOpen && isSidebarRouteActive()) return;
+            backdrop.hidden = true;
+            backdrop.classList.remove("is-closing");
+          }, 190);
+        }
       }
       if (menu) menu.setAttribute("aria-expanded", open ? "true" : "false");
+      if (secondaryMenu) secondaryMenu.setAttribute("aria-expanded", open ? "true" : "false");
     }
 
     function beginMobileSidebarHistoryEntry() {
@@ -87,9 +113,12 @@
       if (action.type === "keep") return !!openKeepHome();
       if (action.type === "settings") return !!openSettingHome();
       if (action.type === "secondary") {
+        const currentListId = normalizeLegacyCategoryId(state.homeV14 && state.homeV14.secondaryListId || "");
+        const targetListId = normalizeLegacyCategoryId(action.listId || "");
+        if (homeUiRoute() === "secondary" && currentListId === targetListId) return true;
         const context = action.context || {};
-        return openSecondaryCatalog(action.listId, {
-          originSection: action.listId,
+        return openSecondaryCatalog(targetListId, {
+          originSection: targetListId,
           originTarget: context.target || null,
           returnTarget: context.target || null,
           returnFocus: context.focus || null,
@@ -103,7 +132,19 @@
     function requestSidebarNavigation(action) {
       const home = state.homeV14;
       if (!action || !home) return false;
-      if (!isMobileSidebarDevice()) return performSidebarNavigation(action);
+      if (!isMobileSidebarDevice()) {
+        const currentListId = normalizeLegacyCategoryId(home.secondaryListId || "");
+        const targetListId = normalizeLegacyCategoryId(action.listId || "");
+        const sameSecondary = action.type === "secondary"
+          && homeUiRoute() === "secondary"
+          && currentListId === targetListId;
+        if (!sameSecondary && home.sidebarOpen && isSidebarRouteActive()) {
+          home.sidebarReturnInvalidated = true;
+          home.sidebarReturnTarget = null;
+          home.sidebarReturnFocus = null;
+        }
+        return performSidebarNavigation(action);
+      }
       if (home.sidebarHistoryBackPending) return true;
       if (!home.sidebarOpen) return false;
       if (!home.sidebarHistoryEntry) {
@@ -236,41 +277,125 @@
       return {
         target: home.sidebarReturnTarget && home.sidebarReturnTarget.isConnected ? home.sidebarReturnTarget : null,
         focus: home.sidebarReturnFocus || null,
-        scrollY: Math.max(0, Number(home.sidebarReturnScrollY || 0))
+        scrollY: Math.max(0, Number(home.sidebarReturnScrollY || 0)),
+        gridScrollTop: Math.max(0, Number(home.sidebarReturnGridScrollTop || 0)),
+        gridScrollLeft: Math.max(0, Number(home.sidebarReturnGridScrollLeft || 0)),
+        route: home.sidebarReturnRoute || homeUiRoute(),
+        invalidated: !!home.sidebarReturnInvalidated
       };
     }
 
-    function restoreSidebarHomeFocus(context) {
+    function focusSidebarCurrentPageDefault() {
+      if (!isSidebarRouteActive()) return false;
+      if (homeUiRoute() === "secondary") {
+        if (typeof focusWeeklySecondaryInitial === "function" && focusWeeklySecondaryInitial()) return true;
+        const back = $("secondaryCatalogBack");
+        const filters = $("secondaryCatalogFilters");
+        const row = filters && filters.querySelector(".secondary-filter-row");
+        const firstFilter = row && Array.from(row.querySelectorAll(".secondary-filter-option")).find(isVisibleFocusable);
+        const grid = $("secondaryCatalogGrid");
+        const firstCard = grid && Array.from(grid.querySelectorAll(".card,.weekly-card")).find(isVisibleFocusable);
+        const target = firstFilter || firstCard || back;
+        if (target) {
+          focusRemoteTarget(target);
+          return true;
+        }
+        return false;
+      }
+      const target = initialHomeFocus();
+      if (target) {
+        focusRemoteTarget(target);
+        return true;
+      }
+      return false;
+    }
+
+    function restoreSidebarFocus(context) {
       const saved = context || {};
       const focusEpoch = homeFocusUserEpoch();
       const restore = () => {
         if (homeFocusUserEpoch() !== focusEpoch) return;
-        if (!isHomeRouteActive()) return;
+        if (!isSidebarRouteActive() || saved.route !== homeUiRoute()) return;
         applyHomeScrollTop(Math.max(0, Number(saved.scrollY || 0)));
+        if (saved.route === "secondary") {
+          const grid = $("secondaryCatalogGrid");
+          if (grid) {
+            grid.scrollTop = Math.max(0, Number(saved.gridScrollTop || 0));
+            grid.scrollLeft = Math.max(0, Number(saved.gridScrollLeft || 0));
+          }
+        }
         let target = isVisibleFocusable(saved.target) ? saved.target : null;
         if (!target && saved.focus) target = findHomeReturnTarget({ focus: saved.focus });
-        if (!target) target = initialHomeFocus();
         if (target) focusHomeReturnTarget(target);
+        else focusSidebarCurrentPageDefault();
       };
       requestAnimationFrame(restore);
     }
 
+    function finishSidebarClose(sidebar) {
+      if (!sidebar || state.homeV14 && state.homeV14.sidebarOpen) return;
+      clearTimeout(sidebar.__closeTimer || 0);
+      sidebar.__closeTimer = 0;
+      if (sidebar.__closeHandler) {
+        sidebar.removeEventListener("transitionend", sidebar.__closeHandler);
+        sidebar.__closeHandler = null;
+      }
+      sidebar.hidden = true;
+      sidebar.setAttribute("aria-hidden", "true");
+      sidebar.classList.remove("is-open", "is-closing");
+    }
+
+    function scheduleSidebarClose(sidebar) {
+      if (!sidebar) return;
+      clearTimeout(sidebar.__closeTimer || 0);
+      if (sidebar.__closeHandler) sidebar.removeEventListener("transitionend", sidebar.__closeHandler);
+      const finish = (event) => {
+        if (event && event.target !== sidebar) return;
+        if (event && event.propertyName !== "opacity" && event.propertyName !== "transform") return;
+        finishSidebarClose(sidebar);
+      };
+      sidebar.__closeHandler = finish;
+      sidebar.addEventListener("transitionend", finish);
+      sidebar.__closeTimer = setTimeout(() => finishSidebarClose(sidebar), 210);
+    }
+
     function openSidebar() {
       if (state.homeV14 && state.homeV14.sidebarHistoryBackPending) return false;
-      if (!isHomeRouteActive() || isConnectionPanelOpen() || isSearchSuggestOpen()) return false;
+      if (!isSidebarRouteActive() || isConnectionPanelOpen() || isSearchSuggestOpen()) return false;
       const sidebar = $("homeSidebar");
       if (!sidebar) return false;
       renderSidebar();
       if (!state.homeV14.sidebarOpen) {
         const active = document.activeElement;
-        const target = isVisibleFocusable(active) && !sidebar.contains(active) ? active : currentHomeFocus() || initialHomeFocus();
+        const current = homeUiRoute() === "secondary"
+          ? active && isVisibleFocusable(active) && !sidebar.contains(active) ? active : $("secondaryCatalogBack")
+          : currentHomeFocus() || initialHomeFocus();
+        const target = isVisibleFocusable(active) && !sidebar.contains(active) ? active : current;
         state.homeV14.sidebarReturnTarget = target && target.isConnected ? target : null;
         state.homeV14.sidebarReturnFocus = target ? homeFocusSnapshot(target, target.__mediaItem || null) : null;
         state.homeV14.sidebarReturnScrollY = homeScrollTop();
+        const grid = homeUiRoute() === "secondary" ? $("secondaryCatalogGrid") : null;
+        state.homeV14.sidebarReturnGridScrollTop = grid ? Math.max(0, Number(grid.scrollTop || 0)) : 0;
+        state.homeV14.sidebarReturnGridScrollLeft = grid ? Math.max(0, Number(grid.scrollLeft || 0)) : 0;
+        state.homeV14.sidebarReturnRoute = homeUiRoute();
+        state.homeV14.sidebarReturnInvalidated = false;
       }
       state.homeV14.sidebarOpen = true;
       sidebar.hidden = false;
       sidebar.setAttribute("aria-hidden", "false");
+      clearTimeout(sidebar.__closeTimer || 0);
+      sidebar.__closeTimer = 0;
+      if (sidebar.__closeHandler) {
+        sidebar.removeEventListener("transitionend", sidebar.__closeHandler);
+        sidebar.__closeHandler = null;
+      }
+      sidebar.classList.remove("is-closing");
+      if (!sidebar.classList.contains("is-open")) {
+        sidebar.offsetWidth;
+        requestAnimationFrame(() => {
+          if (state.homeV14 && state.homeV14.sidebarOpen && isSidebarRouteActive()) sidebar.classList.add("is-open");
+        });
+      }
       const mobile = isMobileSidebarDevice();
       if (mobile) beginMobileSidebarHistoryEntry();
       syncSidebarMobilePresentation();
@@ -288,14 +413,22 @@
       if (isConnectionPanelOpen()) closeConnectionPanel();
       const context = sidebarReturnContext();
       const mobile = isMobileSidebarDevice();
+      const restore = opts.restore !== false && !context.invalidated && isSidebarRouteActive() && !mobile;
       state.homeV14.sidebarOpen = false;
-      sidebar.hidden = true;
       sidebar.setAttribute("aria-hidden", "true");
+      sidebar.classList.remove("is-open");
+      sidebar.classList.add("is-closing");
+      scheduleSidebarClose(sidebar);
       state.homeV14.sidebarReturnTarget = null;
       state.homeV14.sidebarReturnFocus = null;
       state.homeV14.sidebarReturnScrollY = 0;
+      state.homeV14.sidebarReturnGridScrollTop = 0;
+      state.homeV14.sidebarReturnGridScrollLeft = 0;
+      state.homeV14.sidebarReturnRoute = "";
+      state.homeV14.sidebarReturnInvalidated = false;
       syncSidebarMobilePresentation();
-      if (opts.restore !== false && isHomeRouteActive() && !mobile) restoreSidebarHomeFocus(context);
+      if (restore) restoreSidebarFocus(context);
+      else if (opts.restore !== false && !mobile && isSidebarRouteActive()) requestAnimationFrame(focusSidebarCurrentPageDefault);
       settleMobileSidebarHistory({
         fromPopState: opts.fromPopState === true
       });
@@ -401,11 +534,21 @@
     function syncSidebarVisibility() {
       const sidebar = $("homeSidebar");
       if (!sidebar || !state.homeV14) return;
-      const visible = isHomeRouteActive() && !!state.homeV14.sidebarOpen;
+      const routeActive = isSidebarRouteActive();
+      const visible = routeActive && !!state.homeV14.sidebarOpen;
+      if (!routeActive && state.homeV14.sidebarOpen) {
+        closeSidebar({ restore: false });
+        return;
+      }
       if (!visible && isConnectionPanelOpen()) closeConnectionPanel();
-      sidebar.hidden = !visible;
-      sidebar.setAttribute("aria-hidden", visible ? "false" : "true");
-      if (!visible) {
+      if (visible) {
+        sidebar.hidden = false;
+        sidebar.setAttribute("aria-hidden", "false");
+      } else if (!sidebar.classList.contains("is-closing")) {
+        sidebar.hidden = true;
+        sidebar.setAttribute("aria-hidden", "true");
+      }
+      if (!visible && !routeActive) {
         state.homeV14.sidebarOpen = false;
         if (!state.homeV14.sidebarHistoryBackPending) clearMobileSidebarHistoryEntry();
       }

@@ -235,6 +235,10 @@
         if (isSidebarOpen()) closeSidebar();
         else openSidebar();
       });
+      if ($("secondaryMenuLauncher")) $("secondaryMenuLauncher").addEventListener("click", () => {
+        if (isSidebarOpen()) closeSidebar();
+        else openSidebar();
+      });
       if ($("homeSidebarBackdrop")) $("homeSidebarBackdrop").addEventListener("click", () => {
         if (isMobileSidebarDevice() && isSidebarOpen() && isConnectionPanelOpen()) {
           closeConnectionPanel();
@@ -523,6 +527,12 @@
         if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(key)) return;
         if (handlePanDirectionalKey(key, event)) return;
         if (handleDetailDirectionalKey(key, event)) return;
+        if (key === "ArrowLeft" && isSecondaryLeftBoundary(el)) {
+          event.preventDefault();
+          if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+          openSidebar();
+          return;
+        }
         if (key === "ArrowLeft" && isHomeLeftBoundary(el)) {
           event.preventDefault();
           if (event.stopImmediatePropagation) event.stopImmediatePropagation();
@@ -1507,6 +1517,25 @@
         return isVisibleFocusable(hero) ? hero : currentHomeFocus() || active;
       }
       return null;
+    }
+
+    function isSecondaryLeftBoundary(active) {
+      if (!isTvLikeDevice() || homeUiRoute() !== "secondary" || !active) return false;
+      if (active === $("secondaryCatalogBack")) return true;
+      const row = active.closest && active.closest(".secondary-filter-row");
+      if (row) {
+        const options = Array.from(row.querySelectorAll(".secondary-filter-option")).filter(canFastHomeFocus);
+        return options[0] === active;
+      }
+      const grid = $("secondaryCatalogGrid");
+      if (!grid || !grid.contains(active) || !active.classList || !active.classList.contains("card")) return false;
+      const weekly = grid.classList.contains("weekly-secondary-rail");
+      const cards = weekly
+        ? weeklySecondaryFocusableCards(grid)
+        : Array.from(grid.querySelectorAll(".card")).filter(canFastHomeFocus);
+      const index = cards.indexOf(active);
+      if (index < 0) return false;
+      return weekly ? index === 0 : index % Math.max(1, gridColumns(grid)) === 0;
     }
 
     function secondaryCatalogDirectionalTarget(key, active) {

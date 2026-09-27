@@ -418,7 +418,7 @@
       const opts = options || {};
       listId = normalizeLegacyCategoryId(listId);
       if (!listId || !getList(listId) && !["now-playing", "recent", "recommendation"].includes(listId)) return false;
-      if (!isHomeRouteActive() && homeUiRoute() !== "home") return false;
+      if (!isHomeRouteActive() && !(homeUiRoute() === "secondary" && opts.fromSidebar)) return false;
       if (isRecentManagePage() && recentManageRuntime().deleting) {
         toast("正在删除，请稍候");
         return true;
@@ -504,6 +504,7 @@
         loadSecondaryPage(listId, query, 1).catch(() => {});
       } else if (!query.loaded && !query.loading) loadSecondaryPage(listId, query, 1).catch(() => {});
       requestAnimationFrame(() => {
+        if (opts.fromSidebar && isSidebarOpen() && !isMobileSidebarDevice()) return;
         if (listId === "now-playing") {
           if (!focusWeeklySecondaryInitial()) focusRemoteTarget($("secondaryCatalogBack"));
         } else focusRemoteTarget($("secondaryCatalogBack"));

@@ -156,6 +156,32 @@
           && hasAll(sourceOf(performSidebarNavigation), ["openSecondaryCatalog", "openLiveHome", "openSettingHome"])
           && sourceOf(requestSidebarNavigation).includes("performSidebarNavigation"),
         "Sidebar Recommendation delegates through the existing navigation authority", "STATIC_HOOK");
+      check("SIDEBAR_SHARED_HOME_SECONDARY",
+        typeof isSidebarRouteActive === "function"
+          && sourceOf(isSidebarRouteActive).includes('homeUiRoute() === "secondary"')
+          && sourceOf(openSidebar).includes("isSidebarRouteActive")
+          && sourceOf(syncSidebarVisibility).includes("isSidebarRouteActive"),
+        "the existing Sidebar authority is available on both Home and Secondary", "STATIC_HOOK");
+      check("SECONDARY_LEFT_BOUNDARY_OPENS_SIDEBAR",
+        typeof isSecondaryLeftBoundary === "function"
+          && hasAll(sourceOf(isSecondaryLeftBoundary), ["secondaryCatalogBack", "secondary-filter-row", "gridColumns"])
+          && sourceOf(installRemoteKeys).includes("isSecondaryLeftBoundary"),
+        "TV Secondary left boundaries delegate to the shared Sidebar", "STATIC_HOOK");
+      check("SIDEBAR_TV_CONTINUOUS_NAVIGATION",
+        sourceOf(requestSidebarNavigation).includes("sameSecondary")
+          && sourceOf(openSecondaryCatalog).includes("opts.fromSidebar")
+          && sourceOf(handleSidebarDirectionalKey).includes('key === "ArrowRight"'),
+        "TV Sidebar keeps its focus while switching categories and closes on Right", "STATIC_HOOK");
+      check("SECONDARY_MOBILE_SIDEBAR_LAUNCHER",
+        !!$("secondaryMenuLauncher")
+          && sourceOf(bindActions).includes("secondaryMenuLauncher")
+          && sourceOf(syncSidebarMobilePresentation).includes("secondaryMenuLauncher")
+          && sourceOf(beginMobileSidebarHistoryEntry).includes("homeSidebar"),
+        "Secondary mobile uses its own launcher and the existing history entry", "DOM_ASSERTION");
+      check("SIDEBAR_TRANSITION_SETTLEMENT",
+        hasAll(sourceOf(openSidebar) + sourceOf(closeSidebar) + sourceOf(scheduleSidebarClose), ["is-open", "is-closing", "transitionend"])
+          && sourceOf(syncSidebarMobilePresentation).includes("is-closing"),
+        "Sidebar and mobile backdrop close after their transition settles", "STATIC_HOOK");
 
       const searchHot = getSearchHotItems();
       check("REAL_HOT_SEARCH_NOT_PRESENT",

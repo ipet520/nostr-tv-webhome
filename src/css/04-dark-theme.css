@@ -498,11 +498,32 @@
       box-shadow: 0 16px 42px rgba(0, 0, 0, .30);
       overflow-y: auto;
       overscroll-behavior: contain;
+      opacity: 0;
+      transform: translateX(-16px) translateY(-50%);
+      transition: opacity 180ms ease-out, transform 180ms ease-out;
+      will-change: opacity, transform;
+    }
+
+    .home-sidebar.is-open {
+      opacity: 1;
+      transform: translateX(0) translateY(-50%);
+      pointer-events: auto;
+    }
+
+    .home-sidebar.is-closing {
+      opacity: 0;
+      transform: translateX(-16px) translateY(-50%);
+      pointer-events: none;
     }
 
     .home-sidebar-backdrop {
       display: none;
+      opacity: 0;
+      transition: opacity 160ms ease-out;
     }
+
+    .home-sidebar-backdrop.is-open { opacity: 1; }
+    .home-sidebar-backdrop.is-closing { opacity: 0; pointer-events: none !important; }
 
     .home-sidebar-backdrop[hidden] {
       display: none !important;
@@ -562,6 +583,33 @@
       background: rgba(255, 255, 255, .14);
       box-shadow: none;
       transform: translateX(5px);
+    }
+
+    .secondary-menu-launcher {
+      display: none;
+      flex: 0 0 44px;
+      width: 44px;
+      min-height: 40px;
+      height: 40px;
+      margin-left: auto;
+      padding: 0;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid rgba(255, 255, 255, .14);
+      border-radius: 6px;
+      background: rgba(255, 255, 255, .08);
+      color: #fff;
+    }
+
+    .secondary-menu-launcher .icon {
+      width: 22px;
+      height: 22px;
+    }
+
+    .secondary-menu-launcher:focus {
+      outline: none;
+      border-color: rgba(255, 255, 255, .14);
+      background: rgba(191, 233, 255, .16);
     }
     /* The original HTML basic-settings control keeps its DOM and handlers;
        these are only the minimum presentation overrides needed after moving
@@ -1312,7 +1360,7 @@
         left: 10px;
         top: 50%;
         bottom: auto;
-        transform: translateY(-50%);
+        transform: translateX(-16px) translateY(-50%);
         width: clamp(152px, 38vw, 164px);
         max-width: 164px;
         height: auto;
@@ -1331,6 +1379,14 @@
         overscroll-behavior: contain;
         -webkit-overflow-scrolling: touch;
         touch-action: pan-y;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.is-open {
+        transform: translateX(0) translateY(-50%);
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar.is-closing {
+        transform: translateX(-16px) translateY(-50%);
       }
 
       html:not(.tv-mode):not(.tv-preview) #home.home-root .home-sidebar-nav,
@@ -1397,6 +1453,10 @@
 
       html:not(.tv-mode):not(.tv-preview) #home.home-root.mobile-sidebar-open #homeMenuLauncher {
         pointer-events: auto;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #home.home-root .secondary-menu-launcher {
+        display: inline-flex;
       }
 
     }
@@ -1589,5 +1649,3 @@
     html.tv-preview #home.home-root #homeSidebarBackdrop {
       display: none !important;
     }
-
-  
