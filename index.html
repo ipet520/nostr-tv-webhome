@@ -19765,20 +19765,51 @@ utils.encode = function encode(arr, enc) {
 
     async function browserRequest(url, options) {
       const init = options || {};
-      try {
-        const response = await fetch(url, {
-          method: init.method || "GET",
-          headers: init.headers || {},
-          body: init.method && init.method !== "GET" && init.method !== "HEAD" ? init.body || "" : undefined,
-          credentials: init.credentials === "include" ? "include" : "same-origin"
-        });
-        const headers = {};
-        response.headers.forEach((value, key) => headers[key] = value);
-        const body = init.responseType === "json" ? await response.json() : await response.text();
-        return { ok: response.ok, status: response.status, url: response.url, headers, body };
-      } catch (e) {
-        throw e;
+      const timeoutSeconds = Number(init.timeout);
+      const timeoutMs = Number.isFinite(timeoutSeconds) && timeoutSeconds > 0 ? timeoutSeconds * 1000 : 0;
+      const AbortControllerCtor = typeof window !== "undefined" && typeof window.AbortController === "function"
+        ? window.AbortController
+        : typeof AbortController === "function" ? AbortController : null;
+      let controller = null;
+      if (timeoutMs > 0 && AbortControllerCtor) {
+        try { controller = new AbortControllerCtor(); } catch (e) { controller = null; }
       }
+      let timer = 0;
+      let settled = false;
+      return new Promise((resolve, reject) => {
+        const finish = (handler, value) => {
+          if (settled) return;
+          settled = true;
+          if (timer) clearTimeout(timer);
+          handler(value);
+        };
+        if (timeoutMs > 0) {
+          timer = setTimeout(() => {
+            const timeoutError = new Error(`Request timed out after ${timeoutSeconds}s`);
+            timeoutError.name = controller ? "AbortError" : "TimeoutError";
+            if (controller) {
+              try { controller.abort(); } catch (e) {}
+            }
+            finish(reject, timeoutError);
+          }, timeoutMs);
+        }
+        try {
+          fetch(url, {
+            method: init.method || "GET",
+            headers: init.headers || {},
+            body: init.method && init.method !== "GET" && init.method !== "HEAD" ? init.body || "" : undefined,
+            credentials: init.credentials === "include" ? "include" : "same-origin",
+            signal: controller ? controller.signal : undefined
+          }).then(async (response) => {
+            const headers = {};
+            response.headers.forEach((value, key) => headers[key] = value);
+            const body = init.responseType === "json" ? await response.json() : await response.text();
+            return { ok: response.ok, status: response.status, url: response.url, headers, body };
+          }).then((value) => finish(resolve, value)).catch((error) => finish(reject, error));
+        } catch (error) {
+          finish(reject, error);
+        }
+      });
     }
 
     async function requestJson(url, timeout) {

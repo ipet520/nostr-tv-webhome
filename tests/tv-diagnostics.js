@@ -707,6 +707,160 @@
         else delete window.fm;
       }
       check("NOSTR_SECONDARY_PAGINATION_CASE_H", nostrPaginationCaseHSemantic, nostrPaginationCaseHDetail, "RUNTIME_MOCK");
+
+      let transportFastPass = false;
+      let transportHangingPass = false;
+      let transportNoTimeoutPass = false;
+      let nostrHangingDetailPass = false;
+      let transportFixtureError = "";
+      let transportHangingDetail = "";
+      const transportPreviousFetch = window.fetch;
+      const transportHadFm = Object.prototype.hasOwnProperty.call(window, "fm");
+      const transportPreviousFm = window.fm;
+      const transportPreviousUiPrefs = state.uiPrefs;
+      const transportPreviousHomeV14 = state.homeV14;
+      const transportPreviousHot = state.hot;
+      const transportPreviousBlocked = state.blocked;
+      const transportResponse = (body, url) => ({
+        ok: true,
+        status: 200,
+        url: String(url || "fixture://response"),
+        headers: { forEach: () => {} },
+        text: () => Promise.resolve(String(body || ""))
+      });
+      const transportDelay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      try {
+        let fastSignal = null;
+        window.fetch = (url, init) => {
+          fastSignal = init && init.signal;
+          return Promise.resolve(transportResponse("fast", url));
+        };
+        const fastResult = await browserRequest("fixture://fast", { responseType: "text", timeout: 0.01 });
+        await transportDelay(30);
+        transportFastPass = !!fastResult
+          && fastResult.body === "fast"
+          && (!fastSignal || fastSignal.aborted !== true);
+
+        let hangingSignal = null;
+        let hangingAbortObserved = false;
+        let hangingSignalAbortedAtEvent = false;
+        window.fetch = (url, init) => new Promise((resolve, reject) => {
+          hangingSignal = init && init.signal;
+          if (!hangingSignal || typeof hangingSignal.addEventListener !== "function") return;
+          hangingSignal.addEventListener("abort", () => {
+            hangingAbortObserved = true;
+            hangingSignalAbortedAtEvent = hangingSignal.aborted === true;
+            const error = new Error("fixture aborted");
+            error.name = "AbortError";
+            reject(error);
+          }, { once: true });
+        });
+        const hangingOutcome = await Promise.race([
+          browserRequest("fixture://hanging", { responseType: "text", timeout: 0.01 })
+            .then(() => ({ settled: true, rejected: false }), (error) => ({ settled: true, rejected: true, error })),
+          transportDelay(250).then(() => ({ settled: false }))
+        ]);
+        transportHangingDetail = JSON.stringify({
+          settled: !!hangingOutcome.settled,
+          rejected: hangingOutcome.rejected === true,
+          signal: !!hangingSignal,
+          aborted: !!(hangingSignal && hangingSignal.aborted),
+          abortedAtEvent: hangingSignalAbortedAtEvent,
+          abortObserved: hangingAbortObserved,
+          errorName: String(hangingOutcome.error && hangingOutcome.error.name || "")
+        });
+        transportHangingPass = !!hangingOutcome.settled
+          && hangingOutcome.rejected === true
+          && !!hangingSignal
+          && hangingAbortObserved;
+
+        let noTimeoutSignal = null;
+        window.fetch = (url, init) => {
+          noTimeoutSignal = init && init.signal;
+          return Promise.resolve(transportResponse("no-timeout", url));
+        };
+        const noTimeoutResult = await browserRequest("fixture://no-timeout", { responseType: "text" });
+        await transportDelay(30);
+        transportNoTimeoutPass = !!noTimeoutResult
+          && noTimeoutResult.body === "no-timeout"
+          && !noTimeoutSignal;
+
+        const fixtureCandidate = {
+          source: "nostr-hot",
+          mediaType: "tv",
+          tmdbId: "transport-timeout-anime",
+          title: "Transport timeout anime",
+          people: 1,
+          latest: 1
+        };
+        const fixtureFilters = { mediaType: "all", genre: "all", region: "all", year: "all", sort: "hot", lastFocused: { sort: "hot" } };
+        state.uiPrefs = Object.assign({}, transportPreviousUiPrefs || {}, { homeHotSource: "nostr" });
+        state.homeV14 = Object.assign({}, transportPreviousHomeV14 || {}, {
+          route: "secondary",
+          secondaryListId: "anime",
+          secondaryFilters: Object.assign({}, transportPreviousHomeV14 && transportPreviousHomeV14.secondaryFilters || {}, { anime: fixtureFilters }),
+          secondaryQueries: {},
+          secondaryActiveQueryKey: "",
+          secondaryNostrTmdbMemoryCache: {},
+          secondaryNostrAnimeResolver: null,
+          nostrTmdbMeta: { version: NOSTR_TMDB_META_CACHE_VERSION, loaded: true, loading: false, promise: null, entries: {}, dirty: false, dirtyVersion: 0, saveTimer: 0, savePromise: null, lastLoadAt: 0, lastSaveAt: 0, expiredCount: 0, evictedCount: 0 }
+        });
+        state.hot = { ready: true, version: 991, items: [fixtureCandidate] };
+        state.blocked = Object.assign({}, transportPreviousBlocked || {}, { selecting: false });
+        const fixtureQuery = secondaryGetQuery("anime");
+        fixtureQuery.nostrHot = true;
+        fixtureQuery.nostrHotReady = true;
+        fixtureQuery.nostrHotLoaded = false;
+        fixtureQuery.nostrHotItems = [];
+        fixtureQuery.nostrRetryableKeys = {};
+        fixtureQuery.nostrHotGeneration = 0;
+        let resolverAbortObserved = false;
+        window.fetch = (url, init) => new Promise((resolve, reject) => {
+          const signal = init && init.signal;
+          if (!signal || typeof signal.addEventListener !== "function") return;
+          signal.addEventListener("abort", () => {
+            resolverAbortObserved = true;
+            const error = new Error("resolver fixture aborted");
+            error.name = "AbortError";
+            reject(error);
+          }, { once: true });
+        });
+        window.fm = {
+          req: (url, options) => browserRequest(url, Object.assign({}, options || {}, { timeout: 0.01 }))
+        };
+        const resolverOutcome = await Promise.race([
+          secondaryLoadNostrHotItems("anime", fixtureFilters, fixtureQuery, 18)
+            .then((items) => ({ settled: true, items }), (error) => ({ settled: true, error })),
+          transportDelay(300).then(() => ({ settled: false }))
+        ]);
+        const resolver = state.homeV14.secondaryNostrAnimeResolver;
+        nostrHangingDetailPass = !!resolverOutcome.settled
+          && !!resolver
+          && resolver.running === false
+          && Object.keys(resolver.failedKeys || {}).length === 1
+          && Number(fixtureQuery.nostrRetryableMetadataCount || 0) === 1
+          && fixtureQuery.nostrHotLoading === false
+          && resolverAbortObserved;
+      } catch (error) {
+        transportFixtureError = String(error && error.message || error || "transport fixture failed");
+      } finally {
+        const fixtureRuntime = state.homeV14 && state.homeV14.nostrTmdbMeta;
+        if (fixtureRuntime && fixtureRuntime.saveTimer) clearTimeout(fixtureRuntime.saveTimer);
+        window.fetch = transportPreviousFetch;
+        state.uiPrefs = transportPreviousUiPrefs;
+        state.homeV14 = transportPreviousHomeV14;
+        state.hot = transportPreviousHot;
+        state.blocked = transportPreviousBlocked;
+        if (transportHadFm) window.fm = transportPreviousFm;
+        else delete window.fm;
+      }
+      check("BROWSER_REQUEST_FAST_FETCH_TIMEOUT", transportFastPass, transportFixtureError || "fast response settles and clears its timeout before abort", "RUNTIME_MOCK");
+      check("BROWSER_REQUEST_HANGING_FETCH_TIMEOUT", transportHangingPass, transportFixtureError || transportHangingDetail || "hanging response rejects after AbortController timeout", "RUNTIME_MOCK");
+      check("BROWSER_REQUEST_NO_TIMEOUT", transportNoTimeoutPass, transportFixtureError || "omitted timeout does not create an abort signal", "RUNTIME_MOCK");
+      check("NOSTR_HANGING_DETAIL_SETTLES", nostrHangingDetailPass, transportFixtureError || "a timed-out detail marks the resolver retryable and releases the load", "RUNTIME_MOCK");
+      if (!transportHangingPass) {
+        try { console.warn("[Nostr TV][TRANSPORT_HANGING_DETAIL] " + (transportFixtureError || transportHangingDetail || "no detail")); } catch (e) {}
+      }
       check("NOSTR_SECONDARY_PAGE_SIZE", SECONDARY_NOSTR_PAGE_SIZE === 18 && String(secondaryLoadNostrHotItems).includes("Math.max(SECONDARY_NOSTR_PAGE_SIZE"), "Nostr Secondary page size remains 18", "STATIC_HOOK");
       check("NOSTR_SECONDARY_INFINITE_SCROLL", String(secondaryLoadNextPage).includes("secondaryCanLoadMore") && String(secondaryCanLoadMore).includes("query.hasMore") && String(observeInfiniteScroll).includes("loadMoreVisible"), "Nostr Secondary reuses the existing infinite-scroll authority", "STATIC_HOOK");
       check("NOSTR_MOVIE_TV_DETAIL_BUDGET_LIFETIME", String(secondaryLoadNostrHotItems).includes("let loadDetailRequests = 0;") && String(secondaryLoadNostrHotItems).includes("query.nostrLoadPaused") && !String(secondaryLoadNostrHotItems).includes("query.nostrDetailBudgetExhausted"), "Movie and TV detail budget is reset per load rather than treated as a query lifetime cap", "STATIC_HOOK");
