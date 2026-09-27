@@ -73,38 +73,48 @@
       syncSecondaryFilterControls(id, host);
       return groups;
     }
-    async function loadSecondaryNostrPage(id, query, filters, requestSeq) {
+    async function loadSecondaryNostrPage(id, query, filters, requestSeq, pageNumber) {
+      const page = Math.max(1, Number(pageNumber || 1));
       query.source = "nostr-hot";
       query.serverSideFilters = [];
       query.clientSideFilters = [];
       query.endpointMap = [];
       query.sourceStates = [];
-      query.page = 0;
-      query.totalPages = 0;
-      query.totalResults = 0;
-      query.hasMore = false;
       query.error = "";
-      query.items = [];
-      query.nostrHotItems = [];
-      query.nostrHotLoaded = false;
+      if (page === 1 && !query.nostrPaginationInitialized) {
+        query.nostrPaginationInitialized = true;
+        query.page = 0;
+        query.totalPages = 0;
+        query.totalResults = 0;
+        query.hasMore = false;
+        query.items = [];
+        query.nostrHotItems = [];
+        query.nostrHotLoaded = false;
+        query.nostrScanCursor = 0;
+        query.nostrCandidatesScanned = 0;
+        query.nostrNewDetailRequests = 0;
+        query.nostrDetailBudgetExhausted = false;
+        query.nostrExhausted = false;
+        query.nostrHotReady = false;
+      }
       query.nostrHotLoading = false;
       try {
-        const items = await secondaryLoadNostrHotItems(id, filters, query);
+        const items = await secondaryLoadNostrHotItems(id, filters, query, page * SECONDARY_NOSTR_PAGE_SIZE);
         if (query.requestSeq !== requestSeq || secondaryActiveQuery(id) !== query || !query.nostrHot) return query;
         const resolved = uniqueMedia(Array.isArray(query.nostrHotItems) && query.nostrHotItems.length ? query.nostrHotItems : items);
-        const hotReady = !!(state.hot && state.hot.ready);
+        const hotReady = !!(state.hot && state.hot.ready && query.nostrHotReady);
         query.nostrHotItems = resolved;
         query.items = resolved.slice();
         query.nostrHotLoaded = hotReady;
         query.nostrHotLoading = false;
-        query.page = 1;
-        query.totalPages = 1;
-        query.totalResults = resolved.length;
+        query.page = page;
+        query.totalPages = query.nostrExhausted ? page : 0;
+        query.totalResults = query.nostrExhausted ? resolved.length : 0;
         query.loading = false;
         query.loaded = true;
-        query.hasMore = false;
+        query.hasMore = !!(hotReady && !query.nostrExhausted);
         query.error = "";
-        state.homeV14.secondaryPage = 1;
+        state.homeV14.secondaryPage = page;
         if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
         observeInfiniteScroll();
         return query;
@@ -112,13 +122,13 @@
         if (query.requestSeq !== requestSeq || secondaryActiveQuery(id) !== query || !query.nostrHot) return query;
         query.nostrHotLoading = false;
         query.nostrHotLoaded = false;
-        query.items = [];
-        query.nostrHotItems = [];
-        query.page = 0;
-        query.totalPages = 0;
-        query.totalResults = 0;
+        const preserved = uniqueMedia(query.nostrHotItems || query.items || []);
+        query.nostrHotItems = preserved;
+        query.items = preserved.slice();
+        query.totalPages = query.nostrExhausted ? Math.max(1, Number(query.page || 0)) : 0;
+        query.totalResults = query.nostrExhausted ? preserved.length : 0;
         query.loading = false;
-        query.loaded = true;
+        query.loaded = !!(preserved.length || Number(query.page || 0));
         query.hasMore = false;
         query.error = String(error && error.message || "加载失败");
         if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
@@ -198,7 +208,7 @@
       const requestSeq = ++query.requestSeq;
       if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
       const filters = secondaryFilterState(id);
-      if (query.nostrHot) return loadSecondaryNostrPage(id, query, filters, requestSeq);
+      if (query.nostrHot) return loadSecondaryNostrPage(id, query, filters, requestSeq, page);
       const plan = buildSecondaryQueryPlan(id, filters, query);
       const pending = plan.sources.map((source, index) => ({ source, state: plan.sourceStates[index] }))
         .filter((entry) => entry.state && !entry.state.done && !entry.state.error);

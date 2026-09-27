@@ -170,6 +170,13 @@
           nostrHotLoading: false,
           nostrHotLoaded: false,
           nostrHotGeneration: 0,
+          nostrPaginationInitialized: false,
+          nostrScanCursor: 0,
+          nostrCandidatesScanned: 0,
+          nostrNewDetailRequests: 0,
+          nostrDetailBudgetExhausted: false,
+          nostrExhausted: false,
+          nostrHotReady: false,
           page: 0,
           totalPages: 0,
           totalResults: 0,
@@ -343,15 +350,16 @@
       return groups;
     }
 
-    const SECONDARY_NOSTR_HOT_BATCH_SIZE = 18;
-    const SECONDARY_NOSTR_HOT_TARGET_MATCHES = 18;
+    const SECONDARY_NOSTR_PAGE_SIZE = 18;
+    const SECONDARY_NOSTR_HOT_BATCH_SIZE = SECONDARY_NOSTR_PAGE_SIZE;
+    const SECONDARY_NOSTR_HOT_TARGET_MATCHES = SECONDARY_NOSTR_PAGE_SIZE;
     const SECONDARY_NOSTR_HOT_MAX_SCAN_CANDIDATES = 72;
     const SECONDARY_NOSTR_HOT_MAX_NEW_DETAIL_REQUESTS = 36;
     const SECONDARY_NOSTR_HOT_DETAIL_CONCURRENCY = 4;
     const SECONDARY_NOSTR_ANIME_MAX_SCAN_CANDIDATES = 150;
     const SECONDARY_NOSTR_ANIME_SCAN_BATCH_SIZE = 4;
     const SECONDARY_NOSTR_VARIETY_MAX_SCAN_CANDIDATES = 240;
-    const SECONDARY_NOSTR_VARIETY_TARGET_MATCHES = 18;
+    const SECONDARY_NOSTR_VARIETY_TARGET_MATCHES = SECONDARY_NOSTR_PAGE_SIZE;
     const SECONDARY_NOSTR_VARIETY_SCAN_BATCH_SIZE = 4;
     const SECONDARY_NOSTR_VARIETY_MAX_NEW_DETAIL_REQUESTS = 54;
     const NOSTR_TMDB_META_CACHE_VERSION = 2;
@@ -868,6 +876,14 @@
       return selected;
     }
 
+    function secondaryNostrAnimeScanTarget(runtime) {
+      let target = SECONDARY_NOSTR_PAGE_SIZE;
+      (runtime && runtime.listeners || []).forEach((listener) => {
+        if (listener) target = Math.max(target, Number(listener.target || 0));
+      });
+      return target;
+    }
+
     function secondaryNostrAnimeNotify(runtime) {
       if (!runtime) return;
       const defaultItems = secondaryNostrAnimeQualifiedItems(runtime, homeCategoryDefaultFilters(), SECONDARY_NOSTR_HOT_TARGET_MATCHES);
@@ -916,12 +932,13 @@
 
     function secondaryNostrAnimeScanShouldContinue(runtime) {
       if (!runtime) return false;
-      if (secondaryNostrAnimeQualifiedItems(runtime, homeCategoryDefaultFilters(), SECONDARY_NOSTR_HOT_TARGET_MATCHES).length < SECONDARY_NOSTR_HOT_TARGET_MATCHES) return true;
+      const target = secondaryNostrAnimeScanTarget(runtime);
+      if (secondaryNostrAnimeQualifiedItems(runtime, homeCategoryDefaultFilters(), target).length < target) return true;
       return (runtime.listeners || []).some((listener) => {
         if (!listener) return false;
         const filters = listener.filters || homeCategoryDefaultFilters();
-        const nonDefault = ["mediaType", "genre", "region", "year"].some((key) => filters[key] && filters[key] !== "all");
-        return nonDefault && secondaryNostrAnimeQualifiedItems(runtime, filters, listener.target).length < listener.target;
+        const listenerTarget = Math.max(0, Number(listener.target || 0));
+        return secondaryNostrAnimeQualifiedItems(runtime, filters, listenerTarget).length < listenerTarget;
       });
     }
 
@@ -976,9 +993,10 @@
       await ensureNostrTmdbMetaLoaded();
       const retryOnlyFailed = !!runtime.retryOnlyFailed;
       while (runtime.nextIndex < runtime.candidates.length && (retryOnlyFailed ? Object.keys(runtime.failedKeys || {}).length > 0 : secondaryNostrAnimeScanShouldContinue(runtime))) {
-        const defaultMatches = secondaryNostrAnimeQualifiedItems(runtime, homeCategoryDefaultFilters(), SECONDARY_NOSTR_HOT_TARGET_MATCHES).length;
-        const batchSize = !retryOnlyFailed && defaultMatches < SECONDARY_NOSTR_HOT_TARGET_MATCHES
-          ? Math.min(SECONDARY_NOSTR_ANIME_SCAN_BATCH_SIZE, Math.max(1, SECONDARY_NOSTR_HOT_TARGET_MATCHES - defaultMatches))
+        const target = secondaryNostrAnimeScanTarget(runtime);
+        const defaultMatches = secondaryNostrAnimeQualifiedItems(runtime, homeCategoryDefaultFilters(), target).length;
+        const batchSize = !retryOnlyFailed && defaultMatches < target
+          ? Math.min(SECONDARY_NOSTR_ANIME_SCAN_BATCH_SIZE, Math.max(1, target - defaultMatches))
           : SECONDARY_NOSTR_ANIME_SCAN_BATCH_SIZE;
         const batch = runtime.candidates.slice(runtime.nextIndex, runtime.nextIndex + batchSize);
         runtime.nextIndex += batch.length;
@@ -1214,12 +1232,13 @@
     function secondaryNostrVarietyScanShouldContinue(runtime) {
       if (!runtime) return false;
       if (runtime.detailBudgetExhausted) return false;
-      if (secondaryNostrVarietyQualifiedItems(runtime, homeCategoryDefaultFilters(), SECONDARY_NOSTR_VARIETY_TARGET_MATCHES).length < SECONDARY_NOSTR_VARIETY_TARGET_MATCHES) return true;
+      const target = secondaryNostrVarietyScanTarget(runtime);
+      if (secondaryNostrVarietyQualifiedItems(runtime, homeCategoryDefaultFilters(), target).length < target) return true;
       return (runtime.listeners || []).some((listener) => {
         if (!listener) return false;
         const filters = listener.filters || homeCategoryDefaultFilters();
-        const nonDefault = ["mediaType", "genre", "region", "year"].some((key) => filters[key] && filters[key] !== "all");
-        return nonDefault && secondaryNostrVarietyQualifiedItems(runtime, filters, listener.target).length < listener.target;
+        const listenerTarget = Math.max(0, Number(listener.target || 0));
+        return secondaryNostrVarietyQualifiedItems(runtime, filters, listenerTarget).length < listenerTarget;
       });
     }
 
@@ -1274,13 +1293,22 @@
       return memory[key];
     }
 
+    function secondaryNostrVarietyScanTarget(runtime) {
+      let target = SECONDARY_NOSTR_PAGE_SIZE;
+      (runtime && runtime.listeners || []).forEach((listener) => {
+        if (listener) target = Math.max(target, Number(listener.target || 0));
+      });
+      return target;
+    }
+
     async function secondaryRunNostrVarietyResolver(runtime, query) {
       await ensureNostrTmdbMetaLoaded();
       const retryOnlyFailed = !!runtime.retryOnlyFailed;
       while (runtime.nextIndex < runtime.candidates.length && (retryOnlyFailed ? Object.keys(runtime.failedKeys || {}).length > 0 : secondaryNostrVarietyScanShouldContinue(runtime))) {
-        const defaultMatches = secondaryNostrVarietyQualifiedItems(runtime, homeCategoryDefaultFilters(), SECONDARY_NOSTR_VARIETY_TARGET_MATCHES).length;
-        const batchSize = !retryOnlyFailed && defaultMatches < SECONDARY_NOSTR_VARIETY_TARGET_MATCHES
-          ? Math.min(SECONDARY_NOSTR_VARIETY_SCAN_BATCH_SIZE, Math.max(1, SECONDARY_NOSTR_VARIETY_TARGET_MATCHES - defaultMatches))
+        const target = secondaryNostrVarietyScanTarget(runtime);
+        const defaultMatches = secondaryNostrVarietyQualifiedItems(runtime, homeCategoryDefaultFilters(), target).length;
+        const batchSize = !retryOnlyFailed && defaultMatches < target
+          ? Math.min(SECONDARY_NOSTR_VARIETY_SCAN_BATCH_SIZE, Math.max(1, target - defaultMatches))
           : SECONDARY_NOSTR_VARIETY_SCAN_BATCH_SIZE;
         const batch = runtime.candidates.slice(runtime.nextIndex, runtime.nextIndex + batchSize);
         runtime.nextIndex += batch.length;
@@ -1448,10 +1476,6 @@
       if (query.nostrHotItems.length && !query.loaded) {
         query.loaded = true;
         query.error = "";
-        query.page = Math.max(1, Number(query.page || 0));
-        query.totalPages = 1;
-        query.totalResults = query.nostrHotItems.length;
-        query.hasMore = false;
       }
       if (query.loaded || query.nostrHotItems.length) {
         renderSecondaryCatalog();
@@ -1460,11 +1484,15 @@
       return true;
     }
 
-    async function secondaryLoadNostrHotItems(id, filters, query) {
+    async function secondaryLoadNostrHotItems(id, filters, query, target) {
       if (!secondaryNostrHotEnabled(id, filters) || !query || !query.nostrHot) return [];
-      if (query.nostrHotLoaded) return Array.isArray(query.nostrHotItems) ? query.nostrHotItems : [];
+      const targetCount = Math.max(SECONDARY_NOSTR_PAGE_SIZE, Number(target || SECONDARY_NOSTR_PAGE_SIZE));
+      const existingItems = Array.isArray(query.nostrHotItems) ? query.nostrHotItems : [];
+      if (query.nostrHotLoaded && (existingItems.length >= targetCount || query.nostrExhausted)) return existingItems;
       if (query.nostrHotLoading) return Array.isArray(query.nostrHotItems) ? query.nostrHotItems : [];
       if (!state.hot || !state.hot.ready) return [];
+      query.nostrPaginationInitialized = true;
+      query.nostrHotReady = true;
       const scanFilters = {
         mediaType: filters.mediaType,
         genre: filters.genre,
@@ -1475,16 +1503,22 @@
       const generation = Number(query.nostrHotGeneration || 0) + 1;
       query.nostrHotGeneration = generation;
       query.nostrHotLoading = true;
-      query.nostrHotItems = [];
+      query.nostrHotItems = existingItems.slice();
       if (id === "anime") {
         try {
-          const qualifiedAnime = await secondaryLoadNostrAnimePool(scanFilters, query, SECONDARY_NOSTR_HOT_TARGET_MATCHES, {
+          const qualifiedAnime = await secondaryLoadNostrAnimePool(scanFilters, query, targetCount, {
             isCurrent: () => secondaryNostrTaskIsCurrent(id, scanFilters, query, generation),
             onProgress: (items) => commitSecondaryNostrHotItems(id, scanFilters, query, generation, items)
           });
           if (secondaryNostrTaskIsCurrent(id, scanFilters, query, generation)) {
             query.nostrHotItems = uniqueMedia(qualifiedAnime);
             query.nostrHotLoaded = true;
+            const runtime = secondaryNostrAnimeResolverState(secondaryNostrHotCandidates("anime", scanFilters));
+            query.nostrScanCursor = Number(runtime && runtime.nextIndex || 0);
+            query.nostrCandidatesScanned = Number(runtime && runtime.metrics && runtime.metrics.candidatesScanned || query.nostrScanCursor || 0);
+            query.nostrNewDetailRequests = Number(runtime && runtime.metrics && runtime.metrics.newDetailRequests || 0);
+            query.nostrDetailBudgetExhausted = !!(runtime && runtime.detailBudgetExhausted);
+            query.nostrExhausted = !!(runtime && Number(runtime.nextIndex || 0) >= (runtime.candidates || []).length);
             commitSecondaryNostrHotItems(id, scanFilters, query, generation, qualifiedAnime);
           }
           return qualifiedAnime;
@@ -1494,13 +1528,19 @@
       }
       if (id === "variety") {
         try {
-          const qualifiedVariety = await secondaryLoadNostrVarietyPool(scanFilters, query, SECONDARY_NOSTR_VARIETY_TARGET_MATCHES, {
+          const qualifiedVariety = await secondaryLoadNostrVarietyPool(scanFilters, query, targetCount, {
             isCurrent: () => secondaryNostrTaskIsCurrent(id, scanFilters, query, generation),
             onProgress: (items) => commitSecondaryNostrHotItems(id, scanFilters, query, generation, items)
           });
           if (secondaryNostrTaskIsCurrent(id, scanFilters, query, generation)) {
             query.nostrHotItems = uniqueMedia(qualifiedVariety);
             query.nostrHotLoaded = true;
+            const runtime = secondaryNostrVarietyResolverState(secondaryNostrHotCandidates("variety", scanFilters));
+            query.nostrScanCursor = Number(runtime && runtime.nextIndex || 0);
+            query.nostrCandidatesScanned = Number(runtime && runtime.metrics && runtime.metrics.candidatesScanned || query.nostrScanCursor || 0);
+            query.nostrNewDetailRequests = Number(runtime && runtime.metrics && runtime.metrics.newDetailRequests || 0);
+            query.nostrDetailBudgetExhausted = !!(runtime && runtime.detailBudgetExhausted);
+            query.nostrExhausted = !!(runtime && (runtime.detailBudgetExhausted || Number(runtime.nextIndex || 0) >= (runtime.candidates || []).length));
             commitSecondaryNostrHotItems(id, scanFilters, query, generation, qualifiedVariety);
           }
           return qualifiedVariety;
@@ -1509,33 +1549,49 @@
         }
       }
       await ensureNostrTmdbMetaLoaded();
-      const qualified = [];
-      let newDetailRequests = 0;
+      const qualified = uniqueMedia(query.nostrHotItems || []);
+      const candidates = secondaryNostrHotCandidates(id, scanFilters);
+      let cursor = Math.max(0, Math.min(candidates.length, Number(query.nostrScanCursor || 0)));
+      let newDetailRequests = Number(query.nostrNewDetailRequests || 0);
+      let detailBudgetExhausted = !!query.nostrDetailBudgetExhausted;
       try {
-        const candidates = secondaryNostrHotCandidates(id, scanFilters);
-        for (let offset = 0; offset < candidates.length && qualified.length < SECONDARY_NOSTR_HOT_TARGET_MATCHES; offset += SECONDARY_NOSTR_HOT_BATCH_SIZE) {
+        while (cursor < candidates.length && qualified.length < targetCount) {
           if (!secondaryNostrTaskIsCurrent(id, scanFilters, query, generation)) return qualified;
-          const batch = candidates.slice(offset, offset + SECONDARY_NOSTR_HOT_BATCH_SIZE).filter((candidate) => {
+          const batchCandidates = candidates.slice(cursor, cursor + SECONDARY_NOSTR_HOT_BATCH_SIZE);
+          cursor += batchCandidates.length;
+          query.nostrScanCursor = cursor;
+          query.nostrCandidatesScanned = cursor;
+          const batch = batchCandidates.filter((candidate) => {
             const needsDetail = secondaryNostrDetailRequestNeeded(candidate, id, query);
             if (needsDetail) {
-              if (newDetailRequests >= SECONDARY_NOSTR_HOT_MAX_NEW_DETAIL_REQUESTS) return false;
+              if (newDetailRequests >= SECONDARY_NOSTR_HOT_MAX_NEW_DETAIL_REQUESTS) {
+                detailBudgetExhausted = true;
+                return false;
+              }
               newDetailRequests += 1;
             }
             return true;
           });
+          query.nostrNewDetailRequests = newDetailRequests;
+          query.nostrDetailBudgetExhausted = detailBudgetExhausted;
           if (!batch.length) continue;
           const results = await weeklyMapLimit(batch, SECONDARY_NOSTR_HOT_DETAIL_CONCURRENCY, (candidate, index) => secondaryNostrEnrichCandidate(candidate, id, query, index));
           if (!secondaryNostrTaskIsCurrent(id, scanFilters, query, generation)) return qualified;
           const matches = results
             .filter((result) => result && result.ok && result.value && secondaryNostrHotFilterMatches(id, scanFilters, result.value))
             .map((result) => result.value)
-            .slice(0, Math.max(0, SECONDARY_NOSTR_HOT_TARGET_MATCHES - qualified.length));
+            .slice(0, Math.max(0, targetCount - qualified.length));
           if (matches.length) qualified.push(...matches);
           commitSecondaryNostrHotItems(id, scanFilters, query, generation, qualified);
         }
         if (secondaryNostrTaskIsCurrent(id, scanFilters, query, generation)) {
           query.nostrHotItems = uniqueMedia(qualified);
           query.nostrHotLoaded = true;
+          query.nostrScanCursor = cursor;
+          query.nostrCandidatesScanned = cursor;
+          query.nostrNewDetailRequests = newDetailRequests;
+          query.nostrDetailBudgetExhausted = detailBudgetExhausted;
+          query.nostrExhausted = detailBudgetExhausted || cursor >= candidates.length;
         }
         return qualified;
       } finally {
@@ -1554,8 +1610,47 @@
         query.nostrHotLoaded = false;
         query.nostrHotItems = [];
         query.items = [];
+        query.nostrPaginationInitialized = false;
+        query.nostrScanCursor = 0;
+        query.nostrCandidatesScanned = 0;
+        query.nostrNewDetailRequests = 0;
+        query.nostrDetailBudgetExhausted = false;
+        query.nostrExhausted = false;
+        query.nostrHotReady = false;
+        query.page = 0;
+        query.totalPages = 0;
+        query.totalResults = 0;
+        query.hasMore = false;
+        query.loaded = false;
       }
       if (query.nostrHotLoaded) return false;
-      secondaryLoadNostrHotItems(id, filters, query).catch(() => {});
+      const requestSeq = ++query.requestSeq;
+      query.loading = true;
+      secondaryLoadNostrHotItems(id, filters, query, Math.max(SECONDARY_NOSTR_PAGE_SIZE, (Number(query.page || 0) + 1) * SECONDARY_NOSTR_PAGE_SIZE)).then((items) => {
+        if (query.requestSeq !== requestSeq || secondaryActiveQuery(id) !== query || !query.nostrHot) return;
+        const resolved = uniqueMedia(Array.isArray(query.nostrHotItems) && query.nostrHotItems.length ? query.nostrHotItems : items);
+        const hotReady = !!(state.hot && state.hot.ready && query.nostrHotReady);
+        query.nostrHotItems = resolved;
+        query.items = resolved.slice();
+        query.nostrHotLoaded = hotReady;
+        query.loading = false;
+        query.loaded = true;
+        query.nostrHotLoading = false;
+        query.page = 1;
+        query.totalPages = query.nostrExhausted ? 1 : 0;
+        query.totalResults = query.nostrExhausted ? resolved.length : 0;
+        query.hasMore = !!(hotReady && !query.nostrExhausted);
+        query.error = "";
+        if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
+        observeInfiniteScroll();
+      }).catch(() => {
+        if (query.requestSeq !== requestSeq || secondaryActiveQuery(id) !== query || !query.nostrHot) return;
+        query.loading = false;
+        query.nostrHotLoading = false;
+        query.loaded = true;
+        query.hasMore = false;
+        query.error = "加载失败";
+        if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
+      });
       return true;
     }
