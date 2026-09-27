@@ -384,22 +384,10 @@
       return {
         source: "not-present",
         items: [],
-        page: state.searchHot || null,
         loading: false,
         error: "",
         path: "real-hot-search:not-present"
       };
-    }
-
-    async function loadSearchHot() {
-      const hot = state.searchHot;
-      if (!hot) return hot;
-      hot.items = [];
-      hot.loading = false;
-      hot.loaded = true;
-      hot.error = "";
-      hot.loadedAt = Date.now();
-      return hot;
     }
 
     function ensureSearchHotData() {
