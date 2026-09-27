@@ -26223,7 +26223,7 @@ utils.encode = function encode(arr, enc) {
     async function loadHomeCategoryNostrPool(id, feed, key, requestSeq, target) {
       if (!state.hot || !state.hot.ready) return [];
       const scanFilters = homeCategoryDefaultFilters();
-      const knownQuery = { items: Array.isArray(feed && feed.tmdbItems) ? feed.tmdbItems : [] };
+      const knownQuery = { items: [] };
       if (normalizeLegacyCategoryId(id) === "anime") {
         return secondaryLoadNostrAnimePool(scanFilters, knownQuery, target, {
           isCurrent: () => homeCategoryFeedIsCurrent(feed, key, requestSeq),
@@ -26264,10 +26264,11 @@ utils.encode = function encode(arr, enc) {
 
     function commitHomeCategoryNostrItems(id, feed, key, requestSeq, items) {
       if (!homeCategoryFeedIsCurrent(feed, key, requestSeq)) return false;
-      const nostrItems = uniqueMedia(Array.isArray(items) ? items : []);
+      const nostrItems = filterBlocked(uniqueMedia(Array.isArray(items) ? items : []));
       feed.source = "nostr";
       feed.nostrItems = nostrItems;
-      feed.items = filterBlocked(uniqueMedia(nostrItems.concat(Array.isArray(feed.tmdbItems) ? feed.tmdbItems : [])));
+      feed.tmdbItems = [];
+      feed.items = nostrItems.slice();
       feed.dataVersion = key;
       feed.signature = key;
       const section = Array.from(document.querySelectorAll("#listStack > .home-dynamic-section")).find((entry) => entry.dataset.homeListId === normalizeLegacyCategoryId(id));
@@ -26278,11 +26279,12 @@ utils.encode = function encode(arr, enc) {
     }
 
     function commitHomeCategoryTmdbItems(id, feed, key, requestSeq, items) {
-      if (!homeCategoryFeedIsCurrent(feed, key, requestSeq)) return false;
+      if (!homeCategoryFeedIsCurrent(feed, key, requestSeq) || homeCategoryEffectiveSource(id) !== "tmdb") return false;
       const tmdbItems = uniqueMedia(Array.isArray(items) ? items : []);
-      feed.source = "nostr";
+      feed.source = "tmdb";
+      feed.nostrItems = [];
       feed.tmdbItems = tmdbItems;
-      feed.items = filterBlocked(uniqueMedia((Array.isArray(feed.nostrItems) ? feed.nostrItems : []).concat(tmdbItems)));
+      feed.items = filterBlocked(tmdbItems);
       feed.dataVersion = key;
       feed.signature = key;
       const section = Array.from(document.querySelectorAll("#listStack > .home-dynamic-section")).find((entry) => entry.dataset.homeListId === normalizeLegacyCategoryId(id));
@@ -26315,27 +26317,21 @@ utils.encode = function encode(arr, enc) {
         let nostrItems = [];
         let tmdbResult = { items: [], error: "" };
         if (source === "nostr") {
-          const progressiveTmdbPromise = id === "variety"
-            ? loadHomeCategoryTmdbPool(id).then((result) => {
-              if (homeCategoryFeedIsCurrent(feed, key, requestSeq)) commitHomeCategoryTmdbItems(id, feed, key, requestSeq, result && result.items || []);
-              return result;
-            })
-            : null;
           nostrItems = await loadHomeCategoryNostrPool(id, feed, key, requestSeq, target);
           if (!homeCategoryFeedIsCurrent(feed, key, requestSeq)) return feed;
-          if (progressiveTmdbPromise) tmdbResult = await progressiveTmdbPromise;
-          else if (nostrItems.length < target) tmdbResult = await loadHomeCategoryTmdbPool(id);
         } else {
           tmdbResult = await loadHomeCategoryTmdbPool(id);
         }
         if (!homeCategoryFeedIsCurrent(feed, key, requestSeq)) return feed;
-        const tmdbItems = Array.isArray(tmdbResult.items) ? tmdbResult.items : [];
-        const items = filterBlocked(uniqueMedia(nostrItems.concat(tmdbItems)));
-        if (!items.length && tmdbResult.error && !nostrItems.length) throw new Error(tmdbResult.error);
+        const tmdbItems = source === "tmdb" && Array.isArray(tmdbResult.items) ? tmdbResult.items : [];
+        const items = source === "nostr"
+          ? filterBlocked(uniqueMedia(nostrItems))
+          : filterBlocked(uniqueMedia(tmdbItems));
+        if (!items.length && source === "tmdb" && tmdbResult.error) throw new Error(tmdbResult.error);
         feed.source = source;
-        feed.nostrItems = nostrItems;
+        feed.nostrItems = source === "nostr" ? items.slice() : [];
         feed.tmdbItems = tmdbItems;
-        feed.items = items;
+        feed.items = items.slice();
         feed.loaded = true;
         feed.error = "";
         feed.dataVersion = key;
@@ -26343,12 +26339,11 @@ utils.encode = function encode(arr, enc) {
         return feed;
       }).catch((error) => {
         if (homeCategoryFeedIsCurrent(feed, key, requestSeq)) {
-          const retainedTmdb = id === "variety" && Array.isArray(feed.tmdbItems) ? feed.tmdbItems : [];
           feed.loaded = true;
           feed.error = String(error && error.message || "加载失败");
-          feed.items = filterBlocked(uniqueMedia(retainedTmdb));
+          feed.items = [];
           feed.nostrItems = [];
-          feed.tmdbItems = retainedTmdb;
+          feed.tmdbItems = [];
         }
         return feed;
       }).finally(() => {
@@ -26855,7 +26850,6 @@ utils.encode = function encode(arr, enc) {
       requestAnimationFrame(updateHomeRails);
       recordHomeV14Diag();
     }
-
     function scheduleHomeContentRender(options) {
       const opts = options || {};
       const seq = ++state.homeContentSeq;
@@ -28431,14 +28425,16 @@ utils.encode = function encode(arr, enc) {
       if (!secondaryNostrTaskIsCurrent(id, filters, query, generation)) return false;
       const focus = secondaryNostrGridFocusSnapshot();
       query.nostrHotItems = uniqueMedia(Array.isArray(items) ? items : []);
-      const fallback = (query.items || []).filter((item) => item && item.source !== "nostr-hot");
-      query.items = uniqueMedia(query.nostrHotItems.concat(fallback));
-      const progressiveCategory = ["anime", "variety"].includes(normalizeLegacyCategoryId(id));
-      if (progressiveCategory && query.nostrHotItems.length && !query.loaded) {
+      query.items = query.nostrHotItems.slice();
+      if (query.nostrHotItems.length && !query.loaded) {
         query.loaded = true;
         query.error = "";
+        query.page = Math.max(1, Number(query.page || 0));
+        query.totalPages = 1;
+        query.totalResults = query.nostrHotItems.length;
+        query.hasMore = false;
       }
-      if (query.loaded || progressiveCategory && query.nostrHotItems.length) {
+      if (query.loaded || query.nostrHotItems.length) {
         renderSecondaryCatalog();
         restoreSecondaryNostrGridFocus(focus);
       }
@@ -28538,7 +28534,7 @@ utils.encode = function encode(arr, enc) {
       if (force) {
         query.nostrHotLoaded = false;
         query.nostrHotItems = [];
-        query.items = (query.items || []).filter((item) => item && item.source !== "nostr-hot");
+        query.items = [];
       }
       if (query.nostrHotLoaded) return false;
       secondaryLoadNostrHotItems(id, filters, query).catch(() => {});
@@ -28551,7 +28547,7 @@ utils.encode = function encode(arr, enc) {
       const query = secondaryActiveQuery(id);
       const serverFilters = new Set(query && query.listId === id ? query.serverSideFilters || [] : []);
       const base = query && query.nostrHot
-        ? uniqueMedia((query.nostrHotItems || []).concat(Array.isArray(baseItems) ? baseItems : []))
+        ? uniqueMedia(query.nostrHotItems || [])
         : (Array.isArray(baseItems) ? baseItems : []);
       const result = filterReleasedCatalogItems(id, base).filter((item) => {
         const nostrItem = item && item.source === "nostr-hot";
@@ -28562,10 +28558,7 @@ utils.encode = function encode(arr, enc) {
       });
       const metric = (item, key) => Number(item && (key ? item[key] : item.popularity || item.people || item.count) || 0);
       if (query && query.nostrHot && filters.sort === "hot") {
-        const nostrItems = result.filter((item) => item && item.source === "nostr-hot");
-        const fallbackItems = result.filter((item) => !item || item.source !== "nostr-hot");
-        if (!serverFilters.has("sort")) fallbackItems.sort((a, b) => metric(b) - metric(a));
-        return nostrItems.concat(fallbackItems);
+        return result;
       }
       if (!serverFilters.has("sort") && filters.sort === "hot") return result.slice().sort((a, b) => metric(b) - metric(a));
       if (!serverFilters.has("sort") && filters.sort === "rating") return result.slice().sort((a, b) => metric(b, "voteAverage") - metric(a, "voteAverage"));
@@ -28621,6 +28614,58 @@ utils.encode = function encode(arr, enc) {
       });
       syncSecondaryFilterControls(id, host);
       return groups;
+    }
+    async function loadSecondaryNostrPage(id, query, filters, requestSeq) {
+      query.source = "nostr-hot";
+      query.serverSideFilters = [];
+      query.clientSideFilters = [];
+      query.endpointMap = [];
+      query.sourceStates = [];
+      query.page = 0;
+      query.totalPages = 0;
+      query.totalResults = 0;
+      query.hasMore = false;
+      query.error = "";
+      query.items = [];
+      query.nostrHotItems = [];
+      query.nostrHotLoaded = false;
+      query.nostrHotLoading = false;
+      try {
+        const items = await secondaryLoadNostrHotItems(id, filters, query);
+        if (query.requestSeq !== requestSeq || secondaryActiveQuery(id) !== query || !query.nostrHot) return query;
+        const resolved = uniqueMedia(Array.isArray(query.nostrHotItems) && query.nostrHotItems.length ? query.nostrHotItems : items);
+        const hotReady = !!(state.hot && state.hot.ready);
+        query.nostrHotItems = resolved;
+        query.items = resolved.slice();
+        query.nostrHotLoaded = hotReady;
+        query.nostrHotLoading = false;
+        query.page = 1;
+        query.totalPages = 1;
+        query.totalResults = resolved.length;
+        query.loading = false;
+        query.loaded = true;
+        query.hasMore = false;
+        query.error = "";
+        state.homeV14.secondaryPage = 1;
+        if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
+        observeInfiniteScroll();
+        return query;
+      } catch (error) {
+        if (query.requestSeq !== requestSeq || secondaryActiveQuery(id) !== query || !query.nostrHot) return query;
+        query.nostrHotLoading = false;
+        query.nostrHotLoaded = false;
+        query.items = [];
+        query.nostrHotItems = [];
+        query.page = 0;
+        query.totalPages = 0;
+        query.totalResults = 0;
+        query.loading = false;
+        query.loaded = true;
+        query.hasMore = false;
+        query.error = String(error && error.message || "加载失败");
+        if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
+        return query;
+      }
     }
     async function loadSecondaryPage(id, query, pageNumber) {
       id = normalizeLegacyCategoryId(id);
@@ -28695,6 +28740,7 @@ utils.encode = function encode(arr, enc) {
       const requestSeq = ++query.requestSeq;
       if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
       const filters = secondaryFilterState(id);
+      if (query.nostrHot) return loadSecondaryNostrPage(id, query, filters, requestSeq);
       const plan = buildSecondaryQueryPlan(id, filters, query);
       const pending = plan.sources.map((source, index) => ({ source, state: plan.sourceStates[index] }))
         .filter((entry) => entry.state && !entry.state.done && !entry.state.error);
@@ -29192,8 +29238,8 @@ utils.encode = function encode(arr, enc) {
           ? query.loading ? "正在读取最近观看…" : query.error ? query.error : query.loaded ? items.length ? "已加载全部" : "暂无最近观看" : ""
           : query.loading ? (query.page > 0 ? "正在加载下一页…" : "加载中…") : query.error ? "加载失败，请重试或调整筛选" : query.loaded && !query.hasMore ? "已加载全部" : "";
       }
-      const progressiveNostrAnime = listId === "anime" && query.nostrHot && query.nostrHotItems && query.nostrHotItems.length;
-      if (query.loading && !query.page && !progressiveNostrAnime) {
+      const progressiveNostr = query.nostrHot && query.nostrHotItems && query.nostrHotItems.length;
+      if (query.loading && !query.page && !progressiveNostr) {
         showGridStatus(grid, "加载中...");
       } else if (query.error && !query.page) {
         showGridStatus(grid, "加载失败，请重试或调整筛选");

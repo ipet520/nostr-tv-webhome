@@ -153,7 +153,7 @@
     async function loadHomeCategoryNostrPool(id, feed, key, requestSeq, target) {
       if (!state.hot || !state.hot.ready) return [];
       const scanFilters = homeCategoryDefaultFilters();
-      const knownQuery = { items: Array.isArray(feed && feed.tmdbItems) ? feed.tmdbItems : [] };
+      const knownQuery = { items: [] };
       if (normalizeLegacyCategoryId(id) === "anime") {
         return secondaryLoadNostrAnimePool(scanFilters, knownQuery, target, {
           isCurrent: () => homeCategoryFeedIsCurrent(feed, key, requestSeq),
@@ -194,10 +194,11 @@
 
     function commitHomeCategoryNostrItems(id, feed, key, requestSeq, items) {
       if (!homeCategoryFeedIsCurrent(feed, key, requestSeq)) return false;
-      const nostrItems = uniqueMedia(Array.isArray(items) ? items : []);
+      const nostrItems = filterBlocked(uniqueMedia(Array.isArray(items) ? items : []));
       feed.source = "nostr";
       feed.nostrItems = nostrItems;
-      feed.items = filterBlocked(uniqueMedia(nostrItems.concat(Array.isArray(feed.tmdbItems) ? feed.tmdbItems : [])));
+      feed.tmdbItems = [];
+      feed.items = nostrItems.slice();
       feed.dataVersion = key;
       feed.signature = key;
       const section = Array.from(document.querySelectorAll("#listStack > .home-dynamic-section")).find((entry) => entry.dataset.homeListId === normalizeLegacyCategoryId(id));
@@ -208,11 +209,12 @@
     }
 
     function commitHomeCategoryTmdbItems(id, feed, key, requestSeq, items) {
-      if (!homeCategoryFeedIsCurrent(feed, key, requestSeq)) return false;
+      if (!homeCategoryFeedIsCurrent(feed, key, requestSeq) || homeCategoryEffectiveSource(id) !== "tmdb") return false;
       const tmdbItems = uniqueMedia(Array.isArray(items) ? items : []);
-      feed.source = "nostr";
+      feed.source = "tmdb";
+      feed.nostrItems = [];
       feed.tmdbItems = tmdbItems;
-      feed.items = filterBlocked(uniqueMedia((Array.isArray(feed.nostrItems) ? feed.nostrItems : []).concat(tmdbItems)));
+      feed.items = filterBlocked(tmdbItems);
       feed.dataVersion = key;
       feed.signature = key;
       const section = Array.from(document.querySelectorAll("#listStack > .home-dynamic-section")).find((entry) => entry.dataset.homeListId === normalizeLegacyCategoryId(id));
@@ -245,27 +247,21 @@
         let nostrItems = [];
         let tmdbResult = { items: [], error: "" };
         if (source === "nostr") {
-          const progressiveTmdbPromise = id === "variety"
-            ? loadHomeCategoryTmdbPool(id).then((result) => {
-              if (homeCategoryFeedIsCurrent(feed, key, requestSeq)) commitHomeCategoryTmdbItems(id, feed, key, requestSeq, result && result.items || []);
-              return result;
-            })
-            : null;
           nostrItems = await loadHomeCategoryNostrPool(id, feed, key, requestSeq, target);
           if (!homeCategoryFeedIsCurrent(feed, key, requestSeq)) return feed;
-          if (progressiveTmdbPromise) tmdbResult = await progressiveTmdbPromise;
-          else if (nostrItems.length < target) tmdbResult = await loadHomeCategoryTmdbPool(id);
         } else {
           tmdbResult = await loadHomeCategoryTmdbPool(id);
         }
         if (!homeCategoryFeedIsCurrent(feed, key, requestSeq)) return feed;
-        const tmdbItems = Array.isArray(tmdbResult.items) ? tmdbResult.items : [];
-        const items = filterBlocked(uniqueMedia(nostrItems.concat(tmdbItems)));
-        if (!items.length && tmdbResult.error && !nostrItems.length) throw new Error(tmdbResult.error);
+        const tmdbItems = source === "tmdb" && Array.isArray(tmdbResult.items) ? tmdbResult.items : [];
+        const items = source === "nostr"
+          ? filterBlocked(uniqueMedia(nostrItems))
+          : filterBlocked(uniqueMedia(tmdbItems));
+        if (!items.length && source === "tmdb" && tmdbResult.error) throw new Error(tmdbResult.error);
         feed.source = source;
-        feed.nostrItems = nostrItems;
+        feed.nostrItems = source === "nostr" ? items.slice() : [];
         feed.tmdbItems = tmdbItems;
-        feed.items = items;
+        feed.items = items.slice();
         feed.loaded = true;
         feed.error = "";
         feed.dataVersion = key;
@@ -273,12 +269,11 @@
         return feed;
       }).catch((error) => {
         if (homeCategoryFeedIsCurrent(feed, key, requestSeq)) {
-          const retainedTmdb = id === "variety" && Array.isArray(feed.tmdbItems) ? feed.tmdbItems : [];
           feed.loaded = true;
           feed.error = String(error && error.message || "加载失败");
-          feed.items = filterBlocked(uniqueMedia(retainedTmdb));
+          feed.items = [];
           feed.nostrItems = [];
-          feed.tmdbItems = retainedTmdb;
+          feed.tmdbItems = [];
         }
         return feed;
       }).finally(() => {
@@ -785,4 +780,3 @@
       requestAnimationFrame(updateHomeRails);
       recordHomeV14Diag();
     }
-

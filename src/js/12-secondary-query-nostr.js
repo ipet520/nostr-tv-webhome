@@ -1415,14 +1415,16 @@
       if (!secondaryNostrTaskIsCurrent(id, filters, query, generation)) return false;
       const focus = secondaryNostrGridFocusSnapshot();
       query.nostrHotItems = uniqueMedia(Array.isArray(items) ? items : []);
-      const fallback = (query.items || []).filter((item) => item && item.source !== "nostr-hot");
-      query.items = uniqueMedia(query.nostrHotItems.concat(fallback));
-      const progressiveCategory = ["anime", "variety"].includes(normalizeLegacyCategoryId(id));
-      if (progressiveCategory && query.nostrHotItems.length && !query.loaded) {
+      query.items = query.nostrHotItems.slice();
+      if (query.nostrHotItems.length && !query.loaded) {
         query.loaded = true;
         query.error = "";
+        query.page = Math.max(1, Number(query.page || 0));
+        query.totalPages = 1;
+        query.totalResults = query.nostrHotItems.length;
+        query.hasMore = false;
       }
-      if (query.loaded || progressiveCategory && query.nostrHotItems.length) {
+      if (query.loaded || query.nostrHotItems.length) {
         renderSecondaryCatalog();
         restoreSecondaryNostrGridFocus(focus);
       }
@@ -1522,7 +1524,7 @@
       if (force) {
         query.nostrHotLoaded = false;
         query.nostrHotItems = [];
-        query.items = (query.items || []).filter((item) => item && item.source !== "nostr-hot");
+        query.items = [];
       }
       if (query.nostrHotLoaded) return false;
       secondaryLoadNostrHotItems(id, filters, query).catch(() => {});

@@ -5,7 +5,7 @@
       const query = secondaryActiveQuery(id);
       const serverFilters = new Set(query && query.listId === id ? query.serverSideFilters || [] : []);
       const base = query && query.nostrHot
-        ? uniqueMedia((query.nostrHotItems || []).concat(Array.isArray(baseItems) ? baseItems : []))
+        ? uniqueMedia(query.nostrHotItems || [])
         : (Array.isArray(baseItems) ? baseItems : []);
       const result = filterReleasedCatalogItems(id, base).filter((item) => {
         const nostrItem = item && item.source === "nostr-hot";
@@ -16,10 +16,7 @@
       });
       const metric = (item, key) => Number(item && (key ? item[key] : item.popularity || item.people || item.count) || 0);
       if (query && query.nostrHot && filters.sort === "hot") {
-        const nostrItems = result.filter((item) => item && item.source === "nostr-hot");
-        const fallbackItems = result.filter((item) => !item || item.source !== "nostr-hot");
-        if (!serverFilters.has("sort")) fallbackItems.sort((a, b) => metric(b) - metric(a));
-        return nostrItems.concat(fallbackItems);
+        return result;
       }
       if (!serverFilters.has("sort") && filters.sort === "hot") return result.slice().sort((a, b) => metric(b) - metric(a));
       if (!serverFilters.has("sort") && filters.sort === "rating") return result.slice().sort((a, b) => metric(b, "voteAverage") - metric(a, "voteAverage"));
@@ -75,6 +72,58 @@
       });
       syncSecondaryFilterControls(id, host);
       return groups;
+    }
+    async function loadSecondaryNostrPage(id, query, filters, requestSeq) {
+      query.source = "nostr-hot";
+      query.serverSideFilters = [];
+      query.clientSideFilters = [];
+      query.endpointMap = [];
+      query.sourceStates = [];
+      query.page = 0;
+      query.totalPages = 0;
+      query.totalResults = 0;
+      query.hasMore = false;
+      query.error = "";
+      query.items = [];
+      query.nostrHotItems = [];
+      query.nostrHotLoaded = false;
+      query.nostrHotLoading = false;
+      try {
+        const items = await secondaryLoadNostrHotItems(id, filters, query);
+        if (query.requestSeq !== requestSeq || secondaryActiveQuery(id) !== query || !query.nostrHot) return query;
+        const resolved = uniqueMedia(Array.isArray(query.nostrHotItems) && query.nostrHotItems.length ? query.nostrHotItems : items);
+        const hotReady = !!(state.hot && state.hot.ready);
+        query.nostrHotItems = resolved;
+        query.items = resolved.slice();
+        query.nostrHotLoaded = hotReady;
+        query.nostrHotLoading = false;
+        query.page = 1;
+        query.totalPages = 1;
+        query.totalResults = resolved.length;
+        query.loading = false;
+        query.loaded = true;
+        query.hasMore = false;
+        query.error = "";
+        state.homeV14.secondaryPage = 1;
+        if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
+        observeInfiniteScroll();
+        return query;
+      } catch (error) {
+        if (query.requestSeq !== requestSeq || secondaryActiveQuery(id) !== query || !query.nostrHot) return query;
+        query.nostrHotLoading = false;
+        query.nostrHotLoaded = false;
+        query.items = [];
+        query.nostrHotItems = [];
+        query.page = 0;
+        query.totalPages = 0;
+        query.totalResults = 0;
+        query.loading = false;
+        query.loaded = true;
+        query.hasMore = false;
+        query.error = String(error && error.message || "加载失败");
+        if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
+        return query;
+      }
     }
     async function loadSecondaryPage(id, query, pageNumber) {
       id = normalizeLegacyCategoryId(id);
@@ -149,6 +198,7 @@
       const requestSeq = ++query.requestSeq;
       if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
       const filters = secondaryFilterState(id);
+      if (query.nostrHot) return loadSecondaryNostrPage(id, query, filters, requestSeq);
       const plan = buildSecondaryQueryPlan(id, filters, query);
       const pending = plan.sources.map((source, index) => ({ source, state: plan.sourceStates[index] }))
         .filter((entry) => entry.state && !entry.state.done && !entry.state.error);
@@ -646,8 +696,8 @@
           ? query.loading ? "正在读取最近观看…" : query.error ? query.error : query.loaded ? items.length ? "已加载全部" : "暂无最近观看" : ""
           : query.loading ? (query.page > 0 ? "正在加载下一页…" : "加载中…") : query.error ? "加载失败，请重试或调整筛选" : query.loaded && !query.hasMore ? "已加载全部" : "";
       }
-      const progressiveNostrAnime = listId === "anime" && query.nostrHot && query.nostrHotItems && query.nostrHotItems.length;
-      if (query.loading && !query.page && !progressiveNostrAnime) {
+      const progressiveNostr = query.nostrHot && query.nostrHotItems && query.nostrHotItems.length;
+      if (query.loading && !query.page && !progressiveNostr) {
         showGridStatus(grid, "加载中...");
       } else if (query.error && !query.page) {
         showGridStatus(grid, "加载失败，请重试或调整筛选");
