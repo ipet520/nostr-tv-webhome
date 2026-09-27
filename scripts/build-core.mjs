@@ -37,7 +37,9 @@ export const applicationFiles = Object.freeze([
   "05-relay-network-pan-session.js",
   "06-tmdb-history-model.js",
   "07-detail-playback-race.js",
-  "08-catalog-recent-management.js",
+  "08a-catalog-recent-management.js",
+  "08b-native-history-delete.js",
+  "08c-catalog-recent-management.js",
   "09-route-search.js",
   "10-sidebar-navigation.js",
   "11-home-rendering-data.js",
@@ -123,7 +125,7 @@ export function validateManifest() {
   const applicationPaths = applicationFiles.map((name) => `js/${name}`);
 
   if (cssManifest.length !== 11) throw new Error(`CSS manifest expected 11 files, found ${cssManifest.length}`);
-  if (applicationFiles.length !== 21) throw new Error(`Application manifest expected 21 files, found ${applicationFiles.length}`);
+  if (applicationFiles.length !== 23) throw new Error(`Application manifest expected 23 files, found ${applicationFiles.length}`);
   assertUnique(cssPaths, "CSS manifest");
   assertUnique(fixedScriptPaths, "Fixed script manifest");
   assertUnique(applicationFiles, "Application manifest");
