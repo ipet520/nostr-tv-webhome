@@ -45,11 +45,8 @@
       }
       state.catalog = {};
       state.catalogPage = {};
-      state.fallback = [];
-      state.fallbackPage = { sourceIndex: 0, page: 0, loading: false, loaded: false, done: false };
       state.searchItems = [];
       state.gridRender = {};
-      state.recommendationSource = "pending";
       renderSearch();
       renderAll({ deferContent: true });
       loadCatalog();
@@ -362,4 +359,3 @@
       await persistPanConfigQuietly();
       return { Authorization: "Bearer " + token };
     }
-

@@ -214,10 +214,6 @@
       return title ? `title:${title}` : "";
     }
 
-    function preferenceItems() {
-      return state.hot.items;
-    }
-
     function historyNestedContainers(history) {
       if (!history || typeof history !== "object") return [];
       const containers = [history];
@@ -1304,4 +1300,3 @@
         episodeTitle: item.episodeTitle || item.episode_title || ""
       };
     }
-

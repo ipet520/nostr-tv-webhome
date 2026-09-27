@@ -11,14 +11,12 @@
       if (type === "historyContext") return "fish2018_home_v1_history_context";
       if (type === "continueIndex") return "fish2018_home_v1_continue_index";
       if (type === "homeWeekly") return "fish2018_home_v1_home_weekly";
-      if (type === "nostrTmdbMeta") return "fish2018_home_v1_nostr_tmdb_meta";
       return type;
     }
 
     function sanitizeUiPrefs(value) {
       const raw = value && typeof value === "object" ? value : {};
-      const source = raw.homeHotSource === "nostr" ? "nostr" : "tmdb";
-      return { homeFullscreenEnabled: raw.homeFullscreenEnabled === false ? false : true, homeHotSource: source };
+      return { homeFullscreenEnabled: raw.homeFullscreenEnabled === false ? false : true };
     }
 
     function applyUiPrefs() {
@@ -48,39 +46,6 @@
         button.classList.toggle("active", active);
         button.setAttribute("aria-pressed", active ? "true" : "false");
       });
-      const source = homeHotSource();
-      document.querySelectorAll("[data-home-hot-source]").forEach((button) => {
-        const active = button.dataset.homeHotSource === source;
-        button.classList.toggle("active", active);
-        button.setAttribute("aria-pressed", active ? "true" : "false");
-      });
-    }
-
-    function homeHotSource() {
-      return state.uiPrefs && state.uiPrefs.homeHotSource === "nostr" ? "nostr" : "tmdb";
-    }
-
-    function resolveHomeHotItems() {
-      const source = homeHotSource();
-      if (source === "nostr") {
-        return {
-          source,
-          items: filterBlocked(Array.isArray(state.hot && state.hot.items) ? state.hot.items : []),
-          page: null,
-          loading: !(state.hot && state.hot.ready),
-          error: "",
-          path: "state.hot.items"
-        };
-      }
-      const page = state.searchHot || null;
-      return {
-        source,
-        items: filterBlocked(page && page.items || []),
-        page,
-        loading: !!(page && page.loading),
-        error: page && page.error || "",
-        path: "state.searchHot.items"
-      };
     }
 
     const HOME_WEEKLY_TV_DISCOVER_PAGES = 2;
@@ -507,7 +472,7 @@
       });
       publishHomeWeeklySnapshot("cache", { refreshing: !!latest.loading });
       if (isHomeRouteActive()) {
-        renderHomeHot();
+        renderHomeWeekly();
       }
       return true;
     }
@@ -607,7 +572,7 @@
       if (latest.requestSeq !== requestSeq) return latest;
       const hadExistingSnapshot = homeLatestHasItems(latest);
       latest.networkRefreshReason = latest.cacheHydrated ? "cold-start" : refreshReason;
-      if (isHomeRouteActive()) renderHomeHot();
+      if (isHomeRouteActive()) renderHomeWeekly();
       const networkStartedAt = Date.now();
       latest.lastRefreshAt = networkStartedAt;
       const sources = homeLatestSources();
@@ -739,7 +704,7 @@
       }));
       publishHomeWeeklySnapshot("network-final", { final: true, refreshing: false });
       if (isHomeRouteActive()) {
-        renderHomeHot();
+        renderHomeWeekly();
         mergeHomeLatestIntoHeroFeed({ render: true });
       }
       if (networkRefreshSucceeded && latest.requestSeq === requestSeq) await persistHomeLatestCache(latest, range);
@@ -777,7 +742,7 @@
             refreshFailure: true
           });
         }
-        if (isHomeRouteActive()) renderHomeHot();
+        if (isHomeRouteActive()) renderHomeWeekly();
       });
       return true;
     }
@@ -798,35 +763,6 @@
     // diagnostics and the existing Home renderer; its data is now Weekly.
     function resolveHomeLatestItems() {
       return resolveHomeWeeklyItems();
-    }
-
-    async function setHomeHotSource(source) {
-      const next = source === "nostr" ? "nostr" : "tmdb";
-      state.uiPrefs = Object.assign({}, state.uiPrefs || {}, sanitizeUiPrefs(state.uiPrefs || {}), { homeHotSource: next, loaded: true });
-      renderUiPrefsControls();
-      if (next === "tmdb") ensureSearchHotData();
-      if (homeUiRoute() === "search") renderSearch();
-      if (homeUiRoute() === "home") {
-        invalidateHomeHeroFeed();
-        invalidateHomeCategoryFeeds();
-        renderHome();
-      }
-      if (homeUiRoute() === "secondary") {
-        const secondaryId = normalizeLegacyCategoryId(state.homeV14 && state.homeV14.secondaryListId);
-        const secondaryFilters = secondaryId ? secondaryFilterState(secondaryId) : null;
-        if (typeof refreshSidebarSourceVisibility === "function") refreshSidebarSourceVisibility();
-        if (next === "nostr" && secondaryId === "documentary") {
-          requestCloseSecondaryCatalog();
-        } else if (secondaryNostrRecommendationCategory(secondaryId) && secondaryFilters) {
-          state.homeV14.secondaryActiveQueryKey = "";
-          const query = secondaryGetQuery(secondaryId);
-          renderSecondaryCatalog();
-          if (!query.loaded && !query.loading) loadSecondaryPage(secondaryId, query, 1).catch(() => {});
-        }
-      }
-      if (typeof refreshSidebarSourceVisibility === "function") refreshSidebarSourceVisibility();
-      try { await sdk().cache.set(cacheKey("uiPrefs"), JSON.stringify(sanitizeUiPrefs(state.uiPrefs))); } catch (e) {}
-      scheduleUiSnapshotSave();
     }
 
     async function setHomeFullscreenEnabled(enabled) {
@@ -851,7 +787,6 @@
     function commitConnectionSegmentedTarget(target) {
       if (!target) return Promise.resolve(false);
       const fullscreenValue = target.dataset.homeFullscreen;
-      const hotSourceValue = target.dataset.homeHotSource;
       let commit = null;
       if (fullscreenValue === "on" || fullscreenValue === "off") {
         const enabled = fullscreenValue === "on";
@@ -860,12 +795,6 @@
           return Promise.resolve(false);
         }
         commit = setHomeFullscreenEnabled(enabled);
-      } else if (hotSourceValue === "nostr" || hotSourceValue === "tmdb") {
-        if (homeHotSource() === hotSourceValue) {
-          reassertConnectionSegmentedFocus(target);
-          return Promise.resolve(false);
-        }
-        commit = setHomeHotSource(hotSourceValue);
       }
       if (!commit || typeof commit.then !== "function") {
         reassertConnectionSegmentedFocus(target);
@@ -886,13 +815,13 @@
       if (key !== "ArrowLeft" && key !== "ArrowRight") return false;
       const group = button.closest && button.closest(".detail-style-segmented");
       if (!group) return false;
-      const field = button.dataset.homeFullscreen != null ? "homeFullscreen" : button.dataset.homeHotSource != null ? "homeHotSource" : "";
+      const field = button.dataset.homeFullscreen != null ? "homeFullscreen" : "";
       if (!field) return false;
-      const values = field === "homeFullscreen" ? ["on", "off"] : ["nostr", "tmdb"];
+      const values = ["on", "off"];
       const currentValue = String(button.dataset[field] || "");
       const currentIndex = values.indexOf(currentValue);
       const targetValue = values[Math.max(0, Math.min(values.length - 1, currentIndex + (key === "ArrowRight" ? 1 : -1)))] || currentValue;
-      const target = Array.from(group.querySelectorAll("button[data-home-fullscreen],button[data-home-hot-source]"))
+      const target = Array.from(group.querySelectorAll("button[data-home-fullscreen]"))
         .find((candidate) => isVisibleFocusable(candidate) && candidate.dataset[field] === targetValue) || button;
       event.preventDefault();
       event.stopPropagation();

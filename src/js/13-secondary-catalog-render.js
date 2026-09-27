@@ -4,18 +4,17 @@
       const filters = secondaryFilterState(id);
       const query = secondaryActiveQuery(id);
       const serverFilters = new Set(query && query.listId === id ? query.serverSideFilters || [] : []);
-      const base = query && query.nostrHot
-        ? uniqueMedia(query.nostrHotItems || [])
+      const base = query && query.source === "recommendation"
+        ? recommendationPoolItems()
         : (Array.isArray(baseItems) ? baseItems : []);
       const result = filterReleasedCatalogItems(id, base).filter((item) => {
-        const nostrItem = item && item.source === "nostr-hot";
-        return (filters.mediaType === "all" || (!nostrItem && serverFilters.has("mediaType")) || secondaryItemMediaType(item) === filters.mediaType)
-        && (filters.genre === "all" || (!nostrItem && serverFilters.has("genre")) || secondaryItemGenreIds(item).includes(filters.genre))
-        && (filters.region === "all" || (!nostrItem && serverFilters.has("region")) || secondaryRegionMatches(item, filters.region))
-        && (filters.year === "all" || (!nostrItem && serverFilters.has("year")) || secondaryYearMatches(item, filters.year));
+        return (filters.mediaType === "all" || serverFilters.has("mediaType") || secondaryItemMediaType(item) === filters.mediaType)
+        && (filters.genre === "all" || serverFilters.has("genre") || secondaryItemGenreIds(item).includes(filters.genre))
+        && (filters.region === "all" || serverFilters.has("region") || secondaryRegionMatches(item, filters.region))
+        && (filters.year === "all" || serverFilters.has("year") || secondaryYearMatches(item, filters.year));
       });
       const metric = (item, key) => Number(item && (key ? item[key] : item.popularity || item.people || item.count) || 0);
-      if (query && query.nostrHot) {
+      if (query && query.source === "recommendation") {
         return result;
       }
       if (!serverFilters.has("sort") && filters.sort === "hot") return result.slice().sort((a, b) => metric(b) - metric(a));
@@ -73,76 +72,6 @@
       syncSecondaryFilterControls(id, host);
       return groups;
     }
-    async function loadSecondaryNostrPage(id, query, filters, requestSeq, pageNumber) {
-      const page = Math.max(1, Number(pageNumber || 1));
-      query.source = "nostr-hot";
-      query.serverSideFilters = [];
-      query.clientSideFilters = [];
-      query.endpointMap = [];
-      query.sourceStates = [];
-      query.error = "";
-      query.retryableError = "";
-      if (page === 1 && !query.nostrPaginationInitialized) {
-        query.nostrPaginationInitialized = true;
-        query.page = 0;
-        query.totalPages = 0;
-        query.totalResults = 0;
-        query.hasMore = false;
-        query.items = [];
-        query.nostrHotItems = [];
-        query.nostrHotLoaded = false;
-        query.nostrScanCursor = 0;
-        query.nostrCandidatesScanned = 0;
-        query.nostrNewDetailRequests = 0;
-        query.nostrLoadDetailRequests = 0;
-        query.nostrLoadScanCount = 0;
-        query.nostrLoadPaused = false;
-        query.nostrRetryableMetadataCount = 0;
-        query.nostrRetryableKeys = {};
-        query.nostrMetrics = null;
-        query.nostrExhausted = false;
-        query.nostrHotReady = false;
-      }
-      query.nostrHotLoading = false;
-      try {
-        const items = await secondaryLoadNostrHotItems(id, filters, query, page * SECONDARY_NOSTR_PAGE_SIZE);
-        if (query.requestSeq !== requestSeq || secondaryActiveQuery(id) !== query || !query.nostrHot) return query;
-        const resolved = uniqueMedia(Array.isArray(query.nostrHotItems) && query.nostrHotItems.length ? query.nostrHotItems : items);
-        const hotReady = !!(state.hot && state.hot.ready && query.nostrHotReady);
-        query.nostrHotItems = resolved;
-        query.items = resolved.slice();
-        query.nostrHotLoaded = hotReady;
-        query.nostrHotLoading = false;
-        query.page = page;
-        query.totalPages = query.nostrExhausted ? page : 0;
-        query.totalResults = query.nostrExhausted ? resolved.length : 0;
-        query.loading = false;
-        query.loaded = true;
-        query.hasMore = !!(hotReady && (!query.nostrExhausted || Number(query.nostrRetryableMetadataCount || 0) > 0));
-        query.error = "";
-        query.retryableError = query.nostrLoadPaused ? "本轮工作量已暂停，可继续加载" : "";
-        state.homeV14.secondaryPage = page;
-        if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
-        observeInfiniteScroll();
-        return query;
-      } catch (error) {
-        if (query.requestSeq !== requestSeq || secondaryActiveQuery(id) !== query || !query.nostrHot) return query;
-        query.nostrHotLoading = false;
-        query.nostrHotLoaded = false;
-        const preserved = uniqueMedia(query.nostrHotItems || query.items || []);
-        query.nostrHotItems = preserved;
-        query.items = preserved.slice();
-        query.totalPages = query.nostrExhausted ? Math.max(1, Number(query.page || 0)) : 0;
-        query.totalResults = query.nostrExhausted ? preserved.length : 0;
-        query.loading = false;
-        query.loaded = !!(preserved.length || Number(query.page || 0));
-        query.hasMore = !!(state.hot && state.hot.ready && (!query.nostrExhausted || Number(query.nostrRetryableMetadataCount || 0) > 0));
-        query.error = "";
-        query.retryableError = String(error && error.message || "加载失败");
-        if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
-        return query;
-      }
-    }
     function secondaryUpdateTmdbMetrics(query, plan, queryHasMore) {
       if (!query || !plan) return;
       const sources = (plan.sourceStates || []).map((sourceState) => ({
@@ -163,6 +92,39 @@
         sourceRetryableError: sources.some((entry) => !!entry.retryableError),
         queryHasMore: !!queryHasMore
       };
+    }
+
+    function recommendationSecondaryIsCurrent(query, requestSeq) {
+      return !!(query
+        && query.requestSeq === requestSeq
+        && secondaryActiveQuery("recommendation") === query);
+    }
+
+    async function loadRecommendationSecondaryPage(query, pageNumber) {
+      if (!query || query.source !== "recommendation") return query;
+      const page = Math.max(1, Number(pageNumber || 1));
+      const requestSeq = ++query.requestSeq;
+      const pool = recommendationPoolItems();
+      query.loading = false;
+      query.error = "";
+      query.retryableError = "";
+      query.poolItems = pool.slice();
+      query.renderedCount = Math.min(pool.length, Math.max(Number(query.renderedCount || 0), page * Number(query.batchSize || 18)));
+      query.items = pool.slice(0, query.renderedCount);
+      query.page = page;
+      query.totalPages = Math.ceil(pool.length / Number(query.batchSize || 18));
+      query.totalResults = pool.length;
+      query.loaded = true;
+      query.hasMoreLocal = query.renderedCount < pool.length;
+      query.hasMore = query.hasMoreLocal;
+      query.finite = true;
+      query.snapshotReady = true;
+      if (recommendationSecondaryIsCurrent(query, requestSeq)) {
+        state.homeV14.secondaryPage = page;
+        if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === "recommendation") renderSecondaryCatalog();
+        observeInfiniteScroll();
+      }
+      return query;
     }
 
     async function loadSecondaryPage(id, query, pageNumber) {
@@ -187,6 +149,7 @@
         if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
         return query;
       }
+      if (id === "recommendation") return loadRecommendationSecondaryPage(query, page);
       if (id === "now-playing") {
         query.loading = true;
         query.error = "";
@@ -239,13 +202,11 @@
       const requestSeq = ++query.requestSeq;
       if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
       const filters = secondaryFilterState(id);
-      if (query.nostrHot) return loadSecondaryNostrPage(id, query, filters, requestSeq, page);
       const plan = buildSecondaryQueryPlan(id, filters, query);
       const pending = plan.sources.map((source, index) => ({ source, state: plan.sourceStates[index] }))
         .filter((entry) => entry.state && !entry.state.exhausted && !entry.state.terminalError);
-      if (page === 1 && query.nostrHot) secondaryLoadNostrHotItems(id, filters, query).catch(() => {});
       if (!pending.length) {
-        query.items = uniqueMedia((query.nostrHotItems || []).concat(query.items || []));
+        query.items = uniqueMedia(query.items || []);
         query.loading = false;
         query.loaded = true;
         query.hasMore = plan.sourceStates.some(secondaryTmdbSourceHasMore);
@@ -295,7 +256,7 @@
       });
       const hasRetryableSource = plan.sourceStates.some((sourceState) => !!sourceState.retryableError);
       const hasPendingSource = plan.sourceStates.some(secondaryTmdbSourceHasMore);
-      if (!goodCount && !hasRetryableSource && !(Array.isArray(query.nostrHotItems) && query.nostrHotItems.length)) {
+      if (!goodCount && !hasRetryableSource) {
         query.loading = false;
         query.loaded = query.page > 0;
         query.error = "加载失败";
@@ -306,7 +267,7 @@
         if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
         return query;
       }
-      query.items = uniqueMedia((query.nostrHotItems || []).concat(query.items || [], incoming));
+      query.items = uniqueMedia((query.items || []).concat(incoming));
       query.page = Math.max(page, ...plan.sourceStates.map((sourceState) => Number(sourceState.page || 0)));
       query.totalPages = Math.max(page, ...plan.sourceStates.map((sourceState) => Number(sourceState.totalPages || 0)));
       const totals = plan.sourceStates.map((sourceState) => Number(sourceState.totalResults)).filter(Number.isFinite);
@@ -392,7 +353,7 @@
     }
 
     function secondaryMediaFocusRestoreQueryTerminal(query) {
-      return !!(query && query.loaded && !query.loading && !query.error && !query.hasMore && !query.nostrHotLoading);
+      return !!(query && query.loaded && !query.loading && !query.error && !query.hasMore);
     }
 
     function secondaryMediaFocusCardForKey(grid, mediaKey) {
@@ -456,7 +417,7 @@
     function openSecondaryCatalog(listId, options) {
       const opts = options || {};
       listId = normalizeLegacyCategoryId(listId);
-      if (!listId || !getList(listId) && !["now-playing", "recent"].includes(listId)) return false;
+      if (!listId || !getList(listId) && !["now-playing", "recent", "recommendation"].includes(listId)) return false;
       if (!isHomeRouteActive() && homeUiRoute() !== "home") return false;
       if (isRecentManagePage() && recentManageRuntime().deleting) {
         toast("正在删除，请稍候");
@@ -713,8 +674,9 @@
       updateRecentManageUi();
       const list = getList(listId);
       const isRecent = listId === "recent";
+      const isRecommendation = listId === "recommendation";
       const isWeekly = listId === "now-playing";
-      const title = isRecent ? "最近观看" : isWeekly ? "本周更新" : list && list.title || "分类";
+      const title = isRecent ? "最近观看" : isRecommendation ? "推荐" : isWeekly ? "本周更新" : list && list.title || "分类";
       const query = secondaryActiveQuery(listId) || secondaryGetQuery(listId);
       const grid = $("secondaryCatalogGrid");
       const baseItems = isRecent
@@ -756,8 +718,7 @@
           ? query.loading ? "正在读取最近观看…" : query.error ? query.error : query.loaded ? items.length ? "已加载全部" : "暂无最近观看" : ""
           : query.loading ? (query.page > 0 ? "正在加载下一页…" : "加载中…") : query.error ? "加载失败，请重试或调整筛选" : query.loaded && !query.hasMore ? "已加载全部" : "";
       }
-      const progressiveNostr = query.nostrHot && query.nostrHotItems && query.nostrHotItems.length;
-      if (query.loading && !query.page && !progressiveNostr) {
+      if (query.loading && !query.page) {
         showGridStatus(grid, "加载中...");
       } else if (query.error && !query.page) {
         showGridStatus(grid, "加载失败，请重试或调整筛选");
@@ -829,7 +790,7 @@
         applyHomeScrollTop(Math.max(0, Number(saved.scrollY || 0)));
         let target = saved.focus ? findHomeReturnTarget({ focus: saved.focus }) : null;
         if (!target && saved.focusId) target = $(saved.focusId);
-        if (!target && saved.originSection === "now-playing") target = $("homeHotMore");
+        if (!target && saved.originSection === "now-playing") target = $("homeWeeklyMore");
         if (!target && saved.originSection === "recent") target = $("homeRecentMore");
         if (!target && saved.originSection) target = document.querySelector(`[data-home-more-id="${String(saved.originSection).replace(/"/g, "\\\"")}"]`);
         if (!target) target = initialHomeFocus();
@@ -840,10 +801,10 @@
       return true;
     }
 
-    function renderHomeHot(options) {
+    function renderHomeWeekly(options) {
       const opts = options || {};
-      const section = $("recommendSection");
-      const rail = $("recommendRail");
+      const section = $("homeWeeklySection");
+      const rail = $("homeWeeklyRail");
       if (!section || !rail) return;
       if (!isHomeRouteActive()) {
         section.hidden = true;
@@ -851,12 +812,10 @@
       }
       section.hidden = false;
       const resolved = resolveHomeLatestItems();
-      const previousSource = rail.dataset.hotSource || "";
-      section.dataset.hotSource = resolved.source;
-      rail.dataset.hotSource = resolved.source;
-      rail.dataset.hotDataPath = resolved.path;
+      const previousSource = rail.dataset.weeklyDataPath || "";
+      section.dataset.weeklyDataPath = resolved.path;
       rail.dataset.weeklyDataPath = resolved.path;
-      if (previousSource && previousSource !== resolved.source) {
+      if (previousSource && previousSource !== resolved.path) {
         rail.dataset.homeRenderKeys = "";
         replaceHomeRailChildren(rail, [], captureHomeRailFocus(rail));
       }
@@ -872,10 +831,42 @@
         return;
       }
       const items = resolved.items;
-      if (items.length) fillHomeRail(rail, items, { variant: "portrait", limit: homeRailLimit("portrait"), homeMore: true, weeklyHome: true, railKey: "home:hot" });
+      if (items.length) fillHomeRail(rail, items, { variant: "portrait", limit: homeRailLimit("portrait"), homeMore: true, weeklyHome: true, railKey: "home:weekly" });
       else showHomeRailStatus(rail, page && page.loaded ? "暂无本周更新" : "本周更新加载中...", { variant: "portrait" });
       updateBlockSelectUi();
       if (opts.hotOnly) recordHomeV14Diag();
+    }
+
+    function renderHomeRecommendation(options) {
+      const opts = options || {};
+      const section = $("homeRecommendationSection");
+      const rail = $("homeRecommendationRail");
+      if (!section || !rail) return;
+      if (!isHomeRouteActive()) {
+        section.hidden = true;
+        return;
+      }
+      section.hidden = false;
+      const items = recommendationPoolItems();
+      rail.dataset.homeVariant = "portrait";
+      rail.dataset.recommendationSource = "nostr-recommendation-pool";
+      rail.dataset.recommendationPoolLimit = String(typeof HOT_RENDER_LIMIT === "number" ? HOT_RENDER_LIMIT : 1000);
+      if (!state.hot || !state.hot.ready) {
+        showHomeRailStatus(rail, "推荐加载中...", { variant: "portrait" });
+        return;
+      }
+      if (items.length) {
+        fillHomeRail(rail, items, {
+          variant: "portrait",
+          limit: homeRailLimit("portrait"),
+          homeMore: true,
+          railKey: "home:recommendation",
+          homeEagerCount: 4
+        });
+      } else {
+        showHomeRailStatus(rail, "暂无推荐内容", { variant: "portrait" });
+      }
+      if (opts.recommendationOnly) recordHomeV14Diag();
     }
 
     // Compatibility alias for the existing Nostr recommendation refresh path.

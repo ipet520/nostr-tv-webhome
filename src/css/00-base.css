@@ -469,7 +469,8 @@
       overflow: hidden;
     }
 
-    #recommendSection {
+    #homeRecommendationSection,
+    #homeWeeklySection {
       overflow: visible;
     }
 
@@ -856,12 +857,12 @@
       display: block;
     }
 
-    body.block-select-active #recommendRail .card {
+    body.block-select-active #homeRecommendationRail .card {
       outline: 1px solid rgba(255, 255, 255, .18);
       outline-offset: -1px;
     }
 
-    body.block-select-active #recommendRail .card::after {
+    body.block-select-active #homeRecommendationRail .card::after {
       content: "按 OK 屏蔽";
       position: absolute;
       top: 7px;
@@ -881,19 +882,19 @@
       text-shadow: 0 1px 2px rgba(0, 0, 0, .5);
     }
 
-    body.block-select-active #recommendRail .card.blocked {
+    body.block-select-active #homeRecommendationRail .card.blocked {
       opacity: .62;
       border-color: rgba(240, 157, 157, .55);
     }
 
-    body.block-select-active #recommendRail .card.blocked::after {
+    body.block-select-active #homeRecommendationRail .card.blocked::after {
       content: "已屏蔽";
       background: rgba(132, 38, 38, .78);
       border-color: rgba(255, 210, 210, .24);
       color: rgba(255, 240, 240, .95);
     }
 
-    body.block-select-active #recommendRail .card.blocked img {
+    body.block-select-active #homeRecommendationRail .card.blocked img {
       filter: grayscale(.3) brightness(.7);
     }
 
@@ -2632,7 +2633,8 @@
     }
 
     /* TV performance merge: rendering hints and lightweight containment. */
-    html.tv-mode #recommendRail,
+    html.tv-mode #homeRecommendationRail,
+    html.tv-mode #homeWeeklyRail,
     html.tv-mode #searchRail,
     html.tv-mode #listStack .media-grid {
       transform: translateZ(0);
@@ -3814,4 +3816,3 @@
     html.native-mobile-app.mobile-detail-translucent #detailSheet:not(.detail-large) .detail-info p#detailText {
       font-size: 14px !important;
     }
-  

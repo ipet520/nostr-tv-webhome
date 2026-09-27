@@ -130,38 +130,6 @@
       renderAll({ deferContent: true });
     }
 
-    function prefetchRecommendationFallback() {
-      if (preferenceItems().length) {
-        useNostrRecommendationsIfReady();
-        return;
-      }
-      if (state.fallbackPage.loading || state.fallbackPage.loaded || state.fallbackPage.done) return;
-      loadRecommendationFallback().catch((e) => {
-        state.fallbackPage.loading = false;
-        state.fallbackPage.loaded = true;
-        state.fallbackPage.done = true;
-        setStatus("tmdb", "推荐加载失败");
-        if (state.recommendationSource === "fallback") renderActiveGrid();
-      });
-    }
-
-    function ensureRecommendationFallback() {
-      if (!nostrReadyForFallback()) return;
-      prefetchRecommendationFallback();
-    }
-
-    function armFallbackTimers() {
-      clearTimeout(state.relay.fallbackTimer);
-      clearTimeout(state.relay.fallbackPrefetchTimer);
-      const elapsed = Date.now() - PAGE_OPENED_AT;
-      state.relay.fallbackPrefetchTimer = setTimeout(() => {
-        if (!preferenceItems().length) prefetchRecommendationFallback();
-      }, Math.max(0, FALLBACK_PREFETCH_MS - elapsed));
-      state.relay.fallbackTimer = setTimeout(() => {
-        if (!preferenceItems().length) useFallbackRecommendations();
-      }, Math.max(0, FALLBACK_SHOW_MS - elapsed));
-    }
-
     async function loadCatalogList(id) {
       const list = getList(id);
       const page = state.catalogPage[id];
@@ -217,49 +185,6 @@
       if (state.activeList === id) renderActiveGrid();
     }
 
-    async function loadRecommendationFallback() {
-      const sources = [
-        { type: "trending", id: "tmdb-trending", title: "今日趋势" },
-        { type: "airing", id: "tv-airing-today", title: "今日播出", mediaType: "tv" }
-      ];
-      if (preferenceItems().length) {
-        useNostrRecommendationsIfReady();
-        return;
-      }
-      state.fallback = [];
-      state.fallbackPage = { sourceIndex: 0, page: 0, loading: true, loaded: false, done: false };
-      setStatus("tmdb", "请求推荐兜底");
-      if (state.recommendationSource === "fallback") renderActiveGrid();
-      for (let index = 0; index < sources.length; index++) {
-        const source = sources[index];
-        try {
-          const body = await requestJson(tmdbFallbackUrl(source.type, 1), 18);
-          const items = (body.results || [])
-            .filter((item) => item.poster_path && (item.media_type === "movie" || item.media_type === "tv" || source.mediaType))
-            .map((item, index) => normalizeTmdb(item, source, index))
-            .filter(hasPoster)
-            .filter(isReleasedAsOfToday);
-          if (preferenceItems().length) {
-            useNostrRecommendationsIfReady();
-            return;
-          }
-          if (items.length) {
-            state.fallback = uniqueMedia(items);
-            state.fallbackPage = { sourceIndex: index, page: 1, total: body.total_pages || 1, loading: false, loaded: true, done: false };
-            setStatus("tmdb", "推荐兜底已加载");
-            if (state.recommendationSource === "fallback") renderActiveGrid();
-            return;
-          }
-        } catch (e) {}
-      }
-      state.fallback = ranked(allItems());
-      state.fallbackPage.loaded = true;
-      state.fallbackPage.loading = false;
-      state.fallbackPage.done = true;
-      setStatus("tmdb", state.fallback.length ? "本地兜底已加载" : "推荐为空");
-      if (state.recommendationSource === "fallback") renderActiveGrid();
-    }
-
     async function loadMoreCatalog(id) {
       const list = getList(id);
       const page = state.catalogPage[id];
@@ -304,39 +229,6 @@
       }
     }
 
-    async function loadMoreFallback() {
-      const sources = [
-        { type: "trending", id: "tmdb-trending", title: "今日趋势" },
-        { type: "airing", id: "tv-airing-today", title: "今日播出", mediaType: "tv" }
-      ];
-      if (preferenceItems().length) {
-        useNostrRecommendationsIfReady();
-        return;
-      }
-      const page = state.fallbackPage;
-      if (page.loading || page.done) return;
-      const source = sources[page.sourceIndex] || sources[0];
-      if (page.total && page.page >= page.total) {
-        page.done = true;
-        return;
-      }
-      page.loading = true;
-      try {
-        const next = page.page + 1;
-        const body = await requestJson(tmdbFallbackUrl(source.type, next), 18);
-        const items = (body.results || [])
-          .filter((item) => item.poster_path && (item.media_type === "movie" || item.media_type === "tv" || source.mediaType))
-          .map((item, index) => normalizeTmdb(item, source, (next - 1) * 20 + index))
-          .filter(hasPoster)
-          .filter(isReleasedAsOfToday);
-        state.fallback = uniqueMedia(state.fallback.concat(items));
-        state.fallbackPage = { sourceIndex: page.sourceIndex, page: next, total: body.total_pages || page.total || next, loading: false, loaded: true, done: !items.length };
-        renderActiveGrid();
-      } catch (e) {
-        page.loading = false;
-      }
-    }
-
     function loadMoreVisible() {
       if (homeUiRoute() === "secondary" && state.activeList === "all") {
         if (appendActiveGridBatch()) return;
@@ -345,17 +237,10 @@
       }
       if (appendActiveGridBatch()) return;
       if (state.loadingMore || state.activeList === "recent" || state.activeList === "live") return;
-      if (state.activeList === "all") {
-        if (preferenceItems().length) {
-          useNostrRecommendationsIfReady();
-          return;
-        }
-        if (!nostrReadyForFallback()) return;
-        state.recommendationSource = "fallback";
-      }
+      if (state.activeList === "all") return;
       if (state.infiniteObserver) state.infiniteObserver.unobserve($("infiniteSentinel"));
       state.loadingMore = true;
-      Promise.resolve(state.activeList === "all" ? loadMoreFallback() : loadMoreCatalog(state.activeList))
+      Promise.resolve(loadMoreCatalog(state.activeList))
         .finally(() => {
           state.loadingMore = false;
           observeInfiniteScroll();
@@ -390,7 +275,6 @@
         const ingestBarrier = state.hot.ingestQueue;
         await ingestBarrier.catch(() => {});
         await hotClearRankingIndexForRefresh();
-        state.recommendationSource = "pending";
         renderMetrics();
         if (state.activeList === "all") renderActiveGrid();
         updateNostrRefreshProgress({ phase: "连接 relay", indexed: state.hot.items.length });
@@ -485,18 +369,18 @@
 
     function blockableRecommendCard(el) {
       if (state.activeList !== "all" || uiSnapshotRoute() !== "home") return null;
-      const card = el && el.closest && el.closest("#recommendRail .card");
+      const card = el && el.closest && el.closest("#homeRecommendationRail .card");
       if (!card || !card.__mediaItem || card.__mediaItem.source === "history") return null;
       return card;
     }
 
     function currentRecommendationRail() {
-      return $("recommendRail");
+      return $("homeRecommendationRail");
     }
 
     function updateBlockSelectUi() {
       document.body.classList.toggle("block-select-active", !!state.blocked.selecting);
-      document.querySelectorAll("#recommendRail .card").forEach((card) => {
+      document.querySelectorAll("#homeRecommendationRail .card").forEach((card) => {
         card.classList.toggle("blocked", isBlocked(card.__mediaItem));
       });
       if ($("blockSelectHint")) {
@@ -980,4 +864,3 @@
       if (!isRecentManagePage()) return false;
       return exitRecentManageMode({ focus: true });
     }
-

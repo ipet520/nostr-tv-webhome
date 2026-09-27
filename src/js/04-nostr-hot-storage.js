@@ -182,8 +182,6 @@
         state.hot.ready = true;
       }
       markHomeHotVersion();
-      useNostrRecommendationsIfReady();
-      refreshActiveNostrSecondaryQuery(true);
       scheduleRender();
     }
 
@@ -634,8 +632,6 @@
       state.hot.refreshTimer = 0;
       state.hot.items = buildHotItemsFromIndex();
       markHomeHotVersion();
-      useNostrRecommendationsIfReady();
-      refreshActiveNostrSecondaryQuery(true);
       if (isNostrRefreshActive()) {
         updateNostrRefreshProgress({ indexed: state.hot.items.length });
         maybeFinishNostrRefresh();
@@ -689,7 +685,13 @@
           };
         })
         .filter((item) => item && item.people > 0 && hasPoster(item))
-        .sort((a, b) => b.people - a.people || b.lastEventAt - a.lastEventAt);
+        .sort((a, b) => b.people - a.people || b.lastEventAt - a.lastEventAt)
+        .slice(0, HOT_RENDER_LIMIT);
+    }
+
+    function recommendationPoolItems() {
+      return filterBlocked(Array.isArray(state.hot && state.hot.items) ? state.hot.items : [])
+        .slice(0, HOT_RENDER_LIMIT);
     }
 
     async function hotClearIndex(onlyMine) {

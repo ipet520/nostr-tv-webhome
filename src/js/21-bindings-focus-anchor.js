@@ -248,15 +248,8 @@
         closeConnectionPanel();
       });
       if ($("homeRecentMore")) $("homeRecentMore").addEventListener("click", () => openSecondaryCatalog("recent", { originSection: "recent", originTarget: $("homeRecentMore") }));
-      if ($("homeHotMore")) $("homeHotMore").addEventListener("click", () => openSecondaryCatalog("now-playing", { originSection: "now-playing", originTarget: $("homeHotMore") }));
-      document.querySelectorAll("[data-home-hot-source]").forEach((button) => {
-        if (button.dataset.homeHotSourceBound === "1") return;
-        button.dataset.homeHotSourceBound = "1";
-        button.addEventListener("click", () => setHomeHotSource(button.dataset.homeHotSource).catch(() => {}));
-        button.addEventListener("keydown", (event) => {
-          handleConnectionSegmentedDirectionalKey(button, event);
-        });
-      });
+      if ($("homeRecommendationMore")) $("homeRecommendationMore").addEventListener("click", () => openSecondaryCatalog("recommendation", { originSection: "recommendation", originTarget: $("homeRecommendationMore") }));
+      if ($("homeWeeklyMore")) $("homeWeeklyMore").addEventListener("click", () => openSecondaryCatalog("now-playing", { originSection: "now-playing", originTarget: $("homeWeeklyMore") }));
       (function () {
         const clearBtn = $("clearSearchBtn");
         if (clearBtn) {
@@ -1356,7 +1349,7 @@
     function homeRailSections() {
       const home = $("home");
       if (!home || !isHomeRouteActive()) return [];
-      return Array.from(home.querySelectorAll("#homeRecentSection, #recommendSection, #listStack > .home-dynamic-section")).filter((section) => !section.hidden && !section.closest("[hidden]"));
+      return Array.from(home.querySelectorAll("#homeRecentSection, #homeRecommendationSection, #homeWeeklySection, #listStack > .home-dynamic-section")).filter((section) => !section.hidden && !section.closest("[hidden]"));
     }
 
     function homeRailContextForTarget(target) {

@@ -9,38 +9,15 @@
       replaceHomeRailChildren(rail, [status], captureHomeRailFocus(rail));
     }
 
-    function homeNostrSignalKey(item) {
-      const mediaType = String(item && (item.mediaType || item.media_type) || "").toLowerCase();
-      const tmdbId = String(item && (item.tmdbId || item.tmdb_id) || "").trim();
-      return (mediaType === "movie" || mediaType === "tv") && tmdbId ? `tmdb:${mediaType}:${tmdbId}` : "";
-    }
-
     const HOME_CATEGORY_IDS = new Set(["movie", "tv", "anime", "documentary", "variety"]);
 
     function isHomeCategoryId(id) {
       return HOME_CATEGORY_IDS.has(normalizeLegacyCategoryId(id));
     }
 
-    function homeCategoryEffectiveSource(id) {
-      id = normalizeLegacyCategoryId(id);
-      return id === "documentary" ? "tmdb" : homeHotSource();
-    }
-
-    function homeNostrHotSignature(id) {
-      const items = Array.isArray(state.hot && state.hot.items) ? state.hot.items : [];
-      return [
-        Number(state.hot && state.hot.version || 0),
-        items.length
-      ].join(":");
-    }
-
     function homeCategoryFeedKey(id) {
       id = normalizeLegacyCategoryId(id);
-      const selectedSource = homeHotSource();
-      const effectiveSource = homeCategoryEffectiveSource(id);
-      const hotVersion = effectiveSource === "nostr" ? Number(state.hot && state.hot.version || 0) : 0;
-      const hotSignature = effectiveSource === "nostr" ? homeNostrHotSignature(id) : "canonical";
-      return JSON.stringify([id, selectedSource, effectiveSource, hotVersion, hotSignature]);
+      return JSON.stringify([id, "tmdb"]);
     }
 
     function homeCategoryFeed(id) {
@@ -55,8 +32,6 @@
           key: "",
           source: "",
           items: [],
-          nostrItems: [],
-          tmdbItems: [],
           loading: false,
           loaded: false,
           error: "",
@@ -69,10 +44,8 @@
       const key = homeCategoryFeedKey(id);
       if (feed.key !== key) {
         feed.key = key;
-        feed.source = homeCategoryEffectiveSource(id);
+        feed.source = "tmdb";
         feed.items = [];
-        feed.nostrItems = [];
-        feed.tmdbItems = [];
         feed.loading = false;
         feed.loaded = false;
         feed.error = "";
@@ -93,8 +66,6 @@
         if (!feed) return;
         feed.key = "";
         feed.items = [];
-        feed.nostrItems = [];
-        feed.tmdbItems = [];
         feed.loading = false;
         feed.loaded = false;
         feed.error = "";
@@ -142,70 +113,11 @@
       };
     }
 
-    async function loadHomeCategoryNostrPool(id, feed, key, requestSeq, target) {
-      if (!state.hot || !state.hot.ready) return [];
-      const scanFilters = homeCategoryDefaultFilters();
-      const knownQuery = { items: [] };
-      if (normalizeLegacyCategoryId(id) === "anime") {
-        return secondaryLoadNostrAnimePool(scanFilters, knownQuery, target, {
-          isCurrent: () => homeCategoryFeedIsCurrent(feed, key, requestSeq),
-          onProgress: (items) => commitHomeCategoryNostrItems(id, feed, key, requestSeq, items)
-        });
-      }
-      if (normalizeLegacyCategoryId(id) === "variety") {
-        return secondaryLoadNostrVarietyPool(scanFilters, knownQuery, target, {
-          isCurrent: () => homeCategoryFeedIsCurrent(feed, key, requestSeq),
-          onProgress: (items) => commitHomeCategoryNostrItems(id, feed, key, requestSeq, items)
-        });
-      }
-      await ensureNostrTmdbMetaLoaded();
-      const candidates = secondaryNostrHotCandidates(id, scanFilters);
-      const qualified = [];
-      let newDetailRequests = 0;
-      for (let offset = 0; offset < candidates.length && qualified.length < target; offset += SECONDARY_NOSTR_HOT_BATCH_SIZE) {
-        if (!homeCategoryFeedIsCurrent(feed, key, requestSeq)) return qualified;
-        const batch = candidates.slice(offset, offset + SECONDARY_NOSTR_HOT_BATCH_SIZE).filter((candidate) => {
-          const needsDetail = secondaryNostrDetailRequestNeeded(candidate, id, knownQuery);
-          if (needsDetail) {
-            if (newDetailRequests >= SECONDARY_NOSTR_HOT_DETAIL_BUDGET_PER_LOAD) return false;
-            newDetailRequests += 1;
-          }
-          return true;
-        });
-        if (!batch.length) continue;
-        const results = await weeklyMapLimit(batch, SECONDARY_NOSTR_HOT_DETAIL_CONCURRENCY, (candidate, index) => secondaryNostrEnrichCandidate(candidate, id, knownQuery, index));
-        if (!homeCategoryFeedIsCurrent(feed, key, requestSeq)) return qualified;
-        results
-          .filter((result) => result && result.ok && result.value && secondaryNostrHotFilterMatches(id, scanFilters, result.value))
-          .map((result) => result.value)
-          .slice(0, Math.max(0, target - qualified.length))
-          .forEach((item) => qualified.push(item));
-      }
-      return uniqueMedia(qualified);
-    }
-
-    function commitHomeCategoryNostrItems(id, feed, key, requestSeq, items) {
-      if (!homeCategoryFeedIsCurrent(feed, key, requestSeq)) return false;
-      const nostrItems = filterBlocked(uniqueMedia(Array.isArray(items) ? items : []));
-      feed.source = "nostr";
-      feed.nostrItems = nostrItems;
-      feed.tmdbItems = [];
-      feed.items = nostrItems.slice();
-      feed.dataVersion = key;
-      feed.signature = key;
-      const section = Array.from(document.querySelectorAll("#listStack > .home-dynamic-section")).find((entry) => entry.dataset.homeListId === normalizeLegacyCategoryId(id));
-      const config = homeSectionConfig().find((entry) => entry.listId === normalizeLegacyCategoryId(id));
-      if (section && config) renderHomeDynamicSection(section, config);
-      recordHomeV14Diag();
-      return true;
-    }
 
     function commitHomeCategoryTmdbItems(id, feed, key, requestSeq, items) {
-      if (!homeCategoryFeedIsCurrent(feed, key, requestSeq) || homeCategoryEffectiveSource(id) !== "tmdb") return false;
+      if (!homeCategoryFeedIsCurrent(feed, key, requestSeq)) return false;
       const tmdbItems = uniqueMedia(Array.isArray(items) ? items : []);
       feed.source = "tmdb";
-      feed.nostrItems = [];
-      feed.tmdbItems = tmdbItems;
       feed.items = filterBlocked(tmdbItems);
       feed.dataVersion = key;
       feed.signature = key;
@@ -234,25 +146,12 @@
       feed.loaded = false;
       feed.error = "";
       const target = homeCategoryFeedLimit(id);
-      const source = homeCategoryEffectiveSource(id);
       const task = Promise.resolve().then(async () => {
-        let nostrItems = [];
-        let tmdbResult = { items: [], error: "" };
-        if (source === "nostr") {
-          nostrItems = await loadHomeCategoryNostrPool(id, feed, key, requestSeq, target);
-          if (!homeCategoryFeedIsCurrent(feed, key, requestSeq)) return feed;
-        } else {
-          tmdbResult = await loadHomeCategoryTmdbPool(id);
-        }
+        const tmdbResult = await loadHomeCategoryTmdbPool(id);
         if (!homeCategoryFeedIsCurrent(feed, key, requestSeq)) return feed;
-        const tmdbItems = source === "tmdb" && Array.isArray(tmdbResult.items) ? tmdbResult.items : [];
-        const items = source === "nostr"
-          ? filterBlocked(uniqueMedia(nostrItems))
-          : filterBlocked(uniqueMedia(tmdbItems));
-        if (!items.length && source === "tmdb" && tmdbResult.error) throw new Error(tmdbResult.error);
-        feed.source = source;
-        feed.nostrItems = source === "nostr" ? items.slice() : [];
-        feed.tmdbItems = tmdbItems;
+        const items = filterBlocked(uniqueMedia(Array.isArray(tmdbResult.items) ? tmdbResult.items : []));
+        if (!items.length && tmdbResult.error) throw new Error(tmdbResult.error);
+        feed.source = "tmdb";
         feed.items = items.slice();
         feed.loaded = true;
         feed.error = "";
@@ -264,8 +163,6 @@
           feed.loaded = true;
           feed.error = String(error && error.message || "加载失败");
           feed.items = [];
-          feed.nostrItems = [];
-          feed.tmdbItems = [];
         }
         return feed;
       }).finally(() => {
@@ -356,8 +253,8 @@
       if (!rail) return;
       rail.dataset.homeVariant = config.variant;
       const feed = homeCategoryFeed(config.listId);
-      const hasPartialItems = ["anime", "variety"].includes(config.listId) && !!(feed && Array.isArray(feed.items) && feed.items.length);
-      const items = feed && (feed.loaded || hasPartialItems) ? feed.items : [];
+      const hasPartialItems = false;
+      const items = feed && feed.loaded ? feed.items : [];
       rail.dataset.homeFeedSource = feed && feed.source || "";
       rail.dataset.homeFeedVersion = feed && feed.dataVersion || "";
       if (feed && feed.loading && !hasPartialItems) {
@@ -740,11 +637,8 @@
         heroCacheTtlMs: HOME_HERO_CACHE_TTL_MS,
         heroCacheAgeMs: home.heroFeed && home.heroFeed.loadedAt ? Math.max(0, Date.now() - Number(home.heroFeed.loadedAt)) : 0,
         heroSourceStats: home.heroFeed && home.heroFeed.sourceStats || null,
-        hotSource: homeHotSource(),
-        hotRenderSource: homeRoot.querySelector("#recommendSection") && homeRoot.querySelector("#recommendSection").dataset.hotSource || "",
-        hotRenderDataPath: homeRoot.querySelector("#recommendRail") && homeRoot.querySelector("#recommendRail").dataset.hotDataPath || "",
-        hotCardCount: homeRoot.querySelectorAll("#recommendRail > .card").length,
-        nostrAnime: home.secondaryNostrAnimeMetrics || null,
+        recommendationCardCount: homeRoot.querySelectorAll("#homeRecommendationRail > .card").length,
+        weeklyCardCount: homeRoot.querySelectorAll("#homeWeeklyRail > .card").length,
         homeRoute: homeUiRoute()
       };
       home.imageSrcCount = diag.imageSrcCount;
@@ -764,7 +658,8 @@
       renderSidebar();
       renderHomeHero();
       renderHomeRecent();
-      renderHomeHot();
+      renderHomeRecommendation();
+      renderHomeWeekly();
       renderHomeDynamicSections();
       ensureHomeResizeBinding();
       ensureHomeSectionObserver();

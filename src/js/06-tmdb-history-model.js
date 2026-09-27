@@ -29,15 +29,6 @@
       return url.toString();
     }
 
-    function tmdbFallbackUrl(type, page) {
-      const endpoint = type === "airing" ? "tv/airing_today" : "trending/all/day";
-      const url = new URL(`${window.WEBHOME_CONFIG.tmdb.apiBase}/${endpoint}`);
-      url.searchParams.set("api_key", tmdbApiKey());
-      url.searchParams.set("language", window.WEBHOME_CONFIG.tmdb.language);
-      url.searchParams.set("page", String(page || 1));
-      return url.toString();
-    }
-
     function tmdbSearchUrl(keyword) {
       const url = new URL(`${window.WEBHOME_CONFIG.tmdb.apiBase}/search/multi`);
       url.searchParams.set("api_key", tmdbApiKey());
@@ -937,4 +928,3 @@
       resource = detailContinueResourceContextFor(item);
       return resource;
     }
-

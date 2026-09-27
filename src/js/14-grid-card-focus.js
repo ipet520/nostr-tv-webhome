@@ -182,7 +182,7 @@
     function appendGridBatch(grid) {
       if (!grid || grid.closest && grid.closest(".list-panel[hidden]")) return false;
       const gridId = gridRenderId(grid);
-      if (gridId === "recommendRail" && state.activeList !== "all") return false;
+      if (gridId === "homeRecommendationRail" && state.activeList !== "all") return false;
       if (grid.dataset.listId && grid.dataset.listId !== state.activeList && !String(grid.dataset.listId).startsWith("secondary:")) return false;
       const info = state.gridRender[gridId];
       if (!info || !info.total || Number(info.rendered || 0) >= Number(info.total || 0)) return false;
@@ -211,19 +211,14 @@
     function activeMediaGrid() {
       if (state.activeList === "all" && homeUiRoute() === "secondary") return $("secondaryCatalogGrid");
       if (state.activeList === "all" && homeUiRoute() === "search") return $("searchRail");
-      if (state.activeList === "all") return $("recommendRail");
+      if (state.activeList === "all") return $("homeRecommendationRail");
       const panel = Array.from($("listStack").querySelectorAll(".list-panel")).find((item) => !item.hidden && item.dataset.listId === state.activeList);
       return panel && panel.querySelector(".media-grid");
     }
 
     function itemsForGrid(gridId) {
-      if (gridId === "recommendRail" || gridId === "all") {
-        const source = preferenceItems().length
-          ? preferenceItems()
-          : state.fallback.length
-          ? filterReleasedCatalogItems("all", state.fallback)
-          : ranked(allItems());
-        return uniqueMedia(filterBlocked(source)).filter(hasPoster);
+      if (gridId === "homeRecommendationRail" || gridId === "all") {
+        return uniqueMedia(filterBlocked(recommendationPoolItems())).filter(hasPoster);
       }
       if (gridId === "recent" || gridId === "secondary:recent") return uniqueRecentWatchingMedia(state.recent.items || []);
       return uniqueMedia(state.catalog[gridId] || []).filter(hasPoster);
@@ -418,7 +413,7 @@
       if (homeUiRoute() === "secondary" && state.activeList === "all") return secondaryCanLoadMore();
       if (state.activeList === "recent") return false;
       if (state.activeList === "live") return false;
-      if (state.activeList === "all") return !preferenceItems().length && state.recommendationSource === "fallback" && !state.fallbackPage.done;
+      if (state.activeList === "all") return false;
       const page = state.catalogPage[state.activeList];
       return !!(page && !page.loading && page.page < page.total);
     }

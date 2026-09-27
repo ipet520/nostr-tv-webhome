@@ -698,7 +698,8 @@
       overflow: hidden;
     }
 
-    #recommendSection {
+    #homeRecommendationSection,
+    #homeWeeklySection {
       overflow: visible;
     }
 
@@ -1085,12 +1086,12 @@
       display: block;
     }
 
-    body.block-select-active #recommendRail .card {
+    body.block-select-active #homeRecommendationRail .card {
       outline: 1px solid rgba(255, 255, 255, .18);
       outline-offset: -1px;
     }
 
-    body.block-select-active #recommendRail .card::after {
+    body.block-select-active #homeRecommendationRail .card::after {
       content: "按 OK 屏蔽";
       position: absolute;
       top: 7px;
@@ -1110,19 +1111,19 @@
       text-shadow: 0 1px 2px rgba(0, 0, 0, .5);
     }
 
-    body.block-select-active #recommendRail .card.blocked {
+    body.block-select-active #homeRecommendationRail .card.blocked {
       opacity: .62;
       border-color: rgba(240, 157, 157, .55);
     }
 
-    body.block-select-active #recommendRail .card.blocked::after {
+    body.block-select-active #homeRecommendationRail .card.blocked::after {
       content: "已屏蔽";
       background: rgba(132, 38, 38, .78);
       border-color: rgba(255, 210, 210, .24);
       color: rgba(255, 240, 240, .95);
     }
 
-    body.block-select-active #recommendRail .card.blocked img {
+    body.block-select-active #homeRecommendationRail .card.blocked img {
       filter: grayscale(.3) brightness(.7);
     }
 
@@ -2861,7 +2862,8 @@
     }
 
     /* TV performance merge: rendering hints and lightweight containment. */
-    html.tv-mode #recommendRail,
+    html.tv-mode #homeRecommendationRail,
+    html.tv-mode #homeWeeklyRail,
     html.tv-mode #searchRail,
     html.tv-mode #listStack .media-grid {
       transform: translateZ(0);
@@ -4043,7 +4045,7 @@
     html.native-mobile-app.mobile-detail-translucent #detailSheet:not(.detail-large) .detail-info p#detailText {
       font-size: 14px !important;
     }
-  </style>
+</style>
   <style>
     /* ══ 封面图显示补丁 ══════════════════════════════════════════
        手机端（≤719px）：隐藏 .detail-cover，显示 .detail-hero-bg
@@ -7169,10 +7171,6 @@
             <button class="detail-style-option focusable" id="homeFullscreenOnBtn" type="button" data-home-fullscreen="on">开启</button>
             <button class="detail-style-option focusable" id="homeFullscreenOffBtn" type="button" data-home-fullscreen="off">关闭</button>
           </div></div>
-          <div class="connection-item"><b>热门来源</b><div class="detail-style-segmented" id="homeHotSourceSegmented" role="group" aria-label="热门来源">
-            <button class="detail-style-option focusable" id="homeHotSourceNostrBtn" type="button" data-home-hot-source="nostr">Nostr热榜</button>
-            <button class="detail-style-option focusable" id="homeHotSourceTmdbBtn" type="button" data-home-hot-source="tmdb">TMDB趋势</button>
-          </div></div>
         </div>
         <div class="pan-config">
           <label for="tmdbKeyInput">TMDB Key
@@ -7283,7 +7281,7 @@
       </section>
       <section class="home-section search-hot-section" id="searchHotSection" hidden aria-labelledby="searchHotTitle">
         <div class="home-section-head">
-          <h2 class="home-section-title" id="searchHotTitle">热门推荐</h2>
+          <h2 class="home-section-title" id="searchHotTitle">真实热搜</h2>
           <span class="home-section-line" aria-hidden="true"></span>
         </div>
         <div class="home-rail rail search-hot-rail" id="searchHotRail" data-home-variant="portrait" data-rail-key="search:hot"></div>
@@ -7363,14 +7361,23 @@
       <div class="home-rail rail" id="homeRecentRail" data-rail-key="home:recent" data-home-list-id="recent"></div>
     </section>
 
-    <section class="home-section home-hot-section home-recommend-section" id="recommendSection" hidden aria-labelledby="recommendTitle" data-home-hot-section="1">
+    <section class="home-section home-recommendation-section" id="homeRecommendationSection" hidden aria-labelledby="homeRecommendationTitle">
       <div class="home-section-head">
-        <h2 class="home-section-title" id="recommendTitle">本周更新</h2>
+        <h2 class="home-section-title" id="homeRecommendationTitle">推荐</h2>
         <span class="home-section-line" aria-hidden="true"></span>
-        <button class="home-section-more focusable" id="homeHotMore" type="button" tabindex="0">查看更多</button>
+        <button class="home-section-more focusable" id="homeRecommendationMore" type="button" tabindex="0">查看更多</button>
       </div>
       <div class="block-select-hint home-block-select-hint" id="blockSelectHint">屏蔽选择模式：按 OK 切换屏蔽，按返回退出</div>
-      <div class="home-rail rail" id="recommendRail" data-rail-key="home:recommend" data-home-list-id="now-playing"></div>
+      <div class="home-rail rail" id="homeRecommendationRail" data-rail-key="home:recommendation" data-home-list-id="recommendation"></div>
+    </section>
+
+    <section class="home-section home-weekly-section" id="homeWeeklySection" hidden aria-labelledby="homeWeeklyTitle">
+      <div class="home-section-head">
+        <h2 class="home-section-title" id="homeWeeklyTitle">本周更新</h2>
+        <span class="home-section-line" aria-hidden="true"></span>
+        <button class="home-section-more focusable" id="homeWeeklyMore" type="button" tabindex="0">查看更多</button>
+      </div>
+      <div class="home-rail rail" id="homeWeeklyRail" data-rail-key="home:weekly" data-home-list-id="now-playing"></div>
     </section>
 
     <section class="home-section home-list-section" id="listSection" aria-label="首页内容">
@@ -16844,7 +16851,6 @@ utils.encode = function encode(arr, enc) {
       });
       return { count, score, tags };
     }
-    const PAGE_OPENED_AT = window.WEBHOME_PAGE_OPENED_AT || Date.now();
     const GRID_INITIAL_ROWS = 3;
     const GRID_APPEND_ROWS = 2;
     const RECENT_UI_TTL_MS = 30000;
@@ -16893,8 +16899,6 @@ utils.encode = function encode(arr, enc) {
       homeLatest: { items: [], loading: false, loaded: false, error: "", loadedAt: 0, lastRefreshAt: 0, requestSeq: 0, diag: null, promise: null, cacheChecked: false, cacheHydrated: false, cacheWeekStart: "", cacheSavedAt: 0, cacheItemCount: 0, cacheHydratedAt: 0, networkRefreshReason: "", networkRefreshSucceeded: false, refreshStartedAt: 0, firstRenderableAt: 0 },
       gridRender: {},
       gridColumnCache: {},
-      fallback: [],
-      fallbackPage: { sourceIndex: 0, page: 0, loading: false, loaded: false, done: false },
       loadingMore: false,
       railScroll: {},
       homeV14: {
@@ -16925,7 +16929,6 @@ utils.encode = function encode(arr, enc) {
           requestSeq: 0,
           poolCount: 0,
           detailRequests: 0,
-          weeklyMerged: false,
           sourceStats: null
         },
         heroItems: [],
@@ -16948,14 +16951,6 @@ utils.encode = function encode(arr, enc) {
         secondaryQueries: {},
         secondaryActiveQueryKey: "",
         secondaryQueryPlan: null,
-        secondaryNostrMetaCache: {},
-        secondaryNostrAnimeMetaCache: {},
-        secondaryNostrTmdbMemoryCache: {},
-        nostrTmdbMeta: { version: 1, loaded: false, loading: false, promise: null, entries: {}, dirty: false, dirtyVersion: 0, saveTimer: 0, savePromise: null, lastLoadAt: 0, lastSaveAt: 0, expiredCount: 0, evictedCount: 0 },
-        secondaryNostrAnimeResolver: null,
-        secondaryNostrAnimeMetrics: null,
-        secondaryNostrVarietyResolver: null,
-        secondaryNostrVarietyMetrics: null,
         secondaryFocusRestore: null,
         secondaryMediaFocusRestore: null,
         secondaryWeeklyInitialFocusPending: false,
@@ -17004,8 +16999,7 @@ utils.encode = function encode(arr, enc) {
       suggestions: { keyword: "", items: [], loading: false, timer: 0, seq: 0, controller: null },
       hot: { db: null, dbPromise: null, idb: false, ready: false, version: 0, items: [], media: new Map(), users: new Map(), ingestQueue: Promise.resolve(), refreshTimer: 0 },
       searchHot: { items: [], loading: false, loaded: false, error: "", loadedAt: 0, requestSeq: 0 },
-      relay: { connected: 0, published: 0, total: 0, lastOk: 0, lastDone: 0, statuses: {}, subscribeStarted: false, subscribeDone: 0, subscribeFinished: {}, subscribeToken: 0, refresh: null, backfillBusy: {}, backfillTimers: {}, backfillState: {}, queryAborters: new Set(), subscriptionAborters: new Set(), fallbackReadyAt: 0, fallbackTimer: 0, fallbackPrefetchTimer: 0 },
-      recommendationSource: "pending",
+      relay: { connected: 0, published: 0, total: 0, lastOk: 0, lastDone: 0, statuses: {}, subscribeStarted: false, subscribeDone: 0, subscribeFinished: {}, subscribeToken: 0, refresh: null, backfillBusy: {}, backfillTimers: {}, backfillState: {}, queryAborters: new Set(), subscriptionAborters: new Set() },
       status: {
         sdk: "检测中",
         tmdb: "等待请求",
@@ -17017,7 +17011,7 @@ utils.encode = function encode(arr, enc) {
       },
       deleteState: { loaded: false, users: {} },
       tmdb: { config: null, configDirty: false },
-      uiPrefs: { loaded: false, homeFullscreenEnabled: true, homeHotSource: "tmdb" },
+      uiPrefs: { loaded: false, homeFullscreenEnabled: true },
       blocked: { loaded: false, items: {}, selecting: false, holdTimer: 0, holdTarget: null, longPressFired: false, pointer: null, suppressClickUntil: 0 },
       pan: { config: null, configDirty: false, loading: false, keyword: "", activeType: "", results: [], health: {}, pending: {}, queued: new Map(), inFlight: new Set(), observer: null, flushTimer: 0, pollTimers: [], pollRound: 0, pollRoundStarted: {}, panSnapshotSeq: 0, requestSeq: 0, actualRequestAttempts: 0, lifecycleSeq: 0, sessionId: 0, sessionOrigin: "", sessionItemKey: "", sessionStartedAt: 0, sessionTerminal: false, sessionTerminalReason: "", sessionEndRecorded: false, sessionStartCount: 0, sessionEndCount: 0, sessionTimer: 0, initialAttempts: 0, pollRoundsStarted: 0, pollRoundsCompleted: 0, foregroundRecoveryCount: 0, viewToken: "", searchMode: "", initialSucceeded: false, initialResultState: "", lastFailureKind: "", retryRemaining: 0, finalFailure: false, directTransportExhausted: false, renderKeys: "", tabKeys: "", checkEnabled: false, focusKey: "", focusMode: "", playbackReturn: null, progress: { active: false, phase: "", round: 0, totalRounds: 0 }, preflight: null, directReady: null, directFailure: null, sessionDiag: null, isPlaying: false },
       directPlayStatus: { active: false, actionId: 0, phase: "", text: "", startedAt: 0, clearTimer: 0 },
@@ -17089,8 +17083,6 @@ utils.encode = function encode(arr, enc) {
     };
 
     const WATCH_HEAT_MS = 10 * 60 * 1000;
-    const FALLBACK_PREFETCH_MS = 1000;
-    const FALLBACK_SHOW_MS = 1500;
     const HOT_WINDOW_DAYS = 90;
     const HOT_DAY_SECONDS = 24 * 60 * 60;
     const HOT_WINDOW_SECONDS = HOT_WINDOW_DAYS * 24 * 60 * 60;
@@ -17103,6 +17095,9 @@ utils.encode = function encode(arr, enc) {
     const HOT_POSTER_LIMIT = 96;
     const HOT_PAGE_LIMIT = 1000;
     const HOT_SUBSCRIBE_LIMIT = 500;
+    // Presentation-only recommendation pool limit. Relay sync, IndexedDB,
+    // user vectors, and aggregation remain unbounded by this value.
+    const HOT_RENDER_LIMIT = 1000;
     const HOT_RECENT_PAGES_PER_RELAY = 6;
     const HOT_HISTORY_PAGES_PER_RELAY = 10;
     const HOT_BACKFILL_IDLE_MS = 650;
@@ -17341,14 +17336,12 @@ utils.encode = function encode(arr, enc) {
       if (type === "historyContext") return "fish2018_home_v1_history_context";
       if (type === "continueIndex") return "fish2018_home_v1_continue_index";
       if (type === "homeWeekly") return "fish2018_home_v1_home_weekly";
-      if (type === "nostrTmdbMeta") return "fish2018_home_v1_nostr_tmdb_meta";
       return type;
     }
 
     function sanitizeUiPrefs(value) {
       const raw = value && typeof value === "object" ? value : {};
-      const source = raw.homeHotSource === "nostr" ? "nostr" : "tmdb";
-      return { homeFullscreenEnabled: raw.homeFullscreenEnabled === false ? false : true, homeHotSource: source };
+      return { homeFullscreenEnabled: raw.homeFullscreenEnabled === false ? false : true };
     }
 
     function applyUiPrefs() {
@@ -17378,39 +17371,6 @@ utils.encode = function encode(arr, enc) {
         button.classList.toggle("active", active);
         button.setAttribute("aria-pressed", active ? "true" : "false");
       });
-      const source = homeHotSource();
-      document.querySelectorAll("[data-home-hot-source]").forEach((button) => {
-        const active = button.dataset.homeHotSource === source;
-        button.classList.toggle("active", active);
-        button.setAttribute("aria-pressed", active ? "true" : "false");
-      });
-    }
-
-    function homeHotSource() {
-      return state.uiPrefs && state.uiPrefs.homeHotSource === "nostr" ? "nostr" : "tmdb";
-    }
-
-    function resolveHomeHotItems() {
-      const source = homeHotSource();
-      if (source === "nostr") {
-        return {
-          source,
-          items: filterBlocked(Array.isArray(state.hot && state.hot.items) ? state.hot.items : []),
-          page: null,
-          loading: !(state.hot && state.hot.ready),
-          error: "",
-          path: "state.hot.items"
-        };
-      }
-      const page = state.searchHot || null;
-      return {
-        source,
-        items: filterBlocked(page && page.items || []),
-        page,
-        loading: !!(page && page.loading),
-        error: page && page.error || "",
-        path: "state.searchHot.items"
-      };
     }
 
     const HOME_WEEKLY_TV_DISCOVER_PAGES = 2;
@@ -17837,7 +17797,7 @@ utils.encode = function encode(arr, enc) {
       });
       publishHomeWeeklySnapshot("cache", { refreshing: !!latest.loading });
       if (isHomeRouteActive()) {
-        renderHomeHot();
+        renderHomeWeekly();
       }
       return true;
     }
@@ -17937,7 +17897,7 @@ utils.encode = function encode(arr, enc) {
       if (latest.requestSeq !== requestSeq) return latest;
       const hadExistingSnapshot = homeLatestHasItems(latest);
       latest.networkRefreshReason = latest.cacheHydrated ? "cold-start" : refreshReason;
-      if (isHomeRouteActive()) renderHomeHot();
+      if (isHomeRouteActive()) renderHomeWeekly();
       const networkStartedAt = Date.now();
       latest.lastRefreshAt = networkStartedAt;
       const sources = homeLatestSources();
@@ -18069,7 +18029,7 @@ utils.encode = function encode(arr, enc) {
       }));
       publishHomeWeeklySnapshot("network-final", { final: true, refreshing: false });
       if (isHomeRouteActive()) {
-        renderHomeHot();
+        renderHomeWeekly();
         mergeHomeLatestIntoHeroFeed({ render: true });
       }
       if (networkRefreshSucceeded && latest.requestSeq === requestSeq) await persistHomeLatestCache(latest, range);
@@ -18107,7 +18067,7 @@ utils.encode = function encode(arr, enc) {
             refreshFailure: true
           });
         }
-        if (isHomeRouteActive()) renderHomeHot();
+        if (isHomeRouteActive()) renderHomeWeekly();
       });
       return true;
     }
@@ -18128,35 +18088,6 @@ utils.encode = function encode(arr, enc) {
     // diagnostics and the existing Home renderer; its data is now Weekly.
     function resolveHomeLatestItems() {
       return resolveHomeWeeklyItems();
-    }
-
-    async function setHomeHotSource(source) {
-      const next = source === "nostr" ? "nostr" : "tmdb";
-      state.uiPrefs = Object.assign({}, state.uiPrefs || {}, sanitizeUiPrefs(state.uiPrefs || {}), { homeHotSource: next, loaded: true });
-      renderUiPrefsControls();
-      if (next === "tmdb") ensureSearchHotData();
-      if (homeUiRoute() === "search") renderSearch();
-      if (homeUiRoute() === "home") {
-        invalidateHomeHeroFeed();
-        invalidateHomeCategoryFeeds();
-        renderHome();
-      }
-      if (homeUiRoute() === "secondary") {
-        const secondaryId = normalizeLegacyCategoryId(state.homeV14 && state.homeV14.secondaryListId);
-        const secondaryFilters = secondaryId ? secondaryFilterState(secondaryId) : null;
-        if (typeof refreshSidebarSourceVisibility === "function") refreshSidebarSourceVisibility();
-        if (next === "nostr" && secondaryId === "documentary") {
-          requestCloseSecondaryCatalog();
-        } else if (secondaryNostrRecommendationCategory(secondaryId) && secondaryFilters) {
-          state.homeV14.secondaryActiveQueryKey = "";
-          const query = secondaryGetQuery(secondaryId);
-          renderSecondaryCatalog();
-          if (!query.loaded && !query.loading) loadSecondaryPage(secondaryId, query, 1).catch(() => {});
-        }
-      }
-      if (typeof refreshSidebarSourceVisibility === "function") refreshSidebarSourceVisibility();
-      try { await sdk().cache.set(cacheKey("uiPrefs"), JSON.stringify(sanitizeUiPrefs(state.uiPrefs))); } catch (e) {}
-      scheduleUiSnapshotSave();
     }
 
     async function setHomeFullscreenEnabled(enabled) {
@@ -18181,7 +18112,6 @@ utils.encode = function encode(arr, enc) {
     function commitConnectionSegmentedTarget(target) {
       if (!target) return Promise.resolve(false);
       const fullscreenValue = target.dataset.homeFullscreen;
-      const hotSourceValue = target.dataset.homeHotSource;
       let commit = null;
       if (fullscreenValue === "on" || fullscreenValue === "off") {
         const enabled = fullscreenValue === "on";
@@ -18190,12 +18120,6 @@ utils.encode = function encode(arr, enc) {
           return Promise.resolve(false);
         }
         commit = setHomeFullscreenEnabled(enabled);
-      } else if (hotSourceValue === "nostr" || hotSourceValue === "tmdb") {
-        if (homeHotSource() === hotSourceValue) {
-          reassertConnectionSegmentedFocus(target);
-          return Promise.resolve(false);
-        }
-        commit = setHomeHotSource(hotSourceValue);
       }
       if (!commit || typeof commit.then !== "function") {
         reassertConnectionSegmentedFocus(target);
@@ -18216,13 +18140,13 @@ utils.encode = function encode(arr, enc) {
       if (key !== "ArrowLeft" && key !== "ArrowRight") return false;
       const group = button.closest && button.closest(".detail-style-segmented");
       if (!group) return false;
-      const field = button.dataset.homeFullscreen != null ? "homeFullscreen" : button.dataset.homeHotSource != null ? "homeHotSource" : "";
+      const field = button.dataset.homeFullscreen != null ? "homeFullscreen" : "";
       if (!field) return false;
-      const values = field === "homeFullscreen" ? ["on", "off"] : ["nostr", "tmdb"];
+      const values = ["on", "off"];
       const currentValue = String(button.dataset[field] || "");
       const currentIndex = values.indexOf(currentValue);
       const targetValue = values[Math.max(0, Math.min(values.length - 1, currentIndex + (key === "ArrowRight" ? 1 : -1)))] || currentValue;
-      const target = Array.from(group.querySelectorAll("button[data-home-fullscreen],button[data-home-hot-source]"))
+      const target = Array.from(group.querySelectorAll("button[data-home-fullscreen]"))
         .find((candidate) => isVisibleFocusable(candidate) && candidate.dataset[field] === targetValue) || button;
       event.preventDefault();
       event.stopPropagation();
@@ -18278,11 +18202,8 @@ utils.encode = function encode(arr, enc) {
       }
       state.catalog = {};
       state.catalogPage = {};
-      state.fallback = [];
-      state.fallbackPage = { sourceIndex: 0, page: 0, loading: false, loaded: false, done: false };
       state.searchItems = [];
       state.gridRender = {};
-      state.recommendationSource = "pending";
       renderSearch();
       renderAll({ deferContent: true });
       loadCatalog();
@@ -18595,7 +18516,6 @@ utils.encode = function encode(arr, enc) {
       await persistPanConfigQuietly();
       return { Authorization: "Bearer " + token };
     }
-
     function openHotDb() {
       if (!("indexedDB" in window)) return Promise.resolve(null);
       if (state.hot.db) return Promise.resolve(state.hot.db);
@@ -18780,8 +18700,6 @@ utils.encode = function encode(arr, enc) {
         state.hot.ready = true;
       }
       markHomeHotVersion();
-      useNostrRecommendationsIfReady();
-      refreshActiveNostrSecondaryQuery(true);
       scheduleRender();
     }
 
@@ -19232,8 +19150,6 @@ utils.encode = function encode(arr, enc) {
       state.hot.refreshTimer = 0;
       state.hot.items = buildHotItemsFromIndex();
       markHomeHotVersion();
-      useNostrRecommendationsIfReady();
-      refreshActiveNostrSecondaryQuery(true);
       if (isNostrRefreshActive()) {
         updateNostrRefreshProgress({ indexed: state.hot.items.length });
         maybeFinishNostrRefresh();
@@ -19287,7 +19203,13 @@ utils.encode = function encode(arr, enc) {
           };
         })
         .filter((item) => item && item.people > 0 && hasPoster(item))
-        .sort((a, b) => b.people - a.people || b.lastEventAt - a.lastEventAt);
+        .sort((a, b) => b.people - a.people || b.lastEventAt - a.lastEventAt)
+        .slice(0, HOT_RENDER_LIMIT);
+    }
+
+    function recommendationPoolItems() {
+      return filterBlocked(Array.isArray(state.hot && state.hot.items) ? state.hot.items : [])
+        .slice(0, HOT_RENDER_LIMIT);
     }
 
     async function hotClearIndex(onlyMine) {
@@ -19520,33 +19442,6 @@ utils.encode = function encode(arr, enc) {
       return failed >= relays.length;
     }
 
-    function nostrReadyForFallback() {
-      const relays = window.WEBHOME_CONFIG.nostr.relays;
-      return state.recommendationSource === "fallback"
-        || relayFailedAll()
-        || state.relay.subscribeDone >= relays.length
-        || Date.now() >= PAGE_OPENED_AT + FALLBACK_SHOW_MS;
-    }
-
-    function useFallbackRecommendations() {
-      if (preferenceItems().length) {
-        useNostrRecommendationsIfReady();
-        return;
-      }
-      if (state.recommendationSource === "fallback") return;
-      state.recommendationSource = "fallback";
-      ensureRecommendationFallback();
-      if (state.activeList === "all") renderActiveGrid();
-    }
-
-    function useNostrRecommendationsIfReady() {
-      if (!preferenceItems().length) return;
-      state.recommendationSource = "nostr";
-      clearTimeout(state.relay.fallbackTimer);
-      clearTimeout(state.relay.fallbackPrefetchTimer);
-      if (state.activeList === "all") renderActiveGrid();
-    }
-
     function finishRelaySubscribe(relay, status) {
       if (state.relay.subscribeFinished[relay]) return;
       state.relay.subscribeFinished[relay] = true;
@@ -19556,10 +19451,7 @@ utils.encode = function encode(arr, enc) {
       }
       state.relay.subscribeDone += 1;
       if (state.relay.subscribeDone >= window.WEBHOME_CONFIG.nostr.relays.length) {
-        if (preferenceItems().length === 0) {
-          setStatus("nostr", relayFailedAll() ? "连接失败" : "无推荐数据");
-          useFallbackRecommendations();
-        }
+        setStatus("nostr", relayFailedAll() ? "连接失败" : "推荐同步完成");
       }
       if (state.activeList === "all") renderActiveGrid();
     }
@@ -20425,15 +20317,6 @@ utils.encode = function encode(arr, enc) {
         url.searchParams.set(param, resolveParamDate(value));
       });
       if (page) url.searchParams.set("page", String(page));
-      return url.toString();
-    }
-
-    function tmdbFallbackUrl(type, page) {
-      const endpoint = type === "airing" ? "tv/airing_today" : "trending/all/day";
-      const url = new URL(`${window.WEBHOME_CONFIG.tmdb.apiBase}/${endpoint}`);
-      url.searchParams.set("api_key", tmdbApiKey());
-      url.searchParams.set("language", window.WEBHOME_CONFIG.tmdb.language);
-      url.searchParams.set("page", String(page || 1));
       return url.toString();
     }
 
@@ -21336,7 +21219,6 @@ utils.encode = function encode(arr, enc) {
       resource = detailContinueResourceContextFor(item);
       return resource;
     }
-
     function syncDetailMode(item, historyOverride, options) {
       const candidate = historyOverride === undefined ? findDetailContinueHistory(item) : historyOverride;
       const history = detailAuthoritativeNativeHistoryFor(item, candidate, options);
@@ -22670,38 +22552,6 @@ utils.encode = function encode(arr, enc) {
       renderAll({ deferContent: true });
     }
 
-    function prefetchRecommendationFallback() {
-      if (preferenceItems().length) {
-        useNostrRecommendationsIfReady();
-        return;
-      }
-      if (state.fallbackPage.loading || state.fallbackPage.loaded || state.fallbackPage.done) return;
-      loadRecommendationFallback().catch((e) => {
-        state.fallbackPage.loading = false;
-        state.fallbackPage.loaded = true;
-        state.fallbackPage.done = true;
-        setStatus("tmdb", "推荐加载失败");
-        if (state.recommendationSource === "fallback") renderActiveGrid();
-      });
-    }
-
-    function ensureRecommendationFallback() {
-      if (!nostrReadyForFallback()) return;
-      prefetchRecommendationFallback();
-    }
-
-    function armFallbackTimers() {
-      clearTimeout(state.relay.fallbackTimer);
-      clearTimeout(state.relay.fallbackPrefetchTimer);
-      const elapsed = Date.now() - PAGE_OPENED_AT;
-      state.relay.fallbackPrefetchTimer = setTimeout(() => {
-        if (!preferenceItems().length) prefetchRecommendationFallback();
-      }, Math.max(0, FALLBACK_PREFETCH_MS - elapsed));
-      state.relay.fallbackTimer = setTimeout(() => {
-        if (!preferenceItems().length) useFallbackRecommendations();
-      }, Math.max(0, FALLBACK_SHOW_MS - elapsed));
-    }
-
     async function loadCatalogList(id) {
       const list = getList(id);
       const page = state.catalogPage[id];
@@ -22757,49 +22607,6 @@ utils.encode = function encode(arr, enc) {
       if (state.activeList === id) renderActiveGrid();
     }
 
-    async function loadRecommendationFallback() {
-      const sources = [
-        { type: "trending", id: "tmdb-trending", title: "今日趋势" },
-        { type: "airing", id: "tv-airing-today", title: "今日播出", mediaType: "tv" }
-      ];
-      if (preferenceItems().length) {
-        useNostrRecommendationsIfReady();
-        return;
-      }
-      state.fallback = [];
-      state.fallbackPage = { sourceIndex: 0, page: 0, loading: true, loaded: false, done: false };
-      setStatus("tmdb", "请求推荐兜底");
-      if (state.recommendationSource === "fallback") renderActiveGrid();
-      for (let index = 0; index < sources.length; index++) {
-        const source = sources[index];
-        try {
-          const body = await requestJson(tmdbFallbackUrl(source.type, 1), 18);
-          const items = (body.results || [])
-            .filter((item) => item.poster_path && (item.media_type === "movie" || item.media_type === "tv" || source.mediaType))
-            .map((item, index) => normalizeTmdb(item, source, index))
-            .filter(hasPoster)
-            .filter(isReleasedAsOfToday);
-          if (preferenceItems().length) {
-            useNostrRecommendationsIfReady();
-            return;
-          }
-          if (items.length) {
-            state.fallback = uniqueMedia(items);
-            state.fallbackPage = { sourceIndex: index, page: 1, total: body.total_pages || 1, loading: false, loaded: true, done: false };
-            setStatus("tmdb", "推荐兜底已加载");
-            if (state.recommendationSource === "fallback") renderActiveGrid();
-            return;
-          }
-        } catch (e) {}
-      }
-      state.fallback = ranked(allItems());
-      state.fallbackPage.loaded = true;
-      state.fallbackPage.loading = false;
-      state.fallbackPage.done = true;
-      setStatus("tmdb", state.fallback.length ? "本地兜底已加载" : "推荐为空");
-      if (state.recommendationSource === "fallback") renderActiveGrid();
-    }
-
     async function loadMoreCatalog(id) {
       const list = getList(id);
       const page = state.catalogPage[id];
@@ -22844,39 +22651,6 @@ utils.encode = function encode(arr, enc) {
       }
     }
 
-    async function loadMoreFallback() {
-      const sources = [
-        { type: "trending", id: "tmdb-trending", title: "今日趋势" },
-        { type: "airing", id: "tv-airing-today", title: "今日播出", mediaType: "tv" }
-      ];
-      if (preferenceItems().length) {
-        useNostrRecommendationsIfReady();
-        return;
-      }
-      const page = state.fallbackPage;
-      if (page.loading || page.done) return;
-      const source = sources[page.sourceIndex] || sources[0];
-      if (page.total && page.page >= page.total) {
-        page.done = true;
-        return;
-      }
-      page.loading = true;
-      try {
-        const next = page.page + 1;
-        const body = await requestJson(tmdbFallbackUrl(source.type, next), 18);
-        const items = (body.results || [])
-          .filter((item) => item.poster_path && (item.media_type === "movie" || item.media_type === "tv" || source.mediaType))
-          .map((item, index) => normalizeTmdb(item, source, (next - 1) * 20 + index))
-          .filter(hasPoster)
-          .filter(isReleasedAsOfToday);
-        state.fallback = uniqueMedia(state.fallback.concat(items));
-        state.fallbackPage = { sourceIndex: page.sourceIndex, page: next, total: body.total_pages || page.total || next, loading: false, loaded: true, done: !items.length };
-        renderActiveGrid();
-      } catch (e) {
-        page.loading = false;
-      }
-    }
-
     function loadMoreVisible() {
       if (homeUiRoute() === "secondary" && state.activeList === "all") {
         if (appendActiveGridBatch()) return;
@@ -22885,17 +22659,10 @@ utils.encode = function encode(arr, enc) {
       }
       if (appendActiveGridBatch()) return;
       if (state.loadingMore || state.activeList === "recent" || state.activeList === "live") return;
-      if (state.activeList === "all") {
-        if (preferenceItems().length) {
-          useNostrRecommendationsIfReady();
-          return;
-        }
-        if (!nostrReadyForFallback()) return;
-        state.recommendationSource = "fallback";
-      }
+      if (state.activeList === "all") return;
       if (state.infiniteObserver) state.infiniteObserver.unobserve($("infiniteSentinel"));
       state.loadingMore = true;
-      Promise.resolve(state.activeList === "all" ? loadMoreFallback() : loadMoreCatalog(state.activeList))
+      Promise.resolve(loadMoreCatalog(state.activeList))
         .finally(() => {
           state.loadingMore = false;
           observeInfiniteScroll();
@@ -22930,7 +22697,6 @@ utils.encode = function encode(arr, enc) {
         const ingestBarrier = state.hot.ingestQueue;
         await ingestBarrier.catch(() => {});
         await hotClearRankingIndexForRefresh();
-        state.recommendationSource = "pending";
         renderMetrics();
         if (state.activeList === "all") renderActiveGrid();
         updateNostrRefreshProgress({ phase: "连接 relay", indexed: state.hot.items.length });
@@ -23025,18 +22791,18 @@ utils.encode = function encode(arr, enc) {
 
     function blockableRecommendCard(el) {
       if (state.activeList !== "all" || uiSnapshotRoute() !== "home") return null;
-      const card = el && el.closest && el.closest("#recommendRail .card");
+      const card = el && el.closest && el.closest("#homeRecommendationRail .card");
       if (!card || !card.__mediaItem || card.__mediaItem.source === "history") return null;
       return card;
     }
 
     function currentRecommendationRail() {
-      return $("recommendRail");
+      return $("homeRecommendationRail");
     }
 
     function updateBlockSelectUi() {
       document.body.classList.toggle("block-select-active", !!state.blocked.selecting);
-      document.querySelectorAll("#recommendRail .card").forEach((card) => {
+      document.querySelectorAll("#homeRecommendationRail .card").forEach((card) => {
         card.classList.toggle("blocked", isBlocked(card.__mediaItem));
       });
       if ($("blockSelectHint")) {
@@ -23520,7 +23286,6 @@ utils.encode = function encode(arr, enc) {
       if (!isRecentManagePage()) return false;
       return exitRecentManageMode({ focus: true });
     }
-
     function nativeHistoryDeleteCandidates(item, mediaKey, sourceItems) {
       const nativeItems = Array.isArray(sourceItems)
         ? sourceItems
@@ -24238,7 +24003,7 @@ utils.encode = function encode(arr, enc) {
         const cards = targetGrid ? Array.from(targetGrid.querySelectorAll(".recent-watching-card")).filter(canFastHomeFocus) : [];
         let target = cards.length ? cards[Math.min(focusIndex, cards.length - 1)] : null;
         if (!target && targetGrid && targetGrid.id === "secondaryCatalogGrid") target = $("secondaryCatalogBack");
-        if (!target && targetGrid && targetGrid.id === "homeRecentRail") target = $("homeHotMore") || homeFirstTarget();
+        if (!target && targetGrid && targetGrid.id === "homeRecentRail") target = $("homeRecentMore") || homeFirstTarget();
         if (!target && state.activeList === "recent") target = initialHomeFocus();
         if (target) focusRemoteTarget(target);
       });
@@ -24283,7 +24048,6 @@ utils.encode = function encode(arr, enc) {
     });
     const HOME_PRESENTATION_ROUTES = Object.freeze(["home", "search", "secondary"]);
     const LEGACY_HOME_PRESENTATION_ROUTES = Object.freeze(["history", "continue", "live", "recent", "catalog"]);
-
     function normalizeLegacyCategoryId(id) {
       const value = String(id || "").trim();
       return LEGACY_CATEGORY_MIGRATION[value] || value;
@@ -24350,7 +24114,7 @@ utils.encode = function encode(arr, enc) {
     function visibleTmdbLists() {
       return (window.WEBHOME_CONFIG.tmdb.lists || []).filter((list) => {
         if (list.hidden || list.mobileHidden && isPhoneViewport()) return false;
-        return !(homeHotSource() === "nostr" && normalizeLegacyCategoryId(list && list.id) === "documentary");
+        return true;
       });
     }
 
@@ -24415,12 +24179,11 @@ utils.encode = function encode(arr, enc) {
     }
 
     function isKnownList(id) {
-      return id === "all" || id === "recent" || id === "live" || !!getList(id);
+      return id === "all" || id === "recent" || id === "live" || id === "recommendation" || !!getList(id);
     }
 
     function normalizeActiveListForViewport() {
       migrateLegacyHomeState();
-      if (homeHotSource() === "nostr" && state.activeList === "documentary") state.activeList = "all";
       if (state.activeList === "all" || state.activeList === "live" || state.activeList === "recent") return;
       if (!isKnownList(state.activeList)) state.activeList = "now-playing";
     }
@@ -24668,108 +24431,40 @@ utils.encode = function encode(arr, enc) {
     }
 
     function getSearchHotItems() {
-      const resolved = resolveHomeHotItems();
-      const items = (Array.isArray(resolved.items) ? resolved.items : [])
-        .filter((item) => item && (item.mediaType === "movie" || item.mediaType === "tv") && String(item.tmdbId || "").trim() && String(item.title || "").trim())
-        .slice(0, 12);
-      return Object.assign({}, resolved, { items });
+      return {
+        source: "not-present",
+        items: [],
+        page: state.searchHot || null,
+        loading: false,
+        error: "",
+        path: "real-hot-search:not-present"
+      };
     }
 
     async function loadSearchHot() {
       const hot = state.searchHot;
-      if (!hot || hot.loading || hot.loaded || homeHotSource() !== "tmdb") return hot;
-      hot.loading = true;
+      if (!hot) return hot;
+      hot.items = [];
+      hot.loading = false;
+      hot.loaded = true;
       hot.error = "";
-      const requestSeq = ++hot.requestSeq;
-      const source = {
-        id: "search-hot-trending",
-        title: "热门推荐",
-        endpoint: "trending/all/day",
-        mediaType: "",
-        params: { language: "zh-CN" }
-      };
-      try {
-        const body = await requestJson(tmdbUrl(source, 1), 18);
-        if (hot.requestSeq !== requestSeq) return hot;
-        hot.items = (Array.isArray(body && body.results) ? body.results : [])
-          .map((item, index) => normalizeTmdb(item, source, index))
-          .filter((item) => item && (item.mediaType === "movie" || item.mediaType === "tv") && hasPoster(item));
-        hot.loaded = true;
-        hot.error = "";
-        hot.loadedAt = Date.now();
-      } catch (e) {
-        if (hot.requestSeq !== requestSeq) return hot;
-        hot.items = [];
-        hot.loaded = true;
-        hot.error = String(e && e.message || "加载失败");
-      } finally {
-        if (hot.requestSeq === requestSeq) hot.loading = false;
-      }
-      if (homeUiRoute() === "search") renderSearch();
+      hot.loadedAt = Date.now();
       return hot;
     }
 
     function ensureSearchHotData() {
-      if (homeHotSource() !== "tmdb") return false;
-      const page = state.searchHot;
-      if (page && (page.loading || page.loaded)) return false;
-      Promise.resolve(loadSearchHot()).then(() => {
-        if (homeUiRoute() === "search") renderSearch();
-      }).catch(() => {
-        if (homeUiRoute() === "search") renderSearch();
-      });
-      return true;
+      return false;
     }
 
     function renderSearchHot() {
       const section = $("searchHotSection");
       const rail = $("searchHotRail");
-      if (!section || !rail) return;
-      const live = searchLiveState();
-      const keyword = currentSearchKeyword();
-      const loading = homeUiRoute() === "search" && !!keyword && live.loading && live.keyword === keyword;
-      const show = homeUiRoute() === "search" && !state.searchItems.length && !loading;
-      if (!show) {
-        section.hidden = true;
-        return;
-      }
-      const resolved = getSearchHotItems();
-      const previousSource = rail.dataset.hotSource || "";
-      section.hidden = false;
-      section.dataset.hotSource = resolved.source || "";
-      rail.dataset.hotSource = resolved.source || "";
-      rail.dataset.hotDataPath = resolved.path || "";
-      if (previousSource && previousSource !== resolved.source) {
-        rail.dataset.homeRenderKeys = "";
+      if (section) section.hidden = true;
+      if (rail) {
+        rail.dataset.hotSource = "not-present";
+        rail.dataset.hotDataPath = "real-hot-search:not-present";
         rail.replaceChildren();
       }
-      if (resolved.source === "tmdb") {
-        const page = resolved.page;
-        if (!page) ensureSearchHotData();
-        if (page && page.error) {
-          section.hidden = true;
-          rail.replaceChildren();
-          return;
-        }
-        if ((!page || !page.loaded) && !resolved.items.length) {
-          ensureSearchHotData();
-          showHomeRailStatus(rail, "正在加载热门内容…", { variant: "portrait" });
-          return;
-        }
-      } else if (resolved.loading && !resolved.items.length) {
-        showHomeRailStatus(rail, "正在加载热门内容…", { variant: "portrait" });
-        return;
-      }
-      if (!resolved.items.length) {
-        showHomeRailStatus(rail, "暂无热门内容", { variant: "portrait" });
-        return;
-      }
-      fillHomeRail(rail, resolved.items, {
-        variant: "portrait",
-        limit: 12,
-        railKey: "search:hot",
-        homeEagerCount: 4
-      });
     }
 
     function renderSearch() {
@@ -24964,6 +24659,7 @@ utils.encode = function encode(arr, enc) {
     function sidebarNavigationItems() {
       const items = [
         { key: "live", label: "直播", action: "live" },
+        { key: "recommendation", label: "推荐", action: "secondary", listId: "recommendation" },
         { key: "keep", label: "收藏", action: "keep" },
         { key: "recent", label: "最近观看", action: "secondary", listId: "recent" },
         { key: "latest", label: "本周更新", action: "secondary", listId: "now-playing" },
@@ -24974,7 +24670,7 @@ utils.encode = function encode(arr, enc) {
         { key: "variety", label: "综艺", action: "secondary", listId: "variety" }
       ];
       return items.map((item) => {
-        if (item.action !== "secondary" || item.listId === "recent") return item;
+        if (item.action !== "secondary" || item.listId === "recent" || item.listId === "recommendation") return item;
         const configured = sidebarConfiguredList(item.listId);
         return configured ? Object.assign({}, item, { listId: configured.id }) : null;
       }).filter(Boolean);
@@ -25255,7 +24951,7 @@ utils.encode = function encode(arr, enc) {
     }
 
     function homeOnlyPresentationNodes() {
-      const nodes = [$("homeHero"), $("homeRecentSection"), $("recommendSection")];
+      const nodes = [$("homeHero"), $("homeRecentSection"), $("homeRecommendationSection"), $("homeWeeklySection")];
       const stack = $("listStack");
       if (stack) Array.from(stack.children || []).forEach((node) => {
         if (node.classList && node.classList.contains("home-dynamic-section")) nodes.push(node);
@@ -25268,9 +24964,11 @@ utils.encode = function encode(arr, enc) {
       if (!visible) stopHomeHeroAutoplay();
       const hero = $("homeHero");
       const recent = $("homeRecentSection");
-      const recommend = $("recommendSection");
+      const recommendation = $("homeRecommendationSection");
+      const weekly = $("homeWeeklySection");
       if (hero) hero.hidden = !visible;
-      if (recommend) recommend.hidden = !visible;
+      if (recommendation) recommendation.hidden = !visible;
+      if (weekly) weekly.hidden = !visible;
       // Recent visibility still depends on the loaded history list.  The
       // Home renderer decides that part; this gate only closes it off-page.
       if (recent && !visible) recent.hidden = true;
@@ -25384,37 +25082,43 @@ utils.encode = function encode(arr, enc) {
       if (!home.heroFeed) {
         home.heroFeed = {
           items: [], loading: false, loaded: false, loadedAt: 0, error: "",
-          promise: null, requestSeq: 0, poolCount: 0, detailRequests: 0, weeklyMerged: false, sourceStats: null,
-          source: "", sourceKey: ""
+          promise: null, requestSeq: 0, poolCount: 0, detailRequests: 0, weeklyMerged: false,
+          sourceStats: null, inputKey: "", mixed: true
         };
       }
-      if (home.heroFeed.source == null) home.heroFeed.source = "";
-      if (home.heroFeed.sourceKey == null) home.heroFeed.sourceKey = "";
+      if (home.heroFeed.inputKey == null) home.heroFeed.inputKey = "";
+      home.heroFeed.mixed = true;
       return home.heroFeed;
     }
 
-    function homeHeroSourceKey(source) {
-      const selected = source === "nostr" ? "nostr" : "tmdb";
-      if (selected !== "nostr") return "tmdb";
+    function homeHeroInputKey() {
       const hot = state.hot || {};
-      const signature = filterBlocked(Array.isArray(hot.items) ? hot.items : [])
-        .slice(0, HOME_HERO_NOSTR_SCAN_LIMIT)
-        .map((item, index) => [
-          homeHeroIdentity(item),
-          Number(item && (item.people || item.count) || 0),
-          String(item && (item.latest || item.lastEventAt || item.last_event_at) || ""),
-          index
-        ].join(":"))
+      const recommendation = recommendationPoolItems().slice(0, HOME_HERO_NOSTR_SCAN_LIMIT);
+      const hotSignature = recommendation.map((item, index) => [
+        homeHeroIdentity(item),
+        Number(item && (item.people || item.count) || 0),
+        String(item && (item.latest || item.lastEventAt || item.last_event_at) || ""),
+        index
+      ].join(":")).join("|");
+      const latest = state.homeLatest || {};
+      const weeklySignature = filterBlocked(Array.isArray(latest.items) ? latest.items : [])
+        .slice(0, 12)
+        .map(homeHeroIdentity)
         .join("|");
-      return `nostr:${Number(hot.version || 0)}:${signature}`;
+      return [
+        Number(hot.version || 0),
+        hotSignature,
+        Number(latest.loadedAt || 0),
+        Number(latest.requestSeq || 0),
+        weeklySignature
+      ].join("::");
     }
 
     function invalidateHomeHeroFeed() {
       const feed = homeHeroFeedState();
       if (!feed) return false;
       feed.requestSeq = Number(feed.requestSeq || 0) + 1;
-      feed.source = "";
-      feed.sourceKey = "";
+      feed.inputKey = "";
       feed.items = [];
       feed.loading = false;
       feed.loaded = false;
@@ -25433,7 +25137,7 @@ utils.encode = function encode(arr, enc) {
       const mediaType = String(item.mediaType || item.media_type || "").toLowerCase();
       let tmdbId = String(item.tmdbId || "").trim();
       if (!tmdbId && /^tmdb:(movie|tv):[^:]+$/i.test(String(item.id || ""))) tmdbId = String(item.id).split(":").slice(2).join(":");
-      return (mediaType === "movie" || mediaType === "tv") && tmdbId ? `${mediaType}:${tmdbId}` : "";
+      return (mediaType === "movie" || mediaType === "tv") && tmdbId ? mediaType + ":" + tmdbId : "";
     }
 
     function homeHeroTitleKey(item) {
@@ -25447,7 +25151,7 @@ utils.encode = function encode(arr, enc) {
     function homeHeroFreshnessScore(item) {
       const value = latestDateOnly(item && (item.releaseDate || item.firstAirDate || item.release_date || item.first_air_date || ""));
       if (!value) return 0;
-      const stamp = Date.parse(`${value}T00:00:00Z`);
+      const stamp = Date.parse(value + "T00:00:00Z");
       if (!Number.isFinite(stamp)) return 0;
       const days = (Date.now() - stamp) / 86400000;
       if (days < -30) return 0;
@@ -25505,7 +25209,9 @@ utils.encode = function encode(arr, enc) {
       const votes = Math.min(14, Math.log10(Math.max(1, Number(item && (item.voteCount || item.vote_count) || 0) + 1)) * 3.2);
       const freshness = homeHeroFreshnessScore(item);
       const backdrop = homeHeroBackdrop(item) ? 10 : 0;
-      return popularity * 0.48 + rating * 2.7 + votes + freshness + backdrop;
+      const heatCount = Number(item && (item.people || item.count) || 0);
+      const heat = Math.min(24, Math.log10(Math.max(1, heatCount + 1)) * 5);
+      return popularity * 0.48 + rating * 2.7 + votes + freshness + backdrop + heat;
     }
 
     function homeHeroRank(items) {
@@ -25535,33 +25241,6 @@ utils.encode = function encode(arr, enc) {
       return selected;
     }
 
-    function homeHeroNostrEligible(item) {
-      const identity = homeHeroIdentity(item);
-      const title = String(item && item.title || "").trim();
-      return !!identity
-        && !!title
-        && !!homeHeroBackdrop(item)
-        && hasPoster(item)
-        && !isBlocked(item)
-        && isReleasedAsOfToday(item);
-    }
-
-    function homeHeroSelectNostr(items, limit) {
-      const selected = [];
-      const identityKeys = new Set();
-      const titleKeys = new Set();
-      (Array.isArray(items) ? items : []).forEach((item) => {
-        if (selected.length >= Number(limit || HOME_HERO_FINAL_LIMIT) || !homeHeroNostrEligible(item)) return;
-        const identity = homeHeroIdentity(item);
-        const titleKey = homeHeroTitleKey(item);
-        if (!identity || identityKeys.has(identity) || titleKey && titleKeys.has(titleKey)) return;
-        selected.push(item);
-        identityKeys.add(identity);
-        if (titleKey) titleKeys.add(titleKey);
-      });
-      return selected;
-    }
-
     function homeHeroNormalizeNostrCandidate(raw, index) {
       if (!raw) return null;
       const mediaType = String(raw.mediaType || raw.media_type || "").toLowerCase();
@@ -25571,7 +25250,7 @@ utils.encode = function encode(arr, enc) {
       const sourceRaw = mediaType === "tv"
         ? { id: tmdbId, media_type: mediaType, name: title }
         : { id: tmdbId, media_type: mediaType, title };
-      const normalized = normalizeTmdb(sourceRaw, { id: "home-hero-nostr", title: "首页 Nostr Hero", mediaType }, index);
+      const normalized = normalizeTmdb(sourceRaw, { id: "home-hero-nostr", title: "首页推荐信号", mediaType }, index);
       if (!normalized || !homeHeroIdentity(normalized)) return null;
       normalized.pic = "";
       normalized.landscape = "";
@@ -25590,7 +25269,7 @@ utils.encode = function encode(arr, enc) {
 
     function homeHeroNostrCandidates() {
       const seen = new Set();
-      return filterBlocked(Array.isArray(state.hot && state.hot.items) ? state.hot.items : [])
+      return recommendationPoolItems()
         .slice(0, HOME_HERO_NOSTR_SCAN_LIMIT)
         .map((item, index) => homeHeroNormalizeNostrCandidate(item, index))
         .filter((item) => {
@@ -25607,25 +25286,21 @@ utils.encode = function encode(arr, enc) {
         && !(Array.isArray(item.heroSourceKinds) && item.heroSourceKinds.includes("nostr-hot"));
     }
 
-    function homeHeroFallbackCandidates(source) {
-      if ((source || homeHotSource()) === "nostr") return [];
+    function homeHeroFallbackCandidates() {
       const sources = [];
       if (Array.isArray(state.homeLatest && state.homeLatest.items)) {
         sources.push(...state.homeLatest.items.map((item) => Object.assign({}, item, { heroSourceKinds: ["weekly-feed"] })));
       }
-      if (Array.isArray(state.fallback)) sources.push(...state.fallback);
-      if (Array.isArray(state.searchHot && state.searchHot.items)) sources.push(...state.searchHot.items);
       sources.push(...allItems());
       return homeHeroSelect(uniqueMedia(filterBlocked(sources).filter(homeHeroIsTmdbCandidate)), HOME_HERO_FINAL_LIMIT);
     }
 
     function mergeHomeLatestIntoHeroFeed(options) {
       const feed = homeHeroFeedState();
-      if (homeHotSource() === "nostr") return false;
-      if (!feed || feed.source !== "tmdb" || feed.sourceKey !== "tmdb" || feed.loading || !feed.loaded || feed.weeklyMerged || !state.homeLatest || !state.homeLatest.loaded) return false;
-      feed.weeklyMerged = true;
-      const weekly = filterBlocked(state.homeLatest.items || []).slice(0, 12);
+      if (!feed || feed.loading || !feed.loaded || feed.weeklyMerged || !state.homeLatest || !state.homeLatest.loaded) return false;
+      const weekly = filterBlocked(state.homeLatest.items || []).slice(0, 12).map((item) => Object.assign({}, item, { heroSourceKinds: ["weekly-feed"] }));
       if (!weekly.length) return false;
+      feed.weeklyMerged = true;
       const next = homeHeroSelect((feed.items || []).concat(weekly), HOME_HERO_FINAL_LIMIT);
       const changed = next.map(homeHeroIdentity).join("|") !== (feed.items || []).map(homeHeroIdentity).join("|");
       feed.items = next;
@@ -25650,30 +25325,22 @@ utils.encode = function encode(arr, enc) {
     async function homeHeroEnrichCandidate(candidate) {
       const mediaType = String(candidate && candidate.mediaType || "").toLowerCase();
       const tmdbId = String(candidate && candidate.tmdbId || "").trim();
-      if (!candidate || !tmdbId || (mediaType !== "movie" && mediaType !== "tv")) return candidate;
+      if (!candidate || !tmdbId || (mediaType !== "movie" && mediaType !== "tv") || candidate.heroDetailEnriched) return candidate;
       const detail = mediaType === "tv"
         ? await requestTvDetailShared({ mediaType: "tv", tmdbId })
         : await requestJson(tmdbUrl({
           id: "home-hero-detail",
           title: "首页 Hero",
-          endpoint: `${mediaType}/${encodeURIComponent(tmdbId)}`,
+          endpoint: mediaType + "/" + encodeURIComponent(tmdbId),
           mediaType,
           params: { language: "zh-CN", append_to_response: "images" }
         }), 18);
-      const heroRaw = candidate.heroRaw && typeof candidate.heroRaw === "object"
-        ? candidate.heroRaw
-        : {};
+      const heroRaw = candidate.heroRaw && typeof candidate.heroRaw === "object" ? candidate.heroRaw : {};
       const localizedBase = Object.assign({}, heroRaw);
       if (mediaType === "tv") {
-        localizedBase.name = candidate.resourceSearchTitle
-          || candidate.title
-          || localizedBase.name
-          || "";
+        localizedBase.name = candidate.resourceSearchTitle || candidate.title || localizedBase.name || "";
       } else {
-        localizedBase.title = candidate.resourceSearchTitle
-          || candidate.title
-          || localizedBase.title
-          || "";
+        localizedBase.title = candidate.resourceSearchTitle || candidate.title || localizedBase.title || "";
       }
       localizedBase.aliases = mergeTitleAliases(
         localizedBase.aliases,
@@ -25698,13 +25365,11 @@ utils.encode = function encode(arr, enc) {
       return enriched;
     }
 
-    function homeHeroFeedIsCurrent(feed, source, sourceKey, requestSeq) {
+    function homeHeroFeedIsCurrent(feed, inputKey, requestSeq) {
       return !!(feed
         && feed.requestSeq === requestSeq
-        && feed.source === source
-        && feed.sourceKey === sourceKey
-        && homeHotSource() === source
-        && homeHeroSourceKey(source) === sourceKey);
+        && feed.inputKey === inputKey
+        && homeHeroInputKey() === inputKey);
     }
 
     async function homeHeroProgressiveNostrEnrich(scanCandidates, runCurrent) {
@@ -25719,97 +25384,78 @@ utils.encode = function encode(arr, enc) {
         cursor += batch.length;
         const details = await weeklyMapLimit(batch, HOME_HERO_DETAIL_CONCURRENCY, (candidate) => homeHeroEnrichCandidate(candidate));
         if (!runCurrent()) return { stale: true, items: [], processed: cursor };
-        details.forEach((result, index) => {
-          enriched.push(result && result.ok && result.value ? result.value : batch[index]);
-        });
-        selected = homeHeroSelectNostr(enriched, HOME_HERO_FINAL_LIMIT);
+        details.forEach((result, index) => enriched.push(result && result.ok && result.value ? result.value : batch[index]));
+        selected = homeHeroSelect(enriched, HOME_HERO_FINAL_LIMIT);
       }
-      return { stale: false, items: selected, processed: cursor };
+      return { stale: false, items: enriched, selected, processed: cursor };
     }
 
     async function loadHomeHeroFeed() {
       const feed = homeHeroFeedState();
       if (!feed) return null;
-      const source = homeHotSource();
-      const sourceKey = homeHeroSourceKey(source);
-      if (feed.loading && feed.source === source && feed.sourceKey === sourceKey) return feed.promise || feed;
+      const inputKey = homeHeroInputKey();
+      if (feed.loading && feed.inputKey === inputKey) return feed.promise || feed;
       if (feed.loading) invalidateHomeHeroFeed();
-      feed.source = source;
-      feed.sourceKey = sourceKey;
+      feed.inputKey = inputKey;
       feed.loading = true;
       feed.error = "";
       const requestSeq = ++feed.requestSeq;
-      const runCurrent = () => homeHeroFeedIsCurrent(feed, source, sourceKey, requestSeq);
+      const runCurrent = () => homeHeroFeedIsCurrent(feed, inputKey, requestSeq);
       const promise = Promise.resolve().then(async () => {
         const candidates = new Map();
         const sourceStats = {};
         let successCount = 0;
-        if (source === "nostr") {
-          if (!(state.hot && state.hot.ready)) {
-            feed.loading = false;
-            feed.loaded = false;
-            feed.loadedAt = 0;
-            feed.items = [];
-            feed.error = "";
-            return feed;
-          }
-          homeHeroNostrCandidates().forEach((candidate) => homeHeroMergeCandidate(candidates, candidate));
-          sourceStats["nostr-hot"] = candidates.size;
-          successCount = 1;
-        } else {
-          const sources = [
-            { kind: "tmdb-trending-week", endpoint: "trending/all/week", mediaType: "" },
-            { kind: "tmdb-movie-now-playing", endpoint: "movie/now_playing", mediaType: "movie" },
-            { kind: "tmdb-tv-on-the-air", endpoint: "tv/on_the_air", mediaType: "tv" }
-          ];
-          const responses = await Promise.all(sources.map((sourceItem) => requestJson(tmdbUrl({
-            id: "home-hero-source", title: "首页 Hero", endpoint: sourceItem.endpoint, mediaType: sourceItem.mediaType,
-            params: { language: "zh-CN" }
-          }), 18).then((body) => ({ source: sourceItem, body: body || {}, ok: true })).catch((error) => ({ source: sourceItem, body: null, ok: false, error }))));
-          if (!runCurrent()) return feed;
-          responses.forEach((result) => {
-            const sourceItem = result.source;
-            const values = result.ok && result.body && Array.isArray(result.body.results) ? result.body.results : [];
-            sourceStats[sourceItem.kind] = values.length;
-            if (result.ok) successCount += 1;
-            values.forEach((raw, index) => homeHeroMergeCandidate(candidates, homeHeroNormalizeSourceItem(raw, sourceItem, index)));
-          });
-          if (state.homeLatest && state.homeLatest.loaded) {
-            filterBlocked(state.homeLatest.items || []).slice(0, 12).forEach((item) => {
-              const candidate = Object.assign({}, item, { heroSourceKinds: ["weekly-feed"], heroRaw: item.weeklyDetail || item });
-              homeHeroMergeCandidate(candidates, candidate);
-            });
-            sourceStats["weekly-feed"] = Math.min(12, (state.homeLatest.items || []).length);
-          }
+        const nostrInputs = homeHeroNostrCandidates();
+        nostrInputs.forEach((candidate) => homeHeroMergeCandidate(candidates, candidate));
+        sourceStats["nostr-recommendation"] = nostrInputs.length;
+        if (state.hot && state.hot.ready) successCount += 1;
+        const sources = [
+          { kind: "tmdb-trending-week", endpoint: "trending/all/week", mediaType: "" },
+          { kind: "tmdb-movie-now-playing", endpoint: "movie/now_playing", mediaType: "movie" },
+          { kind: "tmdb-tv-on-the-air", endpoint: "tv/on_the_air", mediaType: "tv" }
+        ];
+        const responses = await Promise.all(sources.map((sourceItem) => requestJson(tmdbUrl({
+          id: "home-hero-source", title: "首页 Hero", endpoint: sourceItem.endpoint, mediaType: sourceItem.mediaType,
+          params: { language: "zh-CN" }
+        }), 18).then((body) => ({ source: sourceItem, body: body || {}, ok: true })).catch((error) => ({ source: sourceItem, body: null, ok: false, error }))));
+        if (!runCurrent()) return feed;
+        responses.forEach((result) => {
+          const sourceItem = result.source;
+          const values = result.ok && result.body && Array.isArray(result.body.results) ? result.body.results : [];
+          sourceStats[sourceItem.kind] = values.length;
+          if (result.ok) successCount += 1;
+          values.forEach((raw, index) => homeHeroMergeCandidate(candidates, homeHeroNormalizeSourceItem(raw, sourceItem, index)));
+        });
+        if (state.homeLatest && state.homeLatest.loaded) {
+          const weeklyItems = filterBlocked(state.homeLatest.items || []).slice(0, 12);
+          weeklyItems.forEach((item) => homeHeroMergeCandidate(candidates, Object.assign({}, item, { heroSourceKinds: ["weekly-feed"], heroRaw: item.weeklyDetail || item })));
+          sourceStats["weekly-feed"] = weeklyItems.length;
         }
         if (!runCurrent()) return feed;
+        const nostrProgress = await homeHeroProgressiveNostrEnrich(nostrInputs, runCurrent);
+        if (nostrProgress.stale || !runCurrent()) return feed;
+        nostrProgress.items.forEach((item) => homeHeroMergeCandidate(candidates, item));
+        const tmdbInputs = Array.from(candidates.values()).filter(homeHeroIsTmdbCandidate);
+        const tmdbPrefetch = homeHeroSelect(tmdbInputs, HOME_HERO_PREFETCH_LIMIT);
+        const tmdbDetails = await weeklyMapLimit(tmdbPrefetch, HOME_HERO_DETAIL_CONCURRENCY, (candidate) => homeHeroEnrichCandidate(candidate));
+        if (!runCurrent()) return feed;
+        tmdbDetails.forEach((result, index) => {
+          const candidate = tmdbPrefetch[index];
+          homeHeroMergeCandidate(candidates, result && result.ok && result.value ? result.value : candidate);
+        });
         const sourceCandidates = Array.from(candidates.values());
-        let finalItems = [];
-        if (source === "nostr") {
-          const scanCandidates = sourceCandidates.slice(0, HOME_HERO_NOSTR_SCAN_LIMIT);
-          feed.poolCount = scanCandidates.length;
-          const progress = await homeHeroProgressiveNostrEnrich(scanCandidates, runCurrent);
-          if (progress.stale || !runCurrent()) return feed;
-          feed.detailRequests = progress.processed;
-          finalItems = progress.items;
-        } else {
-          const prefetch = homeHeroSelect(sourceCandidates, HOME_HERO_PREFETCH_LIMIT);
-          feed.poolCount = prefetch.length;
-          const details = await weeklyMapLimit(prefetch, HOME_HERO_DETAIL_CONCURRENCY, (candidate) => homeHeroEnrichCandidate(candidate));
-          if (!runCurrent()) return feed;
-          feed.detailRequests = prefetch.length;
-          const enriched = details.map((result, index) => result && result.ok && result.value ? result.value : prefetch[index]).filter(Boolean);
-          finalItems = homeHeroSelect(enriched, HOME_HERO_FINAL_LIMIT);
-          if (finalItems.length < HOME_HERO_FINAL_LIMIT) {
-            finalItems = homeHeroSelect(finalItems.concat(homeHeroFallbackCandidates("tmdb")), HOME_HERO_FINAL_LIMIT);
-          }
+        feed.poolCount = sourceCandidates.length;
+        feed.detailRequests = nostrProgress.processed + tmdbPrefetch.length;
+        let finalItems = homeHeroSelect(sourceCandidates, HOME_HERO_FINAL_LIMIT);
+        if (finalItems.length < HOME_HERO_FINAL_LIMIT) {
+          finalItems = homeHeroSelect(finalItems.concat(homeHeroFallbackCandidates()), HOME_HERO_FINAL_LIMIT);
         }
         feed.items = finalItems.slice(0, HOME_HERO_FINAL_LIMIT);
-        feed.weeklyMerged = source === "tmdb" && !!(state.homeLatest && state.homeLatest.loaded);
+        feed.weeklyMerged = !!(state.homeLatest && state.homeLatest.loaded);
         feed.loaded = true;
         feed.loadedAt = Date.now();
         feed.loading = false;
-        feed.error = source === "nostr" ? "" : (feed.items.length || successCount ? "" : "加载失败");
+        feed.error = feed.items.length || successCount ? "" : "加载失败";
         feed.sourceStats = Object.assign({ successCount, candidateCount: candidates.size }, sourceStats);
         if (isHomeRouteActive()) renderHomeHero();
         return feed;
@@ -25818,9 +25464,9 @@ utils.encode = function encode(arr, enc) {
         feed.loading = false;
         feed.loaded = true;
         feed.loadedAt = Date.now();
-        feed.error = source === "nostr" ? String(error && error.message || "加载失败") : String(error && error.message || "加载失败");
+        feed.error = String(error && error.message || "加载失败");
         feed.detailRequests = 0;
-        if (source === "tmdb" && !feed.items.length) feed.items = homeHeroFallbackCandidates("tmdb");
+        if (!feed.items.length) feed.items = homeHeroFallbackCandidates();
         if (isHomeRouteActive()) renderHomeHero();
         return feed;
       });
@@ -25833,10 +25479,8 @@ utils.encode = function encode(arr, enc) {
       if (!isHomeRouteActive()) return false;
       const feed = homeHeroFeedState();
       if (!feed) return false;
-      const source = homeHotSource();
-      const sourceKey = homeHeroSourceKey(source);
-      if (feed.source !== source || feed.sourceKey !== sourceKey) invalidateHomeHeroFeed();
-      if (source === "nostr" && !(state.hot && state.hot.ready)) return false;
+      const inputKey = homeHeroInputKey();
+      if (feed.inputKey !== inputKey) invalidateHomeHeroFeed();
       if (feed.loading) return false;
       if (feed.loaded && feed.loadedAt && Date.now() - feed.loadedAt < HOME_HERO_CACHE_TTL_MS) return false;
       loadHomeHeroFeed().catch(() => {});
@@ -25845,14 +25489,13 @@ utils.encode = function encode(arr, enc) {
 
     function homeHeroCandidates() {
       const feed = homeHeroFeedState();
-      const source = homeHotSource();
-      const sourceKey = homeHeroSourceKey(source);
-      const cached = feed && feed.source === source && feed.sourceKey === sourceKey ? filterBlocked(feed.items || []) : [];
-      if (source === "nostr") return homeHeroSelectNostr(cached, HOME_HERO_FINAL_LIMIT).slice(0, HOME_HERO_FINAL_LIMIT);
+      const inputKey = homeHeroInputKey();
+      const cached = feed && feed.inputKey === inputKey ? filterBlocked(feed.items || []) : [];
       return cached && cached.length
         ? homeHeroSelect(cached, HOME_HERO_FINAL_LIMIT).slice(0, HOME_HERO_FINAL_LIMIT)
-        : homeHeroFallbackCandidates("tmdb");
+        : homeHeroFallbackCandidates();
     }
+
 
     function homeHeroBackdropUrl(item) {
       const value = homeHeroBackdrop(item);
@@ -26303,38 +25946,15 @@ utils.encode = function encode(arr, enc) {
       replaceHomeRailChildren(rail, [status], captureHomeRailFocus(rail));
     }
 
-    function homeNostrSignalKey(item) {
-      const mediaType = String(item && (item.mediaType || item.media_type) || "").toLowerCase();
-      const tmdbId = String(item && (item.tmdbId || item.tmdb_id) || "").trim();
-      return (mediaType === "movie" || mediaType === "tv") && tmdbId ? `tmdb:${mediaType}:${tmdbId}` : "";
-    }
-
     const HOME_CATEGORY_IDS = new Set(["movie", "tv", "anime", "documentary", "variety"]);
 
     function isHomeCategoryId(id) {
       return HOME_CATEGORY_IDS.has(normalizeLegacyCategoryId(id));
     }
 
-    function homeCategoryEffectiveSource(id) {
-      id = normalizeLegacyCategoryId(id);
-      return id === "documentary" ? "tmdb" : homeHotSource();
-    }
-
-    function homeNostrHotSignature(id) {
-      const items = Array.isArray(state.hot && state.hot.items) ? state.hot.items : [];
-      return [
-        Number(state.hot && state.hot.version || 0),
-        items.length
-      ].join(":");
-    }
-
     function homeCategoryFeedKey(id) {
       id = normalizeLegacyCategoryId(id);
-      const selectedSource = homeHotSource();
-      const effectiveSource = homeCategoryEffectiveSource(id);
-      const hotVersion = effectiveSource === "nostr" ? Number(state.hot && state.hot.version || 0) : 0;
-      const hotSignature = effectiveSource === "nostr" ? homeNostrHotSignature(id) : "canonical";
-      return JSON.stringify([id, selectedSource, effectiveSource, hotVersion, hotSignature]);
+      return JSON.stringify([id, "tmdb"]);
     }
 
     function homeCategoryFeed(id) {
@@ -26349,8 +25969,6 @@ utils.encode = function encode(arr, enc) {
           key: "",
           source: "",
           items: [],
-          nostrItems: [],
-          tmdbItems: [],
           loading: false,
           loaded: false,
           error: "",
@@ -26363,10 +25981,8 @@ utils.encode = function encode(arr, enc) {
       const key = homeCategoryFeedKey(id);
       if (feed.key !== key) {
         feed.key = key;
-        feed.source = homeCategoryEffectiveSource(id);
+        feed.source = "tmdb";
         feed.items = [];
-        feed.nostrItems = [];
-        feed.tmdbItems = [];
         feed.loading = false;
         feed.loaded = false;
         feed.error = "";
@@ -26387,8 +26003,6 @@ utils.encode = function encode(arr, enc) {
         if (!feed) return;
         feed.key = "";
         feed.items = [];
-        feed.nostrItems = [];
-        feed.tmdbItems = [];
         feed.loading = false;
         feed.loaded = false;
         feed.error = "";
@@ -26436,70 +26050,11 @@ utils.encode = function encode(arr, enc) {
       };
     }
 
-    async function loadHomeCategoryNostrPool(id, feed, key, requestSeq, target) {
-      if (!state.hot || !state.hot.ready) return [];
-      const scanFilters = homeCategoryDefaultFilters();
-      const knownQuery = { items: [] };
-      if (normalizeLegacyCategoryId(id) === "anime") {
-        return secondaryLoadNostrAnimePool(scanFilters, knownQuery, target, {
-          isCurrent: () => homeCategoryFeedIsCurrent(feed, key, requestSeq),
-          onProgress: (items) => commitHomeCategoryNostrItems(id, feed, key, requestSeq, items)
-        });
-      }
-      if (normalizeLegacyCategoryId(id) === "variety") {
-        return secondaryLoadNostrVarietyPool(scanFilters, knownQuery, target, {
-          isCurrent: () => homeCategoryFeedIsCurrent(feed, key, requestSeq),
-          onProgress: (items) => commitHomeCategoryNostrItems(id, feed, key, requestSeq, items)
-        });
-      }
-      await ensureNostrTmdbMetaLoaded();
-      const candidates = secondaryNostrHotCandidates(id, scanFilters);
-      const qualified = [];
-      let newDetailRequests = 0;
-      for (let offset = 0; offset < candidates.length && qualified.length < target; offset += SECONDARY_NOSTR_HOT_BATCH_SIZE) {
-        if (!homeCategoryFeedIsCurrent(feed, key, requestSeq)) return qualified;
-        const batch = candidates.slice(offset, offset + SECONDARY_NOSTR_HOT_BATCH_SIZE).filter((candidate) => {
-          const needsDetail = secondaryNostrDetailRequestNeeded(candidate, id, knownQuery);
-          if (needsDetail) {
-            if (newDetailRequests >= SECONDARY_NOSTR_HOT_DETAIL_BUDGET_PER_LOAD) return false;
-            newDetailRequests += 1;
-          }
-          return true;
-        });
-        if (!batch.length) continue;
-        const results = await weeklyMapLimit(batch, SECONDARY_NOSTR_HOT_DETAIL_CONCURRENCY, (candidate, index) => secondaryNostrEnrichCandidate(candidate, id, knownQuery, index));
-        if (!homeCategoryFeedIsCurrent(feed, key, requestSeq)) return qualified;
-        results
-          .filter((result) => result && result.ok && result.value && secondaryNostrHotFilterMatches(id, scanFilters, result.value))
-          .map((result) => result.value)
-          .slice(0, Math.max(0, target - qualified.length))
-          .forEach((item) => qualified.push(item));
-      }
-      return uniqueMedia(qualified);
-    }
-
-    function commitHomeCategoryNostrItems(id, feed, key, requestSeq, items) {
-      if (!homeCategoryFeedIsCurrent(feed, key, requestSeq)) return false;
-      const nostrItems = filterBlocked(uniqueMedia(Array.isArray(items) ? items : []));
-      feed.source = "nostr";
-      feed.nostrItems = nostrItems;
-      feed.tmdbItems = [];
-      feed.items = nostrItems.slice();
-      feed.dataVersion = key;
-      feed.signature = key;
-      const section = Array.from(document.querySelectorAll("#listStack > .home-dynamic-section")).find((entry) => entry.dataset.homeListId === normalizeLegacyCategoryId(id));
-      const config = homeSectionConfig().find((entry) => entry.listId === normalizeLegacyCategoryId(id));
-      if (section && config) renderHomeDynamicSection(section, config);
-      recordHomeV14Diag();
-      return true;
-    }
 
     function commitHomeCategoryTmdbItems(id, feed, key, requestSeq, items) {
-      if (!homeCategoryFeedIsCurrent(feed, key, requestSeq) || homeCategoryEffectiveSource(id) !== "tmdb") return false;
+      if (!homeCategoryFeedIsCurrent(feed, key, requestSeq)) return false;
       const tmdbItems = uniqueMedia(Array.isArray(items) ? items : []);
       feed.source = "tmdb";
-      feed.nostrItems = [];
-      feed.tmdbItems = tmdbItems;
       feed.items = filterBlocked(tmdbItems);
       feed.dataVersion = key;
       feed.signature = key;
@@ -26528,25 +26083,12 @@ utils.encode = function encode(arr, enc) {
       feed.loaded = false;
       feed.error = "";
       const target = homeCategoryFeedLimit(id);
-      const source = homeCategoryEffectiveSource(id);
       const task = Promise.resolve().then(async () => {
-        let nostrItems = [];
-        let tmdbResult = { items: [], error: "" };
-        if (source === "nostr") {
-          nostrItems = await loadHomeCategoryNostrPool(id, feed, key, requestSeq, target);
-          if (!homeCategoryFeedIsCurrent(feed, key, requestSeq)) return feed;
-        } else {
-          tmdbResult = await loadHomeCategoryTmdbPool(id);
-        }
+        const tmdbResult = await loadHomeCategoryTmdbPool(id);
         if (!homeCategoryFeedIsCurrent(feed, key, requestSeq)) return feed;
-        const tmdbItems = source === "tmdb" && Array.isArray(tmdbResult.items) ? tmdbResult.items : [];
-        const items = source === "nostr"
-          ? filterBlocked(uniqueMedia(nostrItems))
-          : filterBlocked(uniqueMedia(tmdbItems));
-        if (!items.length && source === "tmdb" && tmdbResult.error) throw new Error(tmdbResult.error);
-        feed.source = source;
-        feed.nostrItems = source === "nostr" ? items.slice() : [];
-        feed.tmdbItems = tmdbItems;
+        const items = filterBlocked(uniqueMedia(Array.isArray(tmdbResult.items) ? tmdbResult.items : []));
+        if (!items.length && tmdbResult.error) throw new Error(tmdbResult.error);
+        feed.source = "tmdb";
         feed.items = items.slice();
         feed.loaded = true;
         feed.error = "";
@@ -26558,8 +26100,6 @@ utils.encode = function encode(arr, enc) {
           feed.loaded = true;
           feed.error = String(error && error.message || "加载失败");
           feed.items = [];
-          feed.nostrItems = [];
-          feed.tmdbItems = [];
         }
         return feed;
       }).finally(() => {
@@ -26650,8 +26190,8 @@ utils.encode = function encode(arr, enc) {
       if (!rail) return;
       rail.dataset.homeVariant = config.variant;
       const feed = homeCategoryFeed(config.listId);
-      const hasPartialItems = ["anime", "variety"].includes(config.listId) && !!(feed && Array.isArray(feed.items) && feed.items.length);
-      const items = feed && (feed.loaded || hasPartialItems) ? feed.items : [];
+      const hasPartialItems = false;
+      const items = feed && feed.loaded ? feed.items : [];
       rail.dataset.homeFeedSource = feed && feed.source || "";
       rail.dataset.homeFeedVersion = feed && feed.dataVersion || "";
       if (feed && feed.loading && !hasPartialItems) {
@@ -27034,11 +26574,8 @@ utils.encode = function encode(arr, enc) {
         heroCacheTtlMs: HOME_HERO_CACHE_TTL_MS,
         heroCacheAgeMs: home.heroFeed && home.heroFeed.loadedAt ? Math.max(0, Date.now() - Number(home.heroFeed.loadedAt)) : 0,
         heroSourceStats: home.heroFeed && home.heroFeed.sourceStats || null,
-        hotSource: homeHotSource(),
-        hotRenderSource: homeRoot.querySelector("#recommendSection") && homeRoot.querySelector("#recommendSection").dataset.hotSource || "",
-        hotRenderDataPath: homeRoot.querySelector("#recommendRail") && homeRoot.querySelector("#recommendRail").dataset.hotDataPath || "",
-        hotCardCount: homeRoot.querySelectorAll("#recommendRail > .card").length,
-        nostrAnime: home.secondaryNostrAnimeMetrics || null,
+        recommendationCardCount: homeRoot.querySelectorAll("#homeRecommendationRail > .card").length,
+        weeklyCardCount: homeRoot.querySelectorAll("#homeWeeklyRail > .card").length,
         homeRoute: homeUiRoute()
       };
       home.imageSrcCount = diag.imageSrcCount;
@@ -27058,7 +26595,8 @@ utils.encode = function encode(arr, enc) {
       renderSidebar();
       renderHomeHero();
       renderHomeRecent();
-      renderHomeHot();
+      renderHomeRecommendation();
+      renderHomeWeekly();
       renderHomeDynamicSections();
       ensureHomeResizeBinding();
       ensureHomeSectionObserver();
@@ -27223,38 +26761,24 @@ utils.encode = function encode(arr, enc) {
       documentary: ["year", "sort"],
       variety: ["region", "year", "sort"]
     };
-    function secondaryNostrRecommendationCategory(id) {
-      return ["movie", "tv", "anime", "variety"].includes(normalizeLegacyCategoryId(id));
-    }
-    function secondaryNostrSourceEnabled(id) {
-      return secondaryNostrRecommendationCategory(id) && homeHotSource() === "nostr";
-    }
     function secondaryFilterDefaults() { return { mediaType: "all", genre: "all", region: "all", year: "all", sort: "hot", lastFocused: {} }; }
     function secondaryFilterState(id) {
       id = normalizeLegacyCategoryId(id);
       const home = state.homeV14;
       home.secondaryFilters = home.secondaryFilters && typeof home.secondaryFilters === "object" ? home.secondaryFilters : {};
-      const existing = home.secondaryFilters[id];
       const filters = home.secondaryFilters[id] = Object.assign(secondaryFilterDefaults(), home.secondaryFilters[id] || {});
       filters.lastFocused = Object.assign({}, filters.lastFocused || {});
       if (filters.sort === "default" || !["hot", "latest", "rating"].includes(filters.sort)) filters.sort = "hot";
       if (filters.lastFocused.sort === "default" || !["hot", "latest", "rating"].includes(filters.lastFocused.sort)) filters.lastFocused.sort = filters.sort;
-      if (secondaryNostrSourceEnabled(id)) {
-        if (filters.sort === "rating") {
-          filters.sort = "hot";
-          filters.lastFocused.sort = "hot";
-        }
-        if (filters.lastFocused.sort === "rating") filters.lastFocused.sort = "hot";
-      }
-      // Weekly Feed has no catalog filter rows; retain the state boundary so
-      // older snapshots can still be read without reviving the old filters.
       return filters;
     }
     function secondaryCatalogBaseItems(id) {
-      if (normalizeLegacyCategoryId(id) === "recent") return state.recent && Array.isArray(state.recent.items) ? state.recent.items : [];
+      id = normalizeLegacyCategoryId(id);
+      if (id === "recent") return state.recent && Array.isArray(state.recent.items) ? state.recent.items : [];
+      if (id === "recommendation") return filterBlocked(uniqueMedia(state.hot && state.hot.items || []));
       // now-playing is the finite Weekly Feed route.  It is populated from
       // state.homeLatest by loadSecondaryPage instead of the catalog cache.
-      if (normalizeLegacyCategoryId(id) === "now-playing") return [];
+      if (id === "now-playing") return [];
       return filterBlocked(filterReleasedCatalogItems(id, state.catalog && state.catalog[id] || []));
     }
     function secondaryItemValues(item, keys) { const key = keys.find((name) => item && item[name] != null), value = key && item[key]; return Array.isArray(value) ? value.map(String).filter(Boolean) : String(value || "").split(/[|,\s]+/).filter(Boolean); }
@@ -27304,7 +26828,7 @@ utils.encode = function encode(arr, enc) {
     }
     function secondaryFilterSchemaKeys(id) {
       id = normalizeLegacyCategoryId(id);
-      if (id === "recent") return [];
+      if (id === "recent" || id === "recommendation") return [];
       const known = SECONDARY_FILTER_SCHEMA[id];
       if (known) return known.slice();
       const list = getList(id);
@@ -27371,8 +26895,8 @@ utils.encode = function encode(arr, enc) {
     }
     function secondaryFilterKey(id, filters) {
       id = normalizeLegacyCategoryId(id);
-      const recommendationSource = secondaryNostrRecommendationCategory(id) ? homeHotSource() : "";
-      return JSON.stringify([id, id === "now-playing" ? "weekly-feed" : id === "recent" ? "local-history" : "tmdb", recommendationSource, filters.mediaType, filters.genre, filters.region, filters.year, filters.sort]);
+      const sourceKind = id === "now-playing" ? "weekly-feed" : id === "recent" ? "local-history" : id === "recommendation" ? "recommendation-pool" : "tmdb";
+      return JSON.stringify([id, sourceKind, filters.mediaType, filters.genre, filters.region, filters.year, filters.sort]);
     }
     function secondaryGetQuery(id) {
       id = normalizeLegacyCategoryId(id);
@@ -27380,38 +26904,20 @@ utils.encode = function encode(arr, enc) {
       home.secondaryQueries = home.secondaryQueries && typeof home.secondaryQueries === "object" ? home.secondaryQueries : {};
       const filters = secondaryFilterState(id);
       const key = secondaryFilterKey(id, filters);
-      const recommendationSource = secondaryNostrRecommendationCategory(id) ? homeHotSource() : "";
-      const nostrHot = recommendationSource === "nostr";
       let query = home.secondaryQueries[key];
+      const source = id === "now-playing" ? "weekly-feed" : id === "recent" ? "local-history" : id === "recommendation" ? "recommendation" : "tmdb";
       if (!query) {
         query = home.secondaryQueries[key] = {
           key,
           listId: id,
-          source: id === "now-playing" ? "weekly-feed" : id === "recent" ? "local-history" : nostrHot ? "nostr-hot" : "tmdb",
-          hotSource: recommendationSource,
-          nostrHot,
-          nostrHotItems: [],
-          nostrHotLoading: false,
-          nostrHotLoaded: false,
-          nostrHotGeneration: 0,
-          nostrPaginationInitialized: false,
-          nostrScanCursor: 0,
-          nostrCandidatesScanned: 0,
-          nostrNewDetailRequests: 0,
-          nostrLoadDetailRequests: 0,
-          nostrLoadScanCount: 0,
-          nostrLoadPaused: false,
-          nostrRetryableMetadataCount: 0,
-          nostrRetryableKeys: {},
-          nostrMetrics: null,
-          nostrExhausted: false,
-          nostrHotReady: false,
+          source,
           page: 0,
           totalPages: 0,
           totalResults: 0,
           loading: false,
           loaded: false,
           hasMore: false,
+          hasMoreLocal: false,
           items: [],
           error: "",
           retryableError: "",
@@ -27422,15 +26928,17 @@ utils.encode = function encode(arr, enc) {
           endpointMap: [],
           sourceStates: [],
           tmdbMetrics: null,
-          finite: false,
+          finite: source === "weekly-feed" || source === "local-history" || source === "recommendation",
           snapshotReady: false,
-          snapshotSource: ""
+          snapshotSource: "",
+          poolItems: source === "recommendation" ? [] : null,
+          renderedCount: 0,
+          batchSize: 18,
+          stale: false
         };
       }
-      query.hotSource = recommendationSource;
-      query.nostrHot = nostrHot;
-      query.source = id === "now-playing" ? "weekly-feed" : id === "recent" ? "local-history" : nostrHot ? "nostr-hot" : "tmdb";
-      if (!Array.isArray(query.nostrHotItems)) query.nostrHotItems = [];
+      query.source = source;
+      if (source === "recommendation" && !Array.isArray(query.poolItems)) query.poolItems = [];
       home.secondaryActiveQueryKey = key;
       return query;
     }
@@ -27482,7 +26990,7 @@ utils.encode = function encode(arr, enc) {
       id = normalizeLegacyCategoryId(id);
       const server = [], client = [], endpointMap = [];
       let configured;
-      if (id === "now-playing") {
+      if (id === "now-playing" || id === "recent" || id === "recommendation") {
         configured = [];
       } else if (SECONDARY_FULL_CATALOG_IDS.has(id)) {
         // Home sources intentionally use recent windows.  Secondary pages
@@ -27567,7 +27075,7 @@ utils.encode = function encode(arr, enc) {
     }
     function secondaryFilterGroups(id, items) {
       id = normalizeLegacyCategoryId(id);
-      if (id === "recent" || id === "now-playing") return [];
+      if (id === "recent" || id === "now-playing" || id === "recommendation") return [];
       const source = Array.isArray(items) ? items : [];
       const schema = secondaryFilterSchemaKeys(id);
       const list = getList(id);
@@ -27598,1478 +27106,10 @@ utils.encode = function encode(arr, enc) {
       if (schema.includes("sort")) {
         // All configured Secondary sources can use these metrics either on
         // TMDB (server-side discover) or on the already loaded local page.
-        const sorts = secondaryNostrSourceEnabled(id)
-          ? [{ value: "hot", label: "热门" }, { value: "latest", label: "最新" }]
-          : [{ value: "hot", label: "热门" }, { value: "latest", label: "最新" }, { value: "rating", label: "评分" }];
-        if (secondaryNostrSourceEnabled(id) || discover || source.length || id === "now-playing") groups.push({ key: "sort", label: "排序", options: sorts });
+        const sorts = [{ value: "hot", label: "热门" }, { value: "latest", label: "最新" }, { value: "rating", label: "评分" }];
+        if (discover || source.length || id === "now-playing") groups.push({ key: "sort", label: "排序", options: sorts });
       }
       return groups;
-    }
-
-    const SECONDARY_NOSTR_PAGE_SIZE = 18;
-    const SECONDARY_NOSTR_HOT_BATCH_SIZE = SECONDARY_NOSTR_PAGE_SIZE;
-    const SECONDARY_NOSTR_HOT_TARGET_MATCHES = SECONDARY_NOSTR_PAGE_SIZE;
-    const SECONDARY_NOSTR_HOT_DETAIL_BUDGET_PER_LOAD = 36;
-    const SECONDARY_NOSTR_HOT_DETAIL_CONCURRENCY = 4;
-    const SECONDARY_NOSTR_ANIME_SCAN_BATCH_SIZE = 4;
-    const SECONDARY_NOSTR_VARIETY_TARGET_MATCHES = SECONDARY_NOSTR_PAGE_SIZE;
-    const SECONDARY_NOSTR_VARIETY_SCAN_BATCH_SIZE = 4;
-    const SECONDARY_NOSTR_ANIME_DETAIL_BUDGET_PER_LOAD = 36;
-    const SECONDARY_NOSTR_VARIETY_DETAIL_BUDGET_PER_LOAD = 54;
-    const NOSTR_TMDB_META_CACHE_VERSION = 2;
-    const NOSTR_TMDB_META_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-    const NOSTR_TMDB_META_CACHE_MAX_ENTRIES = 1000;
-    const NOSTR_TMDB_META_CACHE_SAVE_DEBOUNCE_MS = 450;
-
-    function secondaryNostrHotEnabled(id, filters) {
-      return secondaryNostrSourceEnabled(id)
-        && filters && ["hot", "latest"].includes(filters.sort);
-    }
-
-    function secondaryNostrLatestValue(item) {
-      const raw = item && (item.latest != null ? item.latest : item.lastEventAt != null ? item.lastEventAt : item.last_event_at);
-      if (raw == null || raw === "") return 0;
-      const numeric = Number(raw);
-      if (Number.isFinite(numeric)) return numeric;
-      const parsed = Date.parse(String(raw));
-      return Number.isFinite(parsed) ? parsed : 0;
-    }
-
-    function secondaryNostrHotCandidates(id, filters) {
-      const allowed = normalizeLegacyCategoryId(id);
-      const sort = filters && filters.sort === "latest" ? "latest" : "hot";
-      const seen = new Set();
-      const indexed = [];
-      const rawItems = Array.isArray(state.hot && state.hot.items) ? state.hot.items : [];
-      rawItems.forEach((item, sourceIndex) => {
-          if (!state.blocked.selecting && isBlocked(item)) return;
-          const type = String(item && (item.mediaType || item.media_type) || "").toLowerCase();
-          const matches = allowed === "anime"
-            ? type === "movie" || type === "tv"
-            : allowed === "variety" ? type === "tv" : type === allowed;
-          const key = homeNostrSignalKey(item);
-          if (!matches || !key || seen.has(key)) return;
-          seen.add(key);
-          indexed.push({ item, sourceIndex, latest: secondaryNostrLatestValue(item) });
-        });
-      if (sort === "latest") indexed.sort((a, b) => b.latest - a.latest || a.sourceIndex - b.sourceIndex);
-      return indexed.map((entry, index) => Object.assign({}, entry.item, { nostrHotRank: index + 1 }));
-    }
-
-    function secondaryNostrMetaCache() {
-      const home = state.homeV14;
-      home.secondaryNostrMetaCache = home.secondaryNostrMetaCache && typeof home.secondaryNostrMetaCache === "object"
-        ? home.secondaryNostrMetaCache
-        : {};
-      return home.secondaryNostrMetaCache;
-    }
-
-    function secondaryNostrTmdbMemoryCache() {
-      const home = state.homeV14;
-      home.secondaryNostrTmdbMemoryCache = home.secondaryNostrTmdbMemoryCache && typeof home.secondaryNostrTmdbMemoryCache === "object"
-        ? home.secondaryNostrTmdbMemoryCache
-        : {};
-      return home.secondaryNostrTmdbMemoryCache;
-    }
-
-    function secondaryNostrAnimeMemoryCache() {
-      return secondaryNostrTmdbMemoryCache();
-    }
-
-    function nostrTmdbMetaRuntime() {
-      const home = state.homeV14;
-      let runtime = home.nostrTmdbMeta;
-      if (!runtime || typeof runtime !== "object" || Number(runtime.version || 0) !== NOSTR_TMDB_META_CACHE_VERSION) {
-        runtime = home.nostrTmdbMeta = {
-          version: NOSTR_TMDB_META_CACHE_VERSION,
-          loaded: false,
-          loading: false,
-          promise: null,
-          entries: {},
-          dirty: false,
-          dirtyVersion: 0,
-          saveTimer: 0,
-          savePromise: null,
-          lastLoadAt: 0,
-          lastSaveAt: 0,
-          expiredCount: 0,
-          evictedCount: 0
-        };
-      }
-      runtime.entries = runtime.entries && typeof runtime.entries === "object" ? runtime.entries : {};
-      return runtime;
-    }
-
-    function nostrTmdbMetaEntryKey(value) {
-      const mediaType = String(value && (value.mediaType || value.media_type) || "").toLowerCase();
-      const tmdbId = String(value && (value.tmdbId || value.tmdb_id || value.id) || "").replace(/^tmdb:(movie|tv):/i, "").trim();
-      return (mediaType === "movie" || mediaType === "tv") && tmdbId ? `tmdb:${mediaType}:${tmdbId}` : "";
-    }
-
-    function normalizeNostrTmdbMetaEntry(value) {
-      if (!value || typeof value !== "object") return null;
-      const mediaType = String(value.mediaType || value.media_type || "").toLowerCase();
-      const tmdbId = String(value.tmdbId || value.tmdb_id || value.id || "").replace(/^tmdb:(movie|tv):/i, "").trim();
-      const fetchedAt = Number(value.fetchedAt || value.fetched_at || 0);
-      if (Number(value.version || NOSTR_TMDB_META_CACHE_VERSION) !== NOSTR_TMDB_META_CACHE_VERSION) return null;
-      if ((mediaType !== "movie" && mediaType !== "tv") || !tmdbId || !Number.isFinite(fetchedAt) || fetchedAt <= 0) return null;
-      const genreIds = Array.isArray(value.genreIds) ? value.genreIds : Array.isArray(value.genre_ids) ? value.genre_ids : null;
-      const regions = Array.isArray(value.regions) ? value.regions : Array.isArray(value.originCountries) ? value.originCountries : Array.isArray(value.origin_country) ? value.origin_country : null;
-      if (!genreIds || !regions || value.releaseDate == null && value.release_date == null) return null;
-      const voteAverageValue = Number(value.voteAverage != null ? value.voteAverage : value.vote_average);
-      return {
-        version: NOSTR_TMDB_META_CACHE_VERSION,
-        mediaType,
-        tmdbId,
-        genreIds: Array.from(new Set(genreIds.map((item) => String(item).trim()).filter(Boolean))),
-        regions: Array.from(new Set(regions.map((item) => String(item).trim().toUpperCase()).filter(Boolean))),
-        releaseDate: String(value.releaseDate != null ? value.releaseDate : value.release_date || "").trim(),
-        voteAverage: Number.isFinite(voteAverageValue) && voteAverageValue > 0 ? voteAverageValue : 0,
-        posterPath: tmdbImagePath(value.posterPath != null ? value.posterPath : value.poster_path),
-        backdropPath: tmdbImagePath(value.backdropPath != null ? value.backdropPath : value.backdrop_path),
-        fetchedAt,
-        classification: value.classification === "valid" || value.classification === "invalid" ? value.classification : ""
-      };
-    }
-
-    function nostrTmdbMetaHasCanonicalPoster(value) {
-      const entry = value && typeof value === "object" ? value : {};
-      return !!tmdbImagePath(entry.posterPath != null ? entry.posterPath : entry.poster_path);
-    }
-
-    function nostrTmdbMetaEnforceCapacity(runtime) {
-      const keys = Object.keys(runtime.entries || {});
-      if (keys.length <= NOSTR_TMDB_META_CACHE_MAX_ENTRIES) return 0;
-      keys.sort((a, b) => Number(runtime.entries[a] && runtime.entries[a].fetchedAt || 0) - Number(runtime.entries[b] && runtime.entries[b].fetchedAt || 0));
-      const removeCount = keys.length - NOSTR_TMDB_META_CACHE_MAX_ENTRIES;
-      keys.slice(0, removeCount).forEach((key) => delete runtime.entries[key]);
-      runtime.evictedCount = Number(runtime.evictedCount || 0) + removeCount;
-      return removeCount;
-    }
-
-    function scheduleNostrTmdbMetaSave() {
-      const runtime = nostrTmdbMetaRuntime();
-      runtime.dirty = true;
-      runtime.dirtyVersion = Number(runtime.dirtyVersion || 0) + 1;
-      if (runtime.saveTimer || !runtime.loaded) return;
-      runtime.saveTimer = setTimeout(() => {
-        runtime.saveTimer = 0;
-        flushNostrTmdbMetaCache().catch(() => {});
-      }, NOSTR_TMDB_META_CACHE_SAVE_DEBOUNCE_MS);
-    }
-
-    async function flushNostrTmdbMetaCache() {
-      const runtime = nostrTmdbMetaRuntime();
-      if (!runtime.loaded || !runtime.dirty) return false;
-      if (runtime.savePromise) return runtime.savePromise;
-      nostrTmdbMetaEnforceCapacity(runtime);
-      const version = Number(runtime.dirtyVersion || 0);
-      const snapshot = {
-        version: NOSTR_TMDB_META_CACHE_VERSION,
-        savedAt: Date.now(),
-        entries: Object.keys(runtime.entries || {}).reduce((result, key) => {
-          const entry = normalizeNostrTmdbMetaEntry(runtime.entries[key]);
-          if (entry) result[key] = entry;
-          return result;
-        }, {})
-      };
-      runtime.savePromise = Promise.resolve().then(async () => {
-        try {
-          await sdk().cache.set(cacheKey("nostrTmdbMeta"), JSON.stringify(snapshot));
-          runtime.lastSaveAt = Date.now();
-          if (Number(runtime.dirtyVersion || 0) === version) runtime.dirty = false;
-          return true;
-        } catch (e) {
-          runtime.dirty = true;
-          return false;
-        } finally {
-          runtime.savePromise = null;
-          if (runtime.dirty && !runtime.saveTimer) {
-            runtime.saveTimer = setTimeout(() => {
-              runtime.saveTimer = 0;
-              flushNostrTmdbMetaCache().catch(() => {});
-            }, NOSTR_TMDB_META_CACHE_SAVE_DEBOUNCE_MS);
-          }
-        }
-      });
-      return runtime.savePromise;
-    }
-
-    function ensureNostrTmdbMetaLoaded() {
-      const runtime = nostrTmdbMetaRuntime();
-      if (runtime.loaded) return Promise.resolve(runtime);
-      if (runtime.loading && runtime.promise) return runtime.promise;
-      runtime.loading = true;
-      runtime.promise = Promise.resolve().then(async () => {
-        let saved = null;
-        try {
-          const raw = await sdk().cache.get(cacheKey("nostrTmdbMeta"));
-          saved = typeof raw === "string" ? safeJson(raw, null) : raw;
-        } catch (e) {
-          saved = null;
-        }
-        const now = Date.now();
-        const entries = {};
-        let expired = 0;
-        if (saved && typeof saved === "object" && Number(saved.version || 0) === NOSTR_TMDB_META_CACHE_VERSION && saved.entries && typeof saved.entries === "object") {
-          Object.keys(saved.entries).forEach((key) => {
-            const entry = normalizeNostrTmdbMetaEntry(saved.entries[key]);
-            if (!entry) return;
-            if (now - entry.fetchedAt > NOSTR_TMDB_META_CACHE_TTL_MS) {
-              expired += 1;
-              return;
-            }
-            entries[nostrTmdbMetaEntryKey(entry) || key] = entry;
-          });
-        }
-        runtime.entries = entries;
-        runtime.expiredCount = expired;
-        const evicted = nostrTmdbMetaEnforceCapacity(runtime);
-        runtime.loaded = true;
-        runtime.loading = false;
-        runtime.lastLoadAt = Date.now();
-        runtime.promise = null;
-        if (expired || evicted) scheduleNostrTmdbMetaSave();
-        return runtime;
-      }).catch(() => {
-        runtime.entries = {};
-        runtime.loaded = true;
-        runtime.loading = false;
-        runtime.lastLoadAt = Date.now();
-        runtime.promise = null;
-        return runtime;
-      });
-      return runtime.promise;
-    }
-
-    function nostrTmdbMetaPut(value, classification) {
-      const runtime = nostrTmdbMetaRuntime();
-      const entry = normalizeNostrTmdbMetaEntry(Object.assign({}, value, { classification }));
-      const key = nostrTmdbMetaEntryKey(entry);
-      if (!entry || !key || !runtime.loaded) return false;
-      runtime.entries[key] = entry;
-      nostrTmdbMetaEnforceCapacity(runtime);
-      scheduleNostrTmdbMetaSave();
-      return true;
-    }
-
-    function nostrTmdbMetaFromItem(hotItem, item) {
-      if (!hotItem || !item || typeof item !== "object" || !homeNostrSignalKey(hotItem)) return null;
-      const mediaType = String(hotItem.mediaType || hotItem.media_type || "").toLowerCase();
-      const genreValue = item.genreIds != null ? item.genreIds : item.genre_ids;
-      const regionValue = item.originCountries != null ? item.originCountries : item.origin_country;
-      const releaseValue = item.releaseDate != null ? item.releaseDate : mediaType === "tv" ? item.first_air_date : item.release_date;
-      const posterPath = tmdbImagePath(item.pic);
-      const backdropPath = tmdbImagePath(item.landscape);
-      if ((mediaType !== "movie" && mediaType !== "tv") || !Array.isArray(genreValue) || !Array.isArray(regionValue) || releaseValue == null || !posterPath) return null;
-      return normalizeNostrTmdbMetaEntry({
-        version: NOSTR_TMDB_META_CACHE_VERSION,
-        mediaType,
-        tmdbId: hotItem.tmdbId,
-        genreIds: genreValue,
-        regions: regionValue,
-        releaseDate: releaseValue,
-        voteAverage: item.voteAverage != null ? item.voteAverage : item.vote_average,
-        posterPath,
-        backdropPath,
-        fetchedAt: Date.now()
-      });
-    }
-
-    function secondaryNostrAnimeMetadataFromItem(hotItem, item) {
-      return nostrTmdbMetaFromItem(hotItem, item);
-    }
-
-    function nostrTmdbMetaFromDetail(hotItem, detail) {
-      if (!hotItem || !detail || typeof detail !== "object" || detail.id == null || !homeNostrSignalKey(hotItem)) return null;
-      const mediaType = String(hotItem.mediaType || hotItem.media_type || "").toLowerCase();
-      const genreValue = Array.isArray(detail.genre_ids)
-        ? detail.genre_ids
-        : Array.isArray(detail.genres) ? detail.genres.map((genre) => genre && genre.id).filter((value) => value != null) : [];
-      let regionValue = [];
-      if (mediaType === "tv") {
-        regionValue = Array.isArray(detail.origin_country) ? detail.origin_country : [];
-      } else if (mediaType === "movie") {
-        regionValue = Array.isArray(detail.production_countries)
-          ? detail.production_countries.map((country) => country && (country.iso_3166_1 || country.iso)).filter(Boolean)
-          : Array.isArray(detail.origin_country) ? detail.origin_country : [];
-      }
-      const releaseKey = mediaType === "tv" ? "first_air_date" : "release_date";
-      if ((mediaType !== "movie" && mediaType !== "tv") || typeof detail[releaseKey] !== "string") return null;
-      return normalizeNostrTmdbMetaEntry({
-        version: NOSTR_TMDB_META_CACHE_VERSION,
-        mediaType,
-        tmdbId: hotItem.tmdbId,
-        genreIds: genreValue,
-        regions: regionValue,
-        releaseDate: detail[releaseKey],
-        voteAverage: detail.vote_average != null
-          ? detail.vote_average
-          : hotItem.voteAverage != null ? hotItem.voteAverage : hotItem.vote_average,
-        posterPath: tmdbImagePath(detail.poster_path),
-        backdropPath: tmdbImagePath(detail.backdrop_path),
-        fetchedAt: Date.now()
-      });
-    }
-
-    function nostrTmdbItemFromMetadata(hotItem, metadata, listId, index) {
-      const entry = normalizeNostrTmdbMetaEntry(metadata);
-      const hotMediaType = String(hotItem && (hotItem.mediaType || hotItem.media_type) || "").toLowerCase();
-      if (!hotItem || !entry || hotMediaType !== entry.mediaType || !nostrTmdbMetaHasCanonicalPoster(entry)) return null;
-      const raw = {
-        id: entry.tmdbId,
-        media_type: entry.mediaType,
-        name: hotItem.title || "未命名",
-        title: hotItem.title || "未命名",
-        original_name: hotItem.title || "",
-        original_title: hotItem.title || "",
-        genre_ids: entry.genreIds,
-        origin_country: entry.regions,
-        release_date: entry.mediaType === "movie" ? entry.releaseDate : "",
-        first_air_date: entry.mediaType === "tv" ? entry.releaseDate : "",
-        poster_path: entry.posterPath,
-        backdrop_path: entry.backdropPath,
-        vote_average: entry.voteAverage
-      };
-      const item = normalizeTmdb(raw, { id: "secondary-nostr", title: listId, mediaType: entry.mediaType }, index);
-      if (!item) return null;
-      item.id = `tmdb:${entry.mediaType}:${entry.tmdbId}`;
-      item.tmdbId = entry.tmdbId;
-      item.mediaType = entry.mediaType;
-      item.title = item.title || hotItem.title || "未命名";
-      item.listId = listId;
-      return nostrHotSignalOverlay(item, hotItem, listId);
-    }
-
-    function secondaryNostrKnownItem(hotItem, query) {
-      const key = homeNostrSignalKey(hotItem);
-      if (!key) return null;
-      const pools = [];
-      if (query && Array.isArray(query.items)) pools.push(query.items);
-      if (state.recent && Array.isArray(state.recent.items)) pools.push(state.recent.items);
-      if (state.homeLatest && Array.isArray(state.homeLatest.items)) pools.push(state.homeLatest.items);
-      Object.keys(state.catalog || {}).forEach((id) => {
-        if (Array.isArray(state.catalog[id])) pools.push(state.catalog[id]);
-      });
-      for (const pool of pools) {
-        const found = pool.find((item) => homeNostrSignalKey(item) === key
-          && String(item && item.source || "") !== "nostr-hot"
-          && !!tmdbImagePath(item && item.pic));
-        if (found) return found;
-      }
-      for (const pool of pools) {
-        const found = pool.find((item) => homeNostrSignalKey(item) === key
-          && String(item && item.source || "") === "nostr-hot"
-          && String(item && item.nostrMetadataSource || "").trim()
-          && !!tmdbImagePath(item && item.pic));
-        if (found) return found;
-      }
-      return null;
-    }
-
-    function secondaryNostrDetailUrl(item) {
-      const url = new URL(`${window.WEBHOME_CONFIG.tmdb.apiBase}/${item.mediaType}/${item.tmdbId}`);
-      url.searchParams.set("api_key", tmdbApiKey());
-      url.searchParams.set("language", window.WEBHOME_CONFIG.tmdb.language);
-      return url.toString();
-    }
-
-    function secondaryNostrItemFromDetail(hotItem, detail, listId, index) {
-      if (!detail || typeof detail !== "object") return null;
-      const genreIds = Array.isArray(detail.genre_ids)
-        ? detail.genre_ids
-        : Array.isArray(detail.genres) ? detail.genres.map((genre) => genre && genre.id).filter((value) => value != null) : [];
-      const raw = Object.assign({}, detail, {
-        id: hotItem.tmdbId,
-        media_type: hotItem.mediaType,
-        genre_ids: genreIds,
-        origin_country: detail.origin_country || (Array.isArray(detail.production_countries)
-          ? detail.production_countries.map((country) => country && country.iso_3166_1).filter(Boolean)
-          : []),
-        vote_average: detail.vote_average != null
-          ? detail.vote_average
-          : hotItem.voteAverage != null ? hotItem.voteAverage : hotItem.vote_average
-      });
-      const item = normalizeTmdb(raw, { id: "secondary-nostr", title: listId, mediaType: hotItem.mediaType }, index);
-      if (!item || !tmdbImagePath(item.pic)) return null;
-      item.id = `tmdb:${hotItem.mediaType}:${hotItem.tmdbId}`;
-      item.tmdbId = String(hotItem.tmdbId || "");
-      item.mediaType = String(hotItem.mediaType || "").toLowerCase();
-      item.title = item.title || hotItem.title || "未命名";
-      item.listId = listId;
-      return nostrHotSignalOverlay(item, hotItem, listId);
-    }
-
-    function secondaryNostrItemAllowed(id, item) {
-      if (!item || !hasPoster(item)) return false;
-      const listId = normalizeLegacyCategoryId(id);
-      const type = secondaryItemMediaType(item);
-      if (listId === "movie" && type !== "movie") return false;
-      if (listId === "tv" && type !== "tv") return false;
-      if (listId === "anime" && !secondaryItemGenreIds(item).includes("16")) return false;
-      if (listId === "variety" && (type !== "tv" || !secondaryItemGenreIds(item).some((value) => ["10764", "10767"].includes(value)))) return false;
-      if (listId === "tv" && secondaryItemGenreIds(item).some((value) => ["16", "99", "10763", "10764", "10766", "10767"].includes(value))) return false;
-      return true;
-    }
-
-    function secondaryNostrHotFilterMatches(id, filters, item) {
-      if (!secondaryNostrItemAllowed(id, item)) return false;
-      if (isReleaseFilteredCatalogId(id) && !isReleasedAsOfToday(item)) return false;
-      return (filters.mediaType === "all" || secondaryItemMediaType(item) === filters.mediaType)
-        && (filters.genre === "all" || secondaryItemGenreIds(item).includes(filters.genre))
-        && (filters.region === "all" || secondaryRegionMatches(item, filters.region))
-        && (filters.year === "all" || secondaryYearMatches(item, filters.year));
-    }
-
-    function nostrListTitle(listId) {
-      const id = normalizeLegacyCategoryId(listId);
-      return id === "anime" ? "动画" : id === "tv" ? "电视剧" : id === "variety" ? "综艺" : "电影";
-    }
-
-    function nostrHotSignalOverlay(item, hotItem, listId) {
-      if (!item) return null;
-      const result = Object.assign({}, item, { source: "nostr-hot", listId, listTitle: nostrListTitle(listId) });
-      const hot = hotItem || {};
-      if (hot.people != null || hot.count != null) {
-        result.people = hot.people != null ? hot.people : hot.count;
-        result.count = hot.count != null ? hot.count : hot.people;
-      }
-      if (hot.latest != null) result.latest = hot.latest;
-      else if (hot.lastEventAt != null || hot.last_event_at != null) result.latest = hot.lastEventAt != null ? hot.lastEventAt : hot.last_event_at;
-      if (hot.lastEventAt != null || hot.last_event_at != null) result.lastEventAt = hot.lastEventAt != null ? hot.lastEventAt : hot.last_event_at;
-      if (hot.nostrHotRank != null) result.nostrHotRank = hot.nostrHotRank;
-      return result;
-    }
-
-    function nostrTmdbRecordFromMetadata(hotItem, metadata, listId, index, source) {
-      const entry = normalizeNostrTmdbMetaEntry(metadata);
-      const item = entry ? nostrTmdbItemFromMetadata(hotItem, entry, listId, index) : null;
-      const valid = !!(item && secondaryNostrHotFilterMatches(listId, homeCategoryDefaultFilters(), item));
-      if (!entry || !item) return { status: "failed", metadata: null, item: null, source: source || "" };
-      entry.classification = valid ? "valid" : "invalid";
-      item.nostrMetadataSource = source === "persistent" ? "cache" : source || "";
-      return { status: valid ? "valid" : "invalid", metadata: entry, item: valid ? item : null, source: source || "" };
-    }
-
-    function nostrTmdbRecordFromDetail(hotItem, detail, listId, index, source) {
-      const metadata = nostrTmdbMetaFromDetail(hotItem, detail);
-      if (!metadata) return { status: "failed", metadata: null, item: null, source: source || "detail" };
-      const record = nostrTmdbRecordFromMetadata(hotItem, metadata, listId, index, source || "detail");
-      if (record.status === "valid" || record.status === "invalid") nostrTmdbMetaPut(record.metadata, record.status);
-      return record;
-    }
-
-    function secondaryNostrAnimeRecordFromMetadata(hotItem, metadata, index, source) {
-      return nostrTmdbRecordFromMetadata(hotItem, metadata, "anime", index, source);
-    }
-
-    function secondaryNostrAnimeCandidateKey(candidate) {
-      return homeNostrSignalKey(candidate);
-    }
-
-    function secondaryNostrAnimeResolverKey(candidates) {
-      return JSON.stringify([
-        Number(state.hot && state.hot.version || 0),
-        (Array.isArray(candidates) ? candidates : []).map((candidate, index) => [
-          secondaryNostrAnimeCandidateKey(candidate),
-          Number(candidate && (candidate.people || candidate.count) || 0),
-          String(candidate && (candidate.latest || candidate.lastEventAt || candidate.last_event_at) || ""),
-          index + 1
-        ])
-      ]);
-    }
-
-    function secondaryNostrAnimeEmptyMetrics() {
-      return { candidatesScanned: 0, lastScannedRank: 0, knownMetadataHits: 0, persistentHits: 0, memoryHits: 0, newDetailRequests: 0, detailFailures: 0, finalAnimeMatches: 0, totalGlobalPool: 0, candidatePoolSize: 0, cursor: 0, resolvedCount: 0, loadScanCount: 0, loadDetailRequests: 0, retryableMetadataCount: 0, sourceExhausted: false, hasMore: true };
-    }
-
-    function secondaryNostrAnimeResolverState(candidates) {
-      const home = state.homeV14;
-      const source = Array.isArray(candidates) ? candidates : [];
-      const key = secondaryNostrAnimeResolverKey(source);
-      let runtime = home.secondaryNostrAnimeResolver;
-      if (!runtime || runtime.key !== key) {
-        runtime = home.secondaryNostrAnimeResolver = {
-          key,
-          candidates: source.map((candidate, index) => Object.assign({}, candidate, { nostrHotRank: Number(candidate && candidate.nostrHotRank || index + 1) })),
-          statuses: {},
-          items: {},
-          failedKeys: {},
-          nextIndex: 0,
-          done: false,
-          loadPaused: false,
-          loadContext: null,
-          running: false,
-          retryOnlyFailed: false,
-          retryResumeIndex: null,
-          loadScanCount: 0,
-          promise: null,
-          listeners: [],
-          metrics: secondaryNostrAnimeEmptyMetrics()
-        };
-      }
-      return runtime;
-    }
-
-    function secondaryNostrAnimeQualifiedItems(runtime, filters, target) {
-      if (!runtime) return [];
-      const limit = Math.max(0, Number(target || SECONDARY_NOSTR_HOT_TARGET_MATCHES));
-      const selected = [];
-      (runtime.candidates || []).forEach((candidate) => {
-        if (selected.length >= limit) return;
-        const key = secondaryNostrAnimeCandidateKey(candidate);
-        if (!key || runtime.statuses[key] !== "valid" || !runtime.items[key]) return;
-        if (!secondaryNostrHotFilterMatches("anime", filters || homeCategoryDefaultFilters(), runtime.items[key])) return;
-        selected.push(runtime.items[key]);
-      });
-      return selected;
-    }
-
-    function secondaryNostrAnimeScanTarget(runtime) {
-      let target = SECONDARY_NOSTR_PAGE_SIZE;
-      (runtime && runtime.listeners || []).forEach((listener) => {
-        if (listener) target = Math.max(target, Number(listener.target || 0));
-      });
-      return target;
-    }
-
-    function secondaryNostrAnimeNotify(runtime) {
-      if (!runtime) return;
-      const defaultItems = secondaryNostrAnimeQualifiedItems(runtime, homeCategoryDefaultFilters(), SECONDARY_NOSTR_HOT_TARGET_MATCHES);
-      runtime.metrics.finalAnimeMatches = defaultItems.length;
-      const retryableMetadataCount = Object.keys(runtime.failedKeys || {}).length;
-      runtime.metrics.totalGlobalPool = Array.isArray(state.hot && state.hot.items) ? state.hot.items.length : 0;
-      runtime.metrics.candidatePoolSize = Array.isArray(runtime.candidates) ? runtime.candidates.length : 0;
-      runtime.metrics.cursor = Number(runtime.nextIndex || 0);
-      runtime.metrics.resolvedCount = defaultItems.length;
-      runtime.metrics.loadScanCount = Number(runtime.loadScanCount || 0);
-      runtime.metrics.loadDetailRequests = Number(runtime.loadContext && runtime.loadContext.detailRequests || 0);
-      runtime.metrics.retryableMetadataCount = retryableMetadataCount;
-      runtime.metrics.sourceExhausted = !!runtime.done;
-      runtime.metrics.hasMore = !runtime.done || !!runtime.loadPaused || retryableMetadataCount > 0;
-      if (state.homeV14 && state.homeV14.secondaryNostrAnimeResolver === runtime) {
-        state.homeV14.secondaryNostrAnimeMetrics = Object.assign({}, runtime.metrics, {
-          resolverKey: runtime.key,
-          done: !!runtime.done,
-          cacheEntries: Object.keys(nostrTmdbMetaRuntime().entries || {}).length,
-          cacheLoaded: !!nostrTmdbMetaRuntime().loaded
-        });
-        if (state.tvDiag) state.tvDiag.nostrAnime = state.homeV14.secondaryNostrAnimeMetrics;
-      }
-      (runtime.listeners || []).slice().forEach((listener) => {
-        if (!listener || typeof listener.onProgress !== "function") return;
-        const items = secondaryNostrAnimeQualifiedItems(runtime, listener.filters, listener.target);
-        try {
-          if (!listener.isCurrent || listener.isCurrent()) listener.onProgress(items, runtime);
-        } catch (e) {}
-      });
-    }
-
-    function secondaryNostrAnimeApplyResult(runtime, candidate, wrapped) {
-      if (!runtime || !candidate) return;
-      const key = secondaryNostrAnimeCandidateKey(candidate);
-      if (!key) return;
-      const record = wrapped && wrapped.ok ? wrapped.value : null;
-      const rank = Number(candidate.nostrHotRank || 0);
-      runtime.metrics.lastScannedRank = Math.max(Number(runtime.metrics.lastScannedRank || 0), rank);
-      if (record && (record.status === "valid" || record.status === "invalid")) {
-        runtime.statuses[key] = record.status;
-        if (record.status === "valid" && record.item) runtime.items[key] = record.item;
-        else delete runtime.items[key];
-        delete runtime.failedKeys[key];
-      } else if (record && record.status === "budget") {
-        runtime.loadPaused = true;
-        delete runtime.statuses[key];
-        delete runtime.items[key];
-      } else {
-        delete runtime.statuses[key];
-        delete runtime.items[key];
-        runtime.failedKeys[key] = true;
-        runtime.metrics.detailFailures = Number(runtime.metrics.detailFailures || 0) + 1;
-      }
-    }
-
-    function secondaryNostrAnimeScanShouldContinue(runtime) {
-      if (!runtime) return false;
-      const target = secondaryNostrAnimeScanTarget(runtime);
-      if (secondaryNostrAnimeQualifiedItems(runtime, homeCategoryDefaultFilters(), target).length < target) return true;
-      return (runtime.listeners || []).some((listener) => {
-        if (!listener) return false;
-        const filters = listener.filters || homeCategoryDefaultFilters();
-        const listenerTarget = Math.max(0, Number(listener.target || 0));
-        return secondaryNostrAnimeQualifiedItems(runtime, filters, listenerTarget).length < listenerTarget;
-      });
-    }
-
-    async function secondaryNostrAnimeResolveCandidate(candidate, query, index, runtime) {
-      const key = secondaryNostrAnimeCandidateKey(candidate);
-      if (!key) return { status: "failed", metadata: null, item: null, source: "" };
-      const known = secondaryNostrKnownItem(candidate, query);
-      const knownMetadata = secondaryNostrAnimeMetadataFromItem(candidate, known);
-      if (knownMetadata) {
-        runtime.metrics.knownMetadataHits = Number(runtime.metrics.knownMetadataHits || 0) + 1;
-        const record = secondaryNostrAnimeRecordFromMetadata(candidate, knownMetadata, index, "known");
-        secondaryNostrAnimeMemoryCache()[key] = Promise.resolve(record);
-        return record;
-      }
-      await ensureNostrTmdbMetaLoaded();
-      const memory = secondaryNostrAnimeMemoryCache();
-      if (memory[key]) {
-        const memoryPromise = memory[key];
-        runtime.metrics.memoryHits = Number(runtime.metrics.memoryHits || 0) + 1;
-        const record = await Promise.resolve(memoryPromise);
-        if (record && (record.status === "valid" || record.status === "invalid")) {
-          const refreshed = record.metadata ? secondaryNostrAnimeRecordFromMetadata(candidate, record.metadata, index, "cache") : record;
-          if (refreshed.item) refreshed.item.nostrMetadataSource = "cache";
-          return refreshed;
-        }
-        if (memory[key] === memoryPromise) delete memory[key];
-      }
-      const persistent = nostrTmdbMetaRuntime().entries[key];
-      if (persistent) {
-        runtime.metrics.persistentHits = Number(runtime.metrics.persistentHits || 0) + 1;
-        const record = secondaryNostrAnimeRecordFromMetadata(candidate, persistent, index, "persistent");
-        if (record.status === "valid" || record.status === "invalid") {
-          if (record.item) record.item.nostrMetadataSource = "cache";
-          memory[key] = Promise.resolve(record);
-          return record;
-        }
-      }
-      const loadContext = runtime.loadContext || { detailRequests: 0, budget: SECONDARY_NOSTR_ANIME_DETAIL_BUDGET_PER_LOAD };
-      if (Number(loadContext.detailRequests || 0) >= Number(loadContext.budget || SECONDARY_NOSTR_ANIME_DETAIL_BUDGET_PER_LOAD)) {
-        return { status: "budget", metadata: null, item: null, source: "budget" };
-      }
-      loadContext.detailRequests = Number(loadContext.detailRequests || 0) + 1;
-      runtime.loadContext = loadContext;
-      runtime.metrics.newDetailRequests = Number(runtime.metrics.newDetailRequests || 0) + 1;
-      const detailPromise = requestJson(secondaryNostrDetailUrl(candidate), 18)
-        .then((body) => nostrTmdbRecordFromDetail(candidate, body, "anime", index, "detail"))
-        .catch(() => ({ status: "failed", metadata: null, item: null, source: "detail" }));
-      memory[key] = detailPromise.then((record) => {
-        if (!record || (record.status !== "valid" && record.status !== "invalid")) {
-          if (memory[key]) delete memory[key];
-        }
-        return record;
-      });
-      return memory[key];
-    }
-
-    async function secondaryRunNostrAnimeResolver(runtime, query) {
-      await ensureNostrTmdbMetaLoaded();
-      const retryOnlyFailed = !!runtime.retryOnlyFailed;
-      runtime.loadPaused = false;
-      runtime.loadScanCount = 0;
-      const loadContext = runtime.loadContext || { detailRequests: 0, budget: SECONDARY_NOSTR_ANIME_DETAIL_BUDGET_PER_LOAD };
-      runtime.loadContext = loadContext;
-      while (runtime.nextIndex < runtime.candidates.length && (retryOnlyFailed ? Object.keys(runtime.failedKeys || {}).length > 0 : secondaryNostrAnimeScanShouldContinue(runtime))) {
-        const target = secondaryNostrAnimeScanTarget(runtime);
-        const defaultMatches = secondaryNostrAnimeQualifiedItems(runtime, homeCategoryDefaultFilters(), target).length;
-        const batchSize = !retryOnlyFailed && defaultMatches < target
-          ? Math.min(SECONDARY_NOSTR_ANIME_SCAN_BATCH_SIZE, Math.max(1, target - defaultMatches))
-          : SECONDARY_NOSTR_ANIME_SCAN_BATCH_SIZE;
-        const batch = [];
-        let consumed = 0;
-        let reservedDetailRequests = 0;
-        while (runtime.nextIndex < runtime.candidates.length && batch.length < batchSize) {
-          const candidate = runtime.candidates[runtime.nextIndex];
-          const key = secondaryNostrAnimeCandidateKey(candidate);
-          const eligible = !!key && (retryOnlyFailed ? !!runtime.failedKeys[key] : !runtime.statuses[key]);
-          if (!eligible) {
-            runtime.nextIndex += 1;
-            consumed += 1;
-            continue;
-          }
-          const needsDetail = secondaryNostrDetailRequestNeeded(candidate, "anime", query);
-          if (needsDetail && Number(loadContext.detailRequests || 0) + reservedDetailRequests >= Number(loadContext.budget || SECONDARY_NOSTR_ANIME_DETAIL_BUDGET_PER_LOAD)) {
-            runtime.loadPaused = true;
-            break;
-          }
-          if (needsDetail) reservedDetailRequests += 1;
-          batch.push(candidate);
-          runtime.nextIndex += 1;
-          consumed += 1;
-        }
-        runtime.metrics.candidatesScanned = Number(runtime.metrics.candidatesScanned || 0) + consumed;
-        runtime.loadScanCount = Number(runtime.loadScanCount || 0) + consumed;
-        if (!batch.length) {
-          secondaryNostrAnimeNotify(runtime);
-          if (runtime.loadPaused) break;
-          continue;
-        }
-        await weeklyMapLimit(batch, SECONDARY_NOSTR_HOT_DETAIL_CONCURRENCY, (candidate) => {
-          return secondaryNostrAnimeResolveCandidate(candidate, query, Number(candidate.nostrHotRank || 0) - 1, runtime);
-        }, (wrapped, candidate) => {
-          secondaryNostrAnimeApplyResult(runtime, candidate, wrapped);
-          secondaryNostrAnimeNotify(runtime);
-        });
-        if (runtime.loadPaused) break;
-        if (retryOnlyFailed ? !Object.keys(runtime.failedKeys || {}).length : !secondaryNostrAnimeScanShouldContinue(runtime)) break;
-      }
-      const retryResumeIndex = runtime.retryOnlyFailed ? runtime.retryResumeIndex : null;
-      if (retryResumeIndex != null) runtime.nextIndex = Number(retryResumeIndex || 0);
-      runtime.retryResumeIndex = null;
-      runtime.retryOnlyFailed = false;
-      runtime.done = !runtime.loadPaused
-        && Number(runtime.nextIndex || 0) >= (runtime.candidates || []).length
-        && !Object.keys(runtime.failedKeys || {}).length;
-      secondaryNostrAnimeNotify(runtime);
-      await flushNostrTmdbMetaCache();
-      return runtime;
-    }
-
-    function secondaryNostrAnimeStartResolver(runtime, query) {
-      if (!runtime) return Promise.resolve(null);
-      if (runtime.running && runtime.promise) return runtime.promise;
-      if (Object.keys(runtime.failedKeys || {}).length && !runtime.retryOnlyFailed) {
-        runtime.retryResumeIndex = Number(runtime.nextIndex || 0);
-        runtime.nextIndex = 0;
-        runtime.done = false;
-        runtime.retryOnlyFailed = true;
-      }
-      if (runtime.done && secondaryNostrAnimeScanShouldContinue(runtime)) {
-        runtime.done = false;
-      }
-      runtime.loadContext = { detailRequests: 0, budget: SECONDARY_NOSTR_ANIME_DETAIL_BUDGET_PER_LOAD };
-      runtime.loadPaused = false;
-      runtime.running = true;
-      runtime.promise = secondaryRunNostrAnimeResolver(runtime, query)
-        .catch(() => runtime)
-        .then((result) => {
-          runtime.running = false;
-          return result;
-        });
-      return runtime.promise;
-    }
-
-    async function secondaryLoadNostrAnimePool(filters, query, target, options) {
-      const opts = options || {};
-      const candidates = secondaryNostrHotCandidates("anime", filters);
-      const runtime = secondaryNostrAnimeResolverState(candidates);
-      const listener = {
-        filters: Object.assign({}, homeCategoryDefaultFilters(), filters || {}),
-        target: Math.max(0, Number(target || SECONDARY_NOSTR_HOT_TARGET_MATCHES)),
-        isCurrent: typeof opts.isCurrent === "function" ? opts.isCurrent : null,
-        onProgress: typeof opts.onProgress === "function" ? opts.onProgress : null
-      };
-      runtime.listeners.push(listener);
-      try {
-        secondaryNostrAnimeNotify(runtime);
-        await secondaryNostrAnimeStartResolver(runtime, query);
-        return secondaryNostrAnimeQualifiedItems(runtime, listener.filters, listener.target);
-      } finally {
-        runtime.listeners = runtime.listeners.filter((entry) => entry !== listener);
-      }
-    }
-
-    function secondaryNostrVarietyMemoryCache() {
-      return secondaryNostrTmdbMemoryCache();
-    }
-
-    function secondaryNostrVarietyRecordFromMetadata(hotItem, metadata, index, source) {
-      return nostrTmdbRecordFromMetadata(hotItem, metadata, "variety", index, source);
-    }
-
-    function secondaryNostrVarietyCandidateKey(candidate) {
-      return homeNostrSignalKey(candidate);
-    }
-
-    function secondaryNostrVarietyResolverKey(candidates) {
-      return JSON.stringify([
-        Number(state.hot && state.hot.version || 0),
-        (Array.isArray(candidates) ? candidates : []).map((candidate, index) => [
-          secondaryNostrVarietyCandidateKey(candidate),
-          Number(candidate && (candidate.people || candidate.count) || 0),
-          String(candidate && (candidate.latest || candidate.lastEventAt || candidate.last_event_at) || ""),
-          index + 1
-        ])
-      ]);
-    }
-
-    function secondaryNostrVarietyEmptyMetrics() {
-      return { candidatesScanned: 0, lastScannedRank: 0, knownMetadataHits: 0, persistentHits: 0, memoryHits: 0, discoverRequests: 0, discoverMetadataMatches: 0, newDetailRequests: 0, detailFailures: 0, finalVarietyMatches: 0, totalGlobalPool: 0, candidatePoolSize: 0, cursor: 0, resolvedCount: 0, loadScanCount: 0, loadDetailRequests: 0, retryableMetadataCount: 0, sourceExhausted: false, hasMore: true };
-    }
-
-    function secondaryNostrVarietyResolverState(candidates) {
-      const home = state.homeV14;
-      const source = Array.isArray(candidates) ? candidates : [];
-      const key = secondaryNostrVarietyResolverKey(source);
-      let runtime = home.secondaryNostrVarietyResolver;
-      if (!runtime || runtime.key !== key) {
-        runtime = home.secondaryNostrVarietyResolver = {
-          key,
-          candidates: source.map((candidate, index) => Object.assign({}, candidate, { nostrHotRank: Number(candidate && candidate.nostrHotRank || index + 1) })),
-          statuses: {},
-          items: {},
-          failedKeys: {},
-          nextIndex: 0,
-          done: false,
-          loadPaused: false,
-          loadContext: null,
-          running: false,
-          retryOnlyFailed: false,
-          retryResumeIndex: null,
-          loadScanCount: 0,
-          promise: null,
-          listeners: [],
-          discoverPrimed: false,
-          discoverRetryable: false,
-          discoverPromise: null,
-          metrics: secondaryNostrVarietyEmptyMetrics()
-        };
-      }
-      return runtime;
-    }
-
-    function secondaryNostrVarietyQualifiedItems(runtime, filters, target) {
-      if (!runtime) return [];
-      const limit = Math.max(0, Number(target || SECONDARY_NOSTR_VARIETY_TARGET_MATCHES));
-      const selected = [];
-      (runtime.candidates || []).forEach((candidate) => {
-        if (selected.length >= limit) return;
-        const key = secondaryNostrVarietyCandidateKey(candidate);
-        if (!key || runtime.statuses[key] !== "valid" || !runtime.items[key]) return;
-        if (!secondaryNostrHotFilterMatches("variety", filters || homeCategoryDefaultFilters(), runtime.items[key])) return;
-        selected.push(runtime.items[key]);
-      });
-      return selected;
-    }
-
-    function secondaryNostrVarietyNotify(runtime) {
-      if (!runtime) return;
-      const defaultItems = secondaryNostrVarietyQualifiedItems(runtime, homeCategoryDefaultFilters(), SECONDARY_NOSTR_VARIETY_TARGET_MATCHES);
-      runtime.metrics.finalVarietyMatches = defaultItems.length;
-      const retryableMetadataCount = Object.keys(runtime.failedKeys || {}).length;
-      runtime.metrics.totalGlobalPool = Array.isArray(state.hot && state.hot.items) ? state.hot.items.length : 0;
-      runtime.metrics.candidatePoolSize = Array.isArray(runtime.candidates) ? runtime.candidates.length : 0;
-      runtime.metrics.cursor = Number(runtime.nextIndex || 0);
-      runtime.metrics.resolvedCount = defaultItems.length;
-      runtime.metrics.loadScanCount = Number(runtime.loadScanCount || 0);
-      runtime.metrics.loadDetailRequests = Number(runtime.loadContext && runtime.loadContext.detailRequests || 0);
-      runtime.metrics.retryableMetadataCount = retryableMetadataCount;
-      runtime.metrics.sourceExhausted = !!runtime.done;
-      runtime.metrics.hasMore = !runtime.done || !!runtime.loadPaused || retryableMetadataCount > 0;
-      if (state.homeV14 && state.homeV14.secondaryNostrVarietyResolver === runtime) {
-        state.homeV14.secondaryNostrVarietyMetrics = Object.assign({}, runtime.metrics, {
-          resolverKey: runtime.key,
-          done: !!runtime.done,
-          cacheEntries: Object.keys(nostrTmdbMetaRuntime().entries || {}).length,
-          cacheLoaded: !!nostrTmdbMetaRuntime().loaded
-        });
-        if (state.tvDiag) state.tvDiag.nostrVariety = state.homeV14.secondaryNostrVarietyMetrics;
-      }
-      (runtime.listeners || []).slice().forEach((listener) => {
-        if (!listener || typeof listener.onProgress !== "function") return;
-        const items = secondaryNostrVarietyQualifiedItems(runtime, listener.filters, listener.target);
-        try {
-          if (!listener.isCurrent || listener.isCurrent()) listener.onProgress(items, runtime);
-        } catch (e) {}
-      });
-    }
-
-    function secondaryNostrVarietyApplyResult(runtime, candidate, wrapped) {
-      if (!runtime || !candidate) return;
-      const key = secondaryNostrVarietyCandidateKey(candidate);
-      if (!key) return;
-      const record = wrapped && wrapped.ok ? wrapped.value : null;
-      const rank = Number(candidate.nostrHotRank || 0);
-      runtime.metrics.lastScannedRank = Math.max(Number(runtime.metrics.lastScannedRank || 0), rank);
-      if (record && (record.status === "valid" || record.status === "invalid")) {
-        runtime.statuses[key] = record.status;
-        if (record.status === "valid" && record.item) runtime.items[key] = record.item;
-        else delete runtime.items[key];
-        delete runtime.failedKeys[key];
-      } else if (record && record.status === "budget") {
-        runtime.loadPaused = true;
-        delete runtime.statuses[key];
-        delete runtime.items[key];
-      } else {
-        delete runtime.statuses[key];
-        delete runtime.items[key];
-        runtime.failedKeys[key] = true;
-        runtime.metrics.detailFailures = Number(runtime.metrics.detailFailures || 0) + 1;
-      }
-    }
-
-    function secondaryNostrVarietyPrimeDiscover(runtime) {
-      if (!runtime) return Promise.resolve(runtime);
-      if (runtime.discoverPrimed) return Promise.resolve(runtime);
-      if (runtime.discoverPromise) return runtime.discoverPromise;
-      runtime.discoverPromise = Promise.resolve().then(async () => {
-        await ensureNostrTmdbMetaLoaded();
-        const candidates = Array.isArray(runtime.candidates) ? runtime.candidates : [];
-        const candidateMap = new Map();
-        candidates.forEach((candidate) => {
-          const key = secondaryNostrVarietyCandidateKey(candidate);
-          if (key && !candidateMap.has(key)) candidateMap.set(key, candidate);
-        });
-        const sources = secondaryFullCatalogSources("variety");
-        const memory = secondaryNostrVarietyMemoryCache();
-        const matched = new Set();
-        let retryableFailure = false;
-        for (let sourceIndex = 0; sourceIndex < sources.length && matched.size < SECONDARY_NOSTR_VARIETY_TARGET_MATCHES; sourceIndex++) {
-          const source = sources[sourceIndex];
-          for (let page = 1; page <= 3 && matched.size < SECONDARY_NOSTR_VARIETY_TARGET_MATCHES; page++) {
-            runtime.metrics.discoverRequests = Number(runtime.metrics.discoverRequests || 0) + 1;
-            let body = null;
-            try { body = await requestJson(tmdbUrl(source, page), 18); } catch (e) { retryableFailure = true; break; }
-            const results = Array.isArray(body && body.results) ? body.results : [];
-            if (!results.length) break;
-            results.forEach((raw, index) => {
-              const normalized = normalizeTmdb(raw, source, (page - 1) * 20 + index);
-              const key = homeNostrSignalKey(normalized);
-              const candidate = key && candidateMap.get(key);
-              if (!candidate || matched.has(key)) return;
-              const metadata = nostrTmdbMetaFromItem(candidate, normalized);
-              if (metadata) {
-                const record = secondaryNostrVarietyRecordFromMetadata(candidate, metadata, Number(candidate.nostrHotRank || 0) - 1, "discover");
-                if (record.status !== "valid" && record.status !== "invalid") return;
-                runtime.metrics.discoverMetadataMatches = Number(runtime.metrics.discoverMetadataMatches || 0) + 1;
-                matched.add(key);
-                memory[key] = Promise.resolve(record);
-                nostrTmdbMetaPut(record.metadata, record.status);
-                return;
-              }
-              const persistent = nostrTmdbMetaRuntime().entries[key];
-              if (persistent && nostrTmdbMetaHasCanonicalPoster(persistent)) matched.add(key);
-            });
-          }
-          if (retryableFailure) break;
-        }
-        runtime.discoverPrimed = !retryableFailure;
-        runtime.discoverRetryable = retryableFailure;
-        runtime.discoverPromise = null;
-        return runtime;
-      }).catch(() => {
-        runtime.discoverPrimed = false;
-        runtime.discoverRetryable = true;
-        runtime.discoverPromise = null;
-        return runtime;
-      });
-      return runtime.discoverPromise;
-    }
-
-    function secondaryNostrVarietyScanShouldContinue(runtime) {
-      if (!runtime) return false;
-      const target = secondaryNostrVarietyScanTarget(runtime);
-      if (secondaryNostrVarietyQualifiedItems(runtime, homeCategoryDefaultFilters(), target).length < target) return true;
-      return (runtime.listeners || []).some((listener) => {
-        if (!listener) return false;
-        const filters = listener.filters || homeCategoryDefaultFilters();
-        const listenerTarget = Math.max(0, Number(listener.target || 0));
-        return secondaryNostrVarietyQualifiedItems(runtime, filters, listenerTarget).length < listenerTarget;
-      });
-    }
-
-    async function secondaryNostrVarietyResolveCandidate(candidate, query, index, runtime) {
-      const key = secondaryNostrVarietyCandidateKey(candidate);
-      if (!key) return { status: "failed", metadata: null, item: null, source: "" };
-      const known = secondaryNostrKnownItem(candidate, query);
-      const knownMetadata = nostrTmdbMetaFromItem(candidate, known);
-      if (knownMetadata) {
-        runtime.metrics.knownMetadataHits = Number(runtime.metrics.knownMetadataHits || 0) + 1;
-        const record = secondaryNostrVarietyRecordFromMetadata(candidate, knownMetadata, index, "known");
-        secondaryNostrVarietyMemoryCache()[key] = Promise.resolve(record);
-        return record;
-      }
-      await ensureNostrTmdbMetaLoaded();
-      const memory = secondaryNostrVarietyMemoryCache();
-      if (memory[key]) {
-        const memoryPromise = memory[key];
-        runtime.metrics.memoryHits = Number(runtime.metrics.memoryHits || 0) + 1;
-        const record = await Promise.resolve(memoryPromise);
-        if (record && (record.status === "valid" || record.status === "invalid")) {
-          const memorySource = record.source === "discover" ? "discover" : "cache";
-          const refreshed = record.metadata ? secondaryNostrVarietyRecordFromMetadata(candidate, record.metadata, index, memorySource) : record;
-          if (refreshed.item) refreshed.item.nostrMetadataSource = memorySource;
-          return refreshed;
-        }
-        if (memory[key] === memoryPromise) delete memory[key];
-      }
-      const persistent = nostrTmdbMetaRuntime().entries[key];
-      if (persistent) {
-        runtime.metrics.persistentHits = Number(runtime.metrics.persistentHits || 0) + 1;
-        const record = secondaryNostrVarietyRecordFromMetadata(candidate, persistent, index, "persistent");
-        if (record.status === "valid" || record.status === "invalid") {
-          if (record.item) record.item.nostrMetadataSource = "cache";
-          memory[key] = Promise.resolve(record);
-          return record;
-        }
-      }
-      const loadContext = runtime.loadContext || { detailRequests: 0, budget: SECONDARY_NOSTR_VARIETY_DETAIL_BUDGET_PER_LOAD };
-      if (Number(loadContext.detailRequests || 0) >= Number(loadContext.budget || SECONDARY_NOSTR_VARIETY_DETAIL_BUDGET_PER_LOAD)) {
-        return { status: "budget", metadata: null, item: null, source: "budget" };
-      }
-      loadContext.detailRequests = Number(loadContext.detailRequests || 0) + 1;
-      runtime.loadContext = loadContext;
-      runtime.metrics.newDetailRequests = Number(runtime.metrics.newDetailRequests || 0) + 1;
-      const detailPromise = requestJson(secondaryNostrDetailUrl(candidate), 18)
-        .then((body) => nostrTmdbRecordFromDetail(candidate, body, "variety", index, "detail"))
-        .catch(() => ({ status: "failed", metadata: null, item: null, source: "detail" }));
-      memory[key] = detailPromise.then((record) => {
-        if (!record || (record.status !== "valid" && record.status !== "invalid")) {
-          if (memory[key]) delete memory[key];
-        }
-        return record;
-      });
-      return memory[key];
-    }
-
-    function secondaryNostrVarietyScanTarget(runtime) {
-      let target = SECONDARY_NOSTR_PAGE_SIZE;
-      (runtime && runtime.listeners || []).forEach((listener) => {
-        if (listener) target = Math.max(target, Number(listener.target || 0));
-      });
-      return target;
-    }
-
-    async function secondaryRunNostrVarietyResolver(runtime, query) {
-      await ensureNostrTmdbMetaLoaded();
-      const retryOnlyFailed = !!runtime.retryOnlyFailed;
-      runtime.loadPaused = false;
-      runtime.loadScanCount = 0;
-      const loadContext = runtime.loadContext || { detailRequests: 0, budget: SECONDARY_NOSTR_VARIETY_DETAIL_BUDGET_PER_LOAD };
-      runtime.loadContext = loadContext;
-      while (runtime.nextIndex < runtime.candidates.length && (retryOnlyFailed ? Object.keys(runtime.failedKeys || {}).length > 0 : secondaryNostrVarietyScanShouldContinue(runtime))) {
-        const target = secondaryNostrVarietyScanTarget(runtime);
-        const defaultMatches = secondaryNostrVarietyQualifiedItems(runtime, homeCategoryDefaultFilters(), target).length;
-        const batchSize = !retryOnlyFailed && defaultMatches < target
-          ? Math.min(SECONDARY_NOSTR_VARIETY_SCAN_BATCH_SIZE, Math.max(1, target - defaultMatches))
-          : SECONDARY_NOSTR_VARIETY_SCAN_BATCH_SIZE;
-        const batch = [];
-        let consumed = 0;
-        let reservedDetailRequests = 0;
-        while (runtime.nextIndex < runtime.candidates.length && batch.length < batchSize) {
-          const candidate = runtime.candidates[runtime.nextIndex];
-          const key = secondaryNostrVarietyCandidateKey(candidate);
-          const eligible = !!key && (retryOnlyFailed ? !!runtime.failedKeys[key] : !runtime.statuses[key]);
-          if (!eligible) {
-            runtime.nextIndex += 1;
-            consumed += 1;
-            continue;
-          }
-          const needsDetail = secondaryNostrDetailRequestNeeded(candidate, "variety", query);
-          if (needsDetail && Number(loadContext.detailRequests || 0) + reservedDetailRequests >= Number(loadContext.budget || SECONDARY_NOSTR_VARIETY_DETAIL_BUDGET_PER_LOAD)) {
-            runtime.loadPaused = true;
-            break;
-          }
-          if (needsDetail) reservedDetailRequests += 1;
-          batch.push(candidate);
-          runtime.nextIndex += 1;
-          consumed += 1;
-        }
-        runtime.metrics.candidatesScanned = Number(runtime.metrics.candidatesScanned || 0) + consumed;
-        runtime.loadScanCount = Number(runtime.loadScanCount || 0) + consumed;
-        if (!batch.length) {
-          secondaryNostrVarietyNotify(runtime);
-          if (runtime.loadPaused) break;
-          continue;
-        }
-        await weeklyMapLimit(batch, SECONDARY_NOSTR_HOT_DETAIL_CONCURRENCY, (candidate) => {
-          return secondaryNostrVarietyResolveCandidate(candidate, query, Number(candidate.nostrHotRank || 0) - 1, runtime);
-        }, (wrapped, candidate) => {
-          secondaryNostrVarietyApplyResult(runtime, candidate, wrapped);
-          secondaryNostrVarietyNotify(runtime);
-        });
-        if (runtime.loadPaused) break;
-        if (retryOnlyFailed ? !Object.keys(runtime.failedKeys || {}).length : !secondaryNostrVarietyScanShouldContinue(runtime)) break;
-      }
-      const retryResumeIndex = runtime.retryOnlyFailed ? runtime.retryResumeIndex : null;
-      if (retryResumeIndex != null) runtime.nextIndex = Number(retryResumeIndex || 0);
-      runtime.retryResumeIndex = null;
-      runtime.retryOnlyFailed = false;
-      runtime.done = !runtime.loadPaused
-        && Number(runtime.nextIndex || 0) >= (runtime.candidates || []).length
-        && !Object.keys(runtime.failedKeys || {}).length;
-      secondaryNostrVarietyNotify(runtime);
-      await flushNostrTmdbMetaCache();
-      return runtime;
-    }
-
-    function secondaryNostrVarietyStartResolver(runtime, query) {
-      if (!runtime) return Promise.resolve(null);
-      if (runtime.running && runtime.promise) return runtime.promise;
-      if (Object.keys(runtime.failedKeys || {}).length && !runtime.retryOnlyFailed) {
-        runtime.retryResumeIndex = Number(runtime.nextIndex || 0);
-        runtime.nextIndex = 0;
-        runtime.done = false;
-        runtime.retryOnlyFailed = true;
-      }
-      if (runtime.done && secondaryNostrVarietyScanShouldContinue(runtime)) {
-        runtime.done = false;
-      }
-      runtime.loadContext = { detailRequests: 0, budget: SECONDARY_NOSTR_VARIETY_DETAIL_BUDGET_PER_LOAD };
-      runtime.loadPaused = false;
-      runtime.running = true;
-      runtime.promise = secondaryRunNostrVarietyResolver(runtime, query)
-        .catch(() => runtime)
-        .then((result) => {
-          runtime.running = false;
-          return result;
-        });
-      return runtime.promise;
-    }
-
-    async function secondaryLoadNostrVarietyPool(filters, query, target, options) {
-      const opts = options || {};
-      const candidates = secondaryNostrHotCandidates("variety", filters);
-      const runtime = secondaryNostrVarietyResolverState(candidates);
-      const listener = {
-        filters: Object.assign({}, homeCategoryDefaultFilters(), filters || {}),
-        target: Math.max(0, Number(target || SECONDARY_NOSTR_VARIETY_TARGET_MATCHES)),
-        isCurrent: typeof opts.isCurrent === "function" ? opts.isCurrent : null,
-        onProgress: typeof opts.onProgress === "function" ? opts.onProgress : null
-      };
-      runtime.listeners.push(listener);
-      try {
-        await secondaryNostrVarietyPrimeDiscover(runtime);
-        secondaryNostrVarietyNotify(runtime);
-        await secondaryNostrVarietyStartResolver(runtime, query);
-        return secondaryNostrVarietyQualifiedItems(runtime, listener.filters, listener.target);
-      } finally {
-        runtime.listeners = runtime.listeners.filter((entry) => entry !== listener);
-      }
-    }
-
-    function secondaryNostrMarkRetryableMetadata(query, key, retryable) {
-      if (!query || !query.nostrRetryableKeys || !key) return;
-      if (retryable) query.nostrRetryableKeys[key] = true;
-      else delete query.nostrRetryableKeys[key];
-      query.nostrRetryableMetadataCount = Object.keys(query.nostrRetryableKeys).length;
-    }
-
-    async function secondaryNostrEnrichCandidate(hotItem, listId, query, index) {
-      const known = secondaryNostrKnownItem(hotItem, query);
-      if (known && secondaryNostrItemAllowed(listId, known)) {
-        const knownItem = nostrHotSignalOverlay(known, hotItem, listId);
-        if (knownItem) knownItem.nostrMetadataSource = "known";
-        secondaryNostrMarkRetryableMetadata(query, homeNostrSignalKey(hotItem), false);
-        return knownItem;
-      }
-      const key = homeNostrSignalKey(hotItem);
-      if (!key) return null;
-      await ensureNostrTmdbMetaLoaded();
-      const memory = secondaryNostrTmdbMemoryCache();
-      const memoryPromise = memory[key];
-      if (memoryPromise) {
-        const memoryRecord = await Promise.resolve(memoryPromise);
-        if (memoryRecord && (memoryRecord.status === "valid" || memoryRecord.status === "invalid")) {
-          const refreshed = memoryRecord.metadata
-            ? nostrTmdbRecordFromMetadata(hotItem, memoryRecord.metadata, listId, index, "cache")
-            : memoryRecord;
-          if (refreshed.status === "valid") {
-            secondaryNostrMarkRetryableMetadata(query, key, false);
-            return nostrHotSignalOverlay(refreshed.item, hotItem, listId);
-          }
-          secondaryNostrMarkRetryableMetadata(query, key, false);
-        }
-        if (memory[key] === memoryPromise) delete memory[key];
-      }
-      const persistent = nostrTmdbMetaRuntime().entries[key];
-      if (persistent) {
-        const record = nostrTmdbRecordFromMetadata(hotItem, persistent, listId, index, "persistent");
-        if (record.status === "valid" || record.status === "invalid") {
-          memory[key] = Promise.resolve(record);
-          secondaryNostrMarkRetryableMetadata(query, key, false);
-          return record.status === "valid"
-            ? nostrHotSignalOverlay(record.item, hotItem, listId)
-            : null;
-        }
-      }
-      const detailPromise = requestJson(secondaryNostrDetailUrl(hotItem), 18)
-        .then((body) => nostrTmdbRecordFromDetail(hotItem, body, listId, index, "detail"))
-        .catch(() => ({ status: "failed", metadata: null, item: null, source: "detail" }));
-      memory[key] = detailPromise.then((record) => {
-        if (!record || (record.status !== "valid" && record.status !== "invalid")) {
-          if (memory[key]) delete memory[key];
-        }
-        return record;
-      });
-      const record = await Promise.resolve(memory[key]);
-      const valid = !!(record && record.status === "valid");
-      secondaryNostrMarkRetryableMetadata(query, key, !valid);
-      return valid ? nostrHotSignalOverlay(record.item, hotItem, listId) : null;
-    }
-
-    function secondaryNostrDetailRequestNeeded(hotItem, listId, query) {
-      const known = secondaryNostrKnownItem(hotItem, query);
-      if (known && secondaryNostrItemAllowed(listId, known)) return false;
-      const key = homeNostrSignalKey(hotItem);
-      const memory = secondaryNostrTmdbMemoryCache();
-      const persistent = nostrTmdbMetaRuntime().entries[key];
-      return !!key && !memory[key] && (!persistent || !nostrTmdbMetaHasCanonicalPoster(persistent));
-    }
-
-    function secondaryNostrTaskIsCurrent(id, filters, query, generation) {
-      if (!query || !query.nostrHot || homeHotSource() !== "nostr") return false;
-      if (homeUiRoute() !== "secondary" || state.homeV14.secondaryListId !== id) return false;
-      if (secondaryActiveQuery(id) !== query || Number(query.nostrHotGeneration || 0) !== Number(generation || 0)) return false;
-      return secondaryFilterKey(id, secondaryFilterState(id)) === query.key
-        && secondaryFilterKey(id, filters) === query.key;
-    }
-
-    function secondaryNostrGridFocusSnapshot() {
-      const grid = $("secondaryCatalogGrid");
-      const active = document.activeElement;
-      if (!grid || !active || !grid.contains(active)) return null;
-      const mediaKey = String(active.dataset && active.dataset.mediaKey || mediaDomKey(active.__mediaItem) || "");
-      return mediaKey ? { mediaKey, scrollTop: grid.scrollTop, scrollLeft: grid.scrollLeft } : null;
-    }
-
-    function restoreSecondaryNostrGridFocus(snapshot) {
-      if (!snapshot || homeUiRoute() !== "secondary") return;
-      const grid = $("secondaryCatalogGrid");
-      if (!grid) return;
-      let target = Array.from(grid.querySelectorAll(".card")).find((card) => String(card.dataset.mediaKey || mediaDomKey(card.__mediaItem) || "") === snapshot.mediaKey) || null;
-      const info = state.gridRender[gridRenderId(grid)];
-      if (!target && info && Array.isArray(info.items)) {
-        const index = info.items.findIndex((item) => String(mediaDomKey(item) || "") === snapshot.mediaKey);
-        if (index >= 0 && Number(info.rendered || 0) <= index) {
-          appendGridItems(grid, info.items, index + 1);
-          target = Array.from(grid.querySelectorAll(".card")).find((card) => String(card.dataset.mediaKey || mediaDomKey(card.__mediaItem) || "") === snapshot.mediaKey) || null;
-        }
-      }
-      if (target && isVisibleFocusable(target)) {
-        try { target.focus({ preventScroll: true }); } catch (e) { target.focus(); }
-        syncFocusedCardHalo(target);
-      }
-      grid.scrollTop = snapshot.scrollTop;
-      grid.scrollLeft = snapshot.scrollLeft;
-    }
-
-    function commitSecondaryNostrHotItems(id, filters, query, generation, items) {
-      if (!secondaryNostrTaskIsCurrent(id, filters, query, generation)) return false;
-      const focus = secondaryNostrGridFocusSnapshot();
-      query.nostrHotItems = uniqueMedia(Array.isArray(items) ? items : []);
-      query.items = query.nostrHotItems.slice();
-      if (query.nostrHotItems.length && !query.loaded) {
-        query.loaded = true;
-        query.error = "";
-      }
-      if (query.loaded || query.nostrHotItems.length) {
-        renderSecondaryCatalog();
-        restoreSecondaryNostrGridFocus(focus);
-      }
-      return true;
-    }
-
-    function secondaryNostrUpdateQueryMetrics(query, candidates, cursor, resolvedCount, loadScanCount, loadDetailRequests, retryableMetadataCount, sourceExhausted, hasMore) {
-      if (!query) return;
-      query.nostrMetrics = {
-        source: "nostr",
-        totalGlobalPool: Array.isArray(state.hot && state.hot.items) ? state.hot.items.length : 0,
-        candidatePoolSize: Array.isArray(candidates) ? candidates.length : 0,
-        cursor: Number(cursor || 0),
-        resolvedCount: Number(resolvedCount || 0),
-        loadScanCount: Number(loadScanCount || 0),
-        loadDetailRequests: Number(loadDetailRequests || 0),
-        retryableMetadataCount: Number(retryableMetadataCount || 0),
-        sourceExhausted: !!sourceExhausted,
-        hasMore: !!hasMore
-      };
-    }
-
-    async function secondaryLoadNostrHotItems(id, filters, query, target) {
-      if (!secondaryNostrHotEnabled(id, filters) || !query || !query.nostrHot) return [];
-      const targetCount = Math.max(SECONDARY_NOSTR_PAGE_SIZE, Number(target || SECONDARY_NOSTR_PAGE_SIZE));
-      const existingItems = Array.isArray(query.nostrHotItems) ? query.nostrHotItems : [];
-      if (query.nostrHotLoaded && (existingItems.length >= targetCount || query.nostrExhausted)) return existingItems;
-      if (query.nostrHotLoading) return Array.isArray(query.nostrHotItems) ? query.nostrHotItems : [];
-      if (!state.hot || !state.hot.ready) return [];
-      query.nostrPaginationInitialized = true;
-      query.nostrHotReady = true;
-      const scanFilters = {
-        mediaType: filters.mediaType,
-        genre: filters.genre,
-        region: filters.region,
-        year: filters.year,
-        sort: filters.sort
-      };
-      const generation = Number(query.nostrHotGeneration || 0) + 1;
-      query.nostrHotGeneration = generation;
-      query.nostrHotLoading = true;
-      query.nostrHotItems = existingItems.slice();
-      if (id === "anime") {
-        try {
-          const qualifiedAnime = await secondaryLoadNostrAnimePool(scanFilters, query, targetCount, {
-            isCurrent: () => secondaryNostrTaskIsCurrent(id, scanFilters, query, generation),
-            onProgress: (items) => commitSecondaryNostrHotItems(id, scanFilters, query, generation, items)
-          });
-          if (secondaryNostrTaskIsCurrent(id, scanFilters, query, generation)) {
-            query.nostrHotItems = uniqueMedia(qualifiedAnime);
-            query.nostrHotLoaded = true;
-            const runtime = secondaryNostrAnimeResolverState(secondaryNostrHotCandidates("anime", scanFilters));
-            query.nostrScanCursor = Number(runtime && runtime.nextIndex || 0);
-            query.nostrCandidatesScanned = Number(runtime && runtime.metrics && runtime.metrics.candidatesScanned || query.nostrScanCursor || 0);
-            query.nostrNewDetailRequests = Number(runtime && runtime.metrics && runtime.metrics.newDetailRequests || 0);
-            query.nostrLoadDetailRequests = Number(runtime && runtime.loadContext && runtime.loadContext.detailRequests || 0);
-            query.nostrLoadScanCount = Number(runtime && runtime.metrics && runtime.metrics.candidatesScanned || 0);
-            query.nostrLoadPaused = !!(runtime && runtime.loadPaused);
-            query.nostrRetryableMetadataCount = Object.keys(runtime && runtime.failedKeys || {}).length;
-            query.nostrExhausted = !!(runtime && runtime.done);
-            secondaryNostrUpdateQueryMetrics(query, runtime && runtime.candidates, runtime && runtime.nextIndex, qualifiedAnime.length, runtime && runtime.loadScanCount, runtime && runtime.loadContext && runtime.loadContext.detailRequests, query.nostrRetryableMetadataCount, query.nostrExhausted, !query.nostrExhausted || query.nostrRetryableMetadataCount > 0 || query.nostrLoadPaused);
-            commitSecondaryNostrHotItems(id, scanFilters, query, generation, qualifiedAnime);
-          }
-          return qualifiedAnime;
-        } finally {
-          if (Number(query.nostrHotGeneration || 0) === generation) query.nostrHotLoading = false;
-        }
-      }
-      if (id === "variety") {
-        try {
-          const qualifiedVariety = await secondaryLoadNostrVarietyPool(scanFilters, query, targetCount, {
-            isCurrent: () => secondaryNostrTaskIsCurrent(id, scanFilters, query, generation),
-            onProgress: (items) => commitSecondaryNostrHotItems(id, scanFilters, query, generation, items)
-          });
-          if (secondaryNostrTaskIsCurrent(id, scanFilters, query, generation)) {
-            query.nostrHotItems = uniqueMedia(qualifiedVariety);
-            query.nostrHotLoaded = true;
-            const runtime = secondaryNostrVarietyResolverState(secondaryNostrHotCandidates("variety", scanFilters));
-            query.nostrScanCursor = Number(runtime && runtime.nextIndex || 0);
-            query.nostrCandidatesScanned = Number(runtime && runtime.metrics && runtime.metrics.candidatesScanned || query.nostrScanCursor || 0);
-            query.nostrNewDetailRequests = Number(runtime && runtime.metrics && runtime.metrics.newDetailRequests || 0);
-            query.nostrLoadDetailRequests = Number(runtime && runtime.loadContext && runtime.loadContext.detailRequests || 0);
-            query.nostrLoadScanCount = Number(runtime && runtime.metrics && runtime.metrics.candidatesScanned || 0);
-            query.nostrLoadPaused = !!(runtime && runtime.loadPaused);
-            query.nostrRetryableMetadataCount = Object.keys(runtime && runtime.failedKeys || {}).length;
-            query.nostrExhausted = !!(runtime && runtime.done);
-            secondaryNostrUpdateQueryMetrics(query, runtime && runtime.candidates, runtime && runtime.nextIndex, qualifiedVariety.length, runtime && runtime.loadScanCount, runtime && runtime.loadContext && runtime.loadContext.detailRequests, query.nostrRetryableMetadataCount, query.nostrExhausted, !query.nostrExhausted || query.nostrRetryableMetadataCount > 0 || query.nostrLoadPaused);
-            commitSecondaryNostrHotItems(id, scanFilters, query, generation, qualifiedVariety);
-          }
-          return qualifiedVariety;
-        } finally {
-          if (Number(query.nostrHotGeneration || 0) === generation) query.nostrHotLoading = false;
-        }
-      }
-      await ensureNostrTmdbMetaLoaded();
-      const qualified = uniqueMedia(query.nostrHotItems || []);
-      const candidates = secondaryNostrHotCandidates(id, scanFilters);
-      let cursor = Math.max(0, Math.min(candidates.length, Number(query.nostrScanCursor || 0)));
-      let newDetailRequests = Number(query.nostrNewDetailRequests || 0);
-      let loadDetailRequests = 0;
-      let loadScanCount = 0;
-      let loadPaused = false;
-      const retryableKeys = query.nostrRetryableKeys && typeof query.nostrRetryableKeys === "object" ? query.nostrRetryableKeys : {};
-      query.nostrRetryableKeys = retryableKeys;
-      const retryCandidates = candidates.filter((candidate) => !!retryableKeys[homeNostrSignalKey(candidate)]);
-      let retryCursor = 0;
-      try {
-        while ((retryCursor < retryCandidates.length || cursor < candidates.length) && qualified.length < targetCount) {
-          if (!secondaryNostrTaskIsCurrent(id, scanFilters, query, generation)) return qualified;
-          const fromRetry = retryCursor < retryCandidates.length;
-          const batchCandidates = fromRetry
-            ? retryCandidates.slice(retryCursor, retryCursor + SECONDARY_NOSTR_HOT_BATCH_SIZE)
-            : candidates.slice(cursor, cursor + SECONDARY_NOSTR_HOT_BATCH_SIZE);
-          const batch = [];
-          let consumed = 0;
-          for (const candidate of batchCandidates) {
-            const needsDetail = secondaryNostrDetailRequestNeeded(candidate, id, query);
-            if (needsDetail) {
-              if (loadDetailRequests >= SECONDARY_NOSTR_HOT_DETAIL_BUDGET_PER_LOAD) {
-                loadPaused = true;
-                break;
-              }
-              loadDetailRequests += 1;
-              newDetailRequests += 1;
-            }
-            batch.push(candidate);
-            consumed += 1;
-          }
-          if (fromRetry) retryCursor += consumed;
-          else cursor += consumed;
-          loadScanCount += consumed;
-          query.nostrScanCursor = cursor;
-          query.nostrCandidatesScanned = cursor;
-          query.nostrLoadDetailRequests = loadDetailRequests;
-          query.nostrLoadScanCount = loadScanCount;
-          query.nostrNewDetailRequests = newDetailRequests;
-          if (!batch.length) break;
-          const results = await weeklyMapLimit(batch, SECONDARY_NOSTR_HOT_DETAIL_CONCURRENCY, (candidate, index) => secondaryNostrEnrichCandidate(candidate, id, query, index));
-          if (!secondaryNostrTaskIsCurrent(id, scanFilters, query, generation)) return qualified;
-          const matches = results
-            .filter((result) => result && result.ok && result.value && secondaryNostrHotFilterMatches(id, scanFilters, result.value))
-            .map((result) => result.value)
-            .slice(0, Math.max(0, targetCount - qualified.length));
-          if (matches.length) qualified.push(...matches);
-          commitSecondaryNostrHotItems(id, scanFilters, query, generation, qualified);
-          if (loadPaused) break;
-        }
-        if (secondaryNostrTaskIsCurrent(id, scanFilters, query, generation)) {
-          query.nostrHotItems = uniqueMedia(qualified);
-          query.nostrHotLoaded = true;
-          query.nostrScanCursor = cursor;
-          query.nostrCandidatesScanned = cursor;
-          query.nostrNewDetailRequests = newDetailRequests;
-          query.nostrLoadDetailRequests = loadDetailRequests;
-          query.nostrLoadScanCount = loadScanCount;
-          query.nostrLoadPaused = loadPaused;
-          query.nostrRetryableMetadataCount = Object.keys(query.nostrRetryableKeys || {}).length;
-          query.nostrExhausted = !loadPaused && cursor >= candidates.length && !query.nostrRetryableMetadataCount;
-          secondaryNostrUpdateQueryMetrics(query, candidates, cursor, qualified.length, loadScanCount, loadDetailRequests, query.nostrRetryableMetadataCount, query.nostrExhausted, !query.nostrExhausted || query.nostrRetryableMetadataCount > 0 || loadPaused);
-        }
-        return qualified;
-      } finally {
-        if (Number(query.nostrHotGeneration || 0) === generation) query.nostrHotLoading = false;
-      }
-    }
-
-    function refreshActiveNostrSecondaryQuery(force) {
-      if (homeUiRoute() !== "secondary") return false;
-      const id = normalizeLegacyCategoryId(state.homeV14 && state.homeV14.secondaryListId);
-      const filters = id ? secondaryFilterState(id) : null;
-      const query = id ? secondaryActiveQuery(id) : null;
-      if (!query || !secondaryNostrHotEnabled(id, filters) || !state.hot || !state.hot.ready) return false;
-      if (query.nostrHotLoading) return false;
-      if (force) {
-        query.nostrHotLoaded = false;
-        query.nostrHotItems = [];
-        query.items = [];
-        query.nostrPaginationInitialized = false;
-        query.nostrScanCursor = 0;
-        query.nostrCandidatesScanned = 0;
-        query.nostrNewDetailRequests = 0;
-        query.nostrLoadDetailRequests = 0;
-        query.nostrLoadScanCount = 0;
-        query.nostrLoadPaused = false;
-        query.nostrRetryableMetadataCount = 0;
-        query.nostrRetryableKeys = {};
-        query.nostrExhausted = false;
-        query.nostrHotReady = false;
-        query.page = 0;
-        query.totalPages = 0;
-        query.totalResults = 0;
-        query.hasMore = false;
-        query.loaded = false;
-      }
-      if (query.nostrHotLoaded) return false;
-      const requestSeq = ++query.requestSeq;
-      query.loading = true;
-      secondaryLoadNostrHotItems(id, filters, query, Math.max(SECONDARY_NOSTR_PAGE_SIZE, (Number(query.page || 0) + 1) * SECONDARY_NOSTR_PAGE_SIZE)).then((items) => {
-        if (query.requestSeq !== requestSeq || secondaryActiveQuery(id) !== query || !query.nostrHot) return;
-        const resolved = uniqueMedia(Array.isArray(query.nostrHotItems) && query.nostrHotItems.length ? query.nostrHotItems : items);
-        const hotReady = !!(state.hot && state.hot.ready && query.nostrHotReady);
-        query.nostrHotItems = resolved;
-        query.items = resolved.slice();
-        query.nostrHotLoaded = hotReady;
-        query.loading = false;
-        query.loaded = true;
-        query.nostrHotLoading = false;
-        query.page = 1;
-        query.totalPages = query.nostrExhausted ? 1 : 0;
-        query.totalResults = query.nostrExhausted ? resolved.length : 0;
-        query.hasMore = !!(hotReady && !query.nostrExhausted);
-        query.error = "";
-        if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
-        observeInfiniteScroll();
-      }).catch(() => {
-        if (query.requestSeq !== requestSeq || secondaryActiveQuery(id) !== query || !query.nostrHot) return;
-        query.loading = false;
-        query.nostrHotLoading = false;
-        query.loaded = true;
-        query.hasMore = false;
-        query.error = "加载失败";
-        if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
-      });
-      return true;
     }
     function secondaryFilterItems(id, baseItems) {
       id = normalizeLegacyCategoryId(id);
@@ -29077,18 +27117,17 @@ utils.encode = function encode(arr, enc) {
       const filters = secondaryFilterState(id);
       const query = secondaryActiveQuery(id);
       const serverFilters = new Set(query && query.listId === id ? query.serverSideFilters || [] : []);
-      const base = query && query.nostrHot
-        ? uniqueMedia(query.nostrHotItems || [])
+      const base = query && query.source === "recommendation"
+        ? recommendationPoolItems()
         : (Array.isArray(baseItems) ? baseItems : []);
       const result = filterReleasedCatalogItems(id, base).filter((item) => {
-        const nostrItem = item && item.source === "nostr-hot";
-        return (filters.mediaType === "all" || (!nostrItem && serverFilters.has("mediaType")) || secondaryItemMediaType(item) === filters.mediaType)
-        && (filters.genre === "all" || (!nostrItem && serverFilters.has("genre")) || secondaryItemGenreIds(item).includes(filters.genre))
-        && (filters.region === "all" || (!nostrItem && serverFilters.has("region")) || secondaryRegionMatches(item, filters.region))
-        && (filters.year === "all" || (!nostrItem && serverFilters.has("year")) || secondaryYearMatches(item, filters.year));
+        return (filters.mediaType === "all" || serverFilters.has("mediaType") || secondaryItemMediaType(item) === filters.mediaType)
+        && (filters.genre === "all" || serverFilters.has("genre") || secondaryItemGenreIds(item).includes(filters.genre))
+        && (filters.region === "all" || serverFilters.has("region") || secondaryRegionMatches(item, filters.region))
+        && (filters.year === "all" || serverFilters.has("year") || secondaryYearMatches(item, filters.year));
       });
       const metric = (item, key) => Number(item && (key ? item[key] : item.popularity || item.people || item.count) || 0);
-      if (query && query.nostrHot) {
+      if (query && query.source === "recommendation") {
         return result;
       }
       if (!serverFilters.has("sort") && filters.sort === "hot") return result.slice().sort((a, b) => metric(b) - metric(a));
@@ -29146,76 +27185,6 @@ utils.encode = function encode(arr, enc) {
       syncSecondaryFilterControls(id, host);
       return groups;
     }
-    async function loadSecondaryNostrPage(id, query, filters, requestSeq, pageNumber) {
-      const page = Math.max(1, Number(pageNumber || 1));
-      query.source = "nostr-hot";
-      query.serverSideFilters = [];
-      query.clientSideFilters = [];
-      query.endpointMap = [];
-      query.sourceStates = [];
-      query.error = "";
-      query.retryableError = "";
-      if (page === 1 && !query.nostrPaginationInitialized) {
-        query.nostrPaginationInitialized = true;
-        query.page = 0;
-        query.totalPages = 0;
-        query.totalResults = 0;
-        query.hasMore = false;
-        query.items = [];
-        query.nostrHotItems = [];
-        query.nostrHotLoaded = false;
-        query.nostrScanCursor = 0;
-        query.nostrCandidatesScanned = 0;
-        query.nostrNewDetailRequests = 0;
-        query.nostrLoadDetailRequests = 0;
-        query.nostrLoadScanCount = 0;
-        query.nostrLoadPaused = false;
-        query.nostrRetryableMetadataCount = 0;
-        query.nostrRetryableKeys = {};
-        query.nostrMetrics = null;
-        query.nostrExhausted = false;
-        query.nostrHotReady = false;
-      }
-      query.nostrHotLoading = false;
-      try {
-        const items = await secondaryLoadNostrHotItems(id, filters, query, page * SECONDARY_NOSTR_PAGE_SIZE);
-        if (query.requestSeq !== requestSeq || secondaryActiveQuery(id) !== query || !query.nostrHot) return query;
-        const resolved = uniqueMedia(Array.isArray(query.nostrHotItems) && query.nostrHotItems.length ? query.nostrHotItems : items);
-        const hotReady = !!(state.hot && state.hot.ready && query.nostrHotReady);
-        query.nostrHotItems = resolved;
-        query.items = resolved.slice();
-        query.nostrHotLoaded = hotReady;
-        query.nostrHotLoading = false;
-        query.page = page;
-        query.totalPages = query.nostrExhausted ? page : 0;
-        query.totalResults = query.nostrExhausted ? resolved.length : 0;
-        query.loading = false;
-        query.loaded = true;
-        query.hasMore = !!(hotReady && (!query.nostrExhausted || Number(query.nostrRetryableMetadataCount || 0) > 0));
-        query.error = "";
-        query.retryableError = query.nostrLoadPaused ? "本轮工作量已暂停，可继续加载" : "";
-        state.homeV14.secondaryPage = page;
-        if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
-        observeInfiniteScroll();
-        return query;
-      } catch (error) {
-        if (query.requestSeq !== requestSeq || secondaryActiveQuery(id) !== query || !query.nostrHot) return query;
-        query.nostrHotLoading = false;
-        query.nostrHotLoaded = false;
-        const preserved = uniqueMedia(query.nostrHotItems || query.items || []);
-        query.nostrHotItems = preserved;
-        query.items = preserved.slice();
-        query.totalPages = query.nostrExhausted ? Math.max(1, Number(query.page || 0)) : 0;
-        query.totalResults = query.nostrExhausted ? preserved.length : 0;
-        query.loading = false;
-        query.loaded = !!(preserved.length || Number(query.page || 0));
-        query.hasMore = !!(state.hot && state.hot.ready && (!query.nostrExhausted || Number(query.nostrRetryableMetadataCount || 0) > 0));
-        query.error = "";
-        query.retryableError = String(error && error.message || "加载失败");
-        if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
-        return query;
-      }
-    }
     function secondaryUpdateTmdbMetrics(query, plan, queryHasMore) {
       if (!query || !plan) return;
       const sources = (plan.sourceStates || []).map((sourceState) => ({
@@ -29236,6 +27205,39 @@ utils.encode = function encode(arr, enc) {
         sourceRetryableError: sources.some((entry) => !!entry.retryableError),
         queryHasMore: !!queryHasMore
       };
+    }
+
+    function recommendationSecondaryIsCurrent(query, requestSeq) {
+      return !!(query
+        && query.requestSeq === requestSeq
+        && secondaryActiveQuery("recommendation") === query);
+    }
+
+    async function loadRecommendationSecondaryPage(query, pageNumber) {
+      if (!query || query.source !== "recommendation") return query;
+      const page = Math.max(1, Number(pageNumber || 1));
+      const requestSeq = ++query.requestSeq;
+      const pool = recommendationPoolItems();
+      query.loading = false;
+      query.error = "";
+      query.retryableError = "";
+      query.poolItems = pool.slice();
+      query.renderedCount = Math.min(pool.length, Math.max(Number(query.renderedCount || 0), page * Number(query.batchSize || 18)));
+      query.items = pool.slice(0, query.renderedCount);
+      query.page = page;
+      query.totalPages = Math.ceil(pool.length / Number(query.batchSize || 18));
+      query.totalResults = pool.length;
+      query.loaded = true;
+      query.hasMoreLocal = query.renderedCount < pool.length;
+      query.hasMore = query.hasMoreLocal;
+      query.finite = true;
+      query.snapshotReady = true;
+      if (recommendationSecondaryIsCurrent(query, requestSeq)) {
+        state.homeV14.secondaryPage = page;
+        if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === "recommendation") renderSecondaryCatalog();
+        observeInfiniteScroll();
+      }
+      return query;
     }
 
     async function loadSecondaryPage(id, query, pageNumber) {
@@ -29260,6 +27262,7 @@ utils.encode = function encode(arr, enc) {
         if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
         return query;
       }
+      if (id === "recommendation") return loadRecommendationSecondaryPage(query, page);
       if (id === "now-playing") {
         query.loading = true;
         query.error = "";
@@ -29312,13 +27315,11 @@ utils.encode = function encode(arr, enc) {
       const requestSeq = ++query.requestSeq;
       if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
       const filters = secondaryFilterState(id);
-      if (query.nostrHot) return loadSecondaryNostrPage(id, query, filters, requestSeq, page);
       const plan = buildSecondaryQueryPlan(id, filters, query);
       const pending = plan.sources.map((source, index) => ({ source, state: plan.sourceStates[index] }))
         .filter((entry) => entry.state && !entry.state.exhausted && !entry.state.terminalError);
-      if (page === 1 && query.nostrHot) secondaryLoadNostrHotItems(id, filters, query).catch(() => {});
       if (!pending.length) {
-        query.items = uniqueMedia((query.nostrHotItems || []).concat(query.items || []));
+        query.items = uniqueMedia(query.items || []);
         query.loading = false;
         query.loaded = true;
         query.hasMore = plan.sourceStates.some(secondaryTmdbSourceHasMore);
@@ -29368,7 +27369,7 @@ utils.encode = function encode(arr, enc) {
       });
       const hasRetryableSource = plan.sourceStates.some((sourceState) => !!sourceState.retryableError);
       const hasPendingSource = plan.sourceStates.some(secondaryTmdbSourceHasMore);
-      if (!goodCount && !hasRetryableSource && !(Array.isArray(query.nostrHotItems) && query.nostrHotItems.length)) {
+      if (!goodCount && !hasRetryableSource) {
         query.loading = false;
         query.loaded = query.page > 0;
         query.error = "加载失败";
@@ -29379,7 +27380,7 @@ utils.encode = function encode(arr, enc) {
         if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
         return query;
       }
-      query.items = uniqueMedia((query.nostrHotItems || []).concat(query.items || [], incoming));
+      query.items = uniqueMedia((query.items || []).concat(incoming));
       query.page = Math.max(page, ...plan.sourceStates.map((sourceState) => Number(sourceState.page || 0)));
       query.totalPages = Math.max(page, ...plan.sourceStates.map((sourceState) => Number(sourceState.totalPages || 0)));
       const totals = plan.sourceStates.map((sourceState) => Number(sourceState.totalResults)).filter(Number.isFinite);
@@ -29465,7 +27466,7 @@ utils.encode = function encode(arr, enc) {
     }
 
     function secondaryMediaFocusRestoreQueryTerminal(query) {
-      return !!(query && query.loaded && !query.loading && !query.error && !query.hasMore && !query.nostrHotLoading);
+      return !!(query && query.loaded && !query.loading && !query.error && !query.hasMore);
     }
 
     function secondaryMediaFocusCardForKey(grid, mediaKey) {
@@ -29529,7 +27530,7 @@ utils.encode = function encode(arr, enc) {
     function openSecondaryCatalog(listId, options) {
       const opts = options || {};
       listId = normalizeLegacyCategoryId(listId);
-      if (!listId || !getList(listId) && !["now-playing", "recent"].includes(listId)) return false;
+      if (!listId || !getList(listId) && !["now-playing", "recent", "recommendation"].includes(listId)) return false;
       if (!isHomeRouteActive() && homeUiRoute() !== "home") return false;
       if (isRecentManagePage() && recentManageRuntime().deleting) {
         toast("正在删除，请稍候");
@@ -29786,8 +27787,9 @@ utils.encode = function encode(arr, enc) {
       updateRecentManageUi();
       const list = getList(listId);
       const isRecent = listId === "recent";
+      const isRecommendation = listId === "recommendation";
       const isWeekly = listId === "now-playing";
-      const title = isRecent ? "最近观看" : isWeekly ? "本周更新" : list && list.title || "分类";
+      const title = isRecent ? "最近观看" : isRecommendation ? "推荐" : isWeekly ? "本周更新" : list && list.title || "分类";
       const query = secondaryActiveQuery(listId) || secondaryGetQuery(listId);
       const grid = $("secondaryCatalogGrid");
       const baseItems = isRecent
@@ -29829,8 +27831,7 @@ utils.encode = function encode(arr, enc) {
           ? query.loading ? "正在读取最近观看…" : query.error ? query.error : query.loaded ? items.length ? "已加载全部" : "暂无最近观看" : ""
           : query.loading ? (query.page > 0 ? "正在加载下一页…" : "加载中…") : query.error ? "加载失败，请重试或调整筛选" : query.loaded && !query.hasMore ? "已加载全部" : "";
       }
-      const progressiveNostr = query.nostrHot && query.nostrHotItems && query.nostrHotItems.length;
-      if (query.loading && !query.page && !progressiveNostr) {
+      if (query.loading && !query.page) {
         showGridStatus(grid, "加载中...");
       } else if (query.error && !query.page) {
         showGridStatus(grid, "加载失败，请重试或调整筛选");
@@ -29902,7 +27903,7 @@ utils.encode = function encode(arr, enc) {
         applyHomeScrollTop(Math.max(0, Number(saved.scrollY || 0)));
         let target = saved.focus ? findHomeReturnTarget({ focus: saved.focus }) : null;
         if (!target && saved.focusId) target = $(saved.focusId);
-        if (!target && saved.originSection === "now-playing") target = $("homeHotMore");
+        if (!target && saved.originSection === "now-playing") target = $("homeWeeklyMore");
         if (!target && saved.originSection === "recent") target = $("homeRecentMore");
         if (!target && saved.originSection) target = document.querySelector(`[data-home-more-id="${String(saved.originSection).replace(/"/g, "\\\"")}"]`);
         if (!target) target = initialHomeFocus();
@@ -29913,10 +27914,10 @@ utils.encode = function encode(arr, enc) {
       return true;
     }
 
-    function renderHomeHot(options) {
+    function renderHomeWeekly(options) {
       const opts = options || {};
-      const section = $("recommendSection");
-      const rail = $("recommendRail");
+      const section = $("homeWeeklySection");
+      const rail = $("homeWeeklyRail");
       if (!section || !rail) return;
       if (!isHomeRouteActive()) {
         section.hidden = true;
@@ -29924,12 +27925,10 @@ utils.encode = function encode(arr, enc) {
       }
       section.hidden = false;
       const resolved = resolveHomeLatestItems();
-      const previousSource = rail.dataset.hotSource || "";
-      section.dataset.hotSource = resolved.source;
-      rail.dataset.hotSource = resolved.source;
-      rail.dataset.hotDataPath = resolved.path;
+      const previousSource = rail.dataset.weeklyDataPath || "";
+      section.dataset.weeklyDataPath = resolved.path;
       rail.dataset.weeklyDataPath = resolved.path;
-      if (previousSource && previousSource !== resolved.source) {
+      if (previousSource && previousSource !== resolved.path) {
         rail.dataset.homeRenderKeys = "";
         replaceHomeRailChildren(rail, [], captureHomeRailFocus(rail));
       }
@@ -29945,10 +27944,42 @@ utils.encode = function encode(arr, enc) {
         return;
       }
       const items = resolved.items;
-      if (items.length) fillHomeRail(rail, items, { variant: "portrait", limit: homeRailLimit("portrait"), homeMore: true, weeklyHome: true, railKey: "home:hot" });
+      if (items.length) fillHomeRail(rail, items, { variant: "portrait", limit: homeRailLimit("portrait"), homeMore: true, weeklyHome: true, railKey: "home:weekly" });
       else showHomeRailStatus(rail, page && page.loaded ? "暂无本周更新" : "本周更新加载中...", { variant: "portrait" });
       updateBlockSelectUi();
       if (opts.hotOnly) recordHomeV14Diag();
+    }
+
+    function renderHomeRecommendation(options) {
+      const opts = options || {};
+      const section = $("homeRecommendationSection");
+      const rail = $("homeRecommendationRail");
+      if (!section || !rail) return;
+      if (!isHomeRouteActive()) {
+        section.hidden = true;
+        return;
+      }
+      section.hidden = false;
+      const items = recommendationPoolItems();
+      rail.dataset.homeVariant = "portrait";
+      rail.dataset.recommendationSource = "nostr-recommendation-pool";
+      rail.dataset.recommendationPoolLimit = String(typeof HOT_RENDER_LIMIT === "number" ? HOT_RENDER_LIMIT : 1000);
+      if (!state.hot || !state.hot.ready) {
+        showHomeRailStatus(rail, "推荐加载中...", { variant: "portrait" });
+        return;
+      }
+      if (items.length) {
+        fillHomeRail(rail, items, {
+          variant: "portrait",
+          limit: homeRailLimit("portrait"),
+          homeMore: true,
+          railKey: "home:recommendation",
+          homeEagerCount: 4
+        });
+      } else {
+        showHomeRailStatus(rail, "暂无推荐内容", { variant: "portrait" });
+      }
+      if (opts.recommendationOnly) recordHomeV14Diag();
     }
 
     // Compatibility alias for the existing Nostr recommendation refresh path.
@@ -30243,7 +28274,7 @@ utils.encode = function encode(arr, enc) {
     function appendGridBatch(grid) {
       if (!grid || grid.closest && grid.closest(".list-panel[hidden]")) return false;
       const gridId = gridRenderId(grid);
-      if (gridId === "recommendRail" && state.activeList !== "all") return false;
+      if (gridId === "homeRecommendationRail" && state.activeList !== "all") return false;
       if (grid.dataset.listId && grid.dataset.listId !== state.activeList && !String(grid.dataset.listId).startsWith("secondary:")) return false;
       const info = state.gridRender[gridId];
       if (!info || !info.total || Number(info.rendered || 0) >= Number(info.total || 0)) return false;
@@ -30272,19 +28303,14 @@ utils.encode = function encode(arr, enc) {
     function activeMediaGrid() {
       if (state.activeList === "all" && homeUiRoute() === "secondary") return $("secondaryCatalogGrid");
       if (state.activeList === "all" && homeUiRoute() === "search") return $("searchRail");
-      if (state.activeList === "all") return $("recommendRail");
+      if (state.activeList === "all") return $("homeRecommendationRail");
       const panel = Array.from($("listStack").querySelectorAll(".list-panel")).find((item) => !item.hidden && item.dataset.listId === state.activeList);
       return panel && panel.querySelector(".media-grid");
     }
 
     function itemsForGrid(gridId) {
-      if (gridId === "recommendRail" || gridId === "all") {
-        const source = preferenceItems().length
-          ? preferenceItems()
-          : state.fallback.length
-          ? filterReleasedCatalogItems("all", state.fallback)
-          : ranked(allItems());
-        return uniqueMedia(filterBlocked(source)).filter(hasPoster);
+      if (gridId === "homeRecommendationRail" || gridId === "all") {
+        return uniqueMedia(filterBlocked(recommendationPoolItems())).filter(hasPoster);
       }
       if (gridId === "recent" || gridId === "secondary:recent") return uniqueRecentWatchingMedia(state.recent.items || []);
       return uniqueMedia(state.catalog[gridId] || []).filter(hasPoster);
@@ -30479,7 +28505,7 @@ utils.encode = function encode(arr, enc) {
       if (homeUiRoute() === "secondary" && state.activeList === "all") return secondaryCanLoadMore();
       if (state.activeList === "recent") return false;
       if (state.activeList === "live") return false;
-      if (state.activeList === "all") return !preferenceItems().length && state.recommendationSource === "fallback" && !state.fallbackPage.done;
+      if (state.activeList === "all") return false;
       const page = state.catalogPage[state.activeList];
       return !!(page && !page.loading && page.page < page.total);
     }
@@ -30854,10 +28880,6 @@ utils.encode = function encode(arr, enc) {
       if (mediaType && tmdbId) return `tmdb:${mediaType}:${tmdbId}`;
       const title = normalizeTitle(item.title || item.query || "");
       return title ? `title:${title}` : "";
-    }
-
-    function preferenceItems() {
-      return state.hot.items;
     }
 
     function historyNestedContainers(history) {
@@ -31946,7 +29968,6 @@ utils.encode = function encode(arr, enc) {
         episodeTitle: item.episodeTitle || item.episode_title || ""
       };
     }
-
     function canonicalResourceKey(item) {
       const mediaType = normalizeHistoryMediaType(item && (item.mediaType || item.media_type));
       const tmdbId = String(item && (item.tmdbId || item.tmdb_id) || "").trim();
@@ -40981,15 +39002,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         closeConnectionPanel();
       });
       if ($("homeRecentMore")) $("homeRecentMore").addEventListener("click", () => openSecondaryCatalog("recent", { originSection: "recent", originTarget: $("homeRecentMore") }));
-      if ($("homeHotMore")) $("homeHotMore").addEventListener("click", () => openSecondaryCatalog("now-playing", { originSection: "now-playing", originTarget: $("homeHotMore") }));
-      document.querySelectorAll("[data-home-hot-source]").forEach((button) => {
-        if (button.dataset.homeHotSourceBound === "1") return;
-        button.dataset.homeHotSourceBound = "1";
-        button.addEventListener("click", () => setHomeHotSource(button.dataset.homeHotSource).catch(() => {}));
-        button.addEventListener("keydown", (event) => {
-          handleConnectionSegmentedDirectionalKey(button, event);
-        });
-      });
+      if ($("homeRecommendationMore")) $("homeRecommendationMore").addEventListener("click", () => openSecondaryCatalog("recommendation", { originSection: "recommendation", originTarget: $("homeRecommendationMore") }));
+      if ($("homeWeeklyMore")) $("homeWeeklyMore").addEventListener("click", () => openSecondaryCatalog("now-playing", { originSection: "now-playing", originTarget: $("homeWeeklyMore") }));
       (function () {
         const clearBtn = $("clearSearchBtn");
         if (clearBtn) {
@@ -42089,7 +40103,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     function homeRailSections() {
       const home = $("home");
       if (!home || !isHomeRouteActive()) return [];
-      return Array.from(home.querySelectorAll("#homeRecentSection, #recommendSection, #listStack > .home-dynamic-section")).filter((section) => !section.hidden && !section.closest("[hidden]"));
+      return Array.from(home.querySelectorAll("#homeRecentSection, #homeRecommendationSection, #homeWeeklySection, #listStack > .home-dynamic-section")).filter((section) => !section.hidden && !section.closest("[hidden]"));
     }
 
     function homeRailContextForTarget(target) {
@@ -43149,7 +41163,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
     function firstContentFocus() {
       const root = focusScopeRoot();
-      const selectors = ["#homeHero", "#home .home-rail .card", "#recommendRail .card", "#listStack .card", "#searchRail .card", "#searchHotRail .card", ".focusable:not(#searchInput)"];
+      const selectors = ["#homeHero", "#home .home-rail .card", "#homeRecommendationRail .card", "#homeWeeklyRail .card", "#listStack .card", "#searchRail .card", "#searchHotRail .card", ".focusable:not(#searchInput)"];
       for (const selector of selectors) {
         const target = Array.from(root.querySelectorAll(selector)).find(isVisibleFocusable);
         if (target) return target;
@@ -43322,10 +41336,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     }
 
     function isNostrDocumentarySecondaryReturn(savedHomeReturn) {
-      return homeHotSource() === "nostr"
-        && savedHomeReturn
-        && savedHomeReturn.route === "secondary"
-        && normalizeLegacyCategoryId(savedHomeReturn.secondaryListId) === "documentary";
+      return false;
     }
 
     function snapshotHomeReturnForCurrentSource(snapshot) {
@@ -43347,13 +41358,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const rawHomeRoute = String(snapshot.homeRoute || "").trim().toLowerCase();
       const legacyHomeRoute = isLegacyHomePresentationRoute(rawHomeRoute);
       const snapshotSecondaryListId = normalizeLegacyCategoryId(snapshot.secondaryListId || savedHomeReturn && savedHomeReturn.secondaryListId || "");
-      const blockedDocumentarySnapshot = homeHotSource() === "nostr"
-        && (snapshotSecondaryListId === "documentary" || isNostrDocumentarySecondaryReturn(savedHomeReturn));
-      state.homeReturn = blockedDocumentarySnapshot ? null : savedHomeReturn;
-      const restoredHomeRoute = blockedDocumentarySnapshot ? "home" : normalizeHomePresentationRoute(rawHomeRoute);
-      if (blockedDocumentarySnapshot && (location.hash === "#secondary" || history.state && history.state.sheet === "secondary")) {
-        history.replaceState({ sheet: "home" }, "", location.pathname + location.search);
-      }
+      state.homeReturn = savedHomeReturn;
+      const restoredHomeRoute = normalizeHomePresentationRoute(rawHomeRoute);
       if (restoredHomeRoute === "search") {
         state.activeList = "all";
         state.homeV14.route = "search";
@@ -43993,7 +41999,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       setupRelayMirrorDefaults();
       await loadBlockedRecommend();
       renderConnection();
-      armFallbackTimers();
       hotLoadIndex().catch(() => {});
       await loadInfo();
       if (isNativeHistoryDeleteProbeRequested()) probeNativeHistoryDeleteRoutes().catch((e) => {

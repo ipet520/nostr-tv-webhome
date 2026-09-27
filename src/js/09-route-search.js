@@ -64,7 +64,7 @@
     function visibleTmdbLists() {
       return (window.WEBHOME_CONFIG.tmdb.lists || []).filter((list) => {
         if (list.hidden || list.mobileHidden && isPhoneViewport()) return false;
-        return !(homeHotSource() === "nostr" && normalizeLegacyCategoryId(list && list.id) === "documentary");
+        return true;
       });
     }
 
@@ -129,12 +129,11 @@
     }
 
     function isKnownList(id) {
-      return id === "all" || id === "recent" || id === "live" || !!getList(id);
+      return id === "all" || id === "recent" || id === "live" || id === "recommendation" || !!getList(id);
     }
 
     function normalizeActiveListForViewport() {
       migrateLegacyHomeState();
-      if (homeHotSource() === "nostr" && state.activeList === "documentary") state.activeList = "all";
       if (state.activeList === "all" || state.activeList === "live" || state.activeList === "recent") return;
       if (!isKnownList(state.activeList)) state.activeList = "now-playing";
     }
@@ -382,108 +381,40 @@
     }
 
     function getSearchHotItems() {
-      const resolved = resolveHomeHotItems();
-      const items = (Array.isArray(resolved.items) ? resolved.items : [])
-        .filter((item) => item && (item.mediaType === "movie" || item.mediaType === "tv") && String(item.tmdbId || "").trim() && String(item.title || "").trim())
-        .slice(0, 12);
-      return Object.assign({}, resolved, { items });
+      return {
+        source: "not-present",
+        items: [],
+        page: state.searchHot || null,
+        loading: false,
+        error: "",
+        path: "real-hot-search:not-present"
+      };
     }
 
     async function loadSearchHot() {
       const hot = state.searchHot;
-      if (!hot || hot.loading || hot.loaded || homeHotSource() !== "tmdb") return hot;
-      hot.loading = true;
+      if (!hot) return hot;
+      hot.items = [];
+      hot.loading = false;
+      hot.loaded = true;
       hot.error = "";
-      const requestSeq = ++hot.requestSeq;
-      const source = {
-        id: "search-hot-trending",
-        title: "热门推荐",
-        endpoint: "trending/all/day",
-        mediaType: "",
-        params: { language: "zh-CN" }
-      };
-      try {
-        const body = await requestJson(tmdbUrl(source, 1), 18);
-        if (hot.requestSeq !== requestSeq) return hot;
-        hot.items = (Array.isArray(body && body.results) ? body.results : [])
-          .map((item, index) => normalizeTmdb(item, source, index))
-          .filter((item) => item && (item.mediaType === "movie" || item.mediaType === "tv") && hasPoster(item));
-        hot.loaded = true;
-        hot.error = "";
-        hot.loadedAt = Date.now();
-      } catch (e) {
-        if (hot.requestSeq !== requestSeq) return hot;
-        hot.items = [];
-        hot.loaded = true;
-        hot.error = String(e && e.message || "加载失败");
-      } finally {
-        if (hot.requestSeq === requestSeq) hot.loading = false;
-      }
-      if (homeUiRoute() === "search") renderSearch();
+      hot.loadedAt = Date.now();
       return hot;
     }
 
     function ensureSearchHotData() {
-      if (homeHotSource() !== "tmdb") return false;
-      const page = state.searchHot;
-      if (page && (page.loading || page.loaded)) return false;
-      Promise.resolve(loadSearchHot()).then(() => {
-        if (homeUiRoute() === "search") renderSearch();
-      }).catch(() => {
-        if (homeUiRoute() === "search") renderSearch();
-      });
-      return true;
+      return false;
     }
 
     function renderSearchHot() {
       const section = $("searchHotSection");
       const rail = $("searchHotRail");
-      if (!section || !rail) return;
-      const live = searchLiveState();
-      const keyword = currentSearchKeyword();
-      const loading = homeUiRoute() === "search" && !!keyword && live.loading && live.keyword === keyword;
-      const show = homeUiRoute() === "search" && !state.searchItems.length && !loading;
-      if (!show) {
-        section.hidden = true;
-        return;
-      }
-      const resolved = getSearchHotItems();
-      const previousSource = rail.dataset.hotSource || "";
-      section.hidden = false;
-      section.dataset.hotSource = resolved.source || "";
-      rail.dataset.hotSource = resolved.source || "";
-      rail.dataset.hotDataPath = resolved.path || "";
-      if (previousSource && previousSource !== resolved.source) {
-        rail.dataset.homeRenderKeys = "";
+      if (section) section.hidden = true;
+      if (rail) {
+        rail.dataset.hotSource = "not-present";
+        rail.dataset.hotDataPath = "real-hot-search:not-present";
         rail.replaceChildren();
       }
-      if (resolved.source === "tmdb") {
-        const page = resolved.page;
-        if (!page) ensureSearchHotData();
-        if (page && page.error) {
-          section.hidden = true;
-          rail.replaceChildren();
-          return;
-        }
-        if ((!page || !page.loaded) && !resolved.items.length) {
-          ensureSearchHotData();
-          showHomeRailStatus(rail, "正在加载热门内容…", { variant: "portrait" });
-          return;
-        }
-      } else if (resolved.loading && !resolved.items.length) {
-        showHomeRailStatus(rail, "正在加载热门内容…", { variant: "portrait" });
-        return;
-      }
-      if (!resolved.items.length) {
-        showHomeRailStatus(rail, "暂无热门内容", { variant: "portrait" });
-        return;
-      }
-      fillHomeRail(rail, resolved.items, {
-        variant: "portrait",
-        limit: 12,
-        railKey: "search:hot",
-        homeEagerCount: 4
-      });
     }
 
     function renderSearch() {

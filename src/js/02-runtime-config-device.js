@@ -178,7 +178,6 @@
       });
       return { count, score, tags };
     }
-    const PAGE_OPENED_AT = window.WEBHOME_PAGE_OPENED_AT || Date.now();
     const GRID_INITIAL_ROWS = 3;
     const GRID_APPEND_ROWS = 2;
     const RECENT_UI_TTL_MS = 30000;
@@ -227,8 +226,6 @@
       homeLatest: { items: [], loading: false, loaded: false, error: "", loadedAt: 0, lastRefreshAt: 0, requestSeq: 0, diag: null, promise: null, cacheChecked: false, cacheHydrated: false, cacheWeekStart: "", cacheSavedAt: 0, cacheItemCount: 0, cacheHydratedAt: 0, networkRefreshReason: "", networkRefreshSucceeded: false, refreshStartedAt: 0, firstRenderableAt: 0 },
       gridRender: {},
       gridColumnCache: {},
-      fallback: [],
-      fallbackPage: { sourceIndex: 0, page: 0, loading: false, loaded: false, done: false },
       loadingMore: false,
       railScroll: {},
       homeV14: {
@@ -259,7 +256,6 @@
           requestSeq: 0,
           poolCount: 0,
           detailRequests: 0,
-          weeklyMerged: false,
           sourceStats: null
         },
         heroItems: [],
@@ -282,14 +278,6 @@
         secondaryQueries: {},
         secondaryActiveQueryKey: "",
         secondaryQueryPlan: null,
-        secondaryNostrMetaCache: {},
-        secondaryNostrAnimeMetaCache: {},
-        secondaryNostrTmdbMemoryCache: {},
-        nostrTmdbMeta: { version: 1, loaded: false, loading: false, promise: null, entries: {}, dirty: false, dirtyVersion: 0, saveTimer: 0, savePromise: null, lastLoadAt: 0, lastSaveAt: 0, expiredCount: 0, evictedCount: 0 },
-        secondaryNostrAnimeResolver: null,
-        secondaryNostrAnimeMetrics: null,
-        secondaryNostrVarietyResolver: null,
-        secondaryNostrVarietyMetrics: null,
         secondaryFocusRestore: null,
         secondaryMediaFocusRestore: null,
         secondaryWeeklyInitialFocusPending: false,
@@ -338,8 +326,7 @@
       suggestions: { keyword: "", items: [], loading: false, timer: 0, seq: 0, controller: null },
       hot: { db: null, dbPromise: null, idb: false, ready: false, version: 0, items: [], media: new Map(), users: new Map(), ingestQueue: Promise.resolve(), refreshTimer: 0 },
       searchHot: { items: [], loading: false, loaded: false, error: "", loadedAt: 0, requestSeq: 0 },
-      relay: { connected: 0, published: 0, total: 0, lastOk: 0, lastDone: 0, statuses: {}, subscribeStarted: false, subscribeDone: 0, subscribeFinished: {}, subscribeToken: 0, refresh: null, backfillBusy: {}, backfillTimers: {}, backfillState: {}, queryAborters: new Set(), subscriptionAborters: new Set(), fallbackReadyAt: 0, fallbackTimer: 0, fallbackPrefetchTimer: 0 },
-      recommendationSource: "pending",
+      relay: { connected: 0, published: 0, total: 0, lastOk: 0, lastDone: 0, statuses: {}, subscribeStarted: false, subscribeDone: 0, subscribeFinished: {}, subscribeToken: 0, refresh: null, backfillBusy: {}, backfillTimers: {}, backfillState: {}, queryAborters: new Set(), subscriptionAborters: new Set() },
       status: {
         sdk: "检测中",
         tmdb: "等待请求",
@@ -351,7 +338,7 @@
       },
       deleteState: { loaded: false, users: {} },
       tmdb: { config: null, configDirty: false },
-      uiPrefs: { loaded: false, homeFullscreenEnabled: true, homeHotSource: "tmdb" },
+      uiPrefs: { loaded: false, homeFullscreenEnabled: true },
       blocked: { loaded: false, items: {}, selecting: false, holdTimer: 0, holdTarget: null, longPressFired: false, pointer: null, suppressClickUntil: 0 },
       pan: { config: null, configDirty: false, loading: false, keyword: "", activeType: "", results: [], health: {}, pending: {}, queued: new Map(), inFlight: new Set(), observer: null, flushTimer: 0, pollTimers: [], pollRound: 0, pollRoundStarted: {}, panSnapshotSeq: 0, requestSeq: 0, actualRequestAttempts: 0, lifecycleSeq: 0, sessionId: 0, sessionOrigin: "", sessionItemKey: "", sessionStartedAt: 0, sessionTerminal: false, sessionTerminalReason: "", sessionEndRecorded: false, sessionStartCount: 0, sessionEndCount: 0, sessionTimer: 0, initialAttempts: 0, pollRoundsStarted: 0, pollRoundsCompleted: 0, foregroundRecoveryCount: 0, viewToken: "", searchMode: "", initialSucceeded: false, initialResultState: "", lastFailureKind: "", retryRemaining: 0, finalFailure: false, directTransportExhausted: false, renderKeys: "", tabKeys: "", checkEnabled: false, focusKey: "", focusMode: "", playbackReturn: null, progress: { active: false, phase: "", round: 0, totalRounds: 0 }, preflight: null, directReady: null, directFailure: null, sessionDiag: null, isPlaying: false },
       directPlayStatus: { active: false, actionId: 0, phase: "", text: "", startedAt: 0, clearTimer: 0 },
@@ -423,8 +410,6 @@
     };
 
     const WATCH_HEAT_MS = 10 * 60 * 1000;
-    const FALLBACK_PREFETCH_MS = 1000;
-    const FALLBACK_SHOW_MS = 1500;
     const HOT_WINDOW_DAYS = 90;
     const HOT_DAY_SECONDS = 24 * 60 * 60;
     const HOT_WINDOW_SECONDS = HOT_WINDOW_DAYS * 24 * 60 * 60;
@@ -437,6 +422,9 @@
     const HOT_POSTER_LIMIT = 96;
     const HOT_PAGE_LIMIT = 1000;
     const HOT_SUBSCRIBE_LIMIT = 500;
+    // Presentation-only recommendation pool limit. Relay sync, IndexedDB,
+    // user vectors, and aggregation remain unbounded by this value.
+    const HOT_RENDER_LIMIT = 1000;
     const HOT_RECENT_PAGES_PER_RELAY = 6;
     const HOT_HISTORY_PAGES_PER_RELAY = 10;
     const HOT_BACKFILL_IDLE_MS = 650;

@@ -284,7 +284,7 @@
         const cards = targetGrid ? Array.from(targetGrid.querySelectorAll(".recent-watching-card")).filter(canFastHomeFocus) : [];
         let target = cards.length ? cards[Math.min(focusIndex, cards.length - 1)] : null;
         if (!target && targetGrid && targetGrid.id === "secondaryCatalogGrid") target = $("secondaryCatalogBack");
-        if (!target && targetGrid && targetGrid.id === "homeRecentRail") target = $("homeHotMore") || homeFirstTarget();
+        if (!target && targetGrid && targetGrid.id === "homeRecentRail") target = $("homeRecentMore") || homeFirstTarget();
         if (!target && state.activeList === "recent") target = initialHomeFocus();
         if (target) focusRemoteTarget(target);
       });
@@ -329,4 +329,3 @@
     });
     const HOME_PRESENTATION_ROUTES = Object.freeze(["home", "search", "secondary"]);
     const LEGACY_HOME_PRESENTATION_ROUTES = Object.freeze(["history", "continue", "live", "recent", "catalog"]);
-

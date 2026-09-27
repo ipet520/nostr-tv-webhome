@@ -74,33 +74,6 @@
       return failed >= relays.length;
     }
 
-    function nostrReadyForFallback() {
-      const relays = window.WEBHOME_CONFIG.nostr.relays;
-      return state.recommendationSource === "fallback"
-        || relayFailedAll()
-        || state.relay.subscribeDone >= relays.length
-        || Date.now() >= PAGE_OPENED_AT + FALLBACK_SHOW_MS;
-    }
-
-    function useFallbackRecommendations() {
-      if (preferenceItems().length) {
-        useNostrRecommendationsIfReady();
-        return;
-      }
-      if (state.recommendationSource === "fallback") return;
-      state.recommendationSource = "fallback";
-      ensureRecommendationFallback();
-      if (state.activeList === "all") renderActiveGrid();
-    }
-
-    function useNostrRecommendationsIfReady() {
-      if (!preferenceItems().length) return;
-      state.recommendationSource = "nostr";
-      clearTimeout(state.relay.fallbackTimer);
-      clearTimeout(state.relay.fallbackPrefetchTimer);
-      if (state.activeList === "all") renderActiveGrid();
-    }
-
     function finishRelaySubscribe(relay, status) {
       if (state.relay.subscribeFinished[relay]) return;
       state.relay.subscribeFinished[relay] = true;
@@ -110,10 +83,7 @@
       }
       state.relay.subscribeDone += 1;
       if (state.relay.subscribeDone >= window.WEBHOME_CONFIG.nostr.relays.length) {
-        if (preferenceItems().length === 0) {
-          setStatus("nostr", relayFailedAll() ? "连接失败" : "无推荐数据");
-          useFallbackRecommendations();
-        }
+        setStatus("nostr", relayFailedAll() ? "连接失败" : "推荐同步完成");
       }
       if (state.activeList === "all") renderActiveGrid();
     }

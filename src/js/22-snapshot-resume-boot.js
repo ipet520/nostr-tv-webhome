@@ -79,7 +79,7 @@
 
     function firstContentFocus() {
       const root = focusScopeRoot();
-      const selectors = ["#homeHero", "#home .home-rail .card", "#recommendRail .card", "#listStack .card", "#searchRail .card", "#searchHotRail .card", ".focusable:not(#searchInput)"];
+      const selectors = ["#homeHero", "#home .home-rail .card", "#homeRecommendationRail .card", "#homeWeeklyRail .card", "#listStack .card", "#searchRail .card", "#searchHotRail .card", ".focusable:not(#searchInput)"];
       for (const selector of selectors) {
         const target = Array.from(root.querySelectorAll(selector)).find(isVisibleFocusable);
         if (target) return target;
@@ -252,10 +252,7 @@
     }
 
     function isNostrDocumentarySecondaryReturn(savedHomeReturn) {
-      return homeHotSource() === "nostr"
-        && savedHomeReturn
-        && savedHomeReturn.route === "secondary"
-        && normalizeLegacyCategoryId(savedHomeReturn.secondaryListId) === "documentary";
+      return false;
     }
 
     function snapshotHomeReturnForCurrentSource(snapshot) {
@@ -277,13 +274,8 @@
       const rawHomeRoute = String(snapshot.homeRoute || "").trim().toLowerCase();
       const legacyHomeRoute = isLegacyHomePresentationRoute(rawHomeRoute);
       const snapshotSecondaryListId = normalizeLegacyCategoryId(snapshot.secondaryListId || savedHomeReturn && savedHomeReturn.secondaryListId || "");
-      const blockedDocumentarySnapshot = homeHotSource() === "nostr"
-        && (snapshotSecondaryListId === "documentary" || isNostrDocumentarySecondaryReturn(savedHomeReturn));
-      state.homeReturn = blockedDocumentarySnapshot ? null : savedHomeReturn;
-      const restoredHomeRoute = blockedDocumentarySnapshot ? "home" : normalizeHomePresentationRoute(rawHomeRoute);
-      if (blockedDocumentarySnapshot && (location.hash === "#secondary" || history.state && history.state.sheet === "secondary")) {
-        history.replaceState({ sheet: "home" }, "", location.pathname + location.search);
-      }
+      state.homeReturn = savedHomeReturn;
+      const restoredHomeRoute = normalizeHomePresentationRoute(rawHomeRoute);
       if (restoredHomeRoute === "search") {
         state.activeList = "all";
         state.homeV14.route = "search";
@@ -923,7 +915,6 @@
       setupRelayMirrorDefaults();
       await loadBlockedRecommend();
       renderConnection();
-      armFallbackTimers();
       hotLoadIndex().catch(() => {});
       await loadInfo();
       if (isNativeHistoryDeleteProbeRequested()) probeNativeHistoryDeleteRoutes().catch((e) => {

@@ -143,6 +143,7 @@
     function sidebarNavigationItems() {
       const items = [
         { key: "live", label: "直播", action: "live" },
+        { key: "recommendation", label: "推荐", action: "secondary", listId: "recommendation" },
         { key: "keep", label: "收藏", action: "keep" },
         { key: "recent", label: "最近观看", action: "secondary", listId: "recent" },
         { key: "latest", label: "本周更新", action: "secondary", listId: "now-playing" },
@@ -153,7 +154,7 @@
         { key: "variety", label: "综艺", action: "secondary", listId: "variety" }
       ];
       return items.map((item) => {
-        if (item.action !== "secondary" || item.listId === "recent") return item;
+        if (item.action !== "secondary" || item.listId === "recent" || item.listId === "recommendation") return item;
         const configured = sidebarConfiguredList(item.listId);
         return configured ? Object.assign({}, item, { listId: configured.id }) : null;
       }).filter(Boolean);
@@ -434,7 +435,7 @@
     }
 
     function homeOnlyPresentationNodes() {
-      const nodes = [$("homeHero"), $("homeRecentSection"), $("recommendSection")];
+      const nodes = [$("homeHero"), $("homeRecentSection"), $("homeRecommendationSection"), $("homeWeeklySection")];
       const stack = $("listStack");
       if (stack) Array.from(stack.children || []).forEach((node) => {
         if (node.classList && node.classList.contains("home-dynamic-section")) nodes.push(node);
@@ -447,9 +448,11 @@
       if (!visible) stopHomeHeroAutoplay();
       const hero = $("homeHero");
       const recent = $("homeRecentSection");
-      const recommend = $("recommendSection");
+      const recommendation = $("homeRecommendationSection");
+      const weekly = $("homeWeeklySection");
       if (hero) hero.hidden = !visible;
-      if (recommend) recommend.hidden = !visible;
+      if (recommendation) recommendation.hidden = !visible;
+      if (weekly) weekly.hidden = !visible;
       // Recent visibility still depends on the loaded history list.  The
       // Home renderer decides that part; this gate only closes it off-page.
       if (recent && !visible) recent.hidden = true;
