@@ -694,11 +694,13 @@
       min-width: 0;
       height: auto;
       box-sizing: border-box;
-      padding: 0;
+      padding: 3px 6px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       gap: 5px;
+      background: rgba(0, 0, 0, .46);
+      border-radius: 6px;
       color: #ffd98a;
       font-size: 11px;
       font-weight: 760;
@@ -984,8 +986,8 @@
 
     .card-people {
       position: absolute;
-      right: 7px;
-      left: auto;
+      left: 7px;
+      right: auto;
       top: 7px;
       bottom: auto;
       z-index: 3;
@@ -997,7 +999,9 @@
       align-items: center;
       justify-content: center;
       gap: 5px;
-      padding: 0;
+      padding: 3px 6px;
+      background: rgba(0, 0, 0, .46);
+      border-radius: 6px;
       color: #ffd98a;
       font-size: 11px;
       font-weight: 760;
@@ -1010,8 +1014,8 @@
 
     .card.has-air-status .card-people,
     .poster-wrap.has-air-status .card-people {
-      right: 7px;
-      left: auto;
+      left: 7px;
+      right: auto;
       top: 7px;
       bottom: auto;
     }

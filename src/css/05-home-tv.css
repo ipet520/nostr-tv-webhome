@@ -848,7 +848,7 @@
     }
 
     /* Every Home and Secondary media card shares one information layer:
-       rating at the poster's upper-left, Nostr people at the upper-right,
+       rating and Nostr people at the poster's upper-left,
        and the air/episode status across the bottom. Top metadata is frameless;
        portrait cards use a compact scale while landscape cards keep normal sizing. */
     #home.home-root .home-rail > .card .rating-badge,
@@ -864,8 +864,8 @@
     #secondaryCatalog .media-grid > .card .card-people,
     #secondaryCatalog .weekly-secondary-rail > .weekly-card .card-people {
       top: 9px;
-      right: 9px;
-      left: auto;
+      right: auto;
+      left: 9px;
       bottom: auto;
     }
 
@@ -879,10 +879,11 @@
       min-height: 0 !important;
       height: auto !important;
       box-sizing: border-box !important;
-      padding: 0 !important;
+      padding: 3px 6px !important;
       gap: 3px !important;
       border: 0 !important;
-      border-radius: 0 !important;
+      border-radius: 6px !important;
+      background: rgba(0, 0, 0, .46) !important;
       color: #ffd98a !important;
       font-size: 9px !important;
       font-weight: 760 !important;
@@ -1060,5 +1061,3 @@
       color: rgba(255, 255, 255, .9) !important;
       transform: none !important;
     }
-
-  

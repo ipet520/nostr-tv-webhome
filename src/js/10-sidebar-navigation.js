@@ -143,15 +143,15 @@
     function sidebarNavigationItems() {
       const items = [
         { key: "live", label: "直播", action: "live" },
-        { key: "recommendation", label: "推荐", action: "secondary", listId: "recommendation" },
-        { key: "keep", label: "收藏", action: "keep" },
         { key: "recent", label: "最近观看", action: "secondary", listId: "recent" },
+        { key: "recommendation", label: "推荐", action: "secondary", listId: "recommendation" },
         { key: "latest", label: "本周更新", action: "secondary", listId: "now-playing" },
         { key: "movie", label: "电影", action: "secondary", listId: "movie" },
         { key: "tv", label: "电视剧", action: "secondary", listId: "tv" },
         { key: "anime", label: "动画", action: "secondary", listId: "anime" },
         { key: "documentary", label: "纪录片", action: "secondary", listId: "documentary" },
-        { key: "variety", label: "综艺", action: "secondary", listId: "variety" }
+        { key: "variety", label: "综艺", action: "secondary", listId: "variety" },
+        { key: "keep", label: "收藏", action: "keep" }
       ];
       return items.map((item) => {
         if (item.action !== "secondary" || item.listId === "recent" || item.listId === "recommendation") return item;

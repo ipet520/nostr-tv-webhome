@@ -819,20 +819,20 @@
         rail.dataset.homeRenderKeys = "";
         replaceHomeRailChildren(rail, [], captureHomeRailFocus(rail));
       }
-      rail.dataset.homeVariant = "portrait";
+      rail.dataset.homeVariant = "landscape";
       ensureHomeLatestData();
       const page = resolved.page;
       if (page && page.loading && !resolved.items.length) {
-        showHomeRailStatus(rail, "本周更新加载中...", { variant: "portrait" });
+        showHomeRailStatus(rail, "本周更新加载中...", { variant: "landscape" });
         return;
       }
       if (page && page.error && !resolved.items.length) {
-        showHomeRailStatus(rail, "本周更新加载失败", { variant: "portrait" });
+        showHomeRailStatus(rail, "本周更新加载失败", { variant: "landscape" });
         return;
       }
       const items = resolved.items;
-      if (items.length) fillHomeRail(rail, items, { variant: "portrait", limit: homeRailLimit("portrait"), homeMore: true, weeklyHome: true, railKey: "home:weekly" });
-      else showHomeRailStatus(rail, page && page.loaded ? "暂无本周更新" : "本周更新加载中...", { variant: "portrait" });
+      if (items.length) fillHomeRail(rail, items, { variant: "landscape", limit: homeRailLimit("landscape"), homeMore: true, weeklyHome: true, railKey: "home:weekly" });
+      else showHomeRailStatus(rail, page && page.loaded ? "暂无本周更新" : "本周更新加载中...", { variant: "landscape" });
       updateBlockSelectUi();
       if (opts.hotOnly) recordHomeV14Diag();
     }

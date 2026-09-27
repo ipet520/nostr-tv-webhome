@@ -923,11 +923,13 @@
       min-width: 0;
       height: auto;
       box-sizing: border-box;
-      padding: 0;
+      padding: 3px 6px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       gap: 5px;
+      background: rgba(0, 0, 0, .46);
+      border-radius: 6px;
       color: #ffd98a;
       font-size: 11px;
       font-weight: 760;
@@ -1213,8 +1215,8 @@
 
     .card-people {
       position: absolute;
-      right: 7px;
-      left: auto;
+      left: 7px;
+      right: auto;
       top: 7px;
       bottom: auto;
       z-index: 3;
@@ -1226,7 +1228,9 @@
       align-items: center;
       justify-content: center;
       gap: 5px;
-      padding: 0;
+      padding: 3px 6px;
+      background: rgba(0, 0, 0, .46);
+      border-radius: 6px;
       color: #ffd98a;
       font-size: 11px;
       font-weight: 760;
@@ -1239,8 +1243,8 @@
 
     .card.has-air-status .card-people,
     .poster-wrap.has-air-status .card-people {
-      right: 7px;
-      left: auto;
+      left: 7px;
+      right: auto;
       top: 7px;
       bottom: auto;
     }
@@ -6643,7 +6647,7 @@
     }
 
     /* Every Home and Secondary media card shares one information layer:
-       rating at the poster's upper-left, Nostr people at the upper-right,
+       rating and Nostr people at the poster's upper-left,
        and the air/episode status across the bottom. Top metadata is frameless;
        portrait cards use a compact scale while landscape cards keep normal sizing. */
     #home.home-root .home-rail > .card .rating-badge,
@@ -6659,8 +6663,8 @@
     #secondaryCatalog .media-grid > .card .card-people,
     #secondaryCatalog .weekly-secondary-rail > .weekly-card .card-people {
       top: 9px;
-      right: 9px;
-      left: auto;
+      right: auto;
+      left: 9px;
       bottom: auto;
     }
 
@@ -6674,10 +6678,11 @@
       min-height: 0 !important;
       height: auto !important;
       box-sizing: border-box !important;
-      padding: 0 !important;
+      padding: 3px 6px !important;
       gap: 3px !important;
       border: 0 !important;
-      border-radius: 0 !important;
+      border-radius: 6px !important;
+      background: rgba(0, 0, 0, .46) !important;
       color: #ffd98a !important;
       font-size: 9px !important;
       font-weight: 760 !important;
@@ -6855,8 +6860,7 @@
       color: rgba(255, 255, 255, .9) !important;
       transform: none !important;
     }
-
-  </style>
+</style>
   <style id="tv-diagnostic-v1">
     html.tv-mode .tv-diagnostic {
       display: block;
@@ -24659,15 +24663,15 @@ utils.encode = function encode(arr, enc) {
     function sidebarNavigationItems() {
       const items = [
         { key: "live", label: "直播", action: "live" },
-        { key: "recommendation", label: "推荐", action: "secondary", listId: "recommendation" },
-        { key: "keep", label: "收藏", action: "keep" },
         { key: "recent", label: "最近观看", action: "secondary", listId: "recent" },
+        { key: "recommendation", label: "推荐", action: "secondary", listId: "recommendation" },
         { key: "latest", label: "本周更新", action: "secondary", listId: "now-playing" },
         { key: "movie", label: "电影", action: "secondary", listId: "movie" },
         { key: "tv", label: "电视剧", action: "secondary", listId: "tv" },
         { key: "anime", label: "动画", action: "secondary", listId: "anime" },
         { key: "documentary", label: "纪录片", action: "secondary", listId: "documentary" },
-        { key: "variety", label: "综艺", action: "secondary", listId: "variety" }
+        { key: "variety", label: "综艺", action: "secondary", listId: "variety" },
+        { key: "keep", label: "收藏", action: "keep" }
       ];
       return items.map((item) => {
         if (item.action !== "secondary" || item.listId === "recent" || item.listId === "recommendation") return item;
@@ -25011,8 +25015,18 @@ utils.encode = function encode(arr, enc) {
       requestAnimationFrame(ensureScrollablePage);
     }
 
-    function homeSectionVariant(list, index) {
-      return Number(index || 0) % 2 === 0 ? "landscape" : "portrait";
+    function homeSectionVariant(list) {
+      const variants = {
+        recent: "landscape",
+        recommendation: "portrait",
+        "now-playing": "landscape",
+        movie: "portrait",
+        tv: "landscape",
+        anime: "portrait",
+        documentary: "landscape",
+        variety: "portrait"
+      };
+      return variants[String(list && list.id || "")] || "portrait";
     }
 
     function homeSectionPriority(list, index) {
@@ -25037,8 +25051,8 @@ utils.encode = function encode(arr, enc) {
           priority: homeSectionPriority(list, index)
         }))
         .sort((a, b) => a.priority - b.priority)
-        .map((config, index) => {
-          const variant = homeSectionVariant({ id: config.listId }, index);
+        .map((config) => {
+          const variant = homeSectionVariant({ id: config.listId });
           return Object.assign({}, config, { variant, initialLimit: homeRailLimit(variant) });
         });
     }
@@ -27932,20 +27946,20 @@ utils.encode = function encode(arr, enc) {
         rail.dataset.homeRenderKeys = "";
         replaceHomeRailChildren(rail, [], captureHomeRailFocus(rail));
       }
-      rail.dataset.homeVariant = "portrait";
+      rail.dataset.homeVariant = "landscape";
       ensureHomeLatestData();
       const page = resolved.page;
       if (page && page.loading && !resolved.items.length) {
-        showHomeRailStatus(rail, "本周更新加载中...", { variant: "portrait" });
+        showHomeRailStatus(rail, "本周更新加载中...", { variant: "landscape" });
         return;
       }
       if (page && page.error && !resolved.items.length) {
-        showHomeRailStatus(rail, "本周更新加载失败", { variant: "portrait" });
+        showHomeRailStatus(rail, "本周更新加载失败", { variant: "landscape" });
         return;
       }
       const items = resolved.items;
-      if (items.length) fillHomeRail(rail, items, { variant: "portrait", limit: homeRailLimit("portrait"), homeMore: true, weeklyHome: true, railKey: "home:weekly" });
-      else showHomeRailStatus(rail, page && page.loaded ? "暂无本周更新" : "本周更新加载中...", { variant: "portrait" });
+      if (items.length) fillHomeRail(rail, items, { variant: "landscape", limit: homeRailLimit("landscape"), homeMore: true, weeklyHome: true, railKey: "home:weekly" });
+      else showHomeRailStatus(rail, page && page.loaded ? "暂无本周更新" : "本周更新加载中...", { variant: "landscape" });
       updateBlockSelectUi();
       if (opts.hotOnly) recordHomeV14Diag();
     }

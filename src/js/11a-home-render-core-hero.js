@@ -32,8 +32,18 @@
       requestAnimationFrame(ensureScrollablePage);
     }
 
-    function homeSectionVariant(list, index) {
-      return Number(index || 0) % 2 === 0 ? "landscape" : "portrait";
+    function homeSectionVariant(list) {
+      const variants = {
+        recent: "landscape",
+        recommendation: "portrait",
+        "now-playing": "landscape",
+        movie: "portrait",
+        tv: "landscape",
+        anime: "portrait",
+        documentary: "landscape",
+        variety: "portrait"
+      };
+      return variants[String(list && list.id || "")] || "portrait";
     }
 
     function homeSectionPriority(list, index) {
@@ -58,8 +68,8 @@
           priority: homeSectionPriority(list, index)
         }))
         .sort((a, b) => a.priority - b.priority)
-        .map((config, index) => {
-          const variant = homeSectionVariant({ id: config.listId }, index);
+        .map((config) => {
+          const variant = homeSectionVariant({ id: config.listId });
           return Object.assign({}, config, { variant, initialLimit: homeRailLimit(variant) });
         });
     }
