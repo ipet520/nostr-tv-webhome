@@ -32,7 +32,8 @@ export const fixedScriptManifest = Object.freeze([
 export const applicationSlot = "__WEBHOME_BUILD_SCRIPT_APPLICATION__";
 export const applicationFiles = Object.freeze([
   "02-runtime-config-device.js",
-  "03-weekly-tmdb-pan-config.js",
+  "03a-home-weekly-ui-runtime.js",
+  "03b-tmdb-pan-config.js",
   "04-nostr-hot-storage.js",
   "05-relay-network-pan-session.js",
   "06-tmdb-history-model.js",
@@ -131,7 +132,7 @@ export function validateManifest() {
   const applicationPaths = applicationFiles.map((name) => `js/${name}`);
 
   if (cssManifest.length !== 11) throw new Error(`CSS manifest expected 11 files, found ${cssManifest.length}`);
-  if (applicationFiles.length !== 29) throw new Error(`Application manifest expected 29 files, found ${applicationFiles.length}`);
+  if (applicationFiles.length !== 30) throw new Error(`Application manifest expected 30 files, found ${applicationFiles.length}`);
   assertUnique(cssPaths, "CSS manifest");
   assertUnique(fixedScriptPaths, "Fixed script manifest");
   assertUnique(applicationFiles, "Application manifest");
