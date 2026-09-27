@@ -27948,6 +27948,7 @@ utils.encode = function encode(arr, enc) {
 
     function focusWeeklySecondaryInitial() {
       if (homeUiRoute() !== "secondary" || state.homeV14.secondaryListId !== "now-playing") return false;
+      if (typeof isSidebarOpen === "function" && isSidebarOpen()) return false;
       const grid = $("secondaryCatalogGrid");
       const card = weeklySecondaryFocusableCards(grid)[0] || null;
       if (!card) return false;
@@ -27993,7 +27994,9 @@ utils.encode = function encode(arr, enc) {
         const restored = restoreWeeklySecondaryFocus(focusSnapshot);
         const active = grid.querySelector(".weekly-card:focus") || (!restored && grid.querySelector(".weekly-card"));
         if (active) updateWeeklySecondaryHero(active.__mediaItem || null);
-        if (!restored && state.homeV14.secondaryWeeklyInitialFocusPending) requestAnimationFrame(() => focusWeeklySecondaryInitial());
+        if (!restored && state.homeV14.secondaryWeeklyInitialFocusPending) requestAnimationFrame(() => {
+          if (!isSidebarOpen()) focusWeeklySecondaryInitial();
+        });
       } else if (query && query.loading) {
         showGridStatus(grid, "本周更新加载中…");
       } else if (query && query.error) {
@@ -28112,6 +28115,7 @@ utils.encode = function encode(arr, enc) {
 
     function closeSecondaryCatalog() {
       if (homeUiRoute() !== "secondary") return false;
+      if (state.homeV14 && state.homeV14.sidebarOpen) closeSidebar({ restore: false });
       resetRecentManageState();
       const saved = state.homeV14.secondaryReturn || {};
       state.homeV14.secondaryHistoryBackPending = false;
@@ -42007,6 +42011,13 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       button.classList.toggle("is-hidden", hide);
     }
 
+    function handleTvSecondarySidebarBack() {
+      if (!isTvLikeDevice() || !isSidebarOpen() || homeUiRoute() !== "secondary" || location.hash === "#secondary") return false;
+      closeSidebar();
+      try { history.forward(); } catch (e) {}
+      return true;
+    }
+
     window.addEventListener("popstate", (event) => {
       const detailSheet = $("detailSheet");
       if (state.homeV14 && state.homeV14.sidebarHistoryBackPending) {
@@ -42045,6 +42056,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         closeConnectionPanel({ fromPopState: true });
         return;
       }
+      // Native TV Back can bypass keydown; consume the Sidebar layer before
+      // the normal Secondary -> Home history transition.
+      if (handleTvSecondarySidebarBack()) return;
       // 正在关闭动画中，忽略重复触发
       const isClosing = detailSheet && detailSheet.classList.contains("sheet-closing");
       if (isClosing) return;

@@ -612,6 +612,7 @@
 
     function focusWeeklySecondaryInitial() {
       if (homeUiRoute() !== "secondary" || state.homeV14.secondaryListId !== "now-playing") return false;
+      if (typeof isSidebarOpen === "function" && isSidebarOpen()) return false;
       const grid = $("secondaryCatalogGrid");
       const card = weeklySecondaryFocusableCards(grid)[0] || null;
       if (!card) return false;
@@ -657,7 +658,9 @@
         const restored = restoreWeeklySecondaryFocus(focusSnapshot);
         const active = grid.querySelector(".weekly-card:focus") || (!restored && grid.querySelector(".weekly-card"));
         if (active) updateWeeklySecondaryHero(active.__mediaItem || null);
-        if (!restored && state.homeV14.secondaryWeeklyInitialFocusPending) requestAnimationFrame(() => focusWeeklySecondaryInitial());
+        if (!restored && state.homeV14.secondaryWeeklyInitialFocusPending) requestAnimationFrame(() => {
+          if (!isSidebarOpen()) focusWeeklySecondaryInitial();
+        });
       } else if (query && query.loading) {
         showGridStatus(grid, "本周更新加载中…");
       } else if (query && query.error) {
@@ -776,6 +779,7 @@
 
     function closeSecondaryCatalog() {
       if (homeUiRoute() !== "secondary") return false;
+      if (state.homeV14 && state.homeV14.sidebarOpen) closeSidebar({ restore: false });
       resetRecentManageState();
       const saved = state.homeV14.secondaryReturn || {};
       state.homeV14.secondaryHistoryBackPending = false;

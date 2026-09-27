@@ -670,6 +670,13 @@
       button.classList.toggle("is-hidden", hide);
     }
 
+    function handleTvSecondarySidebarBack() {
+      if (!isTvLikeDevice() || !isSidebarOpen() || homeUiRoute() !== "secondary" || location.hash === "#secondary") return false;
+      closeSidebar();
+      try { history.forward(); } catch (e) {}
+      return true;
+    }
+
     window.addEventListener("popstate", (event) => {
       const detailSheet = $("detailSheet");
       if (state.homeV14 && state.homeV14.sidebarHistoryBackPending) {
@@ -708,6 +715,9 @@
         closeConnectionPanel({ fromPopState: true });
         return;
       }
+      // Native TV Back can bypass keydown; consume the Sidebar layer before
+      // the normal Secondary -> Home history transition.
+      if (handleTvSecondarySidebarBack()) return;
       // 正在关闭动画中，忽略重复触发
       const isClosing = detailSheet && detailSheet.classList.contains("sheet-closing");
       if (isClosing) return;

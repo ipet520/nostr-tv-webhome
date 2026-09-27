@@ -182,6 +182,17 @@
         hasAll(sourceOf(openSidebar) + sourceOf(closeSidebar) + sourceOf(scheduleSidebarClose), ["is-open", "is-closing", "transitionend"])
           && sourceOf(syncSidebarMobilePresentation).includes("is-closing"),
         "Sidebar and mobile backdrop close after their transition settles", "STATIC_HOOK");
+      check("WEEKLY_SIDEBAR_FOCUS_STABLE",
+        sourceOf(focusWeeklySecondaryInitial).includes("isSidebarOpen")
+          && sourceOf(renderWeeklySecondaryCatalog).includes("secondaryWeeklyInitialFocusPending")
+          && sourceOf(renderWeeklySecondaryCatalog).includes("if (!isSidebarOpen()) focusWeeklySecondaryInitial")
+          && sourceOf(focusSidebarCurrentPageDefault).includes("focusWeeklySecondaryInitial"),
+        "Weekly keeps its pending initial focus while Sidebar owns focus", "STATIC_HOOK");
+      check("TV_SECONDARY_SIDEBAR_BACK_LAYER",
+        hasAll(sourceOf(handleTvSecondarySidebarBack), ["isTvLikeDevice", "isSidebarOpen", "homeUiRoute", "closeSidebar", "history.forward"])
+          && sourceOf(handleTvSecondarySidebarBack).includes('location.hash === "#secondary"')
+          && sourceOf(closeSecondaryCatalog).includes("closeSidebar"),
+        "TV Secondary Back consumes the open Sidebar layer before returning Home", "STATIC_HOOK");
 
       const searchHot = getSearchHotItems();
       check("REAL_HOT_SEARCH_NOT_PRESENT",
