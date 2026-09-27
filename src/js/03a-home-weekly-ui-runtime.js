@@ -805,7 +805,7 @@
       state.uiPrefs = Object.assign({}, state.uiPrefs || {}, sanitizeUiPrefs(state.uiPrefs || {}), { homeHotSource: next, loaded: true });
       renderUiPrefsControls();
       if (next === "tmdb") ensureSearchHotData();
-      if (state.activeList === "all" && homeUiRoute() === "search") renderSearch();
+      if (homeUiRoute() === "search") renderSearch();
       if (homeUiRoute() === "home") {
         invalidateHomeHeroFeed();
         invalidateHomeCategoryFeeds();
@@ -814,13 +814,17 @@
       if (homeUiRoute() === "secondary") {
         const secondaryId = normalizeLegacyCategoryId(state.homeV14 && state.homeV14.secondaryListId);
         const secondaryFilters = secondaryId ? secondaryFilterState(secondaryId) : null;
-        if (["movie", "tv", "anime"].includes(secondaryId) && secondaryFilters && secondaryFilters.sort === "hot") {
+        if (typeof refreshSidebarSourceVisibility === "function") refreshSidebarSourceVisibility();
+        if (next === "nostr" && secondaryId === "documentary") {
+          requestCloseSecondaryCatalog();
+        } else if (secondaryNostrRecommendationCategory(secondaryId) && secondaryFilters) {
           state.homeV14.secondaryActiveQueryKey = "";
           const query = secondaryGetQuery(secondaryId);
           renderSecondaryCatalog();
           if (!query.loaded && !query.loading) loadSecondaryPage(secondaryId, query, 1).catch(() => {});
         }
       }
+      if (typeof refreshSidebarSourceVisibility === "function") refreshSidebarSourceVisibility();
       try { await sdk().cache.set(cacheKey("uiPrefs"), JSON.stringify(sanitizeUiPrefs(state.uiPrefs))); } catch (e) {}
       scheduleUiSnapshotSave();
     }

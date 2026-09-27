@@ -62,7 +62,10 @@
     }
 
     function visibleTmdbLists() {
-      return (window.WEBHOME_CONFIG.tmdb.lists || []).filter((list) => !list.hidden && !(list.mobileHidden && isPhoneViewport()));
+      return (window.WEBHOME_CONFIG.tmdb.lists || []).filter((list) => {
+        if (list.hidden || list.mobileHidden && isPhoneViewport()) return false;
+        return !(homeHotSource() === "nostr" && normalizeLegacyCategoryId(list && list.id) === "documentary");
+      });
     }
 
     function isPhoneViewport() {
@@ -131,6 +134,7 @@
 
     function normalizeActiveListForViewport() {
       migrateLegacyHomeState();
+      if (homeHotSource() === "nostr" && state.activeList === "documentary") state.activeList = "all";
       if (state.activeList === "all" || state.activeList === "live" || state.activeList === "recent") return;
       if (!isKnownList(state.activeList)) state.activeList = "now-playing";
     }
@@ -529,4 +533,3 @@
     function homeUiRoute() {
       return normalizeHomePresentationRoute(state.homeV14 && state.homeV14.route);
     }
-

@@ -15,7 +15,7 @@
         && (filters.year === "all" || (!nostrItem && serverFilters.has("year")) || secondaryYearMatches(item, filters.year));
       });
       const metric = (item, key) => Number(item && (key ? item[key] : item.popularity || item.people || item.count) || 0);
-      if (query && query.nostrHot && filters.sort === "hot") {
+      if (query && query.nostrHot) {
         return result;
       }
       if (!serverFilters.has("sort") && filters.sort === "hot") return result.slice().sort((a, b) => metric(b) - metric(a));
@@ -217,7 +217,7 @@
         .then(() => requestJson(tmdbUrl(source, page), 18))
         .then((body) => ({ source, sourceState, body: body || {}, error: null }))
         .catch((error) => ({ source, sourceState, body: null, error }))));
-      if (query.requestSeq !== requestSeq) return query;
+      if (query.requestSeq !== requestSeq || secondaryActiveQuery(id) !== query) return query;
       const incoming = [];
       let goodCount = 0;
       results.forEach((result) => {

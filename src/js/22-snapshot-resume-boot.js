@@ -134,6 +134,8 @@
         detailReturn: state.detailReturn || null,
         homeReturn: state.homeReturn || null,
         homeRoute: homeUiRoute(),
+        secondaryListId: state.homeV14 && state.homeV14.secondaryListId || "",
+        secondaryQueryKey: state.homeV14 && state.homeV14.secondaryActiveQueryKey || "",
         homeRailScroll: homeRailScrollSnapshot(),
         homeFocus: ["home", "search", "secondary"].includes(uiSnapshotRoute()) ? homeFocusSnapshot(snapshotFocus, snapshotFocus && snapshotFocus.__mediaItem) : null,
         search: {
@@ -249,11 +251,23 @@
       });
     }
 
+    function isNostrDocumentarySecondaryReturn(savedHomeReturn) {
+      return homeHotSource() === "nostr"
+        && savedHomeReturn
+        && savedHomeReturn.route === "secondary"
+        && normalizeLegacyCategoryId(savedHomeReturn.secondaryListId) === "documentary";
+    }
+
+    function snapshotHomeReturnForCurrentSource(snapshot) {
+      const savedHomeReturn = normalizeLegacySavedState(snapshot && snapshot.homeReturn || null);
+      return isNostrDocumentarySecondaryReturn(savedHomeReturn) ? null : savedHomeReturn;
+    }
+
     async function restoreUiSnapshot(snapshot) {
       if (!snapshot) return false;
       state.detailReturn = snapshot.detailReturn || null;
       state.detailEpisodeTarget = snapshot.detailEpisodeTarget && normalizePlaybackTarget(snapshot.selected || state.selected, snapshot.detailEpisodeTarget) || null;
-      state.homeReturn = normalizeLegacySavedState(snapshot.homeReturn || null);
+      const savedHomeReturn = normalizeLegacySavedState(snapshot.homeReturn || null);
       if (snapshot.homeRailScroll && typeof snapshot.homeRailScroll === "object") {
         Object.keys(snapshot.homeRailScroll).forEach((key) => {
           if (String(key).indexOf("home:") === 0) state.railScroll[key] = Math.max(0, Number(snapshot.homeRailScroll[key] || 0));
@@ -262,7 +276,14 @@
       restoreSearchSnapshot(snapshot.search);
       const rawHomeRoute = String(snapshot.homeRoute || "").trim().toLowerCase();
       const legacyHomeRoute = isLegacyHomePresentationRoute(rawHomeRoute);
-      const restoredHomeRoute = normalizeHomePresentationRoute(rawHomeRoute);
+      const snapshotSecondaryListId = normalizeLegacyCategoryId(snapshot.secondaryListId || savedHomeReturn && savedHomeReturn.secondaryListId || "");
+      const blockedDocumentarySnapshot = homeHotSource() === "nostr"
+        && (snapshotSecondaryListId === "documentary" || isNostrDocumentarySecondaryReturn(savedHomeReturn));
+      state.homeReturn = blockedDocumentarySnapshot ? null : savedHomeReturn;
+      const restoredHomeRoute = blockedDocumentarySnapshot ? "home" : normalizeHomePresentationRoute(rawHomeRoute);
+      if (blockedDocumentarySnapshot && (location.hash === "#secondary" || history.state && history.state.sheet === "secondary")) {
+        history.replaceState({ sheet: "home" }, "", location.pathname + location.search);
+      }
       if (restoredHomeRoute === "search") {
         state.activeList = "all";
         state.homeV14.route = "search";
@@ -273,8 +294,11 @@
       } else if (restoredHomeRoute === "secondary") {
         state.activeList = "all";
         state.homeV14.route = "secondary";
+        state.homeV14.secondaryListId = snapshotSecondaryListId;
+        state.homeV14.secondaryActiveQueryKey = snapshot.secondaryQueryKey || "";
       } else {
         state.homeV14.route = "home";
+        state.homeV14.secondaryListId = "";
         state.homeV14.lastHomeFocusedRail = "";
       }
       if (legacyHomeRoute) state.activeList = "all";
@@ -304,7 +328,7 @@
         requestAnimationFrame(() => {
           if (homeFocusUserEpoch() !== snapshotFocusEpoch) return;
           window.scrollTo(0, Number(snapshot.scrollY || 0));
-          if (snapshot.homeFocus) {
+          if (!blockedDocumentarySnapshot && snapshot.homeFocus) {
             const savedHome = {
               activeList: snapshot.activeList || state.activeList,
               mediaKey: snapshot.homeFocus.key || "",
@@ -316,7 +340,7 @@
         });
         setTimeout(() => {
           if (homeFocusUserEpoch() !== snapshotFocusEpoch) return;
-          if (snapshot.homeFocus && ["home", "search", "secondary"].includes(uiSnapshotRoute())) {
+          if (!blockedDocumentarySnapshot && snapshot.homeFocus && ["home", "search", "secondary"].includes(uiSnapshotRoute())) {
             const savedHome = {
               activeList: snapshot.activeList || state.activeList,
               mediaKey: snapshot.homeFocus.key || "",
@@ -390,7 +414,7 @@
           // 情况2：尝试从 snapshot 恢复（WebView 被系统回收后重建）
           try {
             const snapshot = await readUiSnapshot();
-            if (snapshot && snapshot.homeReturn) state.homeReturn = normalizeLegacySavedState(snapshot.homeReturn);
+            if (snapshot && snapshot.homeReturn) state.homeReturn = snapshotHomeReturnForCurrentSource(snapshot);
             if (snapshot && snapshot.selected && snapshot.route === "detail") {
               if (snapshot.detailReturn) state.detailReturn = snapshot.detailReturn;
               state.detailEpisodeTarget = snapshot.detailEpisodeTarget && normalizePlaybackTarget(snapshot.selected, snapshot.detailEpisodeTarget) || null;
@@ -962,4 +986,3 @@
       try { renderConnection(); } catch(e2) {}
       try { console.error("boot failed:", e); } catch(e2) {}
     });
-  

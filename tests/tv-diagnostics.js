@@ -574,7 +574,7 @@
         && varietyEpisodeStatusLabel({ status: "Ended", last_episode_to_air: { season_number: 8, episode_number: 12 }, number_of_seasons: 8 }) === "第8季 · 12期全"
         && varietyEpisodeStatusLabel({ status: "Returning Series" }) === "更新中"
         && varietyEpisodeStatusLabel({ status: "Ended" }) === "已完结", "variety status uses 期 and does not guess missing episode data", "RUNTIME_MOCK");
-      check("VARIETY_FILTER_SCHEMA_NO_SORT", JSON.stringify(SECONDARY_FILTER_SCHEMA.variety) === JSON.stringify(["region", "year"]), "variety exposes only region and year filters", "STATIC_HOOK");
+      check("VARIETY_FILTER_SCHEMA_WITH_SORT", JSON.stringify(SECONDARY_FILTER_SCHEMA.variety) === JSON.stringify(["region", "year", "sort"]), "variety exposes region, year and source-aware sort filters", "STATIC_HOOK");
       check("VARIETY_RELEASE_FILTERED", isReleaseFilteredCatalogId("variety") && filterReleasedCatalogItems("variety", [{ mediaType: "tv", firstAirDate: weeklyAddDays(today(), 1) }]).length === 0, "future variety releases follow the existing TV-like visibility rule", "RUNTIME_MOCK");
       const secondaryPagingSource = String(secondaryCanLoadMore) + String(secondaryLoadNextPage) + String(loadMoreVisible) + String(maybeAppendGridForFocus) + String(canLoadMore) + String(observeInfiniteScroll);
       check("VARIETY_PAGINATION_AUTHORITY", String(secondaryCanLoadMore).includes("!query.loading") && String(secondaryCanLoadMore).includes("!query.error") && String(secondaryCanLoadMore).includes("query.hasMore") && String(secondaryLoadNextPage).includes("secondaryCanLoadMore"), "variety uses the shared explicit secondary pagination gate", "STATIC_HOOK");
@@ -597,10 +597,258 @@
       check("ANIME_METADATA_ENRICHMENT_PRESERVED", String(secondaryLoadNostrHotItems).includes("secondaryLoadNostrAnimePool") && String(secondaryNostrAnimeResolveCandidate).includes("nostrTmdbRecordFromDetail"), "Anime keeps Nostr candidates with TMDB metadata/detail enrichment", "STATIC_HOOK");
       check("VARIETY_METADATA_PRIME_PRESERVED", String(secondaryNostrVarietyPrimeDiscover).includes("candidateMap") && String(secondaryNostrVarietyPrimeDiscover).includes("nostrTmdbMetaFromItem"), "Variety Discover remains a metadata prime for existing Nostr candidates", "STATIC_HOOK");
       check("VARIETY_CANDIDATE_MAP_GUARD_PRESERVED", String(secondaryNostrVarietyPrimeDiscover).includes("candidateMap.has"), "Variety Discover cannot create a TMDB-only Nostr membership", "STATIC_HOOK");
-      check("NOSTR_ORDER_AUTHORITY_PRESERVED", String(secondaryNostrHotCandidates).includes("state.hot") && String(secondaryFilterItems).includes("if (query && query.nostrHot && filters.sort === \"hot\")") && String(secondaryFilterItems).includes("return result;"), "Nostr Hot order remains the source candidate order after filtering", "STATIC_HOOK");
+      const nostrCandidateOrderSource = String(secondaryNostrHotCandidates);
+      const nostrRenderOrderSource = String(secondaryFilterItems);
+      check("NOSTR_ORDER_AUTHORITY_PRESERVED", nostrCandidateOrderSource.includes("state.hot") && nostrCandidateOrderSource.includes("secondaryNostrLatestValue") && nostrRenderOrderSource.includes("if (query && query.nostrHot)") && nostrRenderOrderSource.includes("return result;"), "Nostr recommendation order remains the source candidate order after filtering", "STATIC_HOOK");
       check("NOSTR_CAN_SHOW_FEWER_THAN_TARGET_WITHOUT_TMDB_FILL", String(loadSecondaryNostrPage).includes("query.hasMore = false") && String(loadHomeCategoryFeed).includes('source === "nostr"'), "finite Nostr results can complete below the target without TMDB fill", "STATIC_HOOK");
       check("TMDB_MODE_HOME_CATEGORY_PRESERVED", String(loadHomeCategoryFeed).includes('} else {') && String(loadHomeCategoryFeed).includes("loadHomeCategoryTmdbPool(id)"), "TMDB Home category mode retains its existing pool loader", "STATIC_HOOK");
       check("TMDB_MODE_SECONDARY_PRESERVED", String(loadSecondaryPage).includes("buildSecondaryQueryPlan") && String(loadSecondaryPage).includes("requestJson(tmdbUrl"), "TMDB Secondary mode retains its existing paging pipeline", "STATIC_HOOK");
+
+      const sourcePolicySetSource = String(setHomeHotSource);
+      const sourcePolicyNostrSource = String(resolveHomeHotItems) + String(secondaryNostrHotCandidates) + String(secondaryNostrTaskIsCurrent);
+      const sourcePolicySecondaryRenderSource = String(secondaryFilterItems);
+      const sourcePolicySearchSource = String(renderSearchHot) + String(getSearchHotItems) + String(ensureSearchHotData);
+      const sourcePolicySnapshotSource = String(restoreUiSnapshot);
+      const sourcePolicySnapshotIngressSource = String(snapshotHomeReturnForCurrentSource) + String(schedulePlayerReturn);
+      const sourcePolicyPreviousPrefs = state.uiPrefs;
+      const sourcePolicyPreviousHot = state.hot;
+      const sourcePolicyPreviousFilters = state.homeV14 && state.homeV14.secondaryFilters;
+      const sourcePolicyPreviousQueries = state.homeV14 && state.homeV14.secondaryQueries;
+      const sourcePolicyPreviousActiveQueryKey = state.homeV14 && state.homeV14.secondaryActiveQueryKey;
+      let sourcePolicyCaseA = false;
+      let sourcePolicyCaseB = false;
+      let sourcePolicyCaseC = false;
+      let sourcePolicyCaseD = false;
+      let sourcePolicyCaseE = false;
+      let sourcePolicyCaseF = false;
+      let sourcePolicyCaseG = false;
+      let sourcePolicyCaseH = false;
+      let sourcePolicyCaseI = false;
+      let sourcePolicyCaseJ = false;
+      let sourcePolicyCaseK = false;
+      let sourcePolicyCaseL = false;
+      let sourcePolicyCaseM = false;
+      let sourcePolicyCaseN = false;
+      let sourcePolicyCaseO = false;
+      let sourcePolicySortChecks = false;
+      let sourcePolicySourceKeyChecks = false;
+      let sourcePolicyLatestDependencyCheck = false;
+      let sourcePolicyStaleGuardChecks = false;
+      try {
+        const sourcePolicyMovie = { mediaType: "all", genre: "all", region: "all", year: "all", sort: "rating", lastFocused: { sort: "rating" } };
+        const sourcePolicyVariety = { mediaType: "all", genre: "all", region: "all", year: "all", sort: "rating", lastFocused: { sort: "rating" } };
+        state.homeV14.secondaryFilters = { movie: sourcePolicyMovie, variety: sourcePolicyVariety };
+        state.homeV14.secondaryQueries = {};
+        state.homeV14.secondaryActiveQueryKey = "";
+        state.uiPrefs = Object.assign({}, state.uiPrefs || {}, { homeHotSource: "tmdb" });
+        const tmdbMovieGroups = secondaryFilterGroups("movie", []);
+        const tmdbVarietyGroups = secondaryFilterGroups("variety", []);
+        const tmdbMovieRating = secondaryFilterState("movie");
+        const tmdbVarietyRating = secondaryFilterState("variety");
+        const tmdbMovieWasRating = tmdbMovieRating.sort === "rating";
+        const tmdbVarietyWasRating = tmdbVarietyRating.sort === "rating";
+        const tmdbMovieSortValues = ((tmdbMovieGroups.find((group) => group.key === "sort") || {}).options || []).map((option) => option.value);
+        const tmdbVarietySortValues = ((tmdbVarietyGroups.find((group) => group.key === "sort") || {}).options || []).map((option) => option.value);
+
+        state.uiPrefs = Object.assign({}, state.uiPrefs || {}, { homeHotSource: "nostr" });
+        const nostrMovieRating = secondaryFilterState("movie");
+        const nostrVarietyRating = secondaryFilterState("variety");
+        const nostrMovieWasHot = nostrMovieRating.sort === "hot" && nostrMovieRating.lastFocused.sort === "hot";
+        const nostrVarietyWasHot = nostrVarietyRating.sort === "hot" && nostrVarietyRating.lastFocused.sort === "hot";
+        const nostrMovieGroups = secondaryFilterGroups("movie", []);
+        const nostrVarietyGroups = secondaryFilterGroups("variety", []);
+        const nostrMovieSortValues = ((nostrMovieGroups.find((group) => group.key === "sort") || {}).options || []).map((option) => option.value);
+        const nostrVarietySortValues = ((nostrVarietyGroups.find((group) => group.key === "sort") || {}).options || []).map((option) => option.value);
+        state.homeV14.secondaryActiveQueryKey = "";
+        const nostrMovieHotQuery = secondaryGetQuery("movie");
+        const nostrHotKey = nostrMovieHotQuery.key;
+
+        const sourcePolicyHotItems = [
+          { mediaType: "movie", tmdbId: "source-movie-1", title: "Source Movie 1", latest: 100, people: 30 },
+          { mediaType: "movie", tmdbId: "source-movie-2", title: "Source Movie 2", latest: 300, people: 20 },
+          { mediaType: "movie", tmdbId: "source-movie-3", title: "Source Movie 3", latest: 300, people: 10 }
+        ];
+        state.hot = { ready: true, items: sourcePolicyHotItems };
+        const nostrMovieHotCandidates = secondaryNostrHotCandidates("movie", { sort: "hot" });
+        state.homeV14.secondaryFilters.movie.sort = "latest";
+        state.homeV14.secondaryFilters.movie.lastFocused.sort = "latest";
+        state.homeV14.secondaryActiveQueryKey = "";
+        const nostrMovieLatestQuery = secondaryGetQuery("movie");
+        const nostrMovieLatestCandidates = secondaryNostrHotCandidates("movie", { sort: "latest" });
+        const latestMovieIds = nostrMovieLatestCandidates.map((item) => item.tmdbId).join(",");
+        sourcePolicyCaseA = tmdbMovieWasRating
+          && nostrMovieWasHot
+          && tmdbVarietyWasRating
+          && nostrVarietyWasHot
+          && !nostrMovieSortValues.includes("rating")
+          && nostrMovieHotQuery.source === "nostr-hot";
+        sourcePolicyCaseB = nostrMovieLatestQuery.source === "nostr-hot"
+          && nostrMovieLatestQuery.nostrHot
+          && nostrMovieLatestQuery.key !== nostrHotKey
+          && latestMovieIds === "source-movie-2,source-movie-3,source-movie-1";
+
+        state.uiPrefs = Object.assign({}, state.uiPrefs || {}, { homeHotSource: "tmdb" });
+        state.homeV14.secondaryActiveQueryKey = "";
+        const tmdbMovieLatestFilters = secondaryFilterState("movie");
+        const tmdbMovieLatestQuery = secondaryGetQuery("movie");
+        const tmdbMovieLatestPlan = secondaryApplyServerFilters(secondaryFullCatalogSources("movie")[0], tmdbMovieLatestFilters);
+        const tmdbHotKey = secondaryFilterKey("movie", Object.assign({}, tmdbMovieLatestFilters, { sort: "hot" }));
+        const tmdbLatestKey = secondaryFilterKey("movie", Object.assign({}, tmdbMovieLatestFilters, { sort: "latest" }));
+        state.uiPrefs = Object.assign({}, state.uiPrefs || {}, { homeHotSource: "nostr" });
+        const nostrHotKeyAgain = secondaryFilterKey("movie", Object.assign({}, tmdbMovieLatestFilters, { sort: "hot" }));
+        const nostrLatestKeyAgain = secondaryFilterKey("movie", Object.assign({}, tmdbMovieLatestFilters, { sort: "latest" }));
+        sourcePolicyCaseC = tmdbMovieLatestFilters.sort === "latest"
+          && tmdbMovieLatestQuery.source === "tmdb"
+          && tmdbMovieLatestPlan && tmdbMovieLatestPlan.entry.params.sort_by === "primary_release_date.desc";
+        sourcePolicyCaseD = nostrMovieHotCandidates.map((item) => item.tmdbId).join(",") === "source-movie-1,source-movie-2,source-movie-3"
+          && nostrMovieHotCandidates.every((item, index) => Number(item.nostrHotRank) === index + 1);
+
+        const sourcePolicyVarietyItems = [
+          { mediaType: "tv", tmdbId: "source-variety-1", title: "Source Variety 1", latest: 10, people: 30 },
+          { mediaType: "tv", tmdbId: "source-variety-2", title: "Source Variety 2", latest: 30, people: 20 },
+          { mediaType: "tv", tmdbId: "source-variety-3", title: "Source Variety 3", latest: 30, people: 10 }
+        ];
+        state.hot = { ready: true, items: sourcePolicyVarietyItems };
+        state.homeV14.secondaryFilters.variety.sort = "latest";
+        state.homeV14.secondaryFilters.variety.lastFocused.sort = "latest";
+        state.homeV14.secondaryActiveQueryKey = "";
+        const nostrVarietyLatestQuery = secondaryGetQuery("variety");
+        const nostrVarietyLatestCandidates = secondaryNostrHotCandidates("variety", { sort: "latest" });
+        state.uiPrefs = Object.assign({}, state.uiPrefs || {}, { homeHotSource: "tmdb" });
+        state.homeV14.secondaryFilters.variety.sort = "rating";
+        state.homeV14.secondaryFilters.variety.lastFocused.sort = "rating";
+        const tmdbVarietyRatingFilters = secondaryFilterState("variety");
+        const tmdbVarietyRatingPlan = secondaryApplyServerFilters(secondaryFullCatalogSources("variety")[0], tmdbVarietyRatingFilters);
+        sourcePolicyCaseE = nostrVarietyLatestQuery.source === "nostr-hot"
+          && nostrVarietyLatestCandidates.map((item) => item.tmdbId).join(",") === "source-variety-2,source-variety-3,source-variety-1"
+          && nostrVarietyLatestCandidates.every((item, index) => Number(item.nostrHotRank) === index + 1);
+        sourcePolicyCaseF = tmdbVarietyRatingFilters.sort === "rating"
+          && tmdbVarietyRatingPlan && tmdbVarietyRatingPlan.entry.params.sort_by === "vote_average.desc";
+
+        const tmdbVisibleLists = (() => {
+          state.uiPrefs = Object.assign({}, state.uiPrefs || {}, { homeHotSource: "tmdb" });
+          return {
+            lists: visibleTmdbLists(),
+            sidebar: sidebarNavigationItems(),
+            sections: homeSectionConfig()
+          };
+        })();
+        state.uiPrefs = Object.assign({}, state.uiPrefs || {}, { homeHotSource: "nostr" });
+        const nostrVisibleLists = visibleTmdbLists();
+        const nostrSidebar = sidebarNavigationItems();
+        const nostrSections = homeSectionConfig();
+        sourcePolicyCaseG = tmdbVisibleLists.lists.some((list) => list.id === "documentary")
+          && tmdbVisibleLists.sidebar.some((item) => item.key === "documentary")
+          && tmdbVisibleLists.sections.some((section) => section.listId === "documentary")
+          && !nostrVisibleLists.some((list) => list.id === "documentary")
+          && !nostrSidebar.some((item) => item.key === "documentary")
+          && !nostrSections.some((section) => section.listId === "documentary");
+        sourcePolicyCaseH = sourcePolicySetSource.includes('next === "nostr" && secondaryId === "documentary"')
+          && sourcePolicySetSource.includes("requestCloseSecondaryCatalog")
+          && !sourcePolicySetSource.includes('state.homeV14.route = "home"');
+        sourcePolicyCaseI = sourcePolicySnapshotSource.includes("snapshotSecondaryListId")
+          && sourcePolicySnapshotSource.includes("blockedDocumentarySnapshot")
+          && sourcePolicySnapshotSource.includes('blockedDocumentarySnapshot ? "home"');
+        sourcePolicyCaseJ = sourcePolicySearchSource.includes("previousSource")
+          && sourcePolicySearchSource.includes("rail.replaceChildren()")
+          && sourcePolicySetSource.includes("renderSearch()")
+          && sourcePolicyNostrSource.includes("state.hot");
+        sourcePolicyCaseK = sourcePolicySearchSource.includes("state.searchHot")
+          && sourcePolicySearchSource.includes("ensureSearchHotData")
+          && sourcePolicySearchSource.includes("previousSource && previousSource !== resolved.source")
+          && !sourcePolicySetSource.includes("state.searchHot = null");
+        sourcePolicySortChecks = tmdbMovieSortValues.includes("rating")
+          && tmdbVarietySortValues.includes("rating")
+          && nostrMovieSortValues.join(",") === "hot,latest"
+          && nostrVarietySortValues.join(",") === "hot,latest"
+          && SECONDARY_FILTER_SCHEMA.variety.includes("sort");
+        sourcePolicySourceKeyChecks = nostrHotKey !== tmdbHotKey
+          && nostrHotKeyAgain !== tmdbHotKey
+          && nostrLatestKeyAgain !== tmdbLatestKey;
+        sourcePolicyLatestDependencyCheck = !nostrCandidateOrderSource.includes("releaseDate")
+          && !nostrCandidateOrderSource.includes("first_air_date")
+          && !nostrCandidateOrderSource.includes("popularity")
+          && !nostrCandidateOrderSource.includes("voteAverage");
+        sourcePolicyStaleGuardChecks = String(secondaryNostrTaskIsCurrent).includes('homeHotSource() !== "nostr"')
+          && String(secondaryNostrTaskIsCurrent).includes("secondaryActiveQuery(id) !== query")
+          && String(loadSecondaryPage).includes("secondaryActiveQuery(id) !== query");
+        state.uiPrefs = Object.assign({}, sourcePolicyPreviousPrefs || {}, { homeHotSource: "nostr" });
+        const nostrDocumentaryDetailReturn = snapshotHomeReturnForCurrentSource({
+          route: "detail",
+          homeReturn: { route: "secondary", secondaryListId: "documentary" }
+        });
+        const nostrDocumentaryDirectReturn = snapshotHomeReturnForCurrentSource({
+          homeRoute: "secondary",
+          secondaryListId: "documentary",
+          homeFocus: { key: "documentary:stale" }
+        });
+        const nostrMovieReturn = snapshotHomeReturnForCurrentSource({
+          homeReturn: { route: "secondary", secondaryListId: "movie" }
+        });
+        state.uiPrefs = Object.assign({}, sourcePolicyPreviousPrefs || {}, { homeHotSource: "tmdb" });
+        const tmdbDocumentaryReturn = snapshotHomeReturnForCurrentSource({
+          homeReturn: { route: "secondary", secondaryListId: "documentary" }
+        });
+        const snapshotFocusGuards = (sourcePolicySnapshotSource.match(/!blockedDocumentarySnapshot && snapshot\.homeFocus/g) || []).length;
+        const closeDetailSource = String(closeDetail);
+        sourcePolicyCaseL = nostrDocumentaryDetailReturn === null
+          && sourcePolicySnapshotIngressSource.includes("snapshotHomeReturnForCurrentSource")
+          && sourcePolicySnapshotSource.includes("state.homeReturn = blockedDocumentarySnapshot ? null : savedHomeReturn")
+          && closeDetailSource.includes("restoreHomeReturn");
+        sourcePolicyCaseM = nostrDocumentaryDirectReturn === null
+          && snapshotFocusGuards === 2
+          && sourcePolicySnapshotSource.includes("state.homeReturn = blockedDocumentarySnapshot ? null : savedHomeReturn")
+          && sourcePolicySnapshotSource.includes('history.replaceState({ sheet: "home"');
+        sourcePolicyCaseN = !!nostrMovieReturn
+          && nostrMovieReturn.route === "secondary"
+          && nostrMovieReturn.secondaryListId === "movie";
+        sourcePolicyCaseO = !!tmdbDocumentaryReturn
+          && tmdbDocumentaryReturn.route === "secondary"
+          && tmdbDocumentaryReturn.secondaryListId === "documentary";
+      } catch (error) {
+        check("SOURCE_POLICY_RUNTIME_ERROR", false, String(error && error.message || error || "source policy fixture failed"), "RUNTIME_MOCK");
+      } finally {
+        state.uiPrefs = sourcePolicyPreviousPrefs;
+        state.hot = sourcePolicyPreviousHot;
+        state.homeV14.secondaryFilters = sourcePolicyPreviousFilters;
+        state.homeV14.secondaryQueries = sourcePolicyPreviousQueries;
+        state.homeV14.secondaryActiveQueryKey = sourcePolicyPreviousActiveQueryKey;
+      }
+      check("SECONDARY_HOT_QUERY_SOURCE_SCOPED", sourcePolicySourceKeyChecks, "Hot recommendation query keys include the active source", "RUNTIME_MOCK");
+      check("SECONDARY_LATEST_QUERY_SOURCE_SCOPED", sourcePolicySourceKeyChecks, "Latest recommendation query keys include the active source", "RUNTIME_MOCK");
+      check("NOSTR_LATEST_TMDB_FIELDS_IGNORED", sourcePolicyLatestDependencyCheck, "Nostr latest ordering does not read TMDB release, popularity or rating fields", "STATIC_HOOK");
+      check("MOVIE_TV_NOSTR_LATEST_ORDER_PRESERVED", sourcePolicyCaseB, "movie/tv Nostr latest keeps source-ranked candidate order", "RUNTIME_MOCK");
+      check("ANIME_NOSTR_LATEST_ORDER_PRESERVED", nostrCandidateOrderSource.includes("secondaryNostrLatestValue") && String(secondaryLoadNostrAnimePool).includes("secondaryNostrHotCandidates(\"anime\", filters)"), "Anime resolver receives the source-aware Nostr latest candidate list", "STATIC_HOOK");
+      check("VARIETY_NOSTR_LATEST_ORDER_PRESERVED", sourcePolicyCaseE && String(secondaryLoadNostrVarietyPool).includes("secondaryNostrHotCandidates(\"variety\", filters)"), "Variety resolver receives the source-aware Nostr latest candidate list", "RUNTIME_MOCK");
+      check("NOSTR_SECONDARY_RENDER_REORDER", !(sourcePolicySecondaryRenderSource.indexOf("if (query && query.nostrHot)") >= 0 && sourcePolicySecondaryRenderSource.indexOf("if (!serverFilters.has") >= 0 && sourcePolicySecondaryRenderSource.indexOf("if (query && query.nostrHot)") < sourcePolicySecondaryRenderSource.indexOf("if (!serverFilters.has")), "Nostr recommendation rendering does not re-sort by TMDB fields", "STATIC_HOOK");
+      check("NOSTR_RATING_OPTION_ABSENT", sourcePolicySortChecks, "Nostr eligible Secondary exposes only hot and latest", "RUNTIME_MOCK");
+      check("TMDB_RATING_OPTION_PRESENT", sourcePolicySortChecks, "TMDB Secondary keeps the rating option", "RUNTIME_MOCK");
+      check("VARIETY_SORT_ENABLED", sourcePolicySortChecks, "Variety includes the source-aware sort group", "RUNTIME_MOCK");
+      check("RATING_TO_NOSTR_NORMALIZATION", sourcePolicyCaseA, "persisted rating normalizes to hot when Nostr becomes active", "RUNTIME_MOCK");
+      check("RATING_LAST_FOCUSED_NORMALIZATION", sourcePolicyCaseA, "persisted lastFocused rating normalizes to hot under Nostr", "RUNTIME_MOCK");
+      check("OLD_NOSTR_SECONDARY_COMMIT_AFTER_TMDB_SWITCH", sourcePolicyStaleGuardChecks, "old Nostr Secondary tasks cannot commit after source/query changes", "STATIC_HOOK");
+      check("OLD_TMDB_SECONDARY_COMMIT_AFTER_NOSTR_SWITCH", sourcePolicyStaleGuardChecks, "old TMDB Secondary tasks cannot commit after source/query changes", "STATIC_HOOK");
+      check("DOCUMENTARY_HOME_NOSTR_HIDDEN", sourcePolicyCaseG, "Documentary is removed from Home section configuration under Nostr", "RUNTIME_MOCK");
+      check("DOCUMENTARY_SIDEBAR_NOSTR_HIDDEN", sourcePolicyCaseG, "Documentary is removed from Sidebar navigation under Nostr", "RUNTIME_MOCK");
+      check("DOCUMENTARY_SECONDARY_NOSTR_BLOCKED", sourcePolicyCaseG && sourcePolicySetSource.includes("requestCloseSecondaryCatalog"), "Documentary Secondary is unavailable under Nostr", "STATIC_HOOK");
+      check("SEARCH_HOT_SOURCE_SWITCH_STALE_VISUAL", sourcePolicyCaseJ && sourcePolicyCaseK, "Search Hot clears the previous source rail before rendering the new source", "STATIC_HOOK");
+      check("SEARCH_HOT_TMDB_CACHE_PRESERVED", sourcePolicyCaseK, "switching to Nostr does not discard the TMDB Search Hot cache", "STATIC_HOOK");
+      check("SEARCH_KEYWORD_RESULTS_UNCHANGED", !sourcePolicySetSource.includes("state.searchItems = []") && !sourcePolicySetSource.includes("submitSearchInput"), "source switching does not alter keyword search state or loader", "STATIC_HOOK");
+      check("CASE_A", sourcePolicyCaseA, "TMDB movie rating switches to Nostr hot with no rating option", "RUNTIME_MOCK");
+      check("CASE_B", sourcePolicyCaseB, "Nostr movie latest uses Nostr latest order", "RUNTIME_MOCK");
+      check("CASE_C", sourcePolicyCaseC, "Nostr movie latest switches to TMDB latest release-date ordering", "RUNTIME_MOCK");
+      check("CASE_D", sourcePolicyCaseD, "Nostr movie hot preserves the existing hot order", "RUNTIME_MOCK");
+      check("CASE_E", sourcePolicyCaseE, "Nostr variety latest preserves pure Nostr latest order", "RUNTIME_MOCK");
+      check("CASE_F", sourcePolicyCaseF, "TMDB variety rating keeps vote_average semantics", "RUNTIME_MOCK");
+      check("CASE_G", sourcePolicyCaseG, "Documentary is visible in TMDB and hidden in Nostr", "RUNTIME_MOCK");
+      check("CASE_H", sourcePolicyCaseH, "switching away from Documentary Secondary uses the existing close authority", "STATIC_HOOK");
+      check("CASE_I", sourcePolicyCaseI, "a persisted Documentary Secondary snapshot restores Home under Nostr", "STATIC_HOOK");
+      check("CASE_J", sourcePolicyCaseJ, "TMDB Search Hot cards are cleared when switching to Nostr", "STATIC_HOOK");
+      check("CASE_K", sourcePolicyCaseK, "Nostr Search Hot cards are cleared while cached TMDB data remains available", "STATIC_HOOK");
+      check("CASE_DOC_DETAIL_RETURN_NOSTR", sourcePolicyCaseL, "Nostr rejects Documentary homeReturn before a restored Detail can return to it", "RUNTIME_MOCK");
+      check("CASE_DOC_DIRECT_SNAPSHOT_NOSTR", sourcePolicyCaseM, "Nostr restores a direct Documentary snapshot as Home without replaying its old focus", "STATIC_HOOK");
+      check("CASE_MOVIE_RETURN_NOSTR", sourcePolicyCaseN, "Nostr preserves a valid Movie Secondary homeReturn", "RUNTIME_MOCK");
+      check("CASE_DOC_RETURN_TMDB", sourcePolicyCaseO, "TMDB preserves a Documentary Secondary homeReturn", "RUNTIME_MOCK");
       const movieToday = today();
       const movieYesterday = weeklyAddDays(movieToday, -1);
       const movieFuture = weeklyAddDays(movieToday, 1);

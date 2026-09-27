@@ -15,6 +15,5 @@
       tv: ["genre", "region", "year", "sort"],
       anime: ["region", "year", "sort"],
       documentary: ["year", "sort"],
-      variety: ["region", "year"]
+      variety: ["region", "year", "sort"]
     };
-

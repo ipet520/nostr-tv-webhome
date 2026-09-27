@@ -1,3 +1,9 @@
+    function secondaryNostrRecommendationCategory(id) {
+      return ["movie", "tv", "anime", "variety"].includes(normalizeLegacyCategoryId(id));
+    }
+    function secondaryNostrSourceEnabled(id) {
+      return secondaryNostrRecommendationCategory(id) && homeHotSource() === "nostr";
+    }
     function secondaryFilterDefaults() { return { mediaType: "all", genre: "all", region: "all", year: "all", sort: "hot", lastFocused: {} }; }
     function secondaryFilterState(id) {
       id = normalizeLegacyCategoryId(id);
@@ -8,6 +14,13 @@
       filters.lastFocused = Object.assign({}, filters.lastFocused || {});
       if (filters.sort === "default" || !["hot", "latest", "rating"].includes(filters.sort)) filters.sort = "hot";
       if (filters.lastFocused.sort === "default" || !["hot", "latest", "rating"].includes(filters.lastFocused.sort)) filters.lastFocused.sort = filters.sort;
+      if (secondaryNostrSourceEnabled(id)) {
+        if (filters.sort === "rating") {
+          filters.sort = "hot";
+          filters.lastFocused.sort = "hot";
+        }
+        if (filters.lastFocused.sort === "rating") filters.lastFocused.sort = "hot";
+      }
       // Weekly Feed has no catalog filter rows; retain the state boundary so
       // older snapshots can still be read without reviving the old filters.
       return filters;
@@ -134,8 +147,8 @@
     }
     function secondaryFilterKey(id, filters) {
       id = normalizeLegacyCategoryId(id);
-      const hotSource = ["movie", "tv", "anime", "variety"].includes(id) && filters.sort === "hot" ? homeHotSource() : "";
-      return JSON.stringify([id, id === "now-playing" ? "weekly-feed" : id === "recent" ? "local-history" : "tmdb", hotSource, filters.mediaType, filters.genre, filters.region, filters.year, filters.sort]);
+      const recommendationSource = secondaryNostrRecommendationCategory(id) ? homeHotSource() : "";
+      return JSON.stringify([id, id === "now-playing" ? "weekly-feed" : id === "recent" ? "local-history" : "tmdb", recommendationSource, filters.mediaType, filters.genre, filters.region, filters.year, filters.sort]);
     }
     function secondaryGetQuery(id) {
       id = normalizeLegacyCategoryId(id);
@@ -143,15 +156,16 @@
       home.secondaryQueries = home.secondaryQueries && typeof home.secondaryQueries === "object" ? home.secondaryQueries : {};
       const filters = secondaryFilterState(id);
       const key = secondaryFilterKey(id, filters);
-      const hotSource = ["movie", "tv", "anime", "variety"].includes(id) && filters.sort === "hot" ? homeHotSource() : "";
+      const recommendationSource = secondaryNostrRecommendationCategory(id) ? homeHotSource() : "";
+      const nostrHot = recommendationSource === "nostr";
       let query = home.secondaryQueries[key];
       if (!query) {
         query = home.secondaryQueries[key] = {
           key,
           listId: id,
-          source: id === "now-playing" ? "weekly-feed" : id === "recent" ? "local-history" : hotSource === "nostr" ? "nostr-hot" : "tmdb",
-          hotSource,
-          nostrHot: hotSource === "nostr",
+          source: id === "now-playing" ? "weekly-feed" : id === "recent" ? "local-history" : nostrHot ? "nostr-hot" : "tmdb",
+          hotSource: recommendationSource,
+          nostrHot,
           nostrHotItems: [],
           nostrHotLoading: false,
           nostrHotLoaded: false,
@@ -175,9 +189,9 @@
           snapshotSource: ""
         };
       }
-      query.hotSource = hotSource;
-      query.nostrHot = hotSource === "nostr";
-      query.source = id === "now-playing" ? "weekly-feed" : id === "recent" ? "local-history" : hotSource === "nostr" ? "nostr-hot" : "tmdb";
+      query.hotSource = recommendationSource;
+      query.nostrHot = nostrHot;
+      query.source = id === "now-playing" ? "weekly-feed" : id === "recent" ? "local-history" : nostrHot ? "nostr-hot" : "tmdb";
       if (!Array.isArray(query.nostrHotItems)) query.nostrHotItems = [];
       home.secondaryActiveQueryKey = key;
       return query;
@@ -321,8 +335,10 @@
       if (schema.includes("sort")) {
         // All configured Secondary sources can use these metrics either on
         // TMDB (server-side discover) or on the already loaded local page.
-        const sorts = [{ value: "hot", label: "热门" }, { value: "latest", label: "最新" }, { value: "rating", label: "评分" }];
-        if (discover || source.length || id === "now-playing") groups.push({ key: "sort", label: "排序", options: sorts });
+        const sorts = secondaryNostrSourceEnabled(id)
+          ? [{ value: "hot", label: "热门" }, { value: "latest", label: "最新" }]
+          : [{ value: "hot", label: "热门" }, { value: "latest", label: "最新" }, { value: "rating", label: "评分" }];
+        if (secondaryNostrSourceEnabled(id) || discover || source.length || id === "now-playing") groups.push({ key: "sort", label: "排序", options: sorts });
       }
       return groups;
     }
@@ -344,31 +360,44 @@
     const NOSTR_TMDB_META_CACHE_SAVE_DEBOUNCE_MS = 450;
 
     function secondaryNostrHotEnabled(id, filters) {
-      return ["movie", "tv", "anime", "variety"].includes(normalizeLegacyCategoryId(id))
-        && filters && filters.sort === "hot"
-        && homeHotSource() === "nostr";
+      return secondaryNostrSourceEnabled(id)
+        && filters && ["hot", "latest"].includes(filters.sort);
     }
 
-    function secondaryNostrHotCandidates(id) {
+    function secondaryNostrLatestValue(item) {
+      const raw = item && (item.latest != null ? item.latest : item.lastEventAt != null ? item.lastEventAt : item.last_event_at);
+      if (raw == null || raw === "") return 0;
+      const numeric = Number(raw);
+      if (Number.isFinite(numeric)) return numeric;
+      const parsed = Date.parse(String(raw));
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    function secondaryNostrHotCandidates(id, filters) {
       const allowed = normalizeLegacyCategoryId(id);
+      const sort = filters && filters.sort === "latest" ? "latest" : "hot";
       const seen = new Set();
-      return filterBlocked(Array.isArray(state.hot && state.hot.items) ? state.hot.items : [])
-        .filter((item) => {
+      const indexed = [];
+      const rawItems = Array.isArray(state.hot && state.hot.items) ? state.hot.items : [];
+      rawItems.forEach((item, sourceIndex) => {
+          if (!state.blocked.selecting && isBlocked(item)) return;
           const type = String(item && (item.mediaType || item.media_type) || "").toLowerCase();
           const matches = allowed === "anime"
             ? type === "movie" || type === "tv"
             : allowed === "variety" ? type === "tv" : type === allowed;
           const key = homeNostrSignalKey(item);
-          if (!matches || !key || seen.has(key)) return false;
+          if (!matches || !key || seen.has(key)) return;
           seen.add(key);
-          return true;
-        })
+          indexed.push({ item, sourceIndex, latest: secondaryNostrLatestValue(item) });
+        });
+      if (sort === "latest") indexed.sort((a, b) => b.latest - a.latest || a.sourceIndex - b.sourceIndex);
+      return indexed
         .slice(0, allowed === "anime"
           ? SECONDARY_NOSTR_ANIME_MAX_SCAN_CANDIDATES
           : allowed === "variety"
             ? SECONDARY_NOSTR_VARIETY_MAX_SCAN_CANDIDATES
             : SECONDARY_NOSTR_HOT_MAX_SCAN_CANDIDATES)
-        .map((item, index) => Object.assign({}, item, { nostrHotRank: index + 1 }));
+        .map((entry, index) => Object.assign({}, entry.item, { nostrHotRank: index + 1 }));
     }
 
     function secondaryNostrMetaCache() {
@@ -809,7 +838,7 @@
       if (!runtime || runtime.key !== key) {
         runtime = home.secondaryNostrAnimeResolver = {
           key,
-          candidates: source.map((candidate, index) => Object.assign({}, candidate, { nostrHotRank: index + 1 })),
+          candidates: source.map((candidate, index) => Object.assign({}, candidate, { nostrHotRank: Number(candidate && candidate.nostrHotRank || index + 1) })),
           statuses: {},
           items: {},
           failedKeys: {},
@@ -997,7 +1026,7 @@
 
     async function secondaryLoadNostrAnimePool(filters, query, target, options) {
       const opts = options || {};
-      const candidates = secondaryNostrHotCandidates("anime");
+      const candidates = secondaryNostrHotCandidates("anime", filters);
       const runtime = secondaryNostrAnimeResolverState(candidates);
       const listener = {
         filters: Object.assign({}, homeCategoryDefaultFilters(), filters || {}),
@@ -1051,7 +1080,7 @@
       if (!runtime || runtime.key !== key) {
         runtime = home.secondaryNostrVarietyResolver = {
           key,
-          candidates: source.map((candidate, index) => Object.assign({}, candidate, { nostrHotRank: index + 1 })),
+          candidates: source.map((candidate, index) => Object.assign({}, candidate, { nostrHotRank: Number(candidate && candidate.nostrHotRank || index + 1) })),
           statuses: {},
           items: {},
           failedKeys: {},
@@ -1299,7 +1328,7 @@
 
     async function secondaryLoadNostrVarietyPool(filters, query, target, options) {
       const opts = options || {};
-      const candidates = secondaryNostrHotCandidates("variety");
+      const candidates = secondaryNostrHotCandidates("variety", filters);
       const runtime = secondaryNostrVarietyResolverState(candidates);
       const listener = {
         filters: Object.assign({}, homeCategoryDefaultFilters(), filters || {}),
@@ -1483,7 +1512,7 @@
       const qualified = [];
       let newDetailRequests = 0;
       try {
-        const candidates = secondaryNostrHotCandidates(id);
+        const candidates = secondaryNostrHotCandidates(id, scanFilters);
         for (let offset = 0; offset < candidates.length && qualified.length < SECONDARY_NOSTR_HOT_TARGET_MATCHES; offset += SECONDARY_NOSTR_HOT_BATCH_SIZE) {
           if (!secondaryNostrTaskIsCurrent(id, scanFilters, query, generation)) return qualified;
           const batch = candidates.slice(offset, offset + SECONDARY_NOSTR_HOT_BATCH_SIZE).filter((candidate) => {

@@ -167,7 +167,7 @@
         });
       }
       await ensureNostrTmdbMetaLoaded();
-      const candidates = secondaryNostrHotCandidates(id);
+      const candidates = secondaryNostrHotCandidates(id, scanFilters);
       const qualified = [];
       let newDetailRequests = 0;
       for (let offset = 0; offset < candidates.length && qualified.length < target; offset += SECONDARY_NOSTR_HOT_BATCH_SIZE) {
