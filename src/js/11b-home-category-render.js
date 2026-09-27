@@ -28,18 +28,10 @@
 
     function homeNostrHotSignature(id) {
       const items = Array.isArray(state.hot && state.hot.items) ? state.hot.items : [];
-      const normalizedId = normalizeLegacyCategoryId(id);
-      const scanLimit = normalizedId === "anime"
-        ? SECONDARY_NOSTR_ANIME_MAX_SCAN_CANDIDATES
-        : normalizedId === "variety"
-          ? SECONDARY_NOSTR_VARIETY_MAX_SCAN_CANDIDATES
-          : SECONDARY_NOSTR_HOT_MAX_SCAN_CANDIDATES;
-      return items.slice(0, scanLimit).map((item, index) => [
-        homeNostrSignalKey(item),
-        Number(item && (item.people || item.count) || 0),
-        String(item && (item.latest || item.lastEventAt || item.last_event_at) || ""),
-        index
-      ].join(":")).join("|");
+      return [
+        Number(state.hot && state.hot.version || 0),
+        items.length
+      ].join(":");
     }
 
     function homeCategoryFeedKey(id) {
@@ -175,7 +167,7 @@
         const batch = candidates.slice(offset, offset + SECONDARY_NOSTR_HOT_BATCH_SIZE).filter((candidate) => {
           const needsDetail = secondaryNostrDetailRequestNeeded(candidate, id, knownQuery);
           if (needsDetail) {
-            if (newDetailRequests >= SECONDARY_NOSTR_HOT_MAX_NEW_DETAIL_REQUESTS) return false;
+            if (newDetailRequests >= SECONDARY_NOSTR_HOT_DETAIL_BUDGET_PER_LOAD) return false;
             newDetailRequests += 1;
           }
           return true;

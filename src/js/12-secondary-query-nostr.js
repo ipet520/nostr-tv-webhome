@@ -98,7 +98,6 @@
       if (id === "tv") {
         return [{ id, title: "电视剧", endpoint: "discover/tv", mediaType: "tv", params: Object.assign({}, common, {
           include_null_first_air_dates: "false",
-          with_origin_country: "CN|HK|TW|KR|JP|US|GB",
           without_genres: "16,99,10763,10764,10766,10767"
         }) }];
       }
@@ -110,8 +109,8 @@
       }
       if (id === "anime") {
         return [
-          { id, title: "动画", endpoint: "discover/tv", mediaType: "tv", params: Object.assign({}, common, { with_genres: "16", with_origin_country: "CN|JP" }) },
-          { id, title: "动画", endpoint: "discover/movie", mediaType: "movie", params: { with_genres: "16", with_origin_country: "CN|JP", sort_by: "popularity.desc" } }
+          { id, title: "动画", endpoint: "discover/tv", mediaType: "tv", params: Object.assign({}, common, { with_genres: "16" }) },
+          { id, title: "动画", endpoint: "discover/movie", mediaType: "movie", params: { with_genres: "16", sort_by: "popularity.desc" } }
         ];
       }
       if (id === "documentary") {
@@ -174,7 +173,12 @@
           nostrScanCursor: 0,
           nostrCandidatesScanned: 0,
           nostrNewDetailRequests: 0,
-          nostrDetailBudgetExhausted: false,
+          nostrLoadDetailRequests: 0,
+          nostrLoadScanCount: 0,
+          nostrLoadPaused: false,
+          nostrRetryableMetadataCount: 0,
+          nostrRetryableKeys: {},
+          nostrMetrics: null,
           nostrExhausted: false,
           nostrHotReady: false,
           page: 0,
@@ -185,12 +189,14 @@
           hasMore: false,
           items: [],
           error: "",
+          retryableError: "",
           failedPage: 0,
           requestSeq: 0,
           serverSideFilters: [],
           clientSideFilters: [],
           endpointMap: [],
           sourceStates: [],
+          tmdbMetrics: null,
           finite: false,
           snapshotReady: false,
           snapshotSource: ""
@@ -280,6 +286,22 @@
       return `${source && source.endpoint || "local"}|${source && source.mediaType || ""}|${JSON.stringify(source && source.params || {})}|${index}`;
     }
 
+    function secondaryTmdbErrorStatus(error) {
+      const value = error && (error.status || error.statusCode || error.httpStatus);
+      const numeric = Number(value);
+      return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
+    }
+
+    function secondaryTmdbErrorIsTerminal(error) {
+      if (error && error.terminal === true) return true;
+      const status = secondaryTmdbErrorStatus(error);
+      return [400, 401, 403, 404].includes(status);
+    }
+
+    function secondaryTmdbSourceHasMore(sourceState) {
+      return !!(sourceState && !sourceState.exhausted && !sourceState.terminalError);
+    }
+
     function buildSecondaryQueryPlan(id, filters, query) {
       id = normalizeLegacyCategoryId(id);
       const sources = secondaryQuerySourceLists(id, filters, query);
@@ -288,12 +310,21 @@
       const sourceStates = sources.map((source, index) => {
           const key = secondarySourceKey(source, index);
           const old = prior.find((entry) => entry.key === key) || {};
-          return Object.assign({ key, endpoint: source.endpoint || "", mediaType: source.mediaType || "", page: 0, totalPages: 0, done: false, loading: false, error: "", totalResults: 0 }, old, {
+          const previousError = String(old.retryableError || old.error || "");
+          const previousTerminalError = String(old.terminalError || "");
+          const previousExhausted = old.exhausted === true
+            || (old.exhausted == null && old.done === true && !previousError && !previousTerminalError);
+          const next = Object.assign({ key, endpoint: source.endpoint || "", mediaType: source.mediaType || "", page: 0, totalPages: 0, exhausted: false, loading: false, retryableError: "", terminalError: "", totalResults: 0 }, old, {
             key,
             endpoint: source.endpoint || "",
             mediaType: source.mediaType || "",
-            loading: false
+            loading: false,
+            exhausted: previousExhausted,
+            retryableError: previousError,
+            terminalError: previousTerminalError,
           });
+          delete next.error;
+          return next;
         });
       query.sourceStates = sourceStates;
       query.finite = finite;
@@ -353,15 +384,13 @@
     const SECONDARY_NOSTR_PAGE_SIZE = 18;
     const SECONDARY_NOSTR_HOT_BATCH_SIZE = SECONDARY_NOSTR_PAGE_SIZE;
     const SECONDARY_NOSTR_HOT_TARGET_MATCHES = SECONDARY_NOSTR_PAGE_SIZE;
-    const SECONDARY_NOSTR_HOT_MAX_SCAN_CANDIDATES = 72;
-    const SECONDARY_NOSTR_HOT_MAX_NEW_DETAIL_REQUESTS = 36;
+    const SECONDARY_NOSTR_HOT_DETAIL_BUDGET_PER_LOAD = 36;
     const SECONDARY_NOSTR_HOT_DETAIL_CONCURRENCY = 4;
-    const SECONDARY_NOSTR_ANIME_MAX_SCAN_CANDIDATES = 150;
     const SECONDARY_NOSTR_ANIME_SCAN_BATCH_SIZE = 4;
-    const SECONDARY_NOSTR_VARIETY_MAX_SCAN_CANDIDATES = 240;
     const SECONDARY_NOSTR_VARIETY_TARGET_MATCHES = SECONDARY_NOSTR_PAGE_SIZE;
     const SECONDARY_NOSTR_VARIETY_SCAN_BATCH_SIZE = 4;
-    const SECONDARY_NOSTR_VARIETY_MAX_NEW_DETAIL_REQUESTS = 54;
+    const SECONDARY_NOSTR_ANIME_DETAIL_BUDGET_PER_LOAD = 36;
+    const SECONDARY_NOSTR_VARIETY_DETAIL_BUDGET_PER_LOAD = 54;
     const NOSTR_TMDB_META_CACHE_VERSION = 2;
     const NOSTR_TMDB_META_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
     const NOSTR_TMDB_META_CACHE_MAX_ENTRIES = 1000;
@@ -399,13 +428,7 @@
           indexed.push({ item, sourceIndex, latest: secondaryNostrLatestValue(item) });
         });
       if (sort === "latest") indexed.sort((a, b) => b.latest - a.latest || a.sourceIndex - b.sourceIndex);
-      return indexed
-        .slice(0, allowed === "anime"
-          ? SECONDARY_NOSTR_ANIME_MAX_SCAN_CANDIDATES
-          : allowed === "variety"
-            ? SECONDARY_NOSTR_VARIETY_MAX_SCAN_CANDIDATES
-            : SECONDARY_NOSTR_HOT_MAX_SCAN_CANDIDATES)
-        .map((entry, index) => Object.assign({}, entry.item, { nostrHotRank: index + 1 }));
+      return indexed.map((entry, index) => Object.assign({}, entry.item, { nostrHotRank: index + 1 }));
     }
 
     function secondaryNostrMetaCache() {
@@ -760,9 +783,6 @@
       if (listId === "tv" && type !== "tv") return false;
       if (listId === "anime" && !secondaryItemGenreIds(item).includes("16")) return false;
       if (listId === "variety" && (type !== "tv" || !secondaryItemGenreIds(item).some((value) => ["10764", "10767"].includes(value)))) return false;
-      const regions = secondaryItemRegions(item);
-      if (listId === "anime" && regions.length && !regions.some((value) => SECONDARY_ANIMATION_REGION_IDS.includes(String(value).toUpperCase()))) return false;
-      if (listId === "tv" && regions.length && !regions.some((value) => SECONDARY_TV_REGION_IDS.includes(String(value).toUpperCase()))) return false;
       if (listId === "tv" && secondaryItemGenreIds(item).some((value) => ["16", "99", "10763", "10764", "10766", "10767"].includes(value))) return false;
       return true;
     }
@@ -835,7 +855,7 @@
     }
 
     function secondaryNostrAnimeEmptyMetrics() {
-      return { candidatesScanned: 0, lastScannedRank: 0, knownMetadataHits: 0, persistentHits: 0, memoryHits: 0, newDetailRequests: 0, detailFailures: 0, finalAnimeMatches: 0 };
+      return { candidatesScanned: 0, lastScannedRank: 0, knownMetadataHits: 0, persistentHits: 0, memoryHits: 0, newDetailRequests: 0, detailFailures: 0, finalAnimeMatches: 0, totalGlobalPool: 0, candidatePoolSize: 0, cursor: 0, resolvedCount: 0, loadScanCount: 0, loadDetailRequests: 0, retryableMetadataCount: 0, sourceExhausted: false, hasMore: true };
     }
 
     function secondaryNostrAnimeResolverState(candidates) {
@@ -852,8 +872,12 @@
           failedKeys: {},
           nextIndex: 0,
           done: false,
-          detailBudgetExhausted: false,
+          loadPaused: false,
+          loadContext: null,
+          running: false,
           retryOnlyFailed: false,
+          retryResumeIndex: null,
+          loadScanCount: 0,
           promise: null,
           listeners: [],
           metrics: secondaryNostrAnimeEmptyMetrics()
@@ -888,6 +912,16 @@
       if (!runtime) return;
       const defaultItems = secondaryNostrAnimeQualifiedItems(runtime, homeCategoryDefaultFilters(), SECONDARY_NOSTR_HOT_TARGET_MATCHES);
       runtime.metrics.finalAnimeMatches = defaultItems.length;
+      const retryableMetadataCount = Object.keys(runtime.failedKeys || {}).length;
+      runtime.metrics.totalGlobalPool = Array.isArray(state.hot && state.hot.items) ? state.hot.items.length : 0;
+      runtime.metrics.candidatePoolSize = Array.isArray(runtime.candidates) ? runtime.candidates.length : 0;
+      runtime.metrics.cursor = Number(runtime.nextIndex || 0);
+      runtime.metrics.resolvedCount = defaultItems.length;
+      runtime.metrics.loadScanCount = Number(runtime.loadScanCount || 0);
+      runtime.metrics.loadDetailRequests = Number(runtime.loadContext && runtime.loadContext.detailRequests || 0);
+      runtime.metrics.retryableMetadataCount = retryableMetadataCount;
+      runtime.metrics.sourceExhausted = !!runtime.done;
+      runtime.metrics.hasMore = !runtime.done || !!runtime.loadPaused || retryableMetadataCount > 0;
       if (state.homeV14 && state.homeV14.secondaryNostrAnimeResolver === runtime) {
         state.homeV14.secondaryNostrAnimeMetrics = Object.assign({}, runtime.metrics, {
           resolverKey: runtime.key,
@@ -919,7 +953,7 @@
         else delete runtime.items[key];
         delete runtime.failedKeys[key];
       } else if (record && record.status === "budget") {
-        runtime.detailBudgetExhausted = true;
+        runtime.loadPaused = true;
         delete runtime.statuses[key];
         delete runtime.items[key];
       } else {
@@ -976,6 +1010,12 @@
           return record;
         }
       }
+      const loadContext = runtime.loadContext || { detailRequests: 0, budget: SECONDARY_NOSTR_ANIME_DETAIL_BUDGET_PER_LOAD };
+      if (Number(loadContext.detailRequests || 0) >= Number(loadContext.budget || SECONDARY_NOSTR_ANIME_DETAIL_BUDGET_PER_LOAD)) {
+        return { status: "budget", metadata: null, item: null, source: "budget" };
+      }
+      loadContext.detailRequests = Number(loadContext.detailRequests || 0) + 1;
+      runtime.loadContext = loadContext;
       runtime.metrics.newDetailRequests = Number(runtime.metrics.newDetailRequests || 0) + 1;
       const detailPromise = requestJson(secondaryNostrDetailUrl(candidate), 18)
         .then((body) => nostrTmdbRecordFromDetail(candidate, body, "anime", index, "detail"))
@@ -992,33 +1032,61 @@
     async function secondaryRunNostrAnimeResolver(runtime, query) {
       await ensureNostrTmdbMetaLoaded();
       const retryOnlyFailed = !!runtime.retryOnlyFailed;
+      runtime.loadPaused = false;
+      runtime.loadScanCount = 0;
+      const loadContext = runtime.loadContext || { detailRequests: 0, budget: SECONDARY_NOSTR_ANIME_DETAIL_BUDGET_PER_LOAD };
+      runtime.loadContext = loadContext;
       while (runtime.nextIndex < runtime.candidates.length && (retryOnlyFailed ? Object.keys(runtime.failedKeys || {}).length > 0 : secondaryNostrAnimeScanShouldContinue(runtime))) {
         const target = secondaryNostrAnimeScanTarget(runtime);
         const defaultMatches = secondaryNostrAnimeQualifiedItems(runtime, homeCategoryDefaultFilters(), target).length;
         const batchSize = !retryOnlyFailed && defaultMatches < target
           ? Math.min(SECONDARY_NOSTR_ANIME_SCAN_BATCH_SIZE, Math.max(1, target - defaultMatches))
           : SECONDARY_NOSTR_ANIME_SCAN_BATCH_SIZE;
-        const batch = runtime.candidates.slice(runtime.nextIndex, runtime.nextIndex + batchSize);
-        runtime.nextIndex += batch.length;
-        runtime.metrics.candidatesScanned = Number(runtime.metrics.candidatesScanned || 0) + batch.length;
-        const pending = batch.filter((candidate) => {
+        const batch = [];
+        let consumed = 0;
+        let reservedDetailRequests = 0;
+        while (runtime.nextIndex < runtime.candidates.length && batch.length < batchSize) {
+          const candidate = runtime.candidates[runtime.nextIndex];
           const key = secondaryNostrAnimeCandidateKey(candidate);
-          return !!key && (retryOnlyFailed ? !!runtime.failedKeys[key] : !runtime.statuses[key]);
-        });
-        if (!pending.length) {
+          const eligible = !!key && (retryOnlyFailed ? !!runtime.failedKeys[key] : !runtime.statuses[key]);
+          if (!eligible) {
+            runtime.nextIndex += 1;
+            consumed += 1;
+            continue;
+          }
+          const needsDetail = secondaryNostrDetailRequestNeeded(candidate, "anime", query);
+          if (needsDetail && Number(loadContext.detailRequests || 0) + reservedDetailRequests >= Number(loadContext.budget || SECONDARY_NOSTR_ANIME_DETAIL_BUDGET_PER_LOAD)) {
+            runtime.loadPaused = true;
+            break;
+          }
+          if (needsDetail) reservedDetailRequests += 1;
+          batch.push(candidate);
+          runtime.nextIndex += 1;
+          consumed += 1;
+        }
+        runtime.metrics.candidatesScanned = Number(runtime.metrics.candidatesScanned || 0) + consumed;
+        runtime.loadScanCount = Number(runtime.loadScanCount || 0) + consumed;
+        if (!batch.length) {
           secondaryNostrAnimeNotify(runtime);
+          if (runtime.loadPaused) break;
           continue;
         }
-        await weeklyMapLimit(pending, SECONDARY_NOSTR_HOT_DETAIL_CONCURRENCY, (candidate) => {
+        await weeklyMapLimit(batch, SECONDARY_NOSTR_HOT_DETAIL_CONCURRENCY, (candidate) => {
           return secondaryNostrAnimeResolveCandidate(candidate, query, Number(candidate.nostrHotRank || 0) - 1, runtime);
         }, (wrapped, candidate) => {
           secondaryNostrAnimeApplyResult(runtime, candidate, wrapped);
           secondaryNostrAnimeNotify(runtime);
         });
+        if (runtime.loadPaused) break;
         if (retryOnlyFailed ? !Object.keys(runtime.failedKeys || {}).length : !secondaryNostrAnimeScanShouldContinue(runtime)) break;
       }
+      const retryResumeIndex = runtime.retryOnlyFailed ? runtime.retryResumeIndex : null;
+      if (retryResumeIndex != null) runtime.nextIndex = Number(retryResumeIndex || 0);
+      runtime.retryResumeIndex = null;
       runtime.retryOnlyFailed = false;
-      runtime.done = true;
+      runtime.done = !runtime.loadPaused
+        && Number(runtime.nextIndex || 0) >= (runtime.candidates || []).length
+        && !Object.keys(runtime.failedKeys || {}).length;
       secondaryNostrAnimeNotify(runtime);
       await flushNostrTmdbMetaCache();
       return runtime;
@@ -1026,19 +1094,25 @@
 
     function secondaryNostrAnimeStartResolver(runtime, query) {
       if (!runtime) return Promise.resolve(null);
-      if (runtime.promise && !runtime.done) return runtime.promise;
-      if (runtime.done && Object.keys(runtime.failedKeys || {}).length) {
+      if (runtime.running && runtime.promise) return runtime.promise;
+      if (Object.keys(runtime.failedKeys || {}).length && !runtime.retryOnlyFailed) {
+        runtime.retryResumeIndex = Number(runtime.nextIndex || 0);
         runtime.nextIndex = 0;
         runtime.done = false;
-        runtime.promise = null;
-        runtime.metrics = secondaryNostrAnimeEmptyMetrics();
         runtime.retryOnlyFailed = true;
       }
       if (runtime.done && secondaryNostrAnimeScanShouldContinue(runtime)) {
         runtime.done = false;
-        runtime.promise = null;
       }
-      if (!runtime.promise) runtime.promise = secondaryRunNostrAnimeResolver(runtime, query).catch(() => runtime);
+      runtime.loadContext = { detailRequests: 0, budget: SECONDARY_NOSTR_ANIME_DETAIL_BUDGET_PER_LOAD };
+      runtime.loadPaused = false;
+      runtime.running = true;
+      runtime.promise = secondaryRunNostrAnimeResolver(runtime, query)
+        .catch(() => runtime)
+        .then((result) => {
+          runtime.running = false;
+          return result;
+        });
       return runtime.promise;
     }
 
@@ -1087,7 +1161,7 @@
     }
 
     function secondaryNostrVarietyEmptyMetrics() {
-      return { candidatesScanned: 0, lastScannedRank: 0, knownMetadataHits: 0, persistentHits: 0, memoryHits: 0, discoverRequests: 0, discoverMetadataMatches: 0, newDetailRequests: 0, detailFailures: 0, finalVarietyMatches: 0 };
+      return { candidatesScanned: 0, lastScannedRank: 0, knownMetadataHits: 0, persistentHits: 0, memoryHits: 0, discoverRequests: 0, discoverMetadataMatches: 0, newDetailRequests: 0, detailFailures: 0, finalVarietyMatches: 0, totalGlobalPool: 0, candidatePoolSize: 0, cursor: 0, resolvedCount: 0, loadScanCount: 0, loadDetailRequests: 0, retryableMetadataCount: 0, sourceExhausted: false, hasMore: true };
     }
 
     function secondaryNostrVarietyResolverState(candidates) {
@@ -1104,10 +1178,16 @@
           failedKeys: {},
           nextIndex: 0,
           done: false,
+          loadPaused: false,
+          loadContext: null,
+          running: false,
           retryOnlyFailed: false,
+          retryResumeIndex: null,
+          loadScanCount: 0,
           promise: null,
           listeners: [],
           discoverPrimed: false,
+          discoverRetryable: false,
           discoverPromise: null,
           metrics: secondaryNostrVarietyEmptyMetrics()
         };
@@ -1133,6 +1213,16 @@
       if (!runtime) return;
       const defaultItems = secondaryNostrVarietyQualifiedItems(runtime, homeCategoryDefaultFilters(), SECONDARY_NOSTR_VARIETY_TARGET_MATCHES);
       runtime.metrics.finalVarietyMatches = defaultItems.length;
+      const retryableMetadataCount = Object.keys(runtime.failedKeys || {}).length;
+      runtime.metrics.totalGlobalPool = Array.isArray(state.hot && state.hot.items) ? state.hot.items.length : 0;
+      runtime.metrics.candidatePoolSize = Array.isArray(runtime.candidates) ? runtime.candidates.length : 0;
+      runtime.metrics.cursor = Number(runtime.nextIndex || 0);
+      runtime.metrics.resolvedCount = defaultItems.length;
+      runtime.metrics.loadScanCount = Number(runtime.loadScanCount || 0);
+      runtime.metrics.loadDetailRequests = Number(runtime.loadContext && runtime.loadContext.detailRequests || 0);
+      runtime.metrics.retryableMetadataCount = retryableMetadataCount;
+      runtime.metrics.sourceExhausted = !!runtime.done;
+      runtime.metrics.hasMore = !runtime.done || !!runtime.loadPaused || retryableMetadataCount > 0;
       if (state.homeV14 && state.homeV14.secondaryNostrVarietyResolver === runtime) {
         state.homeV14.secondaryNostrVarietyMetrics = Object.assign({}, runtime.metrics, {
           resolverKey: runtime.key,
@@ -1164,7 +1254,7 @@
         else delete runtime.items[key];
         delete runtime.failedKeys[key];
       } else if (record && record.status === "budget") {
-        runtime.detailBudgetExhausted = true;
+        runtime.loadPaused = true;
         delete runtime.statuses[key];
         delete runtime.items[key];
       } else {
@@ -1190,12 +1280,13 @@
         const sources = secondaryFullCatalogSources("variety");
         const memory = secondaryNostrVarietyMemoryCache();
         const matched = new Set();
+        let retryableFailure = false;
         for (let sourceIndex = 0; sourceIndex < sources.length && matched.size < SECONDARY_NOSTR_VARIETY_TARGET_MATCHES; sourceIndex++) {
           const source = sources[sourceIndex];
           for (let page = 1; page <= 3 && matched.size < SECONDARY_NOSTR_VARIETY_TARGET_MATCHES; page++) {
             runtime.metrics.discoverRequests = Number(runtime.metrics.discoverRequests || 0) + 1;
             let body = null;
-            try { body = await requestJson(tmdbUrl(source, page), 18); } catch (e) { break; }
+            try { body = await requestJson(tmdbUrl(source, page), 18); } catch (e) { retryableFailure = true; break; }
             const results = Array.isArray(body && body.results) ? body.results : [];
             if (!results.length) break;
             results.forEach((raw, index) => {
@@ -1217,12 +1308,15 @@
               if (persistent && nostrTmdbMetaHasCanonicalPoster(persistent)) matched.add(key);
             });
           }
+          if (retryableFailure) break;
         }
-        runtime.discoverPrimed = true;
+        runtime.discoverPrimed = !retryableFailure;
+        runtime.discoverRetryable = retryableFailure;
         runtime.discoverPromise = null;
         return runtime;
       }).catch(() => {
-        runtime.discoverPrimed = true;
+        runtime.discoverPrimed = false;
+        runtime.discoverRetryable = true;
         runtime.discoverPromise = null;
         return runtime;
       });
@@ -1231,7 +1325,6 @@
 
     function secondaryNostrVarietyScanShouldContinue(runtime) {
       if (!runtime) return false;
-      if (runtime.detailBudgetExhausted) return false;
       const target = secondaryNostrVarietyScanTarget(runtime);
       if (secondaryNostrVarietyQualifiedItems(runtime, homeCategoryDefaultFilters(), target).length < target) return true;
       return (runtime.listeners || []).some((listener) => {
@@ -1277,9 +1370,12 @@
           return record;
         }
       }
-      if (!runtime.retryOnlyFailed && Number(runtime.metrics.newDetailRequests || 0) >= SECONDARY_NOSTR_VARIETY_MAX_NEW_DETAIL_REQUESTS) {
+      const loadContext = runtime.loadContext || { detailRequests: 0, budget: SECONDARY_NOSTR_VARIETY_DETAIL_BUDGET_PER_LOAD };
+      if (Number(loadContext.detailRequests || 0) >= Number(loadContext.budget || SECONDARY_NOSTR_VARIETY_DETAIL_BUDGET_PER_LOAD)) {
         return { status: "budget", metadata: null, item: null, source: "budget" };
       }
+      loadContext.detailRequests = Number(loadContext.detailRequests || 0) + 1;
+      runtime.loadContext = loadContext;
       runtime.metrics.newDetailRequests = Number(runtime.metrics.newDetailRequests || 0) + 1;
       const detailPromise = requestJson(secondaryNostrDetailUrl(candidate), 18)
         .then((body) => nostrTmdbRecordFromDetail(candidate, body, "variety", index, "detail"))
@@ -1304,33 +1400,61 @@
     async function secondaryRunNostrVarietyResolver(runtime, query) {
       await ensureNostrTmdbMetaLoaded();
       const retryOnlyFailed = !!runtime.retryOnlyFailed;
+      runtime.loadPaused = false;
+      runtime.loadScanCount = 0;
+      const loadContext = runtime.loadContext || { detailRequests: 0, budget: SECONDARY_NOSTR_VARIETY_DETAIL_BUDGET_PER_LOAD };
+      runtime.loadContext = loadContext;
       while (runtime.nextIndex < runtime.candidates.length && (retryOnlyFailed ? Object.keys(runtime.failedKeys || {}).length > 0 : secondaryNostrVarietyScanShouldContinue(runtime))) {
         const target = secondaryNostrVarietyScanTarget(runtime);
         const defaultMatches = secondaryNostrVarietyQualifiedItems(runtime, homeCategoryDefaultFilters(), target).length;
         const batchSize = !retryOnlyFailed && defaultMatches < target
           ? Math.min(SECONDARY_NOSTR_VARIETY_SCAN_BATCH_SIZE, Math.max(1, target - defaultMatches))
           : SECONDARY_NOSTR_VARIETY_SCAN_BATCH_SIZE;
-        const batch = runtime.candidates.slice(runtime.nextIndex, runtime.nextIndex + batchSize);
-        runtime.nextIndex += batch.length;
-        runtime.metrics.candidatesScanned = Number(runtime.metrics.candidatesScanned || 0) + batch.length;
-        const pending = batch.filter((candidate) => {
+        const batch = [];
+        let consumed = 0;
+        let reservedDetailRequests = 0;
+        while (runtime.nextIndex < runtime.candidates.length && batch.length < batchSize) {
+          const candidate = runtime.candidates[runtime.nextIndex];
           const key = secondaryNostrVarietyCandidateKey(candidate);
-          return !!key && (retryOnlyFailed ? !!runtime.failedKeys[key] : !runtime.statuses[key]);
-        });
-        if (!pending.length) {
+          const eligible = !!key && (retryOnlyFailed ? !!runtime.failedKeys[key] : !runtime.statuses[key]);
+          if (!eligible) {
+            runtime.nextIndex += 1;
+            consumed += 1;
+            continue;
+          }
+          const needsDetail = secondaryNostrDetailRequestNeeded(candidate, "variety", query);
+          if (needsDetail && Number(loadContext.detailRequests || 0) + reservedDetailRequests >= Number(loadContext.budget || SECONDARY_NOSTR_VARIETY_DETAIL_BUDGET_PER_LOAD)) {
+            runtime.loadPaused = true;
+            break;
+          }
+          if (needsDetail) reservedDetailRequests += 1;
+          batch.push(candidate);
+          runtime.nextIndex += 1;
+          consumed += 1;
+        }
+        runtime.metrics.candidatesScanned = Number(runtime.metrics.candidatesScanned || 0) + consumed;
+        runtime.loadScanCount = Number(runtime.loadScanCount || 0) + consumed;
+        if (!batch.length) {
           secondaryNostrVarietyNotify(runtime);
+          if (runtime.loadPaused) break;
           continue;
         }
-        await weeklyMapLimit(pending, SECONDARY_NOSTR_HOT_DETAIL_CONCURRENCY, (candidate) => {
+        await weeklyMapLimit(batch, SECONDARY_NOSTR_HOT_DETAIL_CONCURRENCY, (candidate) => {
           return secondaryNostrVarietyResolveCandidate(candidate, query, Number(candidate.nostrHotRank || 0) - 1, runtime);
         }, (wrapped, candidate) => {
           secondaryNostrVarietyApplyResult(runtime, candidate, wrapped);
           secondaryNostrVarietyNotify(runtime);
         });
+        if (runtime.loadPaused) break;
         if (retryOnlyFailed ? !Object.keys(runtime.failedKeys || {}).length : !secondaryNostrVarietyScanShouldContinue(runtime)) break;
       }
+      const retryResumeIndex = runtime.retryOnlyFailed ? runtime.retryResumeIndex : null;
+      if (retryResumeIndex != null) runtime.nextIndex = Number(retryResumeIndex || 0);
+      runtime.retryResumeIndex = null;
       runtime.retryOnlyFailed = false;
-      runtime.done = true;
+      runtime.done = !runtime.loadPaused
+        && Number(runtime.nextIndex || 0) >= (runtime.candidates || []).length
+        && !Object.keys(runtime.failedKeys || {}).length;
       secondaryNostrVarietyNotify(runtime);
       await flushNostrTmdbMetaCache();
       return runtime;
@@ -1338,19 +1462,25 @@
 
     function secondaryNostrVarietyStartResolver(runtime, query) {
       if (!runtime) return Promise.resolve(null);
-      if (runtime.promise && !runtime.done) return runtime.promise;
-      if (runtime.done && Object.keys(runtime.failedKeys || {}).length) {
+      if (runtime.running && runtime.promise) return runtime.promise;
+      if (Object.keys(runtime.failedKeys || {}).length && !runtime.retryOnlyFailed) {
+        runtime.retryResumeIndex = Number(runtime.nextIndex || 0);
         runtime.nextIndex = 0;
         runtime.done = false;
-        runtime.promise = null;
-        runtime.metrics = secondaryNostrVarietyEmptyMetrics();
         runtime.retryOnlyFailed = true;
       }
       if (runtime.done && secondaryNostrVarietyScanShouldContinue(runtime)) {
         runtime.done = false;
-        runtime.promise = null;
       }
-      if (!runtime.promise) runtime.promise = secondaryRunNostrVarietyResolver(runtime, query).catch(() => runtime);
+      runtime.loadContext = { detailRequests: 0, budget: SECONDARY_NOSTR_VARIETY_DETAIL_BUDGET_PER_LOAD };
+      runtime.loadPaused = false;
+      runtime.running = true;
+      runtime.promise = secondaryRunNostrVarietyResolver(runtime, query)
+        .catch(() => runtime)
+        .then((result) => {
+          runtime.running = false;
+          return result;
+        });
       return runtime.promise;
     }
 
@@ -1375,11 +1505,19 @@
       }
     }
 
+    function secondaryNostrMarkRetryableMetadata(query, key, retryable) {
+      if (!query || !query.nostrRetryableKeys || !key) return;
+      if (retryable) query.nostrRetryableKeys[key] = true;
+      else delete query.nostrRetryableKeys[key];
+      query.nostrRetryableMetadataCount = Object.keys(query.nostrRetryableKeys).length;
+    }
+
     async function secondaryNostrEnrichCandidate(hotItem, listId, query, index) {
       const known = secondaryNostrKnownItem(hotItem, query);
       if (known && secondaryNostrItemAllowed(listId, known)) {
         const knownItem = nostrHotSignalOverlay(known, hotItem, listId);
         if (knownItem) knownItem.nostrMetadataSource = "known";
+        secondaryNostrMarkRetryableMetadata(query, homeNostrSignalKey(hotItem), false);
         return knownItem;
       }
       const key = homeNostrSignalKey(hotItem);
@@ -1393,7 +1531,11 @@
           const refreshed = memoryRecord.metadata
             ? nostrTmdbRecordFromMetadata(hotItem, memoryRecord.metadata, listId, index, "cache")
             : memoryRecord;
-          if (refreshed.status === "valid") return nostrHotSignalOverlay(refreshed.item, hotItem, listId);
+          if (refreshed.status === "valid") {
+            secondaryNostrMarkRetryableMetadata(query, key, false);
+            return nostrHotSignalOverlay(refreshed.item, hotItem, listId);
+          }
+          secondaryNostrMarkRetryableMetadata(query, key, false);
         }
         if (memory[key] === memoryPromise) delete memory[key];
       }
@@ -1402,6 +1544,7 @@
         const record = nostrTmdbRecordFromMetadata(hotItem, persistent, listId, index, "persistent");
         if (record.status === "valid" || record.status === "invalid") {
           memory[key] = Promise.resolve(record);
+          secondaryNostrMarkRetryableMetadata(query, key, false);
           return record.status === "valid"
             ? nostrHotSignalOverlay(record.item, hotItem, listId)
             : null;
@@ -1417,9 +1560,9 @@
         return record;
       });
       const record = await Promise.resolve(memory[key]);
-      return record && record.status === "valid"
-        ? nostrHotSignalOverlay(record.item, hotItem, listId)
-        : null;
+      const valid = !!(record && record.status === "valid");
+      secondaryNostrMarkRetryableMetadata(query, key, !valid);
+      return valid ? nostrHotSignalOverlay(record.item, hotItem, listId) : null;
     }
 
     function secondaryNostrDetailRequestNeeded(hotItem, listId, query) {
@@ -1484,6 +1627,22 @@
       return true;
     }
 
+    function secondaryNostrUpdateQueryMetrics(query, candidates, cursor, resolvedCount, loadScanCount, loadDetailRequests, retryableMetadataCount, sourceExhausted, hasMore) {
+      if (!query) return;
+      query.nostrMetrics = {
+        source: "nostr",
+        totalGlobalPool: Array.isArray(state.hot && state.hot.items) ? state.hot.items.length : 0,
+        candidatePoolSize: Array.isArray(candidates) ? candidates.length : 0,
+        cursor: Number(cursor || 0),
+        resolvedCount: Number(resolvedCount || 0),
+        loadScanCount: Number(loadScanCount || 0),
+        loadDetailRequests: Number(loadDetailRequests || 0),
+        retryableMetadataCount: Number(retryableMetadataCount || 0),
+        sourceExhausted: !!sourceExhausted,
+        hasMore: !!hasMore
+      };
+    }
+
     async function secondaryLoadNostrHotItems(id, filters, query, target) {
       if (!secondaryNostrHotEnabled(id, filters) || !query || !query.nostrHot) return [];
       const targetCount = Math.max(SECONDARY_NOSTR_PAGE_SIZE, Number(target || SECONDARY_NOSTR_PAGE_SIZE));
@@ -1517,8 +1676,12 @@
             query.nostrScanCursor = Number(runtime && runtime.nextIndex || 0);
             query.nostrCandidatesScanned = Number(runtime && runtime.metrics && runtime.metrics.candidatesScanned || query.nostrScanCursor || 0);
             query.nostrNewDetailRequests = Number(runtime && runtime.metrics && runtime.metrics.newDetailRequests || 0);
-            query.nostrDetailBudgetExhausted = !!(runtime && runtime.detailBudgetExhausted);
-            query.nostrExhausted = !!(runtime && Number(runtime.nextIndex || 0) >= (runtime.candidates || []).length);
+            query.nostrLoadDetailRequests = Number(runtime && runtime.loadContext && runtime.loadContext.detailRequests || 0);
+            query.nostrLoadScanCount = Number(runtime && runtime.metrics && runtime.metrics.candidatesScanned || 0);
+            query.nostrLoadPaused = !!(runtime && runtime.loadPaused);
+            query.nostrRetryableMetadataCount = Object.keys(runtime && runtime.failedKeys || {}).length;
+            query.nostrExhausted = !!(runtime && runtime.done);
+            secondaryNostrUpdateQueryMetrics(query, runtime && runtime.candidates, runtime && runtime.nextIndex, qualifiedAnime.length, runtime && runtime.loadScanCount, runtime && runtime.loadContext && runtime.loadContext.detailRequests, query.nostrRetryableMetadataCount, query.nostrExhausted, !query.nostrExhausted || query.nostrRetryableMetadataCount > 0 || query.nostrLoadPaused);
             commitSecondaryNostrHotItems(id, scanFilters, query, generation, qualifiedAnime);
           }
           return qualifiedAnime;
@@ -1539,8 +1702,12 @@
             query.nostrScanCursor = Number(runtime && runtime.nextIndex || 0);
             query.nostrCandidatesScanned = Number(runtime && runtime.metrics && runtime.metrics.candidatesScanned || query.nostrScanCursor || 0);
             query.nostrNewDetailRequests = Number(runtime && runtime.metrics && runtime.metrics.newDetailRequests || 0);
-            query.nostrDetailBudgetExhausted = !!(runtime && runtime.detailBudgetExhausted);
-            query.nostrExhausted = !!(runtime && (runtime.detailBudgetExhausted || Number(runtime.nextIndex || 0) >= (runtime.candidates || []).length));
+            query.nostrLoadDetailRequests = Number(runtime && runtime.loadContext && runtime.loadContext.detailRequests || 0);
+            query.nostrLoadScanCount = Number(runtime && runtime.metrics && runtime.metrics.candidatesScanned || 0);
+            query.nostrLoadPaused = !!(runtime && runtime.loadPaused);
+            query.nostrRetryableMetadataCount = Object.keys(runtime && runtime.failedKeys || {}).length;
+            query.nostrExhausted = !!(runtime && runtime.done);
+            secondaryNostrUpdateQueryMetrics(query, runtime && runtime.candidates, runtime && runtime.nextIndex, qualifiedVariety.length, runtime && runtime.loadScanCount, runtime && runtime.loadContext && runtime.loadContext.detailRequests, query.nostrRetryableMetadataCount, query.nostrExhausted, !query.nostrExhausted || query.nostrRetryableMetadataCount > 0 || query.nostrLoadPaused);
             commitSecondaryNostrHotItems(id, scanFilters, query, generation, qualifiedVariety);
           }
           return qualifiedVariety;
@@ -1553,28 +1720,44 @@
       const candidates = secondaryNostrHotCandidates(id, scanFilters);
       let cursor = Math.max(0, Math.min(candidates.length, Number(query.nostrScanCursor || 0)));
       let newDetailRequests = Number(query.nostrNewDetailRequests || 0);
-      let detailBudgetExhausted = !!query.nostrDetailBudgetExhausted;
+      let loadDetailRequests = 0;
+      let loadScanCount = 0;
+      let loadPaused = false;
+      const retryableKeys = query.nostrRetryableKeys && typeof query.nostrRetryableKeys === "object" ? query.nostrRetryableKeys : {};
+      query.nostrRetryableKeys = retryableKeys;
+      const retryCandidates = candidates.filter((candidate) => !!retryableKeys[homeNostrSignalKey(candidate)]);
+      let retryCursor = 0;
       try {
-        while (cursor < candidates.length && qualified.length < targetCount) {
+        while ((retryCursor < retryCandidates.length || cursor < candidates.length) && qualified.length < targetCount) {
           if (!secondaryNostrTaskIsCurrent(id, scanFilters, query, generation)) return qualified;
-          const batchCandidates = candidates.slice(cursor, cursor + SECONDARY_NOSTR_HOT_BATCH_SIZE);
-          cursor += batchCandidates.length;
-          query.nostrScanCursor = cursor;
-          query.nostrCandidatesScanned = cursor;
-          const batch = batchCandidates.filter((candidate) => {
+          const fromRetry = retryCursor < retryCandidates.length;
+          const batchCandidates = fromRetry
+            ? retryCandidates.slice(retryCursor, retryCursor + SECONDARY_NOSTR_HOT_BATCH_SIZE)
+            : candidates.slice(cursor, cursor + SECONDARY_NOSTR_HOT_BATCH_SIZE);
+          const batch = [];
+          let consumed = 0;
+          for (const candidate of batchCandidates) {
             const needsDetail = secondaryNostrDetailRequestNeeded(candidate, id, query);
             if (needsDetail) {
-              if (newDetailRequests >= SECONDARY_NOSTR_HOT_MAX_NEW_DETAIL_REQUESTS) {
-                detailBudgetExhausted = true;
-                return false;
+              if (loadDetailRequests >= SECONDARY_NOSTR_HOT_DETAIL_BUDGET_PER_LOAD) {
+                loadPaused = true;
+                break;
               }
+              loadDetailRequests += 1;
               newDetailRequests += 1;
             }
-            return true;
-          });
+            batch.push(candidate);
+            consumed += 1;
+          }
+          if (fromRetry) retryCursor += consumed;
+          else cursor += consumed;
+          loadScanCount += consumed;
+          query.nostrScanCursor = cursor;
+          query.nostrCandidatesScanned = cursor;
+          query.nostrLoadDetailRequests = loadDetailRequests;
+          query.nostrLoadScanCount = loadScanCount;
           query.nostrNewDetailRequests = newDetailRequests;
-          query.nostrDetailBudgetExhausted = detailBudgetExhausted;
-          if (!batch.length) continue;
+          if (!batch.length) break;
           const results = await weeklyMapLimit(batch, SECONDARY_NOSTR_HOT_DETAIL_CONCURRENCY, (candidate, index) => secondaryNostrEnrichCandidate(candidate, id, query, index));
           if (!secondaryNostrTaskIsCurrent(id, scanFilters, query, generation)) return qualified;
           const matches = results
@@ -1583,6 +1766,7 @@
             .slice(0, Math.max(0, targetCount - qualified.length));
           if (matches.length) qualified.push(...matches);
           commitSecondaryNostrHotItems(id, scanFilters, query, generation, qualified);
+          if (loadPaused) break;
         }
         if (secondaryNostrTaskIsCurrent(id, scanFilters, query, generation)) {
           query.nostrHotItems = uniqueMedia(qualified);
@@ -1590,8 +1774,12 @@
           query.nostrScanCursor = cursor;
           query.nostrCandidatesScanned = cursor;
           query.nostrNewDetailRequests = newDetailRequests;
-          query.nostrDetailBudgetExhausted = detailBudgetExhausted;
-          query.nostrExhausted = detailBudgetExhausted || cursor >= candidates.length;
+          query.nostrLoadDetailRequests = loadDetailRequests;
+          query.nostrLoadScanCount = loadScanCount;
+          query.nostrLoadPaused = loadPaused;
+          query.nostrRetryableMetadataCount = Object.keys(query.nostrRetryableKeys || {}).length;
+          query.nostrExhausted = !loadPaused && cursor >= candidates.length && !query.nostrRetryableMetadataCount;
+          secondaryNostrUpdateQueryMetrics(query, candidates, cursor, qualified.length, loadScanCount, loadDetailRequests, query.nostrRetryableMetadataCount, query.nostrExhausted, !query.nostrExhausted || query.nostrRetryableMetadataCount > 0 || loadPaused);
         }
         return qualified;
       } finally {
@@ -1614,7 +1802,11 @@
         query.nostrScanCursor = 0;
         query.nostrCandidatesScanned = 0;
         query.nostrNewDetailRequests = 0;
-        query.nostrDetailBudgetExhausted = false;
+        query.nostrLoadDetailRequests = 0;
+        query.nostrLoadScanCount = 0;
+        query.nostrLoadPaused = false;
+        query.nostrRetryableMetadataCount = 0;
+        query.nostrRetryableKeys = {};
         query.nostrExhausted = false;
         query.nostrHotReady = false;
         query.page = 0;

@@ -294,8 +294,7 @@
         if (!old || hotVectorItemDay(item) >= hotVectorItemDay(old)) map.set(key, item);
       });
       return Array.from(map.values())
-        .sort((a, b) => hotVectorItemDay(b) - hotVectorItemDay(a) || hotVectorItemMediaKey(a).localeCompare(hotVectorItemMediaKey(b)))
-        .slice(0, HOT_USER_VECTOR_LIMIT);
+        .sort((a, b) => hotVectorItemDay(b) - hotVectorItemDay(a) || hotVectorItemMediaKey(a).localeCompare(hotVectorItemMediaKey(b)));
     }
 
     function normalizeStoredVectorItems(items, createdAt) {
@@ -309,8 +308,7 @@
         if (!old || hotVectorItemDay(item) >= hotVectorItemDay(old)) map.set(key, item);
       });
       return Array.from(map.values())
-        .sort((a, b) => hotVectorItemDay(b) - hotVectorItemDay(a) || hotVectorItemMediaKey(a).localeCompare(hotVectorItemMediaKey(b)))
-        .slice(0, HOT_USER_VECTOR_LIMIT);
+        .sort((a, b) => hotVectorItemDay(b) - hotVectorItemDay(a) || hotVectorItemMediaKey(a).localeCompare(hotVectorItemMediaKey(b)));
     }
 
     function hotNormalizeWireItem(raw, fallbackDay, keepExpired) {
@@ -680,7 +678,7 @@
             title: item.t || "",
             mediaType: item.mt || "",
             tmdbId: item.tid || "",
-            source: "tmdb",
+            source: "nostr-hot",
             pic,
             image: pic,
             people,
@@ -691,8 +689,7 @@
           };
         })
         .filter((item) => item && item.people > 0 && hasPoster(item))
-        .sort((a, b) => b.people - a.people || b.lastEventAt - a.lastEventAt)
-        .slice(0, HOT_RENDER_LIMIT);
+        .sort((a, b) => b.people - a.people || b.lastEventAt - a.lastEventAt);
     }
 
     async function hotClearIndex(onlyMine) {
@@ -849,4 +846,3 @@
       parts.push(`当前榜单 ${state.hot.items.length} 条`);
       setRefreshStatus(parts.join("\n"));
     }
-

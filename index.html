@@ -17099,7 +17099,6 @@ utils.encode = function encode(arr, enc) {
     const HOT_DB_VERSION = 1;
     const HOT_VECTOR_D = "heat:user:90d:v2";
     const HOT_VECTOR_VERSION = 5;
-    const HOT_USER_VECTOR_LIMIT = 300;
     const HOT_TITLE_LIMIT = 60;
     const HOT_POSTER_LIMIT = 96;
     const HOT_PAGE_LIMIT = 1000;
@@ -17114,7 +17113,6 @@ utils.encode = function encode(arr, enc) {
     const HOT_REFRESH_IDLE_MS = 260;
     const HOT_REFRESH_BACKFILL_MS = 900;
     const HOT_PRUNE_BATCH = 1000;
-    const HOT_RENDER_LIMIT = 1000;
     const UI_SNAPSHOT_TTL_MS = 2 * 60 * 60 * 1000;
     const HISTORY_CONTEXT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
     const DELETE_REPUBLISH_BLOCK_MS = 24 * 60 * 60 * 1000;
@@ -18894,8 +18892,7 @@ utils.encode = function encode(arr, enc) {
         if (!old || hotVectorItemDay(item) >= hotVectorItemDay(old)) map.set(key, item);
       });
       return Array.from(map.values())
-        .sort((a, b) => hotVectorItemDay(b) - hotVectorItemDay(a) || hotVectorItemMediaKey(a).localeCompare(hotVectorItemMediaKey(b)))
-        .slice(0, HOT_USER_VECTOR_LIMIT);
+        .sort((a, b) => hotVectorItemDay(b) - hotVectorItemDay(a) || hotVectorItemMediaKey(a).localeCompare(hotVectorItemMediaKey(b)));
     }
 
     function normalizeStoredVectorItems(items, createdAt) {
@@ -18909,8 +18906,7 @@ utils.encode = function encode(arr, enc) {
         if (!old || hotVectorItemDay(item) >= hotVectorItemDay(old)) map.set(key, item);
       });
       return Array.from(map.values())
-        .sort((a, b) => hotVectorItemDay(b) - hotVectorItemDay(a) || hotVectorItemMediaKey(a).localeCompare(hotVectorItemMediaKey(b)))
-        .slice(0, HOT_USER_VECTOR_LIMIT);
+        .sort((a, b) => hotVectorItemDay(b) - hotVectorItemDay(a) || hotVectorItemMediaKey(a).localeCompare(hotVectorItemMediaKey(b)));
     }
 
     function hotNormalizeWireItem(raw, fallbackDay, keepExpired) {
@@ -19280,7 +19276,7 @@ utils.encode = function encode(arr, enc) {
             title: item.t || "",
             mediaType: item.mt || "",
             tmdbId: item.tid || "",
-            source: "tmdb",
+            source: "nostr-hot",
             pic,
             image: pic,
             people,
@@ -19291,8 +19287,7 @@ utils.encode = function encode(arr, enc) {
           };
         })
         .filter((item) => item && item.people > 0 && hasPoster(item))
-        .sort((a, b) => b.people - a.people || b.lastEventAt - a.lastEventAt)
-        .slice(0, HOT_RENDER_LIMIT);
+        .sort((a, b) => b.people - a.people || b.lastEventAt - a.lastEventAt);
     }
 
     async function hotClearIndex(onlyMine) {
@@ -19449,7 +19444,6 @@ utils.encode = function encode(arr, enc) {
       parts.push(`当前榜单 ${state.hot.items.length} 条`);
       setRefreshStatus(parts.join("\n"));
     }
-
     function isNostrRefreshActive(token) {
       const info = state.relay.refresh;
       return !!(info && info.active && (token == null || token === state.relay.subscribeToken));
@@ -19463,6 +19457,7 @@ utils.encode = function encode(arr, enc) {
           error: "",
           terminal: false,
           terminalState: "pending",
+          retryable: false,
           historyDone: false,
           historyFailed: false,
           historyTimedOut: false,
@@ -19479,12 +19474,13 @@ utils.encode = function encode(arr, enc) {
 
     function markRelayBackfillTerminal(relay, terminalState, error, token) {
       if (token != null && token !== state.relay.subscribeToken) return;
-      const normalized = terminalState === "done" ? "done" : terminalState === "timeout" ? "timeout" : "failed";
+      const normalized = terminalState === "done" ? "done" : terminalState === "retryable" ? "retryable" : terminalState === "timeout" ? "timeout" : "failed";
       setRelayBackfillState(relay, {
         loading: false,
         error: String(error || ""),
         terminal: true,
         terminalState: normalized,
+        retryable: normalized === "retryable",
         historyDone: normalized === "done",
         historyFailed: normalized === "failed",
         historyTimedOut: normalized === "timeout",
@@ -19787,7 +19783,18 @@ utils.encode = function encode(arr, enc) {
 
     async function requestJson(url, timeout) {
       const response = await sdk().req(url, { responseType: "text", timeout: timeout || 18 });
-      if (response && response.error) throw new Error(response.error);
+      if (response && response.error) {
+        const error = new Error(String(response.error));
+        const status = Number(response.status || response.statusCode || response.httpStatus || 0);
+        if (status) error.status = status;
+        throw error;
+      }
+      if (response && response.ok === false || response && Number(response.status || 0) >= 400) {
+        const error = new Error("HTTP " + Number(response.status || 0));
+        const status = Number(response.status || response.statusCode || response.httpStatus || 0);
+        if (status) error.status = status;
+        throw error;
+      }
       const body = response && response.body;
       if (typeof body === "string") return JSON.parse(body || "{}");
       return body || {};
@@ -20359,7 +20366,6 @@ utils.encode = function encode(arr, enc) {
       }
       throw lastError || new Error("盘搜请求失败");
     }
-
     function today() {
       const date = new Date();
       return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -26285,18 +26291,10 @@ utils.encode = function encode(arr, enc) {
 
     function homeNostrHotSignature(id) {
       const items = Array.isArray(state.hot && state.hot.items) ? state.hot.items : [];
-      const normalizedId = normalizeLegacyCategoryId(id);
-      const scanLimit = normalizedId === "anime"
-        ? SECONDARY_NOSTR_ANIME_MAX_SCAN_CANDIDATES
-        : normalizedId === "variety"
-          ? SECONDARY_NOSTR_VARIETY_MAX_SCAN_CANDIDATES
-          : SECONDARY_NOSTR_HOT_MAX_SCAN_CANDIDATES;
-      return items.slice(0, scanLimit).map((item, index) => [
-        homeNostrSignalKey(item),
-        Number(item && (item.people || item.count) || 0),
-        String(item && (item.latest || item.lastEventAt || item.last_event_at) || ""),
-        index
-      ].join(":")).join("|");
+      return [
+        Number(state.hot && state.hot.version || 0),
+        items.length
+      ].join(":");
     }
 
     function homeCategoryFeedKey(id) {
@@ -26432,7 +26430,7 @@ utils.encode = function encode(arr, enc) {
         const batch = candidates.slice(offset, offset + SECONDARY_NOSTR_HOT_BATCH_SIZE).filter((candidate) => {
           const needsDetail = secondaryNostrDetailRequestNeeded(candidate, id, knownQuery);
           if (needsDetail) {
-            if (newDetailRequests >= SECONDARY_NOSTR_HOT_MAX_NEW_DETAIL_REQUESTS) return false;
+            if (newDetailRequests >= SECONDARY_NOSTR_HOT_DETAIL_BUDGET_PER_LOAD) return false;
             newDetailRequests += 1;
           }
           return true;
@@ -27294,7 +27292,6 @@ utils.encode = function encode(arr, enc) {
       if (id === "tv") {
         return [{ id, title: "电视剧", endpoint: "discover/tv", mediaType: "tv", params: Object.assign({}, common, {
           include_null_first_air_dates: "false",
-          with_origin_country: "CN|HK|TW|KR|JP|US|GB",
           without_genres: "16,99,10763,10764,10766,10767"
         }) }];
       }
@@ -27306,8 +27303,8 @@ utils.encode = function encode(arr, enc) {
       }
       if (id === "anime") {
         return [
-          { id, title: "动画", endpoint: "discover/tv", mediaType: "tv", params: Object.assign({}, common, { with_genres: "16", with_origin_country: "CN|JP" }) },
-          { id, title: "动画", endpoint: "discover/movie", mediaType: "movie", params: { with_genres: "16", with_origin_country: "CN|JP", sort_by: "popularity.desc" } }
+          { id, title: "动画", endpoint: "discover/tv", mediaType: "tv", params: Object.assign({}, common, { with_genres: "16" }) },
+          { id, title: "动画", endpoint: "discover/movie", mediaType: "movie", params: { with_genres: "16", sort_by: "popularity.desc" } }
         ];
       }
       if (id === "documentary") {
@@ -27370,7 +27367,12 @@ utils.encode = function encode(arr, enc) {
           nostrScanCursor: 0,
           nostrCandidatesScanned: 0,
           nostrNewDetailRequests: 0,
-          nostrDetailBudgetExhausted: false,
+          nostrLoadDetailRequests: 0,
+          nostrLoadScanCount: 0,
+          nostrLoadPaused: false,
+          nostrRetryableMetadataCount: 0,
+          nostrRetryableKeys: {},
+          nostrMetrics: null,
           nostrExhausted: false,
           nostrHotReady: false,
           page: 0,
@@ -27381,12 +27383,14 @@ utils.encode = function encode(arr, enc) {
           hasMore: false,
           items: [],
           error: "",
+          retryableError: "",
           failedPage: 0,
           requestSeq: 0,
           serverSideFilters: [],
           clientSideFilters: [],
           endpointMap: [],
           sourceStates: [],
+          tmdbMetrics: null,
           finite: false,
           snapshotReady: false,
           snapshotSource: ""
@@ -27476,6 +27480,22 @@ utils.encode = function encode(arr, enc) {
       return `${source && source.endpoint || "local"}|${source && source.mediaType || ""}|${JSON.stringify(source && source.params || {})}|${index}`;
     }
 
+    function secondaryTmdbErrorStatus(error) {
+      const value = error && (error.status || error.statusCode || error.httpStatus);
+      const numeric = Number(value);
+      return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
+    }
+
+    function secondaryTmdbErrorIsTerminal(error) {
+      if (error && error.terminal === true) return true;
+      const status = secondaryTmdbErrorStatus(error);
+      return [400, 401, 403, 404].includes(status);
+    }
+
+    function secondaryTmdbSourceHasMore(sourceState) {
+      return !!(sourceState && !sourceState.exhausted && !sourceState.terminalError);
+    }
+
     function buildSecondaryQueryPlan(id, filters, query) {
       id = normalizeLegacyCategoryId(id);
       const sources = secondaryQuerySourceLists(id, filters, query);
@@ -27484,12 +27504,21 @@ utils.encode = function encode(arr, enc) {
       const sourceStates = sources.map((source, index) => {
           const key = secondarySourceKey(source, index);
           const old = prior.find((entry) => entry.key === key) || {};
-          return Object.assign({ key, endpoint: source.endpoint || "", mediaType: source.mediaType || "", page: 0, totalPages: 0, done: false, loading: false, error: "", totalResults: 0 }, old, {
+          const previousError = String(old.retryableError || old.error || "");
+          const previousTerminalError = String(old.terminalError || "");
+          const previousExhausted = old.exhausted === true
+            || (old.exhausted == null && old.done === true && !previousError && !previousTerminalError);
+          const next = Object.assign({ key, endpoint: source.endpoint || "", mediaType: source.mediaType || "", page: 0, totalPages: 0, exhausted: false, loading: false, retryableError: "", terminalError: "", totalResults: 0 }, old, {
             key,
             endpoint: source.endpoint || "",
             mediaType: source.mediaType || "",
-            loading: false
+            loading: false,
+            exhausted: previousExhausted,
+            retryableError: previousError,
+            terminalError: previousTerminalError,
           });
+          delete next.error;
+          return next;
         });
       query.sourceStates = sourceStates;
       query.finite = finite;
@@ -27549,15 +27578,13 @@ utils.encode = function encode(arr, enc) {
     const SECONDARY_NOSTR_PAGE_SIZE = 18;
     const SECONDARY_NOSTR_HOT_BATCH_SIZE = SECONDARY_NOSTR_PAGE_SIZE;
     const SECONDARY_NOSTR_HOT_TARGET_MATCHES = SECONDARY_NOSTR_PAGE_SIZE;
-    const SECONDARY_NOSTR_HOT_MAX_SCAN_CANDIDATES = 72;
-    const SECONDARY_NOSTR_HOT_MAX_NEW_DETAIL_REQUESTS = 36;
+    const SECONDARY_NOSTR_HOT_DETAIL_BUDGET_PER_LOAD = 36;
     const SECONDARY_NOSTR_HOT_DETAIL_CONCURRENCY = 4;
-    const SECONDARY_NOSTR_ANIME_MAX_SCAN_CANDIDATES = 150;
     const SECONDARY_NOSTR_ANIME_SCAN_BATCH_SIZE = 4;
-    const SECONDARY_NOSTR_VARIETY_MAX_SCAN_CANDIDATES = 240;
     const SECONDARY_NOSTR_VARIETY_TARGET_MATCHES = SECONDARY_NOSTR_PAGE_SIZE;
     const SECONDARY_NOSTR_VARIETY_SCAN_BATCH_SIZE = 4;
-    const SECONDARY_NOSTR_VARIETY_MAX_NEW_DETAIL_REQUESTS = 54;
+    const SECONDARY_NOSTR_ANIME_DETAIL_BUDGET_PER_LOAD = 36;
+    const SECONDARY_NOSTR_VARIETY_DETAIL_BUDGET_PER_LOAD = 54;
     const NOSTR_TMDB_META_CACHE_VERSION = 2;
     const NOSTR_TMDB_META_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
     const NOSTR_TMDB_META_CACHE_MAX_ENTRIES = 1000;
@@ -27595,13 +27622,7 @@ utils.encode = function encode(arr, enc) {
           indexed.push({ item, sourceIndex, latest: secondaryNostrLatestValue(item) });
         });
       if (sort === "latest") indexed.sort((a, b) => b.latest - a.latest || a.sourceIndex - b.sourceIndex);
-      return indexed
-        .slice(0, allowed === "anime"
-          ? SECONDARY_NOSTR_ANIME_MAX_SCAN_CANDIDATES
-          : allowed === "variety"
-            ? SECONDARY_NOSTR_VARIETY_MAX_SCAN_CANDIDATES
-            : SECONDARY_NOSTR_HOT_MAX_SCAN_CANDIDATES)
-        .map((entry, index) => Object.assign({}, entry.item, { nostrHotRank: index + 1 }));
+      return indexed.map((entry, index) => Object.assign({}, entry.item, { nostrHotRank: index + 1 }));
     }
 
     function secondaryNostrMetaCache() {
@@ -27956,9 +27977,6 @@ utils.encode = function encode(arr, enc) {
       if (listId === "tv" && type !== "tv") return false;
       if (listId === "anime" && !secondaryItemGenreIds(item).includes("16")) return false;
       if (listId === "variety" && (type !== "tv" || !secondaryItemGenreIds(item).some((value) => ["10764", "10767"].includes(value)))) return false;
-      const regions = secondaryItemRegions(item);
-      if (listId === "anime" && regions.length && !regions.some((value) => SECONDARY_ANIMATION_REGION_IDS.includes(String(value).toUpperCase()))) return false;
-      if (listId === "tv" && regions.length && !regions.some((value) => SECONDARY_TV_REGION_IDS.includes(String(value).toUpperCase()))) return false;
       if (listId === "tv" && secondaryItemGenreIds(item).some((value) => ["16", "99", "10763", "10764", "10766", "10767"].includes(value))) return false;
       return true;
     }
@@ -28031,7 +28049,7 @@ utils.encode = function encode(arr, enc) {
     }
 
     function secondaryNostrAnimeEmptyMetrics() {
-      return { candidatesScanned: 0, lastScannedRank: 0, knownMetadataHits: 0, persistentHits: 0, memoryHits: 0, newDetailRequests: 0, detailFailures: 0, finalAnimeMatches: 0 };
+      return { candidatesScanned: 0, lastScannedRank: 0, knownMetadataHits: 0, persistentHits: 0, memoryHits: 0, newDetailRequests: 0, detailFailures: 0, finalAnimeMatches: 0, totalGlobalPool: 0, candidatePoolSize: 0, cursor: 0, resolvedCount: 0, loadScanCount: 0, loadDetailRequests: 0, retryableMetadataCount: 0, sourceExhausted: false, hasMore: true };
     }
 
     function secondaryNostrAnimeResolverState(candidates) {
@@ -28048,8 +28066,12 @@ utils.encode = function encode(arr, enc) {
           failedKeys: {},
           nextIndex: 0,
           done: false,
-          detailBudgetExhausted: false,
+          loadPaused: false,
+          loadContext: null,
+          running: false,
           retryOnlyFailed: false,
+          retryResumeIndex: null,
+          loadScanCount: 0,
           promise: null,
           listeners: [],
           metrics: secondaryNostrAnimeEmptyMetrics()
@@ -28084,6 +28106,16 @@ utils.encode = function encode(arr, enc) {
       if (!runtime) return;
       const defaultItems = secondaryNostrAnimeQualifiedItems(runtime, homeCategoryDefaultFilters(), SECONDARY_NOSTR_HOT_TARGET_MATCHES);
       runtime.metrics.finalAnimeMatches = defaultItems.length;
+      const retryableMetadataCount = Object.keys(runtime.failedKeys || {}).length;
+      runtime.metrics.totalGlobalPool = Array.isArray(state.hot && state.hot.items) ? state.hot.items.length : 0;
+      runtime.metrics.candidatePoolSize = Array.isArray(runtime.candidates) ? runtime.candidates.length : 0;
+      runtime.metrics.cursor = Number(runtime.nextIndex || 0);
+      runtime.metrics.resolvedCount = defaultItems.length;
+      runtime.metrics.loadScanCount = Number(runtime.loadScanCount || 0);
+      runtime.metrics.loadDetailRequests = Number(runtime.loadContext && runtime.loadContext.detailRequests || 0);
+      runtime.metrics.retryableMetadataCount = retryableMetadataCount;
+      runtime.metrics.sourceExhausted = !!runtime.done;
+      runtime.metrics.hasMore = !runtime.done || !!runtime.loadPaused || retryableMetadataCount > 0;
       if (state.homeV14 && state.homeV14.secondaryNostrAnimeResolver === runtime) {
         state.homeV14.secondaryNostrAnimeMetrics = Object.assign({}, runtime.metrics, {
           resolverKey: runtime.key,
@@ -28115,7 +28147,7 @@ utils.encode = function encode(arr, enc) {
         else delete runtime.items[key];
         delete runtime.failedKeys[key];
       } else if (record && record.status === "budget") {
-        runtime.detailBudgetExhausted = true;
+        runtime.loadPaused = true;
         delete runtime.statuses[key];
         delete runtime.items[key];
       } else {
@@ -28172,6 +28204,12 @@ utils.encode = function encode(arr, enc) {
           return record;
         }
       }
+      const loadContext = runtime.loadContext || { detailRequests: 0, budget: SECONDARY_NOSTR_ANIME_DETAIL_BUDGET_PER_LOAD };
+      if (Number(loadContext.detailRequests || 0) >= Number(loadContext.budget || SECONDARY_NOSTR_ANIME_DETAIL_BUDGET_PER_LOAD)) {
+        return { status: "budget", metadata: null, item: null, source: "budget" };
+      }
+      loadContext.detailRequests = Number(loadContext.detailRequests || 0) + 1;
+      runtime.loadContext = loadContext;
       runtime.metrics.newDetailRequests = Number(runtime.metrics.newDetailRequests || 0) + 1;
       const detailPromise = requestJson(secondaryNostrDetailUrl(candidate), 18)
         .then((body) => nostrTmdbRecordFromDetail(candidate, body, "anime", index, "detail"))
@@ -28188,33 +28226,61 @@ utils.encode = function encode(arr, enc) {
     async function secondaryRunNostrAnimeResolver(runtime, query) {
       await ensureNostrTmdbMetaLoaded();
       const retryOnlyFailed = !!runtime.retryOnlyFailed;
+      runtime.loadPaused = false;
+      runtime.loadScanCount = 0;
+      const loadContext = runtime.loadContext || { detailRequests: 0, budget: SECONDARY_NOSTR_ANIME_DETAIL_BUDGET_PER_LOAD };
+      runtime.loadContext = loadContext;
       while (runtime.nextIndex < runtime.candidates.length && (retryOnlyFailed ? Object.keys(runtime.failedKeys || {}).length > 0 : secondaryNostrAnimeScanShouldContinue(runtime))) {
         const target = secondaryNostrAnimeScanTarget(runtime);
         const defaultMatches = secondaryNostrAnimeQualifiedItems(runtime, homeCategoryDefaultFilters(), target).length;
         const batchSize = !retryOnlyFailed && defaultMatches < target
           ? Math.min(SECONDARY_NOSTR_ANIME_SCAN_BATCH_SIZE, Math.max(1, target - defaultMatches))
           : SECONDARY_NOSTR_ANIME_SCAN_BATCH_SIZE;
-        const batch = runtime.candidates.slice(runtime.nextIndex, runtime.nextIndex + batchSize);
-        runtime.nextIndex += batch.length;
-        runtime.metrics.candidatesScanned = Number(runtime.metrics.candidatesScanned || 0) + batch.length;
-        const pending = batch.filter((candidate) => {
+        const batch = [];
+        let consumed = 0;
+        let reservedDetailRequests = 0;
+        while (runtime.nextIndex < runtime.candidates.length && batch.length < batchSize) {
+          const candidate = runtime.candidates[runtime.nextIndex];
           const key = secondaryNostrAnimeCandidateKey(candidate);
-          return !!key && (retryOnlyFailed ? !!runtime.failedKeys[key] : !runtime.statuses[key]);
-        });
-        if (!pending.length) {
+          const eligible = !!key && (retryOnlyFailed ? !!runtime.failedKeys[key] : !runtime.statuses[key]);
+          if (!eligible) {
+            runtime.nextIndex += 1;
+            consumed += 1;
+            continue;
+          }
+          const needsDetail = secondaryNostrDetailRequestNeeded(candidate, "anime", query);
+          if (needsDetail && Number(loadContext.detailRequests || 0) + reservedDetailRequests >= Number(loadContext.budget || SECONDARY_NOSTR_ANIME_DETAIL_BUDGET_PER_LOAD)) {
+            runtime.loadPaused = true;
+            break;
+          }
+          if (needsDetail) reservedDetailRequests += 1;
+          batch.push(candidate);
+          runtime.nextIndex += 1;
+          consumed += 1;
+        }
+        runtime.metrics.candidatesScanned = Number(runtime.metrics.candidatesScanned || 0) + consumed;
+        runtime.loadScanCount = Number(runtime.loadScanCount || 0) + consumed;
+        if (!batch.length) {
           secondaryNostrAnimeNotify(runtime);
+          if (runtime.loadPaused) break;
           continue;
         }
-        await weeklyMapLimit(pending, SECONDARY_NOSTR_HOT_DETAIL_CONCURRENCY, (candidate) => {
+        await weeklyMapLimit(batch, SECONDARY_NOSTR_HOT_DETAIL_CONCURRENCY, (candidate) => {
           return secondaryNostrAnimeResolveCandidate(candidate, query, Number(candidate.nostrHotRank || 0) - 1, runtime);
         }, (wrapped, candidate) => {
           secondaryNostrAnimeApplyResult(runtime, candidate, wrapped);
           secondaryNostrAnimeNotify(runtime);
         });
+        if (runtime.loadPaused) break;
         if (retryOnlyFailed ? !Object.keys(runtime.failedKeys || {}).length : !secondaryNostrAnimeScanShouldContinue(runtime)) break;
       }
+      const retryResumeIndex = runtime.retryOnlyFailed ? runtime.retryResumeIndex : null;
+      if (retryResumeIndex != null) runtime.nextIndex = Number(retryResumeIndex || 0);
+      runtime.retryResumeIndex = null;
       runtime.retryOnlyFailed = false;
-      runtime.done = true;
+      runtime.done = !runtime.loadPaused
+        && Number(runtime.nextIndex || 0) >= (runtime.candidates || []).length
+        && !Object.keys(runtime.failedKeys || {}).length;
       secondaryNostrAnimeNotify(runtime);
       await flushNostrTmdbMetaCache();
       return runtime;
@@ -28222,19 +28288,25 @@ utils.encode = function encode(arr, enc) {
 
     function secondaryNostrAnimeStartResolver(runtime, query) {
       if (!runtime) return Promise.resolve(null);
-      if (runtime.promise && !runtime.done) return runtime.promise;
-      if (runtime.done && Object.keys(runtime.failedKeys || {}).length) {
+      if (runtime.running && runtime.promise) return runtime.promise;
+      if (Object.keys(runtime.failedKeys || {}).length && !runtime.retryOnlyFailed) {
+        runtime.retryResumeIndex = Number(runtime.nextIndex || 0);
         runtime.nextIndex = 0;
         runtime.done = false;
-        runtime.promise = null;
-        runtime.metrics = secondaryNostrAnimeEmptyMetrics();
         runtime.retryOnlyFailed = true;
       }
       if (runtime.done && secondaryNostrAnimeScanShouldContinue(runtime)) {
         runtime.done = false;
-        runtime.promise = null;
       }
-      if (!runtime.promise) runtime.promise = secondaryRunNostrAnimeResolver(runtime, query).catch(() => runtime);
+      runtime.loadContext = { detailRequests: 0, budget: SECONDARY_NOSTR_ANIME_DETAIL_BUDGET_PER_LOAD };
+      runtime.loadPaused = false;
+      runtime.running = true;
+      runtime.promise = secondaryRunNostrAnimeResolver(runtime, query)
+        .catch(() => runtime)
+        .then((result) => {
+          runtime.running = false;
+          return result;
+        });
       return runtime.promise;
     }
 
@@ -28283,7 +28355,7 @@ utils.encode = function encode(arr, enc) {
     }
 
     function secondaryNostrVarietyEmptyMetrics() {
-      return { candidatesScanned: 0, lastScannedRank: 0, knownMetadataHits: 0, persistentHits: 0, memoryHits: 0, discoverRequests: 0, discoverMetadataMatches: 0, newDetailRequests: 0, detailFailures: 0, finalVarietyMatches: 0 };
+      return { candidatesScanned: 0, lastScannedRank: 0, knownMetadataHits: 0, persistentHits: 0, memoryHits: 0, discoverRequests: 0, discoverMetadataMatches: 0, newDetailRequests: 0, detailFailures: 0, finalVarietyMatches: 0, totalGlobalPool: 0, candidatePoolSize: 0, cursor: 0, resolvedCount: 0, loadScanCount: 0, loadDetailRequests: 0, retryableMetadataCount: 0, sourceExhausted: false, hasMore: true };
     }
 
     function secondaryNostrVarietyResolverState(candidates) {
@@ -28300,10 +28372,16 @@ utils.encode = function encode(arr, enc) {
           failedKeys: {},
           nextIndex: 0,
           done: false,
+          loadPaused: false,
+          loadContext: null,
+          running: false,
           retryOnlyFailed: false,
+          retryResumeIndex: null,
+          loadScanCount: 0,
           promise: null,
           listeners: [],
           discoverPrimed: false,
+          discoverRetryable: false,
           discoverPromise: null,
           metrics: secondaryNostrVarietyEmptyMetrics()
         };
@@ -28329,6 +28407,16 @@ utils.encode = function encode(arr, enc) {
       if (!runtime) return;
       const defaultItems = secondaryNostrVarietyQualifiedItems(runtime, homeCategoryDefaultFilters(), SECONDARY_NOSTR_VARIETY_TARGET_MATCHES);
       runtime.metrics.finalVarietyMatches = defaultItems.length;
+      const retryableMetadataCount = Object.keys(runtime.failedKeys || {}).length;
+      runtime.metrics.totalGlobalPool = Array.isArray(state.hot && state.hot.items) ? state.hot.items.length : 0;
+      runtime.metrics.candidatePoolSize = Array.isArray(runtime.candidates) ? runtime.candidates.length : 0;
+      runtime.metrics.cursor = Number(runtime.nextIndex || 0);
+      runtime.metrics.resolvedCount = defaultItems.length;
+      runtime.metrics.loadScanCount = Number(runtime.loadScanCount || 0);
+      runtime.metrics.loadDetailRequests = Number(runtime.loadContext && runtime.loadContext.detailRequests || 0);
+      runtime.metrics.retryableMetadataCount = retryableMetadataCount;
+      runtime.metrics.sourceExhausted = !!runtime.done;
+      runtime.metrics.hasMore = !runtime.done || !!runtime.loadPaused || retryableMetadataCount > 0;
       if (state.homeV14 && state.homeV14.secondaryNostrVarietyResolver === runtime) {
         state.homeV14.secondaryNostrVarietyMetrics = Object.assign({}, runtime.metrics, {
           resolverKey: runtime.key,
@@ -28360,7 +28448,7 @@ utils.encode = function encode(arr, enc) {
         else delete runtime.items[key];
         delete runtime.failedKeys[key];
       } else if (record && record.status === "budget") {
-        runtime.detailBudgetExhausted = true;
+        runtime.loadPaused = true;
         delete runtime.statuses[key];
         delete runtime.items[key];
       } else {
@@ -28386,12 +28474,13 @@ utils.encode = function encode(arr, enc) {
         const sources = secondaryFullCatalogSources("variety");
         const memory = secondaryNostrVarietyMemoryCache();
         const matched = new Set();
+        let retryableFailure = false;
         for (let sourceIndex = 0; sourceIndex < sources.length && matched.size < SECONDARY_NOSTR_VARIETY_TARGET_MATCHES; sourceIndex++) {
           const source = sources[sourceIndex];
           for (let page = 1; page <= 3 && matched.size < SECONDARY_NOSTR_VARIETY_TARGET_MATCHES; page++) {
             runtime.metrics.discoverRequests = Number(runtime.metrics.discoverRequests || 0) + 1;
             let body = null;
-            try { body = await requestJson(tmdbUrl(source, page), 18); } catch (e) { break; }
+            try { body = await requestJson(tmdbUrl(source, page), 18); } catch (e) { retryableFailure = true; break; }
             const results = Array.isArray(body && body.results) ? body.results : [];
             if (!results.length) break;
             results.forEach((raw, index) => {
@@ -28413,12 +28502,15 @@ utils.encode = function encode(arr, enc) {
               if (persistent && nostrTmdbMetaHasCanonicalPoster(persistent)) matched.add(key);
             });
           }
+          if (retryableFailure) break;
         }
-        runtime.discoverPrimed = true;
+        runtime.discoverPrimed = !retryableFailure;
+        runtime.discoverRetryable = retryableFailure;
         runtime.discoverPromise = null;
         return runtime;
       }).catch(() => {
-        runtime.discoverPrimed = true;
+        runtime.discoverPrimed = false;
+        runtime.discoverRetryable = true;
         runtime.discoverPromise = null;
         return runtime;
       });
@@ -28427,7 +28519,6 @@ utils.encode = function encode(arr, enc) {
 
     function secondaryNostrVarietyScanShouldContinue(runtime) {
       if (!runtime) return false;
-      if (runtime.detailBudgetExhausted) return false;
       const target = secondaryNostrVarietyScanTarget(runtime);
       if (secondaryNostrVarietyQualifiedItems(runtime, homeCategoryDefaultFilters(), target).length < target) return true;
       return (runtime.listeners || []).some((listener) => {
@@ -28473,9 +28564,12 @@ utils.encode = function encode(arr, enc) {
           return record;
         }
       }
-      if (!runtime.retryOnlyFailed && Number(runtime.metrics.newDetailRequests || 0) >= SECONDARY_NOSTR_VARIETY_MAX_NEW_DETAIL_REQUESTS) {
+      const loadContext = runtime.loadContext || { detailRequests: 0, budget: SECONDARY_NOSTR_VARIETY_DETAIL_BUDGET_PER_LOAD };
+      if (Number(loadContext.detailRequests || 0) >= Number(loadContext.budget || SECONDARY_NOSTR_VARIETY_DETAIL_BUDGET_PER_LOAD)) {
         return { status: "budget", metadata: null, item: null, source: "budget" };
       }
+      loadContext.detailRequests = Number(loadContext.detailRequests || 0) + 1;
+      runtime.loadContext = loadContext;
       runtime.metrics.newDetailRequests = Number(runtime.metrics.newDetailRequests || 0) + 1;
       const detailPromise = requestJson(secondaryNostrDetailUrl(candidate), 18)
         .then((body) => nostrTmdbRecordFromDetail(candidate, body, "variety", index, "detail"))
@@ -28500,33 +28594,61 @@ utils.encode = function encode(arr, enc) {
     async function secondaryRunNostrVarietyResolver(runtime, query) {
       await ensureNostrTmdbMetaLoaded();
       const retryOnlyFailed = !!runtime.retryOnlyFailed;
+      runtime.loadPaused = false;
+      runtime.loadScanCount = 0;
+      const loadContext = runtime.loadContext || { detailRequests: 0, budget: SECONDARY_NOSTR_VARIETY_DETAIL_BUDGET_PER_LOAD };
+      runtime.loadContext = loadContext;
       while (runtime.nextIndex < runtime.candidates.length && (retryOnlyFailed ? Object.keys(runtime.failedKeys || {}).length > 0 : secondaryNostrVarietyScanShouldContinue(runtime))) {
         const target = secondaryNostrVarietyScanTarget(runtime);
         const defaultMatches = secondaryNostrVarietyQualifiedItems(runtime, homeCategoryDefaultFilters(), target).length;
         const batchSize = !retryOnlyFailed && defaultMatches < target
           ? Math.min(SECONDARY_NOSTR_VARIETY_SCAN_BATCH_SIZE, Math.max(1, target - defaultMatches))
           : SECONDARY_NOSTR_VARIETY_SCAN_BATCH_SIZE;
-        const batch = runtime.candidates.slice(runtime.nextIndex, runtime.nextIndex + batchSize);
-        runtime.nextIndex += batch.length;
-        runtime.metrics.candidatesScanned = Number(runtime.metrics.candidatesScanned || 0) + batch.length;
-        const pending = batch.filter((candidate) => {
+        const batch = [];
+        let consumed = 0;
+        let reservedDetailRequests = 0;
+        while (runtime.nextIndex < runtime.candidates.length && batch.length < batchSize) {
+          const candidate = runtime.candidates[runtime.nextIndex];
           const key = secondaryNostrVarietyCandidateKey(candidate);
-          return !!key && (retryOnlyFailed ? !!runtime.failedKeys[key] : !runtime.statuses[key]);
-        });
-        if (!pending.length) {
+          const eligible = !!key && (retryOnlyFailed ? !!runtime.failedKeys[key] : !runtime.statuses[key]);
+          if (!eligible) {
+            runtime.nextIndex += 1;
+            consumed += 1;
+            continue;
+          }
+          const needsDetail = secondaryNostrDetailRequestNeeded(candidate, "variety", query);
+          if (needsDetail && Number(loadContext.detailRequests || 0) + reservedDetailRequests >= Number(loadContext.budget || SECONDARY_NOSTR_VARIETY_DETAIL_BUDGET_PER_LOAD)) {
+            runtime.loadPaused = true;
+            break;
+          }
+          if (needsDetail) reservedDetailRequests += 1;
+          batch.push(candidate);
+          runtime.nextIndex += 1;
+          consumed += 1;
+        }
+        runtime.metrics.candidatesScanned = Number(runtime.metrics.candidatesScanned || 0) + consumed;
+        runtime.loadScanCount = Number(runtime.loadScanCount || 0) + consumed;
+        if (!batch.length) {
           secondaryNostrVarietyNotify(runtime);
+          if (runtime.loadPaused) break;
           continue;
         }
-        await weeklyMapLimit(pending, SECONDARY_NOSTR_HOT_DETAIL_CONCURRENCY, (candidate) => {
+        await weeklyMapLimit(batch, SECONDARY_NOSTR_HOT_DETAIL_CONCURRENCY, (candidate) => {
           return secondaryNostrVarietyResolveCandidate(candidate, query, Number(candidate.nostrHotRank || 0) - 1, runtime);
         }, (wrapped, candidate) => {
           secondaryNostrVarietyApplyResult(runtime, candidate, wrapped);
           secondaryNostrVarietyNotify(runtime);
         });
+        if (runtime.loadPaused) break;
         if (retryOnlyFailed ? !Object.keys(runtime.failedKeys || {}).length : !secondaryNostrVarietyScanShouldContinue(runtime)) break;
       }
+      const retryResumeIndex = runtime.retryOnlyFailed ? runtime.retryResumeIndex : null;
+      if (retryResumeIndex != null) runtime.nextIndex = Number(retryResumeIndex || 0);
+      runtime.retryResumeIndex = null;
       runtime.retryOnlyFailed = false;
-      runtime.done = true;
+      runtime.done = !runtime.loadPaused
+        && Number(runtime.nextIndex || 0) >= (runtime.candidates || []).length
+        && !Object.keys(runtime.failedKeys || {}).length;
       secondaryNostrVarietyNotify(runtime);
       await flushNostrTmdbMetaCache();
       return runtime;
@@ -28534,19 +28656,25 @@ utils.encode = function encode(arr, enc) {
 
     function secondaryNostrVarietyStartResolver(runtime, query) {
       if (!runtime) return Promise.resolve(null);
-      if (runtime.promise && !runtime.done) return runtime.promise;
-      if (runtime.done && Object.keys(runtime.failedKeys || {}).length) {
+      if (runtime.running && runtime.promise) return runtime.promise;
+      if (Object.keys(runtime.failedKeys || {}).length && !runtime.retryOnlyFailed) {
+        runtime.retryResumeIndex = Number(runtime.nextIndex || 0);
         runtime.nextIndex = 0;
         runtime.done = false;
-        runtime.promise = null;
-        runtime.metrics = secondaryNostrVarietyEmptyMetrics();
         runtime.retryOnlyFailed = true;
       }
       if (runtime.done && secondaryNostrVarietyScanShouldContinue(runtime)) {
         runtime.done = false;
-        runtime.promise = null;
       }
-      if (!runtime.promise) runtime.promise = secondaryRunNostrVarietyResolver(runtime, query).catch(() => runtime);
+      runtime.loadContext = { detailRequests: 0, budget: SECONDARY_NOSTR_VARIETY_DETAIL_BUDGET_PER_LOAD };
+      runtime.loadPaused = false;
+      runtime.running = true;
+      runtime.promise = secondaryRunNostrVarietyResolver(runtime, query)
+        .catch(() => runtime)
+        .then((result) => {
+          runtime.running = false;
+          return result;
+        });
       return runtime.promise;
     }
 
@@ -28571,11 +28699,19 @@ utils.encode = function encode(arr, enc) {
       }
     }
 
+    function secondaryNostrMarkRetryableMetadata(query, key, retryable) {
+      if (!query || !query.nostrRetryableKeys || !key) return;
+      if (retryable) query.nostrRetryableKeys[key] = true;
+      else delete query.nostrRetryableKeys[key];
+      query.nostrRetryableMetadataCount = Object.keys(query.nostrRetryableKeys).length;
+    }
+
     async function secondaryNostrEnrichCandidate(hotItem, listId, query, index) {
       const known = secondaryNostrKnownItem(hotItem, query);
       if (known && secondaryNostrItemAllowed(listId, known)) {
         const knownItem = nostrHotSignalOverlay(known, hotItem, listId);
         if (knownItem) knownItem.nostrMetadataSource = "known";
+        secondaryNostrMarkRetryableMetadata(query, homeNostrSignalKey(hotItem), false);
         return knownItem;
       }
       const key = homeNostrSignalKey(hotItem);
@@ -28589,7 +28725,11 @@ utils.encode = function encode(arr, enc) {
           const refreshed = memoryRecord.metadata
             ? nostrTmdbRecordFromMetadata(hotItem, memoryRecord.metadata, listId, index, "cache")
             : memoryRecord;
-          if (refreshed.status === "valid") return nostrHotSignalOverlay(refreshed.item, hotItem, listId);
+          if (refreshed.status === "valid") {
+            secondaryNostrMarkRetryableMetadata(query, key, false);
+            return nostrHotSignalOverlay(refreshed.item, hotItem, listId);
+          }
+          secondaryNostrMarkRetryableMetadata(query, key, false);
         }
         if (memory[key] === memoryPromise) delete memory[key];
       }
@@ -28598,6 +28738,7 @@ utils.encode = function encode(arr, enc) {
         const record = nostrTmdbRecordFromMetadata(hotItem, persistent, listId, index, "persistent");
         if (record.status === "valid" || record.status === "invalid") {
           memory[key] = Promise.resolve(record);
+          secondaryNostrMarkRetryableMetadata(query, key, false);
           return record.status === "valid"
             ? nostrHotSignalOverlay(record.item, hotItem, listId)
             : null;
@@ -28613,9 +28754,9 @@ utils.encode = function encode(arr, enc) {
         return record;
       });
       const record = await Promise.resolve(memory[key]);
-      return record && record.status === "valid"
-        ? nostrHotSignalOverlay(record.item, hotItem, listId)
-        : null;
+      const valid = !!(record && record.status === "valid");
+      secondaryNostrMarkRetryableMetadata(query, key, !valid);
+      return valid ? nostrHotSignalOverlay(record.item, hotItem, listId) : null;
     }
 
     function secondaryNostrDetailRequestNeeded(hotItem, listId, query) {
@@ -28680,6 +28821,22 @@ utils.encode = function encode(arr, enc) {
       return true;
     }
 
+    function secondaryNostrUpdateQueryMetrics(query, candidates, cursor, resolvedCount, loadScanCount, loadDetailRequests, retryableMetadataCount, sourceExhausted, hasMore) {
+      if (!query) return;
+      query.nostrMetrics = {
+        source: "nostr",
+        totalGlobalPool: Array.isArray(state.hot && state.hot.items) ? state.hot.items.length : 0,
+        candidatePoolSize: Array.isArray(candidates) ? candidates.length : 0,
+        cursor: Number(cursor || 0),
+        resolvedCount: Number(resolvedCount || 0),
+        loadScanCount: Number(loadScanCount || 0),
+        loadDetailRequests: Number(loadDetailRequests || 0),
+        retryableMetadataCount: Number(retryableMetadataCount || 0),
+        sourceExhausted: !!sourceExhausted,
+        hasMore: !!hasMore
+      };
+    }
+
     async function secondaryLoadNostrHotItems(id, filters, query, target) {
       if (!secondaryNostrHotEnabled(id, filters) || !query || !query.nostrHot) return [];
       const targetCount = Math.max(SECONDARY_NOSTR_PAGE_SIZE, Number(target || SECONDARY_NOSTR_PAGE_SIZE));
@@ -28713,8 +28870,12 @@ utils.encode = function encode(arr, enc) {
             query.nostrScanCursor = Number(runtime && runtime.nextIndex || 0);
             query.nostrCandidatesScanned = Number(runtime && runtime.metrics && runtime.metrics.candidatesScanned || query.nostrScanCursor || 0);
             query.nostrNewDetailRequests = Number(runtime && runtime.metrics && runtime.metrics.newDetailRequests || 0);
-            query.nostrDetailBudgetExhausted = !!(runtime && runtime.detailBudgetExhausted);
-            query.nostrExhausted = !!(runtime && Number(runtime.nextIndex || 0) >= (runtime.candidates || []).length);
+            query.nostrLoadDetailRequests = Number(runtime && runtime.loadContext && runtime.loadContext.detailRequests || 0);
+            query.nostrLoadScanCount = Number(runtime && runtime.metrics && runtime.metrics.candidatesScanned || 0);
+            query.nostrLoadPaused = !!(runtime && runtime.loadPaused);
+            query.nostrRetryableMetadataCount = Object.keys(runtime && runtime.failedKeys || {}).length;
+            query.nostrExhausted = !!(runtime && runtime.done);
+            secondaryNostrUpdateQueryMetrics(query, runtime && runtime.candidates, runtime && runtime.nextIndex, qualifiedAnime.length, runtime && runtime.loadScanCount, runtime && runtime.loadContext && runtime.loadContext.detailRequests, query.nostrRetryableMetadataCount, query.nostrExhausted, !query.nostrExhausted || query.nostrRetryableMetadataCount > 0 || query.nostrLoadPaused);
             commitSecondaryNostrHotItems(id, scanFilters, query, generation, qualifiedAnime);
           }
           return qualifiedAnime;
@@ -28735,8 +28896,12 @@ utils.encode = function encode(arr, enc) {
             query.nostrScanCursor = Number(runtime && runtime.nextIndex || 0);
             query.nostrCandidatesScanned = Number(runtime && runtime.metrics && runtime.metrics.candidatesScanned || query.nostrScanCursor || 0);
             query.nostrNewDetailRequests = Number(runtime && runtime.metrics && runtime.metrics.newDetailRequests || 0);
-            query.nostrDetailBudgetExhausted = !!(runtime && runtime.detailBudgetExhausted);
-            query.nostrExhausted = !!(runtime && (runtime.detailBudgetExhausted || Number(runtime.nextIndex || 0) >= (runtime.candidates || []).length));
+            query.nostrLoadDetailRequests = Number(runtime && runtime.loadContext && runtime.loadContext.detailRequests || 0);
+            query.nostrLoadScanCount = Number(runtime && runtime.metrics && runtime.metrics.candidatesScanned || 0);
+            query.nostrLoadPaused = !!(runtime && runtime.loadPaused);
+            query.nostrRetryableMetadataCount = Object.keys(runtime && runtime.failedKeys || {}).length;
+            query.nostrExhausted = !!(runtime && runtime.done);
+            secondaryNostrUpdateQueryMetrics(query, runtime && runtime.candidates, runtime && runtime.nextIndex, qualifiedVariety.length, runtime && runtime.loadScanCount, runtime && runtime.loadContext && runtime.loadContext.detailRequests, query.nostrRetryableMetadataCount, query.nostrExhausted, !query.nostrExhausted || query.nostrRetryableMetadataCount > 0 || query.nostrLoadPaused);
             commitSecondaryNostrHotItems(id, scanFilters, query, generation, qualifiedVariety);
           }
           return qualifiedVariety;
@@ -28749,28 +28914,44 @@ utils.encode = function encode(arr, enc) {
       const candidates = secondaryNostrHotCandidates(id, scanFilters);
       let cursor = Math.max(0, Math.min(candidates.length, Number(query.nostrScanCursor || 0)));
       let newDetailRequests = Number(query.nostrNewDetailRequests || 0);
-      let detailBudgetExhausted = !!query.nostrDetailBudgetExhausted;
+      let loadDetailRequests = 0;
+      let loadScanCount = 0;
+      let loadPaused = false;
+      const retryableKeys = query.nostrRetryableKeys && typeof query.nostrRetryableKeys === "object" ? query.nostrRetryableKeys : {};
+      query.nostrRetryableKeys = retryableKeys;
+      const retryCandidates = candidates.filter((candidate) => !!retryableKeys[homeNostrSignalKey(candidate)]);
+      let retryCursor = 0;
       try {
-        while (cursor < candidates.length && qualified.length < targetCount) {
+        while ((retryCursor < retryCandidates.length || cursor < candidates.length) && qualified.length < targetCount) {
           if (!secondaryNostrTaskIsCurrent(id, scanFilters, query, generation)) return qualified;
-          const batchCandidates = candidates.slice(cursor, cursor + SECONDARY_NOSTR_HOT_BATCH_SIZE);
-          cursor += batchCandidates.length;
-          query.nostrScanCursor = cursor;
-          query.nostrCandidatesScanned = cursor;
-          const batch = batchCandidates.filter((candidate) => {
+          const fromRetry = retryCursor < retryCandidates.length;
+          const batchCandidates = fromRetry
+            ? retryCandidates.slice(retryCursor, retryCursor + SECONDARY_NOSTR_HOT_BATCH_SIZE)
+            : candidates.slice(cursor, cursor + SECONDARY_NOSTR_HOT_BATCH_SIZE);
+          const batch = [];
+          let consumed = 0;
+          for (const candidate of batchCandidates) {
             const needsDetail = secondaryNostrDetailRequestNeeded(candidate, id, query);
             if (needsDetail) {
-              if (newDetailRequests >= SECONDARY_NOSTR_HOT_MAX_NEW_DETAIL_REQUESTS) {
-                detailBudgetExhausted = true;
-                return false;
+              if (loadDetailRequests >= SECONDARY_NOSTR_HOT_DETAIL_BUDGET_PER_LOAD) {
+                loadPaused = true;
+                break;
               }
+              loadDetailRequests += 1;
               newDetailRequests += 1;
             }
-            return true;
-          });
+            batch.push(candidate);
+            consumed += 1;
+          }
+          if (fromRetry) retryCursor += consumed;
+          else cursor += consumed;
+          loadScanCount += consumed;
+          query.nostrScanCursor = cursor;
+          query.nostrCandidatesScanned = cursor;
+          query.nostrLoadDetailRequests = loadDetailRequests;
+          query.nostrLoadScanCount = loadScanCount;
           query.nostrNewDetailRequests = newDetailRequests;
-          query.nostrDetailBudgetExhausted = detailBudgetExhausted;
-          if (!batch.length) continue;
+          if (!batch.length) break;
           const results = await weeklyMapLimit(batch, SECONDARY_NOSTR_HOT_DETAIL_CONCURRENCY, (candidate, index) => secondaryNostrEnrichCandidate(candidate, id, query, index));
           if (!secondaryNostrTaskIsCurrent(id, scanFilters, query, generation)) return qualified;
           const matches = results
@@ -28779,6 +28960,7 @@ utils.encode = function encode(arr, enc) {
             .slice(0, Math.max(0, targetCount - qualified.length));
           if (matches.length) qualified.push(...matches);
           commitSecondaryNostrHotItems(id, scanFilters, query, generation, qualified);
+          if (loadPaused) break;
         }
         if (secondaryNostrTaskIsCurrent(id, scanFilters, query, generation)) {
           query.nostrHotItems = uniqueMedia(qualified);
@@ -28786,8 +28968,12 @@ utils.encode = function encode(arr, enc) {
           query.nostrScanCursor = cursor;
           query.nostrCandidatesScanned = cursor;
           query.nostrNewDetailRequests = newDetailRequests;
-          query.nostrDetailBudgetExhausted = detailBudgetExhausted;
-          query.nostrExhausted = detailBudgetExhausted || cursor >= candidates.length;
+          query.nostrLoadDetailRequests = loadDetailRequests;
+          query.nostrLoadScanCount = loadScanCount;
+          query.nostrLoadPaused = loadPaused;
+          query.nostrRetryableMetadataCount = Object.keys(query.nostrRetryableKeys || {}).length;
+          query.nostrExhausted = !loadPaused && cursor >= candidates.length && !query.nostrRetryableMetadataCount;
+          secondaryNostrUpdateQueryMetrics(query, candidates, cursor, qualified.length, loadScanCount, loadDetailRequests, query.nostrRetryableMetadataCount, query.nostrExhausted, !query.nostrExhausted || query.nostrRetryableMetadataCount > 0 || loadPaused);
         }
         return qualified;
       } finally {
@@ -28810,7 +28996,11 @@ utils.encode = function encode(arr, enc) {
         query.nostrScanCursor = 0;
         query.nostrCandidatesScanned = 0;
         query.nostrNewDetailRequests = 0;
-        query.nostrDetailBudgetExhausted = false;
+        query.nostrLoadDetailRequests = 0;
+        query.nostrLoadScanCount = 0;
+        query.nostrLoadPaused = false;
+        query.nostrRetryableMetadataCount = 0;
+        query.nostrRetryableKeys = {};
         query.nostrExhausted = false;
         query.nostrHotReady = false;
         query.page = 0;
@@ -28933,6 +29123,7 @@ utils.encode = function encode(arr, enc) {
       query.endpointMap = [];
       query.sourceStates = [];
       query.error = "";
+      query.retryableError = "";
       if (page === 1 && !query.nostrPaginationInitialized) {
         query.nostrPaginationInitialized = true;
         query.page = 0;
@@ -28945,7 +29136,12 @@ utils.encode = function encode(arr, enc) {
         query.nostrScanCursor = 0;
         query.nostrCandidatesScanned = 0;
         query.nostrNewDetailRequests = 0;
-        query.nostrDetailBudgetExhausted = false;
+        query.nostrLoadDetailRequests = 0;
+        query.nostrLoadScanCount = 0;
+        query.nostrLoadPaused = false;
+        query.nostrRetryableMetadataCount = 0;
+        query.nostrRetryableKeys = {};
+        query.nostrMetrics = null;
         query.nostrExhausted = false;
         query.nostrHotReady = false;
       }
@@ -28964,8 +29160,9 @@ utils.encode = function encode(arr, enc) {
         query.totalResults = query.nostrExhausted ? resolved.length : 0;
         query.loading = false;
         query.loaded = true;
-        query.hasMore = !!(hotReady && !query.nostrExhausted);
+        query.hasMore = !!(hotReady && (!query.nostrExhausted || Number(query.nostrRetryableMetadataCount || 0) > 0));
         query.error = "";
+        query.retryableError = query.nostrLoadPaused ? "本轮工作量已暂停，可继续加载" : "";
         state.homeV14.secondaryPage = page;
         if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
         observeInfiniteScroll();
@@ -28981,12 +29178,35 @@ utils.encode = function encode(arr, enc) {
         query.totalResults = query.nostrExhausted ? preserved.length : 0;
         query.loading = false;
         query.loaded = !!(preserved.length || Number(query.page || 0));
-        query.hasMore = false;
-        query.error = String(error && error.message || "加载失败");
+        query.hasMore = !!(state.hot && state.hot.ready && (!query.nostrExhausted || Number(query.nostrRetryableMetadataCount || 0) > 0));
+        query.error = "";
+        query.retryableError = String(error && error.message || "加载失败");
         if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
         return query;
       }
     }
+    function secondaryUpdateTmdbMetrics(query, plan, queryHasMore) {
+      if (!query || !plan) return;
+      const sources = (plan.sourceStates || []).map((sourceState) => ({
+        key: sourceState.key,
+        page: Number(sourceState.page || 0),
+        totalPages: Number(sourceState.totalPages || 0),
+        exhausted: !!sourceState.exhausted,
+        retryableError: String(sourceState.retryableError || ""),
+        terminalError: String(sourceState.terminalError || "")
+      }));
+      query.tmdbMetrics = {
+        source: "tmdb",
+        sourceCount: sources.length,
+        sources,
+        sourcePage: sources.length === 1 ? sources[0].page : null,
+        sourceTotalPages: sources.length === 1 ? sources[0].totalPages : null,
+        sourceExhausted: sources.length === 1 ? sources[0].exhausted : sources.every((entry) => entry.exhausted || !!entry.terminalError),
+        sourceRetryableError: sources.some((entry) => !!entry.retryableError),
+        queryHasMore: !!queryHasMore
+      };
+    }
+
     async function loadSecondaryPage(id, query, pageNumber) {
       id = normalizeLegacyCategoryId(id);
       if (!query || query.listId !== id || query.loading) return query;
@@ -29056,6 +29276,7 @@ utils.encode = function encode(arr, enc) {
       if (page > 1 && !query.hasMore && !query.error) return query;
       query.loading = true;
       query.error = "";
+      query.retryableError = "";
       query.failedPage = 0;
       const requestSeq = ++query.requestSeq;
       if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
@@ -29063,50 +29284,67 @@ utils.encode = function encode(arr, enc) {
       if (query.nostrHot) return loadSecondaryNostrPage(id, query, filters, requestSeq, page);
       const plan = buildSecondaryQueryPlan(id, filters, query);
       const pending = plan.sources.map((source, index) => ({ source, state: plan.sourceStates[index] }))
-        .filter((entry) => entry.state && !entry.state.done && !entry.state.error);
+        .filter((entry) => entry.state && !entry.state.exhausted && !entry.state.terminalError);
       if (page === 1 && query.nostrHot) secondaryLoadNostrHotItems(id, filters, query).catch(() => {});
       if (!pending.length) {
         query.items = uniqueMedia((query.nostrHotItems || []).concat(query.items || []));
         query.loading = false;
         query.loaded = true;
-        query.hasMore = false;
+        query.hasMore = plan.sourceStates.some(secondaryTmdbSourceHasMore);
+        secondaryUpdateTmdbMetrics(query, plan, query.hasMore);
         state.homeV14.secondaryPage = query.page;
         if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
         return query;
       }
       pending.forEach((entry) => { entry.state.loading = true; });
-      const results = await Promise.all(pending.map(({ source, state: sourceState }) => Promise.resolve()
-        .then(() => requestJson(tmdbUrl(source, page), 18))
-        .then((body) => ({ source, sourceState, body: body || {}, error: null }))
-        .catch((error) => ({ source, sourceState, body: null, error }))));
+      const results = await Promise.all(pending.map(({ source, state: sourceState }) => {
+        const requestPage = Math.max(1, Number(sourceState.page || 0) + 1);
+        return Promise.resolve()
+          .then(() => requestJson(tmdbUrl(source, requestPage), 18))
+          .then((body) => ({ source, sourceState, requestPage, body: body || {}, error: null }))
+          .catch((error) => ({ source, sourceState, requestPage, body: null, error }));
+      }));
       if (query.requestSeq !== requestSeq || secondaryActiveQuery(id) !== query) return query;
       const incoming = [];
       let goodCount = 0;
       results.forEach((result) => {
         const sourceState = result.sourceState;
         sourceState.loading = false;
-        sourceState.page = page;
         if (result.error || !result.body) {
-          sourceState.error = String(result.error && result.error.message || "加载失败");
-          sourceState.done = true;
+          const message = String(result.error && result.error.message || "加载失败");
+          if (secondaryTmdbErrorIsTerminal(result.error)) {
+            sourceState.retryableError = "";
+            sourceState.terminalError = message;
+          } else {
+            sourceState.retryableError = message;
+            sourceState.terminalError = "";
+          }
+          sourceState.exhausted = false;
           return;
         }
         goodCount += 1;
         const body = result.body || {};
-        sourceState.totalPages = Math.max(page, Number(body.total_pages || page));
+        sourceState.page = result.requestPage;
+        sourceState.totalPages = Math.max(result.requestPage, Number(body.total_pages || result.requestPage));
         sourceState.totalResults = Number.isFinite(Number(body.total_results)) ? Number(body.total_results) : 0;
-        sourceState.done = page >= sourceState.totalPages;
+        sourceState.exhausted = result.requestPage >= sourceState.totalPages;
+        sourceState.retryableError = "";
+        sourceState.terminalError = "";
         (Array.isArray(body.results) ? body.results : []).forEach((item, index) => {
-          const normalized = normalizeTmdb(item, result.source, (page - 1) * 20 + index);
+          const normalized = normalizeTmdb(item, result.source, (result.requestPage - 1) * 20 + index);
           if (hasPoster(normalized) && (!isReleaseFilteredCatalogId(id) || isReleasedAsOfToday(normalized))) incoming.push(normalized);
         });
       });
-      if (!goodCount && !(Array.isArray(query.nostrHotItems) && query.nostrHotItems.length)) {
+      const hasRetryableSource = plan.sourceStates.some((sourceState) => !!sourceState.retryableError);
+      const hasPendingSource = plan.sourceStates.some(secondaryTmdbSourceHasMore);
+      if (!goodCount && !hasRetryableSource && !(Array.isArray(query.nostrHotItems) && query.nostrHotItems.length)) {
         query.loading = false;
         query.loaded = query.page > 0;
         query.error = "加载失败";
+        query.retryableError = "";
         query.failedPage = page;
-        query.hasMore = false;
+        query.hasMore = hasPendingSource;
+        secondaryUpdateTmdbMetrics(query, plan, query.hasMore);
         if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
         return query;
       }
@@ -29117,8 +29355,10 @@ utils.encode = function encode(arr, enc) {
       query.totalResults = totals.length ? totals.reduce((sum, value) => sum + value, 0) : 0;
       query.loading = false;
       query.loaded = true;
-      query.hasMore = plan.sourceStates.some((sourceState) => !sourceState.done && !sourceState.error);
+      query.hasMore = hasPendingSource;
       query.error = "";
+      query.retryableError = hasRetryableSource ? "部分来源暂时不可用，可继续重试" : "";
+      secondaryUpdateTmdbMetrics(query, plan, query.hasMore);
       state.homeV14.secondaryPage = query.page;
       if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
       observeInfiniteScroll();
@@ -40013,7 +40253,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         if (cursor.nextRetryAt && cursor.nextRetryAt > now) return;
         let changed = false;
         changed = await syncRelayRecent(relay, cursor, since, now, runToken) || changed;
-        if (!cursor.recentUntil && !cursor.historyDone && !cursor.historyFailed && !cursor.historyTimedOut) {
+        if (!cursor.recentUntil && !cursor.historyDone) {
           changed = await syncRelayHistory(relay, cursor, since, now, runToken) || changed;
         }
         if (runToken !== state.relay.subscribeToken) return;
@@ -40033,16 +40273,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         if (runToken === state.relay.subscribeToken) {
           const error = e && e.message || "回填失败";
           if (cursor) {
-            cursor.recentUntil = 0;
-            cursor.recentHigh = 0;
-            cursor.recentTarget = 0;
-            cursor.historyUntil = Number(cursor.since || 0) - 1;
-            cursor.historyDone = false;
-            cursor.historyFailed = true;
+            cursor.retryableFailure = true;
+            cursor.historyFailed = false;
             cursor.historyTimedOut = false;
             cursor.error = error;
           }
-          markRelayBackfillTerminal(relay, "failed", error, runToken);
+          markRelayBackfillTerminal(relay, cursor ? "retryable" : "failed", error, runToken);
         }
       } finally {
         if (runToken === state.relay.subscribeToken) {
@@ -40056,7 +40292,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     }
 
     function relayBackfillDone(cursor) {
-      return !cursor.recentUntil && (cursor.historyDone || cursor.historyFailed || cursor.historyTimedOut);
+      return !cursor.recentUntil && cursor.historyDone === true;
     }
 
     function relayBackfillDelay(cursor) {
@@ -40073,19 +40309,16 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       cursor.error = error;
       if (cursor.failures >= HOT_BACKFILL_MAX_FAILURES) {
         cursor.nextRetryAt = 0;
-        cursor.recentHigh = 0;
-        cursor.recentUntil = 0;
-        cursor.recentTarget = 0;
-        cursor.historyUntil = Number(cursor.since || 0) - 1;
+        cursor.retryableFailure = true;
         cursor.historyDone = false;
-        cursor.historyFailed = failureKind === "failed";
-        cursor.historyTimedOut = failureKind === "timeout";
-        markRelayBackfillTerminal(relay, failureKind, error, token);
+        cursor.historyFailed = false;
+        cursor.historyTimedOut = false;
+        markRelayBackfillTerminal(relay, "retryable", error, token);
         return true;
       }
       const delay = Math.min(HOT_BACKFILL_RETRY_MAX_MS, HOT_BACKFILL_RETRY_MS * Math.pow(2, cursor.failures - 1));
       cursor.nextRetryAt = hotNow() + Math.ceil(delay / 1000);
-      setRelayBackfillState(relay, { error, terminal: false, terminalState: "retrying" });
+      setRelayBackfillState(relay, { error, terminal: false, retryable: true, terminalState: "retrying" });
       return false;
     }
 
@@ -40093,6 +40326,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       cursor.failures = 0;
       cursor.nextRetryAt = 0;
       cursor.error = "";
+      cursor.retryableFailure = false;
     }
 
     function scheduleRelayBackfill(relay, delay, token) {
@@ -40120,6 +40354,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           historyDone: false,
           historyFailed: false,
           historyTimedOut: false,
+          retryableFailure: false,
           error: "",
           updatedAt: 0,
           failures: 0,
@@ -40145,6 +40380,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         historyDone,
         historyFailed: false,
         historyTimedOut: false,
+        retryableFailure: !!cursor.retryableFailure,
         error: "",
         updatedAt: Number(cursor.updatedAt || 0),
         failures: Number(cursor.failures || 0),
@@ -40226,7 +40462,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     }
 
     async function syncRelayHistory(relay, cursor, since, now, token) {
-      if (cursor.historyDone || cursor.historyFailed || cursor.historyTimedOut) return false;
+      if (cursor.historyDone) return false;
       if (!cursor.historyUntil || cursor.historyUntil < since) cursor.historyUntil = Math.max(cursor.newest || 0, now);
       let changed = false;
       for (let page = 0; page < HOT_HISTORY_PAGES_PER_RELAY; page++) {
@@ -40464,7 +40700,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (content && typeof content === "object") return content;
       return safeJson(content, null);
     }
-
     // 详情页背景：随滚动渐变高斯模糊 + 压暗（参考美化最终.html，排除 TV 端）
     // ease 0→1：0=顶部正常，1=完全模糊压暗
     function setDetailHeroBlur(blurPx, ease) {

@@ -81,6 +81,7 @@
       query.endpointMap = [];
       query.sourceStates = [];
       query.error = "";
+      query.retryableError = "";
       if (page === 1 && !query.nostrPaginationInitialized) {
         query.nostrPaginationInitialized = true;
         query.page = 0;
@@ -93,7 +94,12 @@
         query.nostrScanCursor = 0;
         query.nostrCandidatesScanned = 0;
         query.nostrNewDetailRequests = 0;
-        query.nostrDetailBudgetExhausted = false;
+        query.nostrLoadDetailRequests = 0;
+        query.nostrLoadScanCount = 0;
+        query.nostrLoadPaused = false;
+        query.nostrRetryableMetadataCount = 0;
+        query.nostrRetryableKeys = {};
+        query.nostrMetrics = null;
         query.nostrExhausted = false;
         query.nostrHotReady = false;
       }
@@ -112,8 +118,9 @@
         query.totalResults = query.nostrExhausted ? resolved.length : 0;
         query.loading = false;
         query.loaded = true;
-        query.hasMore = !!(hotReady && !query.nostrExhausted);
+        query.hasMore = !!(hotReady && (!query.nostrExhausted || Number(query.nostrRetryableMetadataCount || 0) > 0));
         query.error = "";
+        query.retryableError = query.nostrLoadPaused ? "本轮工作量已暂停，可继续加载" : "";
         state.homeV14.secondaryPage = page;
         if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
         observeInfiniteScroll();
@@ -129,12 +136,35 @@
         query.totalResults = query.nostrExhausted ? preserved.length : 0;
         query.loading = false;
         query.loaded = !!(preserved.length || Number(query.page || 0));
-        query.hasMore = false;
-        query.error = String(error && error.message || "加载失败");
+        query.hasMore = !!(state.hot && state.hot.ready && (!query.nostrExhausted || Number(query.nostrRetryableMetadataCount || 0) > 0));
+        query.error = "";
+        query.retryableError = String(error && error.message || "加载失败");
         if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
         return query;
       }
     }
+    function secondaryUpdateTmdbMetrics(query, plan, queryHasMore) {
+      if (!query || !plan) return;
+      const sources = (plan.sourceStates || []).map((sourceState) => ({
+        key: sourceState.key,
+        page: Number(sourceState.page || 0),
+        totalPages: Number(sourceState.totalPages || 0),
+        exhausted: !!sourceState.exhausted,
+        retryableError: String(sourceState.retryableError || ""),
+        terminalError: String(sourceState.terminalError || "")
+      }));
+      query.tmdbMetrics = {
+        source: "tmdb",
+        sourceCount: sources.length,
+        sources,
+        sourcePage: sources.length === 1 ? sources[0].page : null,
+        sourceTotalPages: sources.length === 1 ? sources[0].totalPages : null,
+        sourceExhausted: sources.length === 1 ? sources[0].exhausted : sources.every((entry) => entry.exhausted || !!entry.terminalError),
+        sourceRetryableError: sources.some((entry) => !!entry.retryableError),
+        queryHasMore: !!queryHasMore
+      };
+    }
+
     async function loadSecondaryPage(id, query, pageNumber) {
       id = normalizeLegacyCategoryId(id);
       if (!query || query.listId !== id || query.loading) return query;
@@ -204,6 +234,7 @@
       if (page > 1 && !query.hasMore && !query.error) return query;
       query.loading = true;
       query.error = "";
+      query.retryableError = "";
       query.failedPage = 0;
       const requestSeq = ++query.requestSeq;
       if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
@@ -211,50 +242,67 @@
       if (query.nostrHot) return loadSecondaryNostrPage(id, query, filters, requestSeq, page);
       const plan = buildSecondaryQueryPlan(id, filters, query);
       const pending = plan.sources.map((source, index) => ({ source, state: plan.sourceStates[index] }))
-        .filter((entry) => entry.state && !entry.state.done && !entry.state.error);
+        .filter((entry) => entry.state && !entry.state.exhausted && !entry.state.terminalError);
       if (page === 1 && query.nostrHot) secondaryLoadNostrHotItems(id, filters, query).catch(() => {});
       if (!pending.length) {
         query.items = uniqueMedia((query.nostrHotItems || []).concat(query.items || []));
         query.loading = false;
         query.loaded = true;
-        query.hasMore = false;
+        query.hasMore = plan.sourceStates.some(secondaryTmdbSourceHasMore);
+        secondaryUpdateTmdbMetrics(query, plan, query.hasMore);
         state.homeV14.secondaryPage = query.page;
         if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
         return query;
       }
       pending.forEach((entry) => { entry.state.loading = true; });
-      const results = await Promise.all(pending.map(({ source, state: sourceState }) => Promise.resolve()
-        .then(() => requestJson(tmdbUrl(source, page), 18))
-        .then((body) => ({ source, sourceState, body: body || {}, error: null }))
-        .catch((error) => ({ source, sourceState, body: null, error }))));
+      const results = await Promise.all(pending.map(({ source, state: sourceState }) => {
+        const requestPage = Math.max(1, Number(sourceState.page || 0) + 1);
+        return Promise.resolve()
+          .then(() => requestJson(tmdbUrl(source, requestPage), 18))
+          .then((body) => ({ source, sourceState, requestPage, body: body || {}, error: null }))
+          .catch((error) => ({ source, sourceState, requestPage, body: null, error }));
+      }));
       if (query.requestSeq !== requestSeq || secondaryActiveQuery(id) !== query) return query;
       const incoming = [];
       let goodCount = 0;
       results.forEach((result) => {
         const sourceState = result.sourceState;
         sourceState.loading = false;
-        sourceState.page = page;
         if (result.error || !result.body) {
-          sourceState.error = String(result.error && result.error.message || "加载失败");
-          sourceState.done = true;
+          const message = String(result.error && result.error.message || "加载失败");
+          if (secondaryTmdbErrorIsTerminal(result.error)) {
+            sourceState.retryableError = "";
+            sourceState.terminalError = message;
+          } else {
+            sourceState.retryableError = message;
+            sourceState.terminalError = "";
+          }
+          sourceState.exhausted = false;
           return;
         }
         goodCount += 1;
         const body = result.body || {};
-        sourceState.totalPages = Math.max(page, Number(body.total_pages || page));
+        sourceState.page = result.requestPage;
+        sourceState.totalPages = Math.max(result.requestPage, Number(body.total_pages || result.requestPage));
         sourceState.totalResults = Number.isFinite(Number(body.total_results)) ? Number(body.total_results) : 0;
-        sourceState.done = page >= sourceState.totalPages;
+        sourceState.exhausted = result.requestPage >= sourceState.totalPages;
+        sourceState.retryableError = "";
+        sourceState.terminalError = "";
         (Array.isArray(body.results) ? body.results : []).forEach((item, index) => {
-          const normalized = normalizeTmdb(item, result.source, (page - 1) * 20 + index);
+          const normalized = normalizeTmdb(item, result.source, (result.requestPage - 1) * 20 + index);
           if (hasPoster(normalized) && (!isReleaseFilteredCatalogId(id) || isReleasedAsOfToday(normalized))) incoming.push(normalized);
         });
       });
-      if (!goodCount && !(Array.isArray(query.nostrHotItems) && query.nostrHotItems.length)) {
+      const hasRetryableSource = plan.sourceStates.some((sourceState) => !!sourceState.retryableError);
+      const hasPendingSource = plan.sourceStates.some(secondaryTmdbSourceHasMore);
+      if (!goodCount && !hasRetryableSource && !(Array.isArray(query.nostrHotItems) && query.nostrHotItems.length)) {
         query.loading = false;
         query.loaded = query.page > 0;
         query.error = "加载失败";
+        query.retryableError = "";
         query.failedPage = page;
-        query.hasMore = false;
+        query.hasMore = hasPendingSource;
+        secondaryUpdateTmdbMetrics(query, plan, query.hasMore);
         if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
         return query;
       }
@@ -265,8 +313,10 @@
       query.totalResults = totals.length ? totals.reduce((sum, value) => sum + value, 0) : 0;
       query.loading = false;
       query.loaded = true;
-      query.hasMore = plan.sourceStates.some((sourceState) => !sourceState.done && !sourceState.error);
+      query.hasMore = hasPendingSource;
       query.error = "";
+      query.retryableError = hasRetryableSource ? "部分来源暂时不可用，可继续重试" : "";
+      secondaryUpdateTmdbMetrics(query, plan, query.hasMore);
       state.homeV14.secondaryPage = query.page;
       if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
       observeInfiniteScroll();

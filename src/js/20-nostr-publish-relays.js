@@ -546,7 +546,7 @@
         if (cursor.nextRetryAt && cursor.nextRetryAt > now) return;
         let changed = false;
         changed = await syncRelayRecent(relay, cursor, since, now, runToken) || changed;
-        if (!cursor.recentUntil && !cursor.historyDone && !cursor.historyFailed && !cursor.historyTimedOut) {
+        if (!cursor.recentUntil && !cursor.historyDone) {
           changed = await syncRelayHistory(relay, cursor, since, now, runToken) || changed;
         }
         if (runToken !== state.relay.subscribeToken) return;
@@ -566,16 +566,12 @@
         if (runToken === state.relay.subscribeToken) {
           const error = e && e.message || "回填失败";
           if (cursor) {
-            cursor.recentUntil = 0;
-            cursor.recentHigh = 0;
-            cursor.recentTarget = 0;
-            cursor.historyUntil = Number(cursor.since || 0) - 1;
-            cursor.historyDone = false;
-            cursor.historyFailed = true;
+            cursor.retryableFailure = true;
+            cursor.historyFailed = false;
             cursor.historyTimedOut = false;
             cursor.error = error;
           }
-          markRelayBackfillTerminal(relay, "failed", error, runToken);
+          markRelayBackfillTerminal(relay, cursor ? "retryable" : "failed", error, runToken);
         }
       } finally {
         if (runToken === state.relay.subscribeToken) {
@@ -589,7 +585,7 @@
     }
 
     function relayBackfillDone(cursor) {
-      return !cursor.recentUntil && (cursor.historyDone || cursor.historyFailed || cursor.historyTimedOut);
+      return !cursor.recentUntil && cursor.historyDone === true;
     }
 
     function relayBackfillDelay(cursor) {
@@ -606,19 +602,16 @@
       cursor.error = error;
       if (cursor.failures >= HOT_BACKFILL_MAX_FAILURES) {
         cursor.nextRetryAt = 0;
-        cursor.recentHigh = 0;
-        cursor.recentUntil = 0;
-        cursor.recentTarget = 0;
-        cursor.historyUntil = Number(cursor.since || 0) - 1;
+        cursor.retryableFailure = true;
         cursor.historyDone = false;
-        cursor.historyFailed = failureKind === "failed";
-        cursor.historyTimedOut = failureKind === "timeout";
-        markRelayBackfillTerminal(relay, failureKind, error, token);
+        cursor.historyFailed = false;
+        cursor.historyTimedOut = false;
+        markRelayBackfillTerminal(relay, "retryable", error, token);
         return true;
       }
       const delay = Math.min(HOT_BACKFILL_RETRY_MAX_MS, HOT_BACKFILL_RETRY_MS * Math.pow(2, cursor.failures - 1));
       cursor.nextRetryAt = hotNow() + Math.ceil(delay / 1000);
-      setRelayBackfillState(relay, { error, terminal: false, terminalState: "retrying" });
+      setRelayBackfillState(relay, { error, terminal: false, retryable: true, terminalState: "retrying" });
       return false;
     }
 
@@ -626,6 +619,7 @@
       cursor.failures = 0;
       cursor.nextRetryAt = 0;
       cursor.error = "";
+      cursor.retryableFailure = false;
     }
 
     function scheduleRelayBackfill(relay, delay, token) {
@@ -653,6 +647,7 @@
           historyDone: false,
           historyFailed: false,
           historyTimedOut: false,
+          retryableFailure: false,
           error: "",
           updatedAt: 0,
           failures: 0,
@@ -678,6 +673,7 @@
         historyDone,
         historyFailed: false,
         historyTimedOut: false,
+        retryableFailure: !!cursor.retryableFailure,
         error: "",
         updatedAt: Number(cursor.updatedAt || 0),
         failures: Number(cursor.failures || 0),
@@ -759,7 +755,7 @@
     }
 
     async function syncRelayHistory(relay, cursor, since, now, token) {
-      if (cursor.historyDone || cursor.historyFailed || cursor.historyTimedOut) return false;
+      if (cursor.historyDone) return false;
       if (!cursor.historyUntil || cursor.historyUntil < since) cursor.historyUntil = Math.max(cursor.newest || 0, now);
       let changed = false;
       for (let page = 0; page < HOT_HISTORY_PAGES_PER_RELAY; page++) {
@@ -997,4 +993,3 @@
       if (content && typeof content === "object") return content;
       return safeJson(content, null);
     }
-

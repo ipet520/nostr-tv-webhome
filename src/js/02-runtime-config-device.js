@@ -433,7 +433,6 @@
     const HOT_DB_VERSION = 1;
     const HOT_VECTOR_D = "heat:user:90d:v2";
     const HOT_VECTOR_VERSION = 5;
-    const HOT_USER_VECTOR_LIMIT = 300;
     const HOT_TITLE_LIMIT = 60;
     const HOT_POSTER_LIMIT = 96;
     const HOT_PAGE_LIMIT = 1000;
@@ -448,7 +447,6 @@
     const HOT_REFRESH_IDLE_MS = 260;
     const HOT_REFRESH_BACKFILL_MS = 900;
     const HOT_PRUNE_BATCH = 1000;
-    const HOT_RENDER_LIMIT = 1000;
     const UI_SNAPSHOT_TTL_MS = 2 * 60 * 60 * 1000;
     const HISTORY_CONTEXT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
     const DELETE_REPUBLISH_BLOCK_MS = 24 * 60 * 60 * 1000;

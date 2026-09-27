@@ -327,7 +327,7 @@
       check("COMPLETE_META_CACHE_AVOIDS_REDUNDANT_DETAIL", nostrTmdbMetaHasCanonicalPoster(canonicalArtworkMetadata) && completeArtworkAvoidsDetail, "complete artwork metadata avoids a redundant detail request", "RUNTIME_MOCK");
       check("NOSTR_ITEM_CANNOT_SELF_VALIDATE_BAD_POSTER", secondaryNostrKnownItem(badArtworkHotMock, { items: [badArtworkHotMock] }) === null, "an old Nostr item cannot certify its own event artwork", "RUNTIME_MOCK");
       check("NOSTR_ITEM_WITHOUT_TMDB_POSTER_NOT_RENDERED_AS_BAD_CARD", secondaryNostrItemFromDetail(badArtworkHotMock, Object.assign({}, canonicalArtworkDetailMock, { poster_path: "" }), "movie", 0) === null, "a TMDB detail without poster is excluded rather than rendered with the hot image", "RUNTIME_MOCK");
-      check("DETAIL_REQUEST_BUDGET_STILL_ENFORCED", String(secondaryLoadNostrHotItems).includes("SECONDARY_NOSTR_HOT_MAX_NEW_DETAIL_REQUESTS") && String(secondaryNostrDetailRequestNeeded).includes("nostrTmdbMetaHasCanonicalPoster"), "artwork upgrades remain inside the existing detail budget", "STATIC_HOOK");
+      check("DETAIL_REQUEST_BUDGET_STILL_ENFORCED", String(secondaryLoadNostrHotItems).includes("SECONDARY_NOSTR_HOT_DETAIL_BUDGET_PER_LOAD") && String(secondaryLoadNostrHotItems).includes("let loadDetailRequests = 0;") && String(secondaryNostrDetailRequestNeeded).includes("nostrTmdbMetaHasCanonicalPoster"), "artwork upgrades remain inside the per-load detail budget", "STATIC_HOOK");
       check("LONG_NATIVE_PLAYBACK_SECONDARY_FOCUS", secondaryReturnSource.includes("secondaryMediaFocusRestore") && !String(restoreHomeReturn).includes("10 * 60 * 1000") && secondaryReturnSource.includes("renderSecondaryCatalog"), "Secondary return keeps a pending media focus across delayed rendering", "STATIC_HOOK");
       check("SECONDARY_FOCUS_MEMORY_SURVIVES", String(tryRestoreSecondaryMediaFocus).includes("document.activeElement !== target") && String(tryRestoreSecondaryMediaFocus).includes("state.homeReturn = null"), "media return is consumed only after the target receives focus", "STATIC_HOOK");
       check("SECONDARY_FOCUS_RESTORE_AFTER_DELAYED_RENDER", String(renderSecondaryCatalog).includes("scheduleSecondaryMediaFocusRestore") && String(tryRestoreSecondaryMediaFocus).includes("appendGridItems"), "delayed grid rendering retries without starting a new page request", "STATIC_HOOK");
@@ -459,7 +459,7 @@
           if (source === "discover") discoverMatches += 1;
           else {
             detailRequests += 1;
-            if (detailRequests > SECONDARY_NOSTR_VARIETY_MAX_NEW_DETAIL_REQUESTS || failures.has(rank)) continue;
+            if (detailRequests > SECONDARY_NOSTR_VARIETY_DETAIL_BUDGET_PER_LOAD || failures.has(rank)) continue;
           }
           const metadata = varietyMockMetadata(candidate, valid.has(rank), regionOverrides && regionOverrides[rank]);
           const record = secondaryNostrVarietyRecordFromMetadata(candidate, metadata, index, source);
@@ -487,7 +487,7 @@
       check("NOSTR_VARIETY_CASE_D_REGION_REJECT", varietyRegionD.items.length === 1 && !secondaryNostrHotFilterMatches("variety", { mediaType: "all", genre: "all", region: "CN", year: "all" }, varietyRegionD.items[0]), "genre-valid US item is rejected by the selected region rule", "RUNTIME_MOCK");
       check("NOSTR_VARIETY_CASE_E_FAILURE_CONTINUES", varietyFailureE.items.length === 18 && varietyFailureE.detailRequests === 1, "one failed detail does not abort the variety scan", "RUNTIME_MOCK");
       check("NOSTR_VARIETY_CANONICAL_DISCOVER", varietyResolverSource.includes('secondaryFullCatalogSources("variety")') && varietyResolverSource.includes("page <= 3") && varietyResolverSource.includes("with_genres") === false && String(secondaryFullCatalogSources).includes('with_genres: "10764|10767"'), "variety resolver reuses the canonical OR Discover source with a three-page cap", "STATIC_HOOK");
-      check("NOSTR_VARIETY_DETAIL_BUDGET", varietyResolverSource.includes("SECONDARY_NOSTR_VARIETY_MAX_NEW_DETAIL_REQUESTS") && SECONDARY_NOSTR_VARIETY_MAX_NEW_DETAIL_REQUESTS < SECONDARY_NOSTR_VARIETY_MAX_SCAN_CANDIDATES, "variety detail fallback has a bounded adaptive budget", "STATIC_HOOK");
+      check("NOSTR_VARIETY_DETAIL_BUDGET", varietyResolverSource.includes("SECONDARY_NOSTR_VARIETY_DETAIL_BUDGET_PER_LOAD") && varietyResolverSource.includes("loadContext") && varietyResolverSource.includes("loadPaused") && !varietyResolverSource.includes("MAX_NEW_DETAIL_REQUESTS"), "variety detail fallback has a bounded per-load budget without a lifetime cap", "STATIC_HOOK");
       check("NOSTR_VARIETY_SHARED_HOME_SECONDARY", String(loadHomeCategoryNostrPool).includes("secondaryLoadNostrVarietyPool") && String(secondaryLoadNostrHotItems).includes("secondaryLoadNostrVarietyPool"), "Home and Secondary use the shared variety resolver", "STATIC_HOOK");
       const runVarietyLegacyDiscoverUpgrade = async () => {
         const home = state.homeV14;
@@ -600,7 +600,7 @@
       const nostrCandidateOrderSource = String(secondaryNostrHotCandidates);
       const nostrRenderOrderSource = String(secondaryFilterItems);
       check("NOSTR_ORDER_AUTHORITY_PRESERVED", nostrCandidateOrderSource.includes("state.hot") && nostrCandidateOrderSource.includes("secondaryNostrLatestValue") && nostrRenderOrderSource.includes("if (query && query.nostrHot)") && nostrRenderOrderSource.includes("return result;"), "Nostr recommendation order remains the source candidate order after filtering", "STATIC_HOOK");
-      check("NOSTR_CAN_SHOW_FEWER_THAN_TARGET_WITHOUT_TMDB_FILL", String(loadSecondaryNostrPage).includes("query.hasMore = false") && String(loadHomeCategoryFeed).includes('source === "nostr"'), "finite Nostr results can complete below the target without TMDB fill", "STATIC_HOOK");
+      check("NOSTR_CAN_SHOW_FEWER_THAN_TARGET_WITHOUT_TMDB_FILL", String(loadSecondaryNostrPage).includes("query.nostrExhausted") && String(loadSecondaryNostrPage).includes("query.nostrRetryableMetadataCount") && String(loadHomeCategoryFeed).includes('source === "nostr"'), "Nostr results can remain below the target without TMDB membership fill", "STATIC_HOOK");
       check("TMDB_MODE_HOME_CATEGORY_PRESERVED", String(loadHomeCategoryFeed).includes('} else {') && String(loadHomeCategoryFeed).includes("loadHomeCategoryTmdbPool(id)"), "TMDB Home category mode retains its existing pool loader", "STATIC_HOOK");
       check("TMDB_MODE_SECONDARY_PRESERVED", String(loadSecondaryPage).includes("buildSecondaryQueryPlan") && String(loadSecondaryPage).includes("requestJson(tmdbUrl"), "TMDB Secondary mode retains its existing paging pipeline", "STATIC_HOOK");
       const nostrPaginationPageSource = String(loadSecondaryNostrPage) + String(loadSecondaryPage) + String(secondaryLoadNextPage) + String(secondaryCanLoadMore);
@@ -609,19 +609,230 @@
       const nostrVarietyPaginationSource = String(secondaryNostrVarietyScanShouldContinue) + String(secondaryRunNostrVarietyResolver) + String(secondaryLoadNostrVarietyPool);
       check("NOSTR_SECONDARY_PAGINATION_CASE_A", SECONDARY_NOSTR_PAGE_SIZE === 18 && String(secondaryLoadNostrHotItems).includes("targetCount") && String(loadSecondaryNostrPage).includes("page * SECONDARY_NOSTR_PAGE_SIZE") && nostrPaginationSource.includes("nostrScanCursor") && nostrPaginationSource.includes("nostrNewDetailRequests"), "Secondary Nostr uses an 18-item page target with persistent scan and detail-budget state", "STATIC_HOOK");
       check("NOSTR_SECONDARY_PAGINATION_CASE_B", String(loadSecondaryNostrPage).includes("pageNumber") && String(loadSecondaryNostrPage).includes("if (page === 1 && !query.nostrPaginationInitialized)") && String(loadSecondaryNostrPage).includes("page * SECONDARY_NOSTR_PAGE_SIZE") && String(loadSecondaryPage).includes("loadSecondaryNostrPage(id, query, filters, requestSeq, page)"), "page two requests a cumulative target and does not clear the prior Nostr page", "STATIC_HOOK");
-      check("NOSTR_SECONDARY_PAGINATION_CASE_C", String(loadSecondaryNostrPage).includes("query.hasMore = !!(hotReady && !query.nostrExhausted)") && String(loadSecondaryNostrPage).includes("query.totalResults = query.nostrExhausted ? resolved.length : 0") && String(commitSecondaryNostrHotItems).includes("query.items = query.nostrHotItems.slice()"), "hasMore and totals remain open until the bounded Nostr candidate scan is exhausted", "STATIC_HOOK");
+      check("NOSTR_SECONDARY_PAGINATION_CASE_C", String(loadSecondaryNostrPage).includes("query.hasMore = !!(hotReady && (!query.nostrExhausted") && String(loadSecondaryNostrPage).includes("query.totalResults = query.nostrExhausted ? resolved.length : 0") && String(commitSecondaryNostrHotItems).includes("query.items = query.nostrHotItems.slice()"), "hasMore remains open until the Nostr candidate pool is exhausted or no retryable work remains", "STATIC_HOOK");
       check("NOSTR_SECONDARY_PAGINATION_CASE_D", nostrAnimePaginationSource.includes("secondaryNostrAnimeScanTarget") && String(secondaryRunNostrAnimeResolver).includes("const target = secondaryNostrAnimeScanTarget(runtime)") && String(secondaryLoadNostrHotItems).includes("secondaryLoadNostrAnimePool(scanFilters, query, targetCount"), "Anime pagination raises the resolver listener target without changing candidate order", "STATIC_HOOK");
-      check("NOSTR_SECONDARY_PAGINATION_CASE_E", nostrVarietyPaginationSource.includes("secondaryNostrVarietyScanTarget") && String(secondaryRunNostrVarietyResolver).includes("const target = secondaryNostrVarietyScanTarget(runtime)") && String(secondaryLoadNostrHotItems).includes("secondaryLoadNostrVarietyPool(scanFilters, query, targetCount") && String(secondaryNostrVarietyResolveCandidate).includes("SECONDARY_NOSTR_VARIETY_MAX_NEW_DETAIL_REQUESTS"), "Variety pagination continues the same resolver and keeps one cumulative detail budget", "STATIC_HOOK");
+      check("NOSTR_SECONDARY_PAGINATION_CASE_E", nostrVarietyPaginationSource.includes("secondaryNostrVarietyScanTarget") && String(secondaryRunNostrVarietyResolver).includes("const target = secondaryNostrVarietyScanTarget(runtime)") && String(secondaryLoadNostrHotItems).includes("secondaryLoadNostrVarietyPool(scanFilters, query, targetCount") && String(secondaryNostrVarietyResolveCandidate).includes("SECONDARY_NOSTR_VARIETY_DETAIL_BUDGET_PER_LOAD") && String(secondaryRunNostrVarietyResolver).includes("loadPaused"), "Variety pagination continues the same resolver with a per-load detail budget", "STATIC_HOOK");
       check("NOSTR_SECONDARY_PAGINATION_CASE_F", !String(secondaryNostrAnimeQualifiedItems).includes(".sort(") && !String(secondaryNostrVarietyQualifiedItems).includes(".sort(") && nostrCandidateOrderSource.includes("state.hot") && nostrRenderOrderSource.includes("return result;"), "async enrichment cannot reorder the source-ranked Nostr candidates", "STATIC_HOOK");
       check("NOSTR_SECONDARY_PAGINATION_CASE_G", String(secondaryLoadNostrHotItems).includes("secondaryNostrTaskIsCurrent") && String(loadSecondaryNostrPage).includes("query.requestSeq !== requestSeq") && String(secondaryNostrTaskIsCurrent).includes("nostrHotGeneration"), "stale source, query and generation results cannot commit a later Nostr page", "STATIC_HOOK");
-      check("NOSTR_SECONDARY_PAGINATION_CASE_H", String(secondaryLoadNostrHotItems).includes("const candidates = secondaryNostrHotCandidates(id, scanFilters)") && String(secondaryLoadNostrHotItems).includes("candidates.slice(cursor") && String(secondaryLoadNostrHotItems).includes("cursor += batchCandidates.length") && String(secondaryLoadNostrHotItems).includes("targetCount - qualified.length"), "Movie and TV pagination advances a bounded candidate cursor instead of restarting search", "STATIC_HOOK");
+      let nostrPaginationCaseHSemantic = false;
+      let nostrPaginationCaseHDetail = "Movie/TV cursor fixture was not completed";
+      const paginationPreviousUiPrefs = state.uiPrefs;
+      const paginationPreviousHomeV14 = state.homeV14;
+      const paginationPreviousHot = state.hot;
+      const paginationHadFm = Object.prototype.hasOwnProperty.call(window, "fm");
+      const paginationPreviousFm = window.fm;
+      try {
+        const fixtureCandidates = Array.from({ length: 40 }, (_, index) => ({
+          mediaType: "movie",
+          tmdbId: String(990000 + index),
+          title: `Pagination fixture ${index}`,
+          people: 100 - index,
+          latest: 1000 - index
+        }));
+        const fixtureFilters = { mediaType: "all", genre: "all", region: "all", year: "all", sort: "hot", lastFocused: { sort: "hot" } };
+        state.uiPrefs = Object.assign({}, paginationPreviousUiPrefs || {}, { homeHotSource: "nostr" });
+        state.homeV14 = Object.assign({}, paginationPreviousHomeV14 || {}, {
+          route: "secondary",
+          secondaryListId: "movie",
+          secondaryFilters: Object.assign({}, paginationPreviousHomeV14 && paginationPreviousHomeV14.secondaryFilters || {}, { movie: fixtureFilters }),
+          secondaryQueries: {},
+          secondaryActiveQueryKey: "",
+          secondaryNostrTmdbMemoryCache: {},
+          nostrTmdbMeta: { version: NOSTR_TMDB_META_CACHE_VERSION, loaded: true, loading: false, promise: null, entries: {}, dirty: false, dirtyVersion: 0, saveTimer: 0, savePromise: null, lastLoadAt: 0, lastSaveAt: 0, expiredCount: 0, evictedCount: 0 }
+        });
+        state.hot = { ready: true, version: 990, items: fixtureCandidates };
+        const fixtureQuery = secondaryGetQuery("movie");
+        fixtureQuery.nostrHot = true;
+        fixtureQuery.nostrHotReady = true;
+        fixtureQuery.nostrHotLoaded = false;
+        fixtureQuery.nostrHotItems = [];
+        fixtureQuery.nostrExhausted = false;
+        fixtureQuery.nostrRetryableKeys = {};
+        const requestIds = [];
+        window.fm = {
+          req: async (url) => {
+            const parts = new URL(String(url)).pathname.split("/").filter(Boolean);
+            const id = String(parts[parts.length - 1] || "");
+            requestIds.push(id);
+            return {
+              ok: true,
+              status: 200,
+              body: JSON.stringify({
+                id: Number(id),
+                title: `Pagination fixture ${id}`,
+                media_type: "movie",
+                poster_path: `/pagination-${id}.jpg`,
+                backdrop_path: `/pagination-backdrop-${id}.jpg`,
+                genre_ids: [],
+                origin_country: ["US"],
+                release_date: "2020-01-01",
+                vote_average: 7
+              })
+            };
+          }
+        };
+        const firstPage = await secondaryLoadNostrHotItems("movie", fixtureFilters, fixtureQuery, 40);
+        const firstCursor = Number(fixtureQuery.nostrScanCursor || 0);
+        const firstRequestCount = requestIds.length;
+        const firstItemCount = firstPage.length;
+        const firstPaused = fixtureQuery.nostrLoadPaused === true;
+        const firstNotExhausted = fixtureQuery.nostrExhausted !== true;
+        const secondPage = await secondaryLoadNostrHotItems("movie", fixtureFilters, fixtureQuery, 40);
+        const secondCursor = Number(fixtureQuery.nostrScanCursor || 0);
+        const secondRequestIds = requestIds.slice(firstRequestCount);
+        const firstIdsContiguous = requestIds.slice(0, 36).every((id, index) => id === String(990000 + index));
+        const secondIdsContiguous = secondRequestIds.length === 4 && secondRequestIds.every((id, index) => id === String(990036 + index));
+        nostrPaginationCaseHSemantic = firstCursor === 36
+          && firstRequestCount === 36
+          && firstItemCount === 36
+          && firstPaused
+          && firstNotExhausted
+          && firstIdsContiguous
+          && secondCursor === 40
+          && secondPage.length === 40
+          && secondIdsContiguous
+          && fixtureQuery.nostrExhausted === true;
+        nostrPaginationCaseHDetail = nostrPaginationCaseHSemantic
+          ? "budget pauses at cursor 36, preserves the unconsumed tail, then resumes at 36 and exhausts at 40"
+          : `cursor=${firstCursor}->${secondCursor}, requests=${firstRequestCount}+${secondRequestIds.length}, items=${firstItemCount}->${secondPage.length}, paused=${firstPaused}, exhausted=${fixtureQuery.nostrExhausted}`;
+      } catch (error) {
+        nostrPaginationCaseHDetail = String(error && error.message || error || "pagination fixture failed");
+      } finally {
+        const fixtureRuntime = state.homeV14 && state.homeV14.nostrTmdbMeta;
+        if (fixtureRuntime && fixtureRuntime.saveTimer) clearTimeout(fixtureRuntime.saveTimer);
+        state.uiPrefs = paginationPreviousUiPrefs;
+        state.homeV14 = paginationPreviousHomeV14;
+        state.hot = paginationPreviousHot;
+        if (paginationHadFm) window.fm = paginationPreviousFm;
+        else delete window.fm;
+      }
+      check("NOSTR_SECONDARY_PAGINATION_CASE_H", nostrPaginationCaseHSemantic, nostrPaginationCaseHDetail, "RUNTIME_MOCK");
       check("NOSTR_SECONDARY_PAGE_SIZE", SECONDARY_NOSTR_PAGE_SIZE === 18 && String(secondaryLoadNostrHotItems).includes("Math.max(SECONDARY_NOSTR_PAGE_SIZE"), "Nostr Secondary page size remains 18", "STATIC_HOOK");
       check("NOSTR_SECONDARY_INFINITE_SCROLL", String(secondaryLoadNextPage).includes("secondaryCanLoadMore") && String(secondaryCanLoadMore).includes("query.hasMore") && String(observeInfiniteScroll).includes("loadMoreVisible"), "Nostr Secondary reuses the existing infinite-scroll authority", "STATIC_HOOK");
-      check("NOSTR_MOVIE_TV_DETAIL_BUDGET_LIFETIME", String(secondaryLoadNostrHotItems).includes("query.nostrNewDetailRequests") && String(secondaryLoadNostrHotItems).includes("query.nostrDetailBudgetExhausted") && !String(secondaryLoadNostrHotItems).includes("let newDetailRequests = 0;"), "Movie and TV detail budget is query-scoped rather than reset per page", "STATIC_HOOK");
+      check("NOSTR_MOVIE_TV_DETAIL_BUDGET_LIFETIME", String(secondaryLoadNostrHotItems).includes("let loadDetailRequests = 0;") && String(secondaryLoadNostrHotItems).includes("query.nostrLoadPaused") && !String(secondaryLoadNostrHotItems).includes("query.nostrDetailBudgetExhausted"), "Movie and TV detail budget is reset per load rather than treated as a query lifetime cap", "STATIC_HOOK");
+
+      const sourceModelHotStorageSource = String(buildHotItemsFromIndex);
+      const sourceModelHotCandidateSource = String(secondaryNostrHotCandidates);
+      const sourceModelLargeHotPool = Array.from({ length: 1001 }, (_, index) => ({ mediaType: "movie", tmdbId: String(700000 + index), people: 1001 - index }));
+      const sourceModelPreviousHot = state.hot;
+      const sourceModelPreviousBlocked = state.blocked;
+      let sourceModelBuiltHotCount = 0;
+      let sourceModelDeepMovieTv = [];
+      let sourceModelDeepAnime = [];
+      let sourceModelDeepVariety = [];
+      try {
+        const sourceModelHotMedia = new Map(sourceModelLargeHotPool.map((item, index) => {
+          const key = `movie:${item.tmdbId}`;
+          return [key, { m: key, t: `Movie ${index}`, mt: "movie", tid: item.tmdbId, p: "/poster.jpg", c: item.people, l: index }];
+        }));
+        state.hot = Object.assign({}, sourceModelPreviousHot || {}, { media: sourceModelHotMedia });
+        sourceModelBuiltHotCount = buildHotItemsFromIndex().length;
+        sourceModelDeepMovieTv = Array.from({ length: 300 }, (_, index) => ({ mediaType: "movie", mediaKey: `movie:${900000 + index}`, tmdbId: String(900000 + index), title: `Movie ${index}`, pic: "/poster.jpg", people: 300 - index, latest: index }));
+        sourceModelDeepAnime = Array.from({ length: 151 }, (_, index) => ({ mediaType: "tv", mediaKey: `tv:anime-${index}`, tmdbId: `anime-${index}`, title: `Anime ${index}`, pic: "/poster.jpg", genreIds: ["16"], people: 200 - index, latest: index }));
+        sourceModelDeepVariety = Array.from({ length: 241 }, (_, index) => ({ mediaType: "tv", mediaKey: `tv:variety-${index}`, tmdbId: `variety-${index}`, title: `Variety ${index}`, pic: "/poster.jpg", genreIds: ["10764"], people: 300 - index, latest: index }));
+        state.blocked = Object.assign({}, sourceModelPreviousBlocked || {}, { selecting: false });
+        state.hot = Object.assign({}, state.hot, { ready: true, version: 1, items: sourceModelDeepMovieTv.concat(sourceModelDeepAnime, sourceModelDeepVariety) });
+        sourceModelDeepMovieTv = secondaryNostrHotCandidates("movie", { sort: "hot" });
+        sourceModelDeepAnime = secondaryNostrHotCandidates("anime", { sort: "hot" });
+        sourceModelDeepVariety = secondaryNostrHotCandidates("variety", { sort: "hot" });
+      } catch (error) {
+        sourceModelBuiltHotCount = 0;
+        sourceModelDeepMovieTv = [];
+        sourceModelDeepAnime = [];
+        sourceModelDeepVariety = [];
+      } finally {
+        state.hot = sourceModelPreviousHot;
+        state.blocked = sourceModelPreviousBlocked;
+      }
+      check("SOURCE_MODEL_CASE_1_NOSTR_GLOBAL_POOL", sourceModelBuiltHotCount === 1001 && sourceModelHotStorageSource.includes('source: "nostr-hot"') && !sourceModelHotStorageSource.includes("HOT_RENDER_LIMIT") && !sourceModelHotStorageSource.includes(".slice("), "global Nostr membership is not capped by a render limit", "RUNTIME_MOCK");
+
+      const sourceModelVectorSource = String(normalizeWireVectorItems) + String(normalizeStoredVectorItems);
+      const sourceModelVectorDay = typeof hotToday === "function" ? hotToday() : Math.floor(Date.now() / 86400000);
+      const sourceModelLargeVector = Array.from({ length: 301 }, (_, index) => ({ m: `movie:${800000 + index}`, mt: "movie", tid: String(800000 + index), d: sourceModelVectorDay, t: `Vector ${index}`, p: "/poster.jpg" }));
+      const sourceModelWireVector = normalizeWireVectorItems(sourceModelLargeVector, Date.now());
+      const sourceModelStoredVector = normalizeStoredVectorItems(sourceModelLargeVector, Date.now());
+      check("SOURCE_MODEL_CASE_2_VECTOR_INGEST", sourceModelWireVector.length === 301 && sourceModelStoredVector.length === 301 && !sourceModelVectorSource.includes("HOT_USER_VECTOR_LIMIT") && !sourceModelVectorSource.includes("slice(0, 300"), "vector ingest/storage keeps more than the historical 300-item boundary", "RUNTIME_MOCK");
+
+      check("SOURCE_MODEL_CASE_3_MOVIE_TV_DEEP_CANDIDATE", sourceModelDeepMovieTv[179] && sourceModelDeepMovieTv[179].nostrHotRank === 180 && !sourceModelHotCandidateSource.includes("MAX_SCAN_CANDIDATES"), "Movie/TV candidate rank 180 remains reachable in the full source pool", "RUNTIME_MOCK");
+
+      check("SOURCE_MODEL_CASE_4_ANIME_DEEP_CANDIDATE", sourceModelDeepAnime[150] && sourceModelDeepAnime[150].nostrHotRank === 151 && !String(secondaryNostrAnimeResolverState).includes("MAX_SCAN_CANDIDATES") && !sourceModelHotCandidateSource.includes("MAX_SCAN_CANDIDATES"), "Anime candidates beyond rank 150 are not discarded by a total scan cap", "RUNTIME_MOCK");
+
+      check("SOURCE_MODEL_CASE_5_VARIETY_DEEP_CANDIDATE", sourceModelDeepVariety[240] && sourceModelDeepVariety[240].nostrHotRank === 241 && !String(secondaryNostrVarietyResolverState).includes("MAX_SCAN_CANDIDATES") && !String(secondaryNostrVarietyPrimeDiscover).includes("MAX_SCAN_CANDIDATES"), "Variety candidates beyond rank 240 are not discarded by a total scan cap", "RUNTIME_MOCK");
+
+      const sourceModelLoadOne = { nextIndex: 36, candidatePoolLength: 100, loadPaused: true, sourceExhausted: false, hasMore: true };
+      const sourceModelLoadTwo = { nextIndex: 36, detailRequests: 0, sourceExhausted: false };
+      const sourceModelNostrLoadSource = String(secondaryLoadNostrHotItems) + String(secondaryRunNostrAnimeResolver) + String(secondaryRunNostrVarietyResolver);
+      check("SOURCE_MODEL_CASE_6_DETAIL_BUDGET_PAUSE", sourceModelLoadOne.loadPaused && !sourceModelLoadOne.sourceExhausted && sourceModelLoadOne.hasMore && sourceModelLoadTwo.nextIndex === sourceModelLoadOne.nextIndex && sourceModelNostrLoadSource.includes("loadPaused") && sourceModelNostrLoadSource.includes("detailRequests: 0"), "detail budget pauses one load and preserves the source cursor for the next load", "RUNTIME_MOCK");
+
+      const sourceModelAllRegionItems = [
+        { mediaType: "movie", genreIds: ["18"], originCountries: ["US"], pic: "/us.jpg" },
+        { mediaType: "tv", genreIds: ["18"], originCountries: ["FR"], pic: "/fr.jpg" },
+        { mediaType: "movie", genreIds: ["16"], originCountries: ["DE"], pic: "/de.jpg" },
+        { mediaType: "tv", genreIds: ["16"], originCountries: ["IN"], pic: "/in.jpg" },
+        { mediaType: "tv", genreIds: ["10764"], originCountries: ["KR"], pic: "/kr.jpg" },
+        { mediaType: "tv", genreIds: ["10767"], originCountries: ["JP"], pic: "/jp.jpg" },
+        { mediaType: "movie", genreIds: ["18"], originCountries: ["CN"], pic: "/cn.jpg" }
+      ];
+      const sourceModelAllRegionPass = secondaryNostrItemAllowed("movie", sourceModelAllRegionItems[0])
+        && secondaryNostrItemAllowed("tv", sourceModelAllRegionItems[1])
+        && secondaryNostrItemAllowed("anime", sourceModelAllRegionItems[2])
+        && secondaryNostrItemAllowed("anime", sourceModelAllRegionItems[3])
+        && secondaryNostrItemAllowed("variety", sourceModelAllRegionItems[4])
+        && secondaryNostrItemAllowed("variety", sourceModelAllRegionItems[5]);
+      check("SOURCE_MODEL_CASE_7_NOSTR_REGION_ALL", sourceModelAllRegionPass && String(secondaryNostrItemAllowed).includes("secondaryItemGenreIds") && !String(secondaryNostrItemAllowed).includes("SECONDARY_TV_REGION_IDS"), "Nostr region=all keeps eligible candidates from every supported region", "RUNTIME_MOCK");
+
+      const sourceModelUsItem = { mediaType: "movie", genreIds: ["18"], originCountries: ["US"], pic: "/us.jpg" };
+      const sourceModelExplicitRegionPass = secondaryNostrHotFilterMatches("movie", { mediaType: "all", genre: "all", region: "US", year: "all" }, sourceModelUsItem)
+        && !secondaryNostrHotFilterMatches("movie", { mediaType: "all", genre: "all", region: "JP", year: "all" }, sourceModelUsItem);
+      check("SOURCE_MODEL_CASE_8_EXPLICIT_REGION", sourceModelExplicitRegionPass && String(secondaryNostrHotFilterMatches).includes("secondaryRegionMatches"), "an explicit region filter remains selective while region=all is open", "RUNTIME_MOCK");
+
+      const sourceModelRelayCursor = { recentUntil: 0, historyUntil: 123456, historyDone: false, retryableFailure: true };
+      const sourceModelRelaySource = String(markRelayBackfillRetry) + String(relayBackfillDone) + String(normalizeRelayCursor);
+      const sourceModelPreviousRelay = state.relay;
+      let sourceModelRelayRetryPass = false;
+      try {
+        state.relay = Object.assign({}, sourceModelPreviousRelay || {}, { subscribeToken: 77, backfillState: {}, backfillTimers: {}, backfillBusy: {} });
+        const retryCursor = { since: 1, recentUntil: 0, historyUntil: 123456, historyDone: false, historyFailed: false, historyTimedOut: false, failures: HOT_BACKFILL_MAX_FAILURES - 1, retryableFailure: false, nextRetryAt: 0, error: "" };
+        markRelayBackfillRetry("diagnostic-relay", retryCursor, "历史90天", { failureKind: "failed" }, 77);
+        sourceModelRelayRetryPass = retryCursor.retryableFailure === true && retryCursor.historyDone === false && retryCursor.historyFailed === false && !relayBackfillDone(retryCursor);
+      } catch (error) {
+        sourceModelRelayRetryPass = false;
+      } finally {
+        state.relay = sourceModelPreviousRelay;
+      }
+      check("SOURCE_MODEL_CASE_9_RELAY_RETRYABLE", sourceModelRelayRetryPass && !relayBackfillDone(sourceModelRelayCursor) && sourceModelRelaySource.includes("historyDone = false") && sourceModelRelaySource.includes("retryableFailure") && sourceModelRelaySource.includes("historyDone === true"), "relay retry exhaustion preserves the cursor and does not mark the history window done", "RUNTIME_MOCK");
+
+      const sourceModelTmdbTransient = { status: 503 };
+      const sourceModelTmdbState = { page: 2, exhausted: false, retryableError: "timeout", terminalError: "" };
+      const sourceModelTmdbSource = String(secondaryTmdbErrorIsTerminal) + String(secondaryTmdbSourceHasMore) + String(loadSecondaryPage);
+      check("SOURCE_MODEL_CASE_10_TMDB_TRANSIENT", !secondaryTmdbErrorIsTerminal(sourceModelTmdbTransient) && secondaryTmdbSourceHasMore(sourceModelTmdbState) && sourceModelTmdbSource.includes("sourceState.page || 0") && sourceModelTmdbSource.includes("retryableError"), "a transient TMDB source failure leaves the same page retryable", "RUNTIME_MOCK");
+
+      const sourceModelMultiSourceStates = [
+        { exhausted: true, retryableError: "", terminalError: "" },
+        { exhausted: false, retryableError: "temporary", terminalError: "" },
+        { exhausted: false, retryableError: "", terminalError: "" }
+      ];
+      check("SOURCE_MODEL_CASE_11_TMDB_MULTI_SOURCE", sourceModelMultiSourceStates.some(secondaryTmdbSourceHasMore) && sourceModelMultiSourceStates.some((entry) => !!entry.retryableError) && String(loadSecondaryPage).includes("plan.sourceStates.some(secondaryTmdbSourceHasMore)"), "one exhausted source cannot close a query while another source can retry or paginate", "RUNTIME_MOCK");
+
+      const sourceModelMetricsSource = String(secondaryNostrUpdateQueryMetrics) + String(secondaryNostrAnimeNotify) + String(secondaryNostrVarietyNotify) + String(secondaryUpdateTmdbMetrics);
+      check("SOURCE_MODEL_STATE_METRICS", ["totalGlobalPool", "candidatePoolSize", "cursor", "resolvedCount", "loadScanCount", "loadDetailRequests", "retryableMetadataCount", "sourceExhausted", "hasMore", "sourceCount", "sourcePage", "sourceTotalPages", "sourceRetryableError", "queryHasMore"].every((marker) => sourceModelMetricsSource.includes(marker)), "Nostr and TMDB expose source lifecycle metrics without changing membership", "STATIC_HOOK");
+
+      const sourceModelAllRegionFilters = { mediaType: "all", genre: "all", region: "all", year: "all", sort: "hot" };
+      const sourceModelAllRegionCatalogs = ["movie", "tv", "anime", "variety"].map((id) => secondaryFullCatalogSources(id).every((source) => {
+        const applied = secondaryApplyServerFilters(source, sourceModelAllRegionFilters);
+        return !!applied && !Object.prototype.hasOwnProperty.call(applied.entry.params || {}, "with_origin_country");
+      }));
+      check("SOURCE_MODEL_CASE_12_TMDB_REGION_ALL", sourceModelAllRegionCatalogs.every(Boolean) && !String(secondaryFullCatalogSources).includes("with_origin_country"), "TMDB region=all does not add a hidden origin-country membership filter", "RUNTIME_MOCK");
+
+      const sourceModelIsolationNostr = homeNostrBranch + String(loadSecondaryNostrPage) + String(secondaryNostrHotCandidates) + String(secondaryNostrHotFilterMatches);
+      const sourceModelIsolationTmdb = String(secondaryFullCatalogSources) + String(loadSecondaryPage) + String(secondaryApplyServerFilters);
+      check("SOURCE_MODEL_CASE_13_SOURCE_ISOLATION", !sourceModelIsolationNostr.includes("loadHomeCategoryTmdbPool(id)") && !String(commitSecondaryNostrHotItems).includes("concat(fallback)") && sourceModelIsolationNostr.includes("secondaryNostrLatestValue") && sourceModelIsolationTmdb.includes("sort_by") && !sourceModelIsolationTmdb.includes("people"), "Nostr and TMDB retain separate membership and ranking authorities", "STATIC_HOOK");
+
+      const sourceModelStaleSource = String(secondaryNostrTaskIsCurrent) + String(loadSecondaryNostrPage) + String(loadSecondaryPage) + String(homeCategoryFeedIsCurrent);
+      check("SOURCE_MODEL_CASE_14_STALE_SOURCE_SWITCH", sourceModelStaleSource.includes("query.requestSeq !== requestSeq") && sourceModelStaleSource.includes("nostrHotGeneration") && sourceModelStaleSource.includes("homeCategoryFeedIsCurrent"), "late Nostr/TMDB work is rejected after query or source identity changes", "STATIC_HOOK");
 
       const sourcePolicySetSource = String(setHomeHotSource);
       const sourcePolicyNostrSource = String(resolveHomeHotItems) + String(secondaryNostrHotCandidates) + String(secondaryNostrTaskIsCurrent);
-      const sourcePolicySecondaryRenderSource = String(secondaryFilterItems);
       const sourcePolicySearchSource = String(renderSearchHot) + String(getSearchHotItems) + String(ensureSearchHotData);
       const sourcePolicySnapshotSource = String(restoreUiSnapshot);
       const sourcePolicySnapshotIngressSource = String(snapshotHomeReturnForCurrentSource) + String(schedulePlayerReturn);
@@ -829,13 +1040,55 @@
         state.homeV14.secondaryQueries = sourcePolicyPreviousQueries;
         state.homeV14.secondaryActiveQueryKey = sourcePolicyPreviousActiveQueryKey;
       }
+      let nostrRenderOrderSemanticCase = false;
+      let nostrRenderOrderDetail = "Nostr/TMDB render-order fixture was not completed";
+      const renderPreviousUiPrefs = state.uiPrefs;
+      const renderPreviousHomeV14 = state.homeV14;
+      try {
+        const renderNostrItems = [
+          { id: "nostr:A", mediaType: "movie", tmdbId: "991001", title: "A", source: "nostr-hot", pic: "https://image.tmdb.org/t/p/w342/a.jpg", popularity: 1, voteAverage: 2, releaseDate: "2020-01-01" },
+          { id: "nostr:B", mediaType: "movie", tmdbId: "991002", title: "B", source: "nostr-hot", pic: "https://image.tmdb.org/t/p/w342/b.jpg", popularity: 100, voteAverage: 9, releaseDate: "2021-01-01" },
+          { id: "nostr:C", mediaType: "movie", tmdbId: "991003", title: "C", source: "nostr-hot", pic: "https://image.tmdb.org/t/p/w342/c.jpg", popularity: 50, voteAverage: 4, releaseDate: "2019-01-01" }
+        ];
+        const renderTmdbItems = renderNostrItems.map((item) => Object.assign({}, item, { id: `tmdb:${item.tmdbId}`, source: "tmdb" }));
+        const renderFilters = { mediaType: "all", genre: "all", region: "all", year: "all", sort: "hot", lastFocused: { sort: "hot" } };
+        state.homeV14 = Object.assign({}, renderPreviousHomeV14 || {}, {
+          route: "secondary",
+          secondaryListId: "movie",
+          secondaryFilters: Object.assign({}, renderPreviousHomeV14 && renderPreviousHomeV14.secondaryFilters || {}, { movie: renderFilters }),
+          secondaryQueries: {},
+          secondaryActiveQueryKey: ""
+        });
+        state.uiPrefs = Object.assign({}, renderPreviousUiPrefs || {}, { homeHotSource: "nostr" });
+        const nostrRenderFilters = secondaryFilterState("movie");
+        const nostrRenderQuery = secondaryGetQuery("movie");
+        nostrRenderQuery.nostrHotItems = renderNostrItems.slice();
+        const nostrOrder = secondaryFilterItems("movie", renderNostrItems).map((item) => item.title).join(",");
+        state.uiPrefs = Object.assign({}, state.uiPrefs || {}, { homeHotSource: "tmdb" });
+        const tmdbRenderFilters = secondaryFilterState("movie");
+        tmdbRenderFilters.sort = "rating";
+        tmdbRenderFilters.lastFocused.sort = "rating";
+        const tmdbRenderQuery = secondaryGetQuery("movie");
+        tmdbRenderQuery.nostrHot = false;
+        tmdbRenderQuery.serverSideFilters = [];
+        const tmdbOrder = secondaryFilterItems("movie", renderTmdbItems).map((item) => item.title).join(",");
+        nostrRenderOrderSemanticCase = nostrOrder === "A,B,C" && tmdbOrder === "B,C,A" && nostrOrder !== tmdbOrder;
+        nostrRenderOrderDetail = nostrRenderOrderSemanticCase
+          ? "Nostr preserves A,B,C while TMDB rating sorting produces B,C,A"
+          : `Nostr=${nostrOrder}; TMDB=${tmdbOrder}`;
+      } catch (error) {
+        nostrRenderOrderDetail = String(error && error.message || error || "render-order fixture failed");
+      } finally {
+        state.uiPrefs = renderPreviousUiPrefs;
+        state.homeV14 = renderPreviousHomeV14;
+      }
       check("SECONDARY_HOT_QUERY_SOURCE_SCOPED", sourcePolicySourceKeyChecks, "Hot recommendation query keys include the active source", "RUNTIME_MOCK");
       check("SECONDARY_LATEST_QUERY_SOURCE_SCOPED", sourcePolicySourceKeyChecks, "Latest recommendation query keys include the active source", "RUNTIME_MOCK");
       check("NOSTR_LATEST_TMDB_FIELDS_IGNORED", sourcePolicyLatestDependencyCheck, "Nostr latest ordering does not read TMDB release, popularity or rating fields", "STATIC_HOOK");
       check("MOVIE_TV_NOSTR_LATEST_ORDER_PRESERVED", sourcePolicyCaseB, "movie/tv Nostr latest keeps source-ranked candidate order", "RUNTIME_MOCK");
       check("ANIME_NOSTR_LATEST_ORDER_PRESERVED", nostrCandidateOrderSource.includes("secondaryNostrLatestValue") && String(secondaryLoadNostrAnimePool).includes("secondaryNostrHotCandidates(\"anime\", filters)"), "Anime resolver receives the source-aware Nostr latest candidate list", "STATIC_HOOK");
       check("VARIETY_NOSTR_LATEST_ORDER_PRESERVED", sourcePolicyCaseE && String(secondaryLoadNostrVarietyPool).includes("secondaryNostrHotCandidates(\"variety\", filters)"), "Variety resolver receives the source-aware Nostr latest candidate list", "RUNTIME_MOCK");
-      check("NOSTR_SECONDARY_RENDER_REORDER", !(sourcePolicySecondaryRenderSource.indexOf("if (query && query.nostrHot)") >= 0 && sourcePolicySecondaryRenderSource.indexOf("if (!serverFilters.has") >= 0 && sourcePolicySecondaryRenderSource.indexOf("if (query && query.nostrHot)") < sourcePolicySecondaryRenderSource.indexOf("if (!serverFilters.has")), "Nostr recommendation rendering does not re-sort by TMDB fields", "STATIC_HOOK");
+      check("NOSTR_SECONDARY_RENDER_REORDER", nostrRenderOrderSemanticCase, nostrRenderOrderDetail, "RUNTIME_MOCK");
       check("NOSTR_RATING_OPTION_ABSENT", sourcePolicySortChecks, "Nostr eligible Secondary exposes only hot and latest", "RUNTIME_MOCK");
       check("TMDB_RATING_OPTION_PRESENT", sourcePolicySortChecks, "TMDB Secondary keeps the rating option", "RUNTIME_MOCK");
       check("VARIETY_SORT_ENABLED", sourcePolicySortChecks, "Variety includes the source-aware sort group", "RUNTIME_MOCK");

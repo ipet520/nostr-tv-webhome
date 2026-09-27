@@ -11,6 +11,7 @@
           error: "",
           terminal: false,
           terminalState: "pending",
+          retryable: false,
           historyDone: false,
           historyFailed: false,
           historyTimedOut: false,
@@ -27,12 +28,13 @@
 
     function markRelayBackfillTerminal(relay, terminalState, error, token) {
       if (token != null && token !== state.relay.subscribeToken) return;
-      const normalized = terminalState === "done" ? "done" : terminalState === "timeout" ? "timeout" : "failed";
+      const normalized = terminalState === "done" ? "done" : terminalState === "retryable" ? "retryable" : terminalState === "timeout" ? "timeout" : "failed";
       setRelayBackfillState(relay, {
         loading: false,
         error: String(error || ""),
         terminal: true,
         terminalState: normalized,
+        retryable: normalized === "retryable",
         historyDone: normalized === "done",
         historyFailed: normalized === "failed",
         historyTimedOut: normalized === "timeout",
@@ -335,7 +337,18 @@
 
     async function requestJson(url, timeout) {
       const response = await sdk().req(url, { responseType: "text", timeout: timeout || 18 });
-      if (response && response.error) throw new Error(response.error);
+      if (response && response.error) {
+        const error = new Error(String(response.error));
+        const status = Number(response.status || response.statusCode || response.httpStatus || 0);
+        if (status) error.status = status;
+        throw error;
+      }
+      if (response && response.ok === false || response && Number(response.status || 0) >= 400) {
+        const error = new Error("HTTP " + Number(response.status || 0));
+        const status = Number(response.status || response.statusCode || response.httpStatus || 0);
+        if (status) error.status = status;
+        throw error;
+      }
       const body = response && response.body;
       if (typeof body === "string") return JSON.parse(body || "{}");
       return body || {};
@@ -907,4 +920,3 @@
       }
       throw lastError || new Error("盘搜请求失败");
     }
-
