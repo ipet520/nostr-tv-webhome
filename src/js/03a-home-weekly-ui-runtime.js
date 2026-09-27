@@ -807,6 +807,7 @@
       if (next === "tmdb") ensureSearchHotData();
       if (state.activeList === "all" && homeUiRoute() === "search") renderSearch();
       if (homeUiRoute() === "home") {
+        invalidateHomeHeroFeed();
         invalidateHomeCategoryFeeds();
         renderHome();
       }
@@ -896,4 +897,3 @@
       commitConnectionSegmentedTarget(target).catch(() => {});
       return true;
     }
-

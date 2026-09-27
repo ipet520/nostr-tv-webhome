@@ -73,6 +73,47 @@
       check("PHASE1_HEADER_METRICS_REMOVED_OR_JUSTIFIED", typeof syncHomeHeaderMetrics === "undefined" && !sourceText.includes("homeContentTopLimit"), "legacy Header metrics are absent", "STATIC_HOOK");
       check("PHASE1_HOME_CONTENT_STILL_RENDERS", !!home && typeof renderHome === "function" && typeof renderHomeRecent === "function" && typeof renderHomeHot === "function" && typeof renderHomeDynamicSections === "function", "Home content renderer remains available", "STATIC_HOOK");
       check("PHASE1_HERO_BUSINESS_UNCHANGED", typeof renderHomeHero === "function" && typeof homeHeroCandidates === "function", "existing Hero data path remains", "FROZEN_SOURCE_AUDIT");
+      const heroScoreSource = String(homeHeroScore) + String(homeHeroRank) + String(homeHeroSelect);
+      const heroFeedSource = String(homeHeroFeedState) + String(homeHeroSourceKey) + String(homeHeroFeedIsCurrent) + String(loadHomeHeroFeed) + String(ensureHomeHeroFeed) + String(invalidateHomeHeroFeed);
+      const heroNostrSource = String(homeHeroNormalizeNostrCandidate) + String(homeHeroNostrCandidates) + String(homeHeroSelectNostr) + String(homeHeroNostrEligible);
+      check("HERO_TMDB_NO_NOSTR_SCORE", !heroScoreSource.includes("homeHeroNostr") && !String(loadHomeHeroFeed).includes("homeHeroNostrSignals") && !String(loadHomeHeroFeed).includes("homeHeroNostrBoost"), "TMDB Hero ranking has no Nostr score dependency", "STATIC_HOOK");
+      check("HERO_NOSTR_MEMBERSHIP_SOURCE", heroNostrSource.includes("state.hot") && heroNostrSource.includes("HOME_HERO_NOSTR_SCAN_LIMIT") && String(loadHomeHeroFeed).includes("homeHeroNostrCandidates") && String(loadHomeHeroFeed).includes('source === "nostr"'), "Nostr Hero membership is sourced from bounded state.hot candidates", "STATIC_HOOK");
+      check("HERO_NOSTR_ORDER_PRESERVED", String(homeHeroSelectNostr).includes("forEach") && !String(homeHeroSelectNostr).includes(".sort(") && String(homeHeroNostrCandidates).includes("state.hot"), "Nostr Hero keeps source order while filtering invalid candidates", "STATIC_HOOK");
+      check("HERO_NOSTR_NO_MIXED_FALLBACK", String(homeHeroFallbackCandidates).includes('=== "nostr"') && String(homeHeroFallbackCandidates).includes("return []") && String(homeHeroCandidates).includes('source === "nostr"'), "Nostr Hero has no TMDB or mixed fallback membership", "STATIC_HOOK");
+      check("HERO_WEEKLY_MERGE_TMDB_ONLY", String(mergeHomeLatestIntoHeroFeed).includes('homeHotSource() === "nostr"') && String(mergeHomeLatestIntoHeroFeed).includes('feed.source !== "tmdb"') && String(mergeHomeLatestIntoHeroFeed).includes("return false") && String(loadHomeHeroFeed).includes('source === "tmdb"'), "Weekly Hero merge is restricted to TMDB mode", "STATIC_HOOK");
+      check("HERO_FEED_SOURCE_AWARE", heroFeedSource.includes("source") && heroFeedSource.includes("sourceKey") && heroFeedSource.includes("requestSeq") && String(homeHeroFeedIsCurrent).includes("homeHeroSourceKey(source)"), "Hero feed records source identity and rejects stale commits", "STATIC_HOOK");
+      check("HERO_HOT_VERSION_INVALIDATION", String(homeHeroSourceKey).includes("hot.version") && String(ensureHomeHeroFeed).includes("sourceKey") && String(ensureHomeHeroFeed).includes("invalidateHomeHeroFeed"), "Nostr hot version/signature invalidates stale Hero feed", "STATIC_HOOK");
+      check("HERO_NOSTR_NOT_READY_NO_TMDB_FALLBACK", String(ensureHomeHeroFeed).includes("state.hot && state.hot.ready") && String(loadHomeHeroFeed).includes("feed.loaded = false") && String(loadHomeHeroFeed).includes('source === "nostr"'), "Nostr Hero waits for hot data without loading TMDB fallback", "STATIC_HOOK");
+      const heroProgressiveSource = String(homeHeroProgressiveNostrEnrich);
+      check("HERO_NOSTR_PROGRESSIVE_SCAN", heroProgressiveSource.includes("missing") && heroProgressiveSource.includes("batch") && heroProgressiveSource.includes("weeklyMapLimit") && heroProgressiveSource.includes("runCurrent") && String(loadHomeHeroFeed).includes("homeHeroProgressiveNostrEnrich"), "Nostr Hero enriches only the missing number of candidates per batch", "STATIC_HOOK");
+      check("HERO_NOSTR_PROGRESSIVE_STALE_GUARD", heroProgressiveSource.indexOf("if (!runCurrent())") >= 0 && heroProgressiveSource.lastIndexOf("if (!runCurrent())") > heroProgressiveSource.indexOf("if (!runCurrent())") && String(loadHomeHeroFeed).includes("progress.stale"), "Nostr Hero stops before a subsequent batch when the source is stale", "STATIC_HOOK");
+      check("HERO_NOSTR_PROGRESSIVE_NO_TMDB_FALLBACK", String(loadHomeHeroFeed).includes('if (source === "nostr")') && String(homeHeroProgressiveNostrEnrich).indexOf("homeHeroFallbackCandidates") < 0 && String(loadHomeHeroFeed).includes('homeHeroFallbackCandidates("tmdb")'), "Nostr Hero progressive enrichment does not enter the TMDB fallback path", "STATIC_HOOK");
+      const runHeroProgressiveFixture = async (validity, staleAfterBatch) => {
+        const values = Array.isArray(validity) ? validity : [];
+        const selected = [];
+        let cursor = 0;
+        let batchCount = 0;
+        while (selected.length < HOME_HERO_FINAL_LIMIT && cursor < values.length) {
+          const missing = HOME_HERO_FINAL_LIMIT - selected.length;
+          const batch = values.slice(cursor, cursor + missing);
+          cursor += batch.length;
+          batchCount += 1;
+          const results = await weeklyMapLimit(batch, HOME_HERO_DETAIL_CONCURRENCY, async (isValid) => isValid ? { valid: true } : null);
+          if (staleAfterBatch && batchCount >= staleAfterBatch) return { stale: true, committed: false, processed: cursor, batchCount, selected };
+          results.forEach((result) => {
+            if (result && result.ok && result.value) selected.push(result.value);
+          });
+        }
+        return { stale: false, committed: true, processed: cursor, batchCount, selected };
+      };
+      const heroProgressiveCaseA = await runHeroProgressiveFixture([true, true, true, true, true, true]);
+      const heroProgressiveCaseB = await runHeroProgressiveFixture([true, true, true, true, false, false, true, true]);
+      const heroProgressiveCaseC = await runHeroProgressiveFixture([true, true, true, true].concat(new Array(20).fill(false)));
+      const heroProgressiveCaseD = await runHeroProgressiveFixture(new Array(24).fill(true), 1);
+      check("HERO_NOSTR_PROGRESSIVE_CASE_A", heroProgressiveCaseA.processed === 6 && heroProgressiveCaseA.selected.length === 6 && heroProgressiveCaseA.committed === true, "six valid first-rank candidates stop after the first six Detail requests", "RUNTIME_MOCK");
+      check("HERO_NOSTR_PROGRESSIVE_CASE_B", heroProgressiveCaseB.processed === 8 && heroProgressiveCaseB.selected.length === 6 && heroProgressiveCaseB.batchCount === 2, "two invalid first-batch candidates consume only the two missing next-batch requests", "RUNTIME_MOCK");
+      check("HERO_NOSTR_PROGRESSIVE_CASE_C", heroProgressiveCaseC.processed === 24 && heroProgressiveCaseC.selected.length === 4 && heroProgressiveCaseC.committed === true, "fewer than six valid candidates scan the bounded 24-candidate pool and keep four", "RUNTIME_MOCK");
+      check("HERO_NOSTR_PROGRESSIVE_CASE_D", heroProgressiveCaseD.stale === true && heroProgressiveCaseD.committed === false && heroProgressiveCaseD.processed === 6 && heroProgressiveCaseD.batchCount === 1, "a stale source after the first batch prevents the next batch and commit", "RUNTIME_MOCK");
       check("PHASE1_RECENT_DATA_UNCHANGED", typeof renderHomeRecent === "function" && typeof renderRecentList === "function" && typeof recentWatchingItems === "function", "existing Recent data path remains", "FROZEN_SOURCE_AUDIT");
       check("PHASE1_LATEST_DATA_UNCHANGED", typeof resolveHomeLatestItems === "function" && typeof renderHomeHot === "function", "existing Latest data path remains", "FROZEN_SOURCE_AUDIT");
       check("PHASE1_SEARCH_BUSINESS_UNCHANGED", typeof openSearchPage === "function" && typeof submitSearchInput === "function", "existing Search path remains", "FROZEN_SOURCE_AUDIT");
