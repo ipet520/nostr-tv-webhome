@@ -558,6 +558,8 @@
     }
 
     function searchHotMetaYear(item) {
+      const identityYear = String(item && item.identityYear || "").trim();
+      if (/^(?:19|20)\d{2}$/.test(identityYear)) return identityYear;
       const text = String(item && item.meta || "");
       const match = text.match(/(?:19|20)\d{2}/);
       return match ? match[0] : "";
@@ -596,13 +598,10 @@
       return { identityTier: yearState === "match" ? 2 : 1, yearState, localExact, originalExact };
     }
 
-    async function resolveSearchHotTmdbItem(hotItem, requestOverride) {
+    function resolveSearchHotTmdbResults(hotItem, rawResults) {
       const hot = hotItem || {};
       const query = String(hot.query || "").trim();
-      if (!query) return { verdict: "NO_MATCH", item: null, candidates: [] };
-      const request = typeof requestOverride === "function" ? requestOverride : requestJson;
-      const body = await request(tmdbSearchUrl(query), 18);
-      const rawResults = body && Array.isArray(body.results) ? body.results : [];
+      if (!query) return { verdict: "NO_MATCH", item: null, candidates: [], rawResults: [] };
       const year = searchHotMetaYear(hot);
       const ranked = rawResults
         .filter((item) => item && (item.media_type === "movie" || item.media_type === "tv") && item.id != null)
@@ -618,7 +617,7 @@
         })
         .filter((entry) => entry.identityTier > 0)
         .sort((a, b) => b.identityTier - a.identityTier || b.popularity - a.popularity || b.votes - a.votes);
-      if (!ranked.length) return { verdict: "NO_MATCH", item: null, candidates: [] };
+      if (!ranked.length) return { verdict: "NO_MATCH", item: null, candidates: [], rawResults };
       const highestIdentityTier = ranked[0].identityTier;
       const highestTier = ranked.filter((entry) => entry.identityTier === highestIdentityTier);
       if (highestTier.length > 1) {
@@ -626,7 +625,8 @@
           verdict: "AMBIGUOUS",
           item: null,
           candidates: highestTier.map((entry) => entry.item),
-          identityTier: highestIdentityTier
+          identityTier: highestIdentityTier,
+          rawResults
         };
       }
       const winner = highestTier[0];
@@ -635,8 +635,77 @@
         item: winner.item,
         candidates: [winner.item],
         identityTier: winner.identityTier,
-        yearState: winner.yearState
+        yearState: winner.yearState,
+        rawResults
       };
+    }
+
+    async function resolveSearchHotTmdbItem(hotItem, requestOverride) {
+      const hot = hotItem || {};
+      const query = String(hot.query || "").trim();
+      if (!query) return { verdict: "NO_MATCH", item: null, candidates: [], rawResults: [] };
+      const request = typeof requestOverride === "function" ? requestOverride : requestJson;
+      const body = await request(tmdbSearchUrl(query), 18);
+      const rawResults = body && Array.isArray(body.results) ? body.results : [];
+      return resolveSearchHotTmdbResults(hot, rawResults);
+    }
+
+    async function loadSearchHotQipuMetadata(hotItem, requestOverride) {
+      const hot = hotItem || {};
+      const query = String(hot.query || "").trim();
+      const qipuId = String(hot.qipu_id || "").trim();
+      if (!query || !qipuId) return null;
+      const request = typeof requestOverride === "function" ? requestOverride : requestJson;
+      try {
+        const url = new URL("https://mesh.if.iqiyi.com/portal/lw/search/homePageV3");
+        [
+          ["key", query],
+          ["current_page", "1"],
+          ["mode", "1"],
+          ["source", "input"],
+          ["pageNum", "1"],
+          ["pageSize", "20"],
+          ["u", "aaa"],
+          ["scale", "150"],
+          ["dataType", "webSearch"]
+        ].forEach(([key, value]) => url.searchParams.set(key, value));
+        const body = await request(url.toString(), 18);
+        const data = body && body.data;
+        const templates = data && Array.isArray(data.templates)
+          ? data.templates
+          : data && data.data && Array.isArray(data.data.templates)
+            ? data.data.templates
+            : [];
+        const albumInfo = templates
+          .map((template) => template && template.albumInfo)
+          .find((candidate) => candidate && String(candidate.qipuId || "") === qipuId);
+        if (!albumInfo) return null;
+        const title = String(albumInfo.title || "").trim();
+        if (title && normalizeTitle(title) !== normalizeTitle(query)) return null;
+        const year = String(albumInfo.year && albumInfo.year.value || "").trim();
+        if (!/^(?:19|20)\d{2}$/.test(year)) return null;
+        return {
+          identityYear: year,
+          identityChannel: String(albumInfo.channel || "").trim(),
+          identityQipuId: qipuId
+        };
+      } catch (error) {
+        return null;
+      }
+    }
+
+    async function resolveSearchHotIdentity(hotItem, requestOverride) {
+      const hot = hotItem || {};
+      const initial = await resolveSearchHotTmdbItem(hot, requestOverride);
+      if (initial.verdict !== "AMBIGUOUS"
+        || !String(hot.qipu_id || "").trim()
+        || searchHotMetaYear(hot)) return initial;
+      const qipuMetadata = await loadSearchHotQipuMetadata(hot, requestOverride);
+      if (!qipuMetadata) return initial;
+      return resolveSearchHotTmdbResults(
+        Object.assign({}, hot, qipuMetadata),
+        Array.isArray(initial.rawResults) ? initial.rawResults : []
+      );
     }
 
     function activateSearchHotFallback(query) {
@@ -661,7 +730,7 @@
       state.searchHotResolveSeq = resolveSeq;
       if (target) target.dataset.hotResolving = "1";
       try {
-        const resolved = await resolveSearchHotTmdbItem(hot);
+        const resolved = await resolveSearchHotIdentity(hot);
         if (resolveSeq !== Number(state.searchHotResolveSeq || 0)) return false;
         if (resolved && resolved.verdict === "STRONG" && resolved.item) {
           openDetail(resolved.item, { returnTarget: target });

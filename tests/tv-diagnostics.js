@@ -345,7 +345,10 @@
       const searchHotReturnSource = sourceOf(findSearchHotReturnTarget);
       const homeReturnTargetSource = sourceOf(findHomeReturnTarget);
       const searchHotIdentitySource = sourceOf(searchHotIdentityEvidence);
+      const searchHotResultsSource = sourceOf(resolveSearchHotTmdbResults);
       const searchHotResolveSource = sourceOf(resolveSearchHotTmdbItem);
+      const searchHotQipuSource = sourceOf(loadSearchHotQipuMetadata);
+      const searchHotIdentityResolveSource = sourceOf(resolveSearchHotIdentity);
       const searchHotActivateSource = sourceOf(activateSearchHotItem);
       const searchHotFallbackSource = sourceOf(activateSearchHotFallback);
       const searchHotStyleText = Array.from(document.querySelectorAll("style"))
@@ -478,6 +481,16 @@
       let searchHotYearMismatchResolution = null;
       let searchHotUniqueYearResolution = null;
       let searchHotNoMatchResolution = null;
+      let searchHotWinterInitialResolution = null;
+      let searchHotWinterQipuResolution = null;
+      let searchHotQipuMismatchMetadata = null;
+      let searchHotQipuMissingYearMetadata = null;
+      let searchHotQipuFailureFallback = false;
+      let searchHotQipuRemainAmbiguousResolution = null;
+      let searchHotNormalTmdbRequestCount = 0;
+      let searchHotNormalQipuRequestCount = 0;
+      let searchHotQipuFlowTmdbRequestCount = 0;
+      let searchHotQipuFlowRequestCount = 0;
       let searchHotResolveRequestUrl = "";
       try {
         const resolveBody = {
@@ -518,6 +531,90 @@
             { id: 920021, media_type: "movie", title: "不存在的热词外传", release_date: "2024-01-01", popularity: 999, vote_count: 999 }
           ] })
         );
+        const winterHot = {
+          query: "冬至",
+          meta: "8.5分 / 黄景瑜 孙千",
+          qipu_id: "1756442394382201",
+          doc_channel: "2"
+        };
+        const winterResults = [
+          { id: 243028, media_type: "tv", name: "冬至", original_name: "冬至", first_air_date: "2024-12-20", popularity: 1, vote_count: 1 },
+          { id: 99723, media_type: "tv", name: "冬至", original_name: "冬至", first_air_date: "2004-01-01", popularity: 100, vote_count: 100 },
+          { id: 109557, media_type: "tv", name: "冬至", original_name: "冬至", first_air_date: "2002-01-01", popularity: 50, vote_count: 50 }
+        ];
+        const winterQipuBody = {
+          data: {
+            templates: [{ albumInfo: {
+              qipuId: "1756442394382201",
+              title: "冬至",
+              channel: "电视剧,2",
+              year: { value: "2024" }
+            } }]
+          }
+        };
+        searchHotWinterInitialResolution = await resolveSearchHotTmdbItem(
+          winterHot,
+          () => Promise.resolve({ results: winterResults })
+        );
+        searchHotWinterQipuResolution = await resolveSearchHotIdentity(
+          winterHot,
+          (url) => {
+            if (String(url).includes("/search/multi")) {
+              searchHotQipuFlowTmdbRequestCount += 1;
+              return Promise.resolve({ results: winterResults });
+            }
+            if (String(url).includes("/homePageV3")) {
+              searchHotQipuFlowRequestCount += 1;
+              return Promise.resolve(winterQipuBody);
+            }
+            return Promise.reject(new Error("unexpected Search Hot identity URL"));
+          }
+        );
+        const normalStrongFlow = await resolveSearchHotIdentity(
+          { query: "热剧", meta: "2024", qipu_id: "qipu-strong" },
+          (url) => {
+            if (String(url).includes("/search/multi")) {
+              searchHotNormalTmdbRequestCount += 1;
+              return Promise.resolve(resolveBody);
+            }
+            searchHotNormalQipuRequestCount += 1;
+            return Promise.reject(new Error("unexpected qipu request for strong identity"));
+          }
+        );
+        searchHotQipuMismatchMetadata = await loadSearchHotQipuMetadata(
+          winterHot,
+          () => Promise.resolve({ data: { templates: [{ albumInfo: {
+            qipuId: "other-qipu",
+            title: "冬至",
+            year: { value: "2024" }
+          } }] } })
+        );
+        searchHotQipuMissingYearMetadata = await loadSearchHotQipuMetadata(
+          winterHot,
+          () => Promise.resolve({ data: { templates: [{ albumInfo: {
+            qipuId: "1756442394382201",
+            title: "冬至",
+            year: { value: "未知" }
+          } }] } })
+        );
+        searchHotQipuFailureFallback = !(await loadSearchHotQipuMetadata(
+          winterHot,
+          () => Promise.reject(new Error("qipu metadata unavailable"))
+        ));
+        searchHotQipuRemainAmbiguousResolution = await resolveSearchHotIdentity(
+          { query: "同名剧", qipu_id: "qipu-ambiguous" },
+          (url) => String(url).includes("/search/multi")
+            ? Promise.resolve({ results: [
+              { id: 921001, media_type: "tv", name: "同名剧", first_air_date: "2024-01-01", popularity: 100, vote_count: 100 },
+              { id: 921002, media_type: "tv", name: "同名剧", first_air_date: "2024-01-02", popularity: 10, vote_count: 10 }
+            ] })
+            : Promise.resolve({ data: { templates: [{ albumInfo: {
+              qipuId: "qipu-ambiguous",
+              title: "同名剧",
+              year: { value: "2024" }
+            } }] } })
+        );
+        void normalStrongFlow;
       } catch (error) {}
       check("SEARCH_HOT_IQIYI_AUTHORITY",
         SEARCH_HOT_ENDPOINT === "https://search.video.iqiyi.com/m"
@@ -645,7 +742,7 @@
         "Search Hot renders the query as a two-line title", "STATIC_HOOK");
       check("SEARCH_HOT_CLICK_TO_TMDB",
         hasAll(searchHotActivateSource, [
-          "resolveSearchHotTmdbItem",
+          "resolveSearchHotIdentity",
           "openDetail(resolved.item, { returnTarget: target })",
           "activateSearchHotFallback"
         ])
@@ -669,6 +766,54 @@
           && searchHotResolveSource.includes("media_type === \"tv\"")
           && searchHotResolveRequestUrl.includes("/search/multi"),
         "Search Hot resolves only through the existing TMDB multi-search authority", "RUNTIME_MOCK");
+      check("SEARCH_HOT_INITIAL_AMBIGUOUS",
+        !!searchHotWinterInitialResolution
+          && searchHotWinterInitialResolution.verdict === "AMBIGUOUS"
+          && searchHotWinterInitialResolution.identityTier === 4
+          && Array.isArray(searchHotWinterInitialResolution.candidates)
+          && searchHotWinterInitialResolution.candidates.length === 3,
+        "Winter Solstice remains ambiguous before qipu metadata enrichment", "RUNTIME_MOCK");
+      check("SEARCH_HOT_QIPU_YEAR_RESOLVE_STRONG",
+        !!searchHotWinterQipuResolution
+          && searchHotWinterQipuResolution.verdict === "STRONG"
+          && searchHotWinterQipuResolution.item
+          && String(searchHotWinterQipuResolution.item.tmdbId) === "243028"
+          && searchHotWinterQipuResolution.identityTier === 4
+          && searchHotWinterQipuResolution.yearState === "match"
+          && searchHotQipuSource.includes("homePageV3")
+          && searchHotQipuSource.includes("candidate.qipuId")
+          && searchHotQipuSource.includes("albumInfo.year")
+          && searchHotIdentityResolveSource.includes('initial.verdict !== "AMBIGUOUS"'),
+        "qipu year metadata upgrades only the initially ambiguous Winter Solstice identity", "RUNTIME_MOCK");
+      check("SEARCH_HOT_QIPU_ID_MISMATCH_REJECTED",
+        searchHotQipuMismatchMetadata === null
+          && searchHotQipuSource.includes("candidate.qipuId")
+          && searchHotQipuSource.includes("qipuId"),
+        "qipu metadata with a different media id is rejected", "RUNTIME_MOCK");
+      check("SEARCH_HOT_QIPU_YEAR_MISSING_REJECTED",
+        searchHotQipuMissingYearMetadata === null
+          && searchHotQipuSource.includes("/^(?:19|20)\\d{2}$/"),
+        "qipu metadata without a strict four-digit year is rejected", "RUNTIME_MOCK");
+      check("SEARCH_HOT_QIPU_METADATA_FAILURE_FALLBACK",
+        searchHotQipuFailureFallback
+          && searchHotIdentityResolveSource.includes("if (!qipuMetadata) return initial")
+          && searchHotActivateSource.includes("activateSearchHotFallback(query)"),
+        "qipu request failure preserves the existing Search fallback", "RUNTIME_MOCK");
+      check("SEARCH_HOT_QIPU_REMAIN_AMBIGUOUS_FALLBACK",
+        !!searchHotQipuRemainAmbiguousResolution
+          && searchHotQipuRemainAmbiguousResolution.verdict === "AMBIGUOUS"
+          && searchHotActivateSource.includes('resolved.verdict === "STRONG"'),
+        "qipu metadata that cannot resolve a tie remains on the fallback path", "RUNTIME_MOCK");
+      check("SEARCH_HOT_QIPU_NO_SECOND_TMDB_REQUEST",
+        searchHotQipuFlowTmdbRequestCount === 1
+          && searchHotQipuFlowRequestCount === 1
+          && searchHotResultsSource.includes("rawResults")
+          && searchHotIdentityResolveSource.includes("initial.rawResults"),
+        "qipu enrichment reuses the initial TMDB results without a second TMDB request", "RUNTIME_MOCK");
+      check("SEARCH_HOT_STRONG_NO_QIPU_REQUEST",
+        searchHotNormalTmdbRequestCount === 1
+          && searchHotNormalQipuRequestCount === 0,
+        "a normally strong Search Hot identity does not request qipu metadata", "RUNTIME_MOCK");
       check("SEARCH_HOT_EXACT_TITLE_PRIORITY",
         !!searchHotStrongResolution
           && searchHotStrongResolution.verdict === "STRONG"
