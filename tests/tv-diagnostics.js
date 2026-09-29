@@ -135,6 +135,146 @@
           && Array.isArray(movieCategorySources)
           && movieCategorySources.some((source) => source && source.endpoint === "discover/movie"),
         "category queries use the TMDB catalog source", "STATIC_HOOK");
+
+      const homeHotMarkSource = sourceOf(markHomeHotVersion);
+      const homeHeroInputSource = sourceOf(homeHeroInputKey);
+      check("HOME_CATEGORY_SOURCE_IS_TMDB_ONLY",
+        homeCategoryFeedKey("movie") === JSON.stringify(["movie", "tmdb"])
+          && homeHotMarkSource.includes("state.hot.version")
+          && !homeHotMarkSource.includes("invalidateHomeCategoryFeeds"),
+        "Home category feed identity remains TMDB-only and independent from Nostr hot version marking", "STATIC_HOOK");
+
+      const previousHotVersionForMark = state.hot.version;
+      const previousCategoryFeedsForMark = state.homeV14.categoryFeeds;
+      const categoryIdsForMark = ["movie", "tv", "anime", "documentary", "variety"];
+      const categoryFeedFixture = {};
+      categoryIdsForMark.forEach((id, index) => {
+        const key = homeCategoryFeedKey(id);
+        categoryFeedFixture[id] = {
+          id,
+          key,
+          source: "tmdb",
+          items: [{ mediaKey: "home-loading-fixture-" + id }],
+          loading: id === "tv",
+          loaded: id !== "tv",
+          error: "",
+          promise: id === "tv" ? Promise.resolve("inflight-fixture") : null,
+          requestSeq: 40 + index,
+          dataVersion: key,
+          signature: key
+        };
+      });
+      const categoryFeedSnapshot = categoryIdsForMark.reduce((snapshot, id) => {
+        const feed = categoryFeedFixture[id];
+        snapshot[id] = {
+          key: feed.key,
+          items: feed.items,
+          loading: feed.loading,
+          loaded: feed.loaded,
+          error: feed.error,
+          promise: feed.promise,
+          requestSeq: feed.requestSeq,
+          dataVersion: feed.dataVersion,
+          signature: feed.signature
+        };
+        return snapshot;
+      }, {});
+      try {
+        state.homeV14.categoryFeeds = categoryFeedFixture;
+        markHomeHotVersion();
+        const loadedFeedsPreserved = categoryIdsForMark
+          .filter((id) => id !== "tv")
+          .every((id) => {
+            const before = categoryFeedSnapshot[id];
+            const after = categoryFeedFixture[id];
+            return after.key === before.key
+              && after.items === before.items
+              && after.loading === before.loading
+              && after.loaded === before.loaded
+              && after.error === before.error
+              && after.promise === before.promise
+              && after.requestSeq === before.requestSeq
+              && after.dataVersion === before.dataVersion
+              && after.signature === before.signature;
+          });
+        const inflightFeedPreserved = (() => {
+          const before = categoryFeedSnapshot.tv;
+          const after = categoryFeedFixture.tv;
+          return after.key === before.key
+            && after.items === before.items
+            && after.loading === true
+            && after.loaded === false
+            && after.promise === before.promise
+            && after.requestSeq === before.requestSeq;
+        })();
+        const categoryRequestSeqUnchanged = categoryIdsForMark.every((id) =>
+          categoryFeedFixture[id].requestSeq === categoryFeedSnapshot[id].requestSeq);
+        check("NOSTR_MARK_VERSION_INCREMENTS",
+          Number(state.hot.version) === Number(previousHotVersionForMark || 0) + 1,
+          "Nostr hot updates still advance the shared hot version", "RUNTIME_MOCK");
+        check("NOSTR_MARK_DOES_NOT_INVALIDATE_HOME_CATEGORY",
+          loadedFeedsPreserved && inflightFeedPreserved && categoryRequestSeqUnchanged,
+          "markHomeHotVersion does not clear loaded or in-flight TMDB category feeds", "RUNTIME_MOCK");
+        check("LOADED_CATEGORY_FEED_PRESERVED",
+          loadedFeedsPreserved,
+          "loaded TMDB category items and request state survive a Nostr update", "RUNTIME_MOCK");
+        check("HOME_MOVIE_FEED_SURVIVES_NOSTR_UPDATE",
+          loadedFeedsPreserved && categoryFeedFixture.movie.items === categoryFeedSnapshot.movie.items
+            && categoryFeedFixture.movie.loaded === true
+            && categoryFeedFixture.movie.requestSeq === categoryFeedSnapshot.movie.requestSeq,
+          "Home Movie TMDB feed survives a Nostr hot update", "RUNTIME_MOCK");
+        check("HOME_TV_FEED_SURVIVES_NOSTR_UPDATE",
+          inflightFeedPreserved && categoryFeedFixture.tv.items === categoryFeedSnapshot.tv.items
+            && categoryFeedFixture.tv.loaded === false
+            && categoryFeedFixture.tv.requestSeq === categoryFeedSnapshot.tv.requestSeq,
+          "Home TV category feed state is not invalidated by a Nostr hot update", "RUNTIME_MOCK");
+        check("HOME_ANIME_FEED_SURVIVES_NOSTR_UPDATE",
+          loadedFeedsPreserved && categoryFeedFixture.anime.items === categoryFeedSnapshot.anime.items
+            && categoryFeedFixture.anime.loaded === true
+            && categoryFeedFixture.anime.requestSeq === categoryFeedSnapshot.anime.requestSeq,
+          "Home Anime TMDB feed survives a Nostr hot update", "RUNTIME_MOCK");
+        check("HOME_DOCUMENTARY_FEED_SURVIVES_NOSTR_UPDATE",
+          loadedFeedsPreserved && categoryFeedFixture.documentary.items === categoryFeedSnapshot.documentary.items
+            && categoryFeedFixture.documentary.loaded === true
+            && categoryFeedFixture.documentary.requestSeq === categoryFeedSnapshot.documentary.requestSeq,
+          "Home Documentary TMDB feed survives a Nostr hot update", "RUNTIME_MOCK");
+        check("HOME_VARIETY_FEED_SURVIVES_NOSTR_UPDATE",
+          loadedFeedsPreserved && categoryFeedFixture.variety.items === categoryFeedSnapshot.variety.items
+            && categoryFeedFixture.variety.loaded === true
+            && categoryFeedFixture.variety.requestSeq === categoryFeedSnapshot.variety.requestSeq,
+          "Home Variety TMDB feed survives a Nostr hot update", "RUNTIME_MOCK");
+        check("INFLIGHT_CATEGORY_FEED_PRESERVED",
+          inflightFeedPreserved,
+          "in-flight TMDB category promise and loading state survive a Nostr update", "RUNTIME_MOCK");
+        check("INFLIGHT_TMDB_FEED_NOT_INVALIDATED_BY_NOSTR",
+          inflightFeedPreserved,
+          "an in-flight TMDB category request is not cancelled by a Nostr update", "RUNTIME_MOCK");
+        check("CATEGORY_REQUEST_SEQ_UNCHANGED",
+          categoryRequestSeqUnchanged,
+          "Nostr hot updates do not create a second TMDB category request generation", "RUNTIME_MOCK");
+        check("NO_DUPLICATE_TMDB_CATEGORY_RELOAD",
+          !homeHotMarkSource.includes("invalidateHomeCategoryFeeds")
+            && categoryRequestSeqUnchanged,
+          "Nostr hot updates do not invalidate and reload TMDB Home categories", "RUNTIME_MOCK");
+        check("NO_DUPLICATE_CATEGORY_REQUEST_AFTER_NOSTR_UPDATE",
+          !homeHotMarkSource.includes("invalidateHomeCategoryFeeds")
+            && categoryRequestSeqUnchanged,
+          "Nostr hot updates do not create a duplicate TMDB category request", "RUNTIME_MOCK");
+      } catch (error) {
+        check("NOSTR_HOME_CATEGORY_UPDATE_FIXTURE", false, String(error && error.message || error || "unknown"), "RUNTIME_MOCK");
+      } finally {
+        state.hot.version = previousHotVersionForMark;
+        state.homeV14.categoryFeeds = previousCategoryFeedsForMark;
+      }
+      check("NOSTR_UPDATE_RECOMMENDATION_REFRESH",
+        sourceOf(hotRefreshItems).includes("markHomeHotVersion")
+          && sourceOf(hotRefreshItems).includes("state.hot.items")
+          && sourceOf(hotRefreshItems).includes("scheduleRender"),
+        "Nostr hot refresh still rebuilds and renders the Recommendation surface", "STATIC_HOOK");
+      check("NOSTR_UPDATE_HERO_INVALIDATION",
+        homeHeroInputSource.includes("hot.version")
+          && homeHotMarkSource.includes("state.hot.version"),
+        "Nostr hot version remains part of Hero input invalidation", "STATIC_HOOK");
       check("NOSTR_CATEGORY_EMULATION_REMOVED",
         typeof secondaryNostrHotCandidates === "undefined"
           && typeof secondaryLoadNostrHotItems === "undefined"

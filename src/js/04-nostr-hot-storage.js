@@ -160,7 +160,6 @@
 
     function markHomeHotVersion() {
       state.hot.version = Number(state.hot.version || 0) + 1;
-      if (typeof invalidateHomeCategoryFeeds === "function") invalidateHomeCategoryFeeds();
     }
 
     async function hotLoadIndex() {
