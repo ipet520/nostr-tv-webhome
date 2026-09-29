@@ -874,6 +874,33 @@
       white-space: nowrap;
     }
 
+    @media (orientation: portrait) and (max-width: 719px) {
+      html:not(.tv-mode):not(.tv-preview) #searchHotRail {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        column-gap: 9px;
+        row-gap: 9px;
+        overflow-x: visible;
+        overflow-y: visible;
+        scroll-snap-type: none;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #searchHotRail > .search-hot-card {
+        width: 100%;
+        max-width: none;
+        min-width: 0;
+        flex: none;
+        min-height: 64px;
+        max-height: 78px;
+      }
+
+      html:not(.tv-mode):not(.tv-preview) #searchHotRail > .search-hot-card .search-hot-rank {
+        flex: 0 0 26px;
+        min-width: 26px;
+        font-size: clamp(16px, 5vw, 21px);
+      }
+    }
+
     #searchEmptyState {
       margin: 0 0 12px;
       color: var(--home-v14-muted);
@@ -1041,10 +1068,6 @@
         border: 0 !important;
         box-shadow: none !important;
       }
-    }
-
-    @media (max-width: 900px) {
-      #searchHotRail { --home-card-width: clamp(112px, 28vw, 148px); }
     }
 
     /* Final media-card surface contract.  Keep this after the shared TV

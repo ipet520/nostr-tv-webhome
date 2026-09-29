@@ -341,12 +341,26 @@
       const searchHotNormalizeSource = sourceOf(normalizeSearchHotItems);
       const searchHotRenderSource = sourceOf(renderSearchHot);
       const searchHotCardSource = sourceOf(searchHotCard);
+      const searchHotIdentitySource = sourceOf(searchHotIdentityEvidence);
       const searchHotResolveSource = sourceOf(resolveSearchHotTmdbItem);
       const searchHotActivateSource = sourceOf(activateSearchHotItem);
       const searchHotFallbackSource = sourceOf(activateSearchHotFallback);
       const searchHotStyleText = Array.from(document.querySelectorAll("style"))
         .map((style) => String(style.textContent || ""))
         .join("\n");
+      const searchHotPortraitSelectorStart = searchHotStyleText.indexOf("html:not(.tv-mode):not(.tv-preview) #searchHotRail");
+      const searchHotRailStyleStart = searchHotPortraitSelectorStart >= 0
+        ? searchHotStyleText.lastIndexOf("#searchHotRail {", searchHotPortraitSelectorStart)
+        : -1;
+      const searchHotPortraitStyleStart = searchHotPortraitSelectorStart >= 0
+        ? searchHotStyleText.lastIndexOf("@media (orientation: portrait) and (max-width: 719px)", searchHotPortraitSelectorStart)
+        : -1;
+      const searchHotBaseStyleText = searchHotRailStyleStart >= 0 && searchHotPortraitStyleStart > searchHotRailStyleStart
+        ? searchHotStyleText.slice(searchHotRailStyleStart, searchHotPortraitStyleStart)
+        : "";
+      const searchHotPortraitStyleText = searchHotPortraitStyleStart >= 0
+        ? searchHotStyleText.slice(searchHotPortraitStyleStart, searchHotStyleText.indexOf("#searchEmptyState", searchHotPortraitStyleStart))
+        : "";
       const searchHotPipelineSource = [
         searchHotUrlSource,
         searchHotRequestSource,
@@ -380,6 +394,8 @@
       } catch (error) {}
       let searchHotStrongResolution = null;
       let searchHotAmbiguousResolution = null;
+      let searchHotYearMismatchResolution = null;
+      let searchHotUniqueYearResolution = null;
       let searchHotNoMatchResolution = null;
       let searchHotResolveRequestUrl = "";
       try {
@@ -398,8 +414,21 @@
         searchHotAmbiguousResolution = await resolveSearchHotTmdbItem(
           { query: "同名剧", meta: "2024" },
           () => Promise.resolve({ results: [
-            { id: 920011, media_type: "tv", name: "同名剧", first_air_date: "2024-01-01", popularity: 5, vote_count: 5 },
-            { id: 920012, media_type: "tv", name: "同名剧", first_air_date: "2024-01-02", popularity: 5, vote_count: 5 }
+            { id: 920011, media_type: "tv", name: "同名剧", first_air_date: "2024-01-01", popularity: 100, vote_count: 100 },
+            { id: 920012, media_type: "tv", name: "同名剧", first_air_date: "2024-01-02", popularity: 10, vote_count: 10 }
+          ] })
+        );
+        searchHotYearMismatchResolution = await resolveSearchHotTmdbItem(
+          { query: "年份剧", meta: "2026" },
+          () => Promise.resolve({ results: [
+            { id: 920031, media_type: "movie", title: "年份剧", release_date: "2023-01-01", popularity: 1000, vote_count: 1000 }
+          ] })
+        );
+        searchHotUniqueYearResolution = await resolveSearchHotTmdbItem(
+          { query: "年份剧", meta: "2026" },
+          () => Promise.resolve({ results: [
+            { id: 920041, media_type: "movie", title: "年份剧", release_date: "2023-01-01", popularity: 1000, vote_count: 1000 },
+            { id: 920042, media_type: "movie", title: "年份剧", release_date: "2026-01-01", popularity: 10, vote_count: 10 }
           ] })
         );
         searchHotNoMatchResolution = await resolveSearchHotTmdbItem(
@@ -483,6 +512,46 @@
           && searchHotStyleText.includes("max-height: 90px")
           && !searchHotStyleText.includes("#searchHotRail > .search-hot-card .search-hot-poster"),
         "Search Hot uses a compact landscape tile rather than the portrait card width", "STATIC_HOOK");
+      check("SEARCH_HOT_MOBILE_PORTRAIT_GRID",
+        searchHotPortraitStyleText.includes("@media (orientation: portrait) and (max-width: 719px)")
+          && searchHotPortraitStyleText.includes("html:not(.tv-mode):not(.tv-preview) #searchHotRail")
+          && searchHotPortraitStyleText.includes("display: grid"),
+        "Mobile portrait Search Hot switches the existing rail to a responsive grid", "STATIC_HOOK");
+      check("SEARCH_HOT_MOBILE_TWO_COLUMNS",
+        searchHotPortraitStyleText.includes("grid-template-columns: repeat(2, minmax(0, 1fr))")
+          && searchHotPortraitStyleText.includes("column-gap: 9px")
+          && searchHotPortraitStyleText.includes("row-gap: 9px"),
+        "Mobile portrait Search Hot uses two compact columns", "STATIC_HOOK");
+      check("SEARCH_HOT_MOBILE_NO_HORIZONTAL_TRACK",
+        searchHotPortraitStyleText.includes("overflow-x: visible")
+          && searchHotPortraitStyleText.includes("scroll-snap-type: none")
+          && !searchHotStyleText.includes("#searchHotRail { --home-card-width"),
+        "Mobile portrait Search Hot does not retain a horizontal scrolling track", "STATIC_HOOK");
+      check("SEARCH_HOT_MOBILE_CARD_FULL_COLUMN",
+        searchHotPortraitStyleText.includes("width: 100%")
+          && searchHotPortraitStyleText.includes("max-width: none")
+          && searchHotPortraitStyleText.includes("min-width: 0")
+          && searchHotPortraitStyleText.includes("flex: none")
+          && searchHotPortraitStyleText.includes("min-height: 64px")
+          && searchHotPortraitStyleText.includes("max-height: 78px"),
+        "Mobile portrait Search Hot cards fill their grid columns", "STATIC_HOOK");
+      check("SEARCH_HOT_MOBILE_HISTORY_UNCHANGED",
+        typeof renderSearchHistory === "function"
+          && sourceOf(renderSearchHistory).includes("searchHistoryRail")
+          && !searchHotPortraitStyleText.includes("#searchHistoryRail"),
+        "Mobile portrait changes are scoped away from Search History", "STATIC_HOOK");
+      check("SEARCH_HOT_DESKTOP_HORIZONTAL",
+        searchHotBaseStyleText.includes("#searchHotRail > .search-hot-card")
+          && searchHotBaseStyleText.includes("flex: 0 0 clamp(220px, 16vw, 300px)"),
+        "Desktop Search Hot remains a horizontal compact rail", "STATIC_HOOK");
+      check("SEARCH_HOT_TV_HORIZONTAL",
+        searchHotBaseStyleText.includes("#searchHotRail > .search-hot-card")
+          && searchHotPortraitStyleText.includes("html:not(.tv-mode):not(.tv-preview) #searchHotRail"),
+        "TV and TV Preview are excluded from the portrait grid override", "STATIC_HOOK");
+      check("SEARCH_HOT_LANDSCAPE_HORIZONTAL",
+        searchHotBaseStyleText.includes("flex: 0 0 clamp(220px, 16vw, 300px)")
+          && !searchHotPortraitStyleText.includes("orientation: landscape"),
+        "Landscape Search Hot remains on the base horizontal rail", "STATIC_HOOK");
       check("SEARCH_HOT_RANK_VISIBLE",
         searchHotCardSource.includes("search-hot-rank")
           && searchHotCardSource.includes("padStart(2, \"0\")")
@@ -507,6 +576,11 @@
             'searchTmdb(normalized, { source: "hot-fallback" })'
           ]),
         "Search Hot first resolves a strong TMDB detail and keeps the existing search fallback", "STATIC_HOOK");
+      check("SEARCH_HOT_CLICK_DIRECT_DETAIL",
+        searchHotActivateSource.includes('resolved.verdict === "STRONG"')
+          && searchHotActivateSource.includes("openDetail(resolved.item, { returnTarget: target })")
+          && searchHotActivateSource.includes("activateSearchHotFallback(query)"),
+        "a reliable Search Hot identity opens Detail directly", "STATIC_HOOK");
       check("SEARCH_HOT_TMDB_RESOLVE",
         searchHotResolveSource.includes("tmdbSearchUrl")
           && searchHotResolveSource.includes("requestJson")
@@ -520,7 +594,8 @@
           && searchHotStrongResolution.item
           && String(searchHotStrongResolution.item.tmdbId) === "920001"
           && searchHotResolveSource.includes("normalizeTitle")
-          && searchHotResolveSource.includes("searchHotMatchScore"),
+          && searchHotIdentitySource.includes("identityTier")
+          && searchHotResolveSource.includes("searchHotIdentityEvidence"),
         "exact localized title plus year outranks original-title and weaker matches", "RUNTIME_MOCK");
       check("SEARCH_HOT_YEAR_DISAMBIGUATION",
         !!searchHotStrongResolution
@@ -530,6 +605,33 @@
           && searchHotResolveSource.includes("release_date")
           && searchHotResolveSource.includes("first_air_date"),
         "the hot metadata year participates in TMDB title selection", "RUNTIME_MOCK");
+      check("SEARCH_HOT_POPULARITY_NOT_IDENTITY",
+        !!searchHotAmbiguousResolution
+          && searchHotAmbiguousResolution.verdict === "AMBIGUOUS"
+          && Array.isArray(searchHotAmbiguousResolution.candidates)
+          && searchHotAmbiguousResolution.candidates.length === 2
+          && searchHotResolveSource.includes("highestIdentityTier")
+          && !searchHotResolveSource.includes("sameTie"),
+        "popularity and vote count cannot resolve an identity tie", "RUNTIME_MOCK");
+      check("SEARCH_HOT_SAME_TIER_MULTI_AMBIGUOUS",
+        !!searchHotAmbiguousResolution
+          && searchHotAmbiguousResolution.verdict === "AMBIGUOUS"
+          && searchHotAmbiguousResolution.identityTier === 4
+          && searchHotAmbiguousResolution.candidates.length === 2,
+        "multiple candidates at the highest identity tier remain ambiguous", "RUNTIME_MOCK");
+      check("SEARCH_HOT_EXPLICIT_YEAR_MISMATCH_NOT_STRONG",
+        !!searchHotYearMismatchResolution
+          && searchHotYearMismatchResolution.verdict === "NO_MATCH"
+          && !searchHotYearMismatchResolution.item
+          && searchHotIdentitySource.includes('yearState === "mismatch"'),
+        "an exact title with an explicit conflicting year cannot become STRONG", "RUNTIME_MOCK");
+      check("SEARCH_HOT_EXACT_YEAR_UNIQUE_STRONG",
+        !!searchHotUniqueYearResolution
+          && searchHotUniqueYearResolution.verdict === "STRONG"
+          && searchHotUniqueYearResolution.item
+          && String(searchHotUniqueYearResolution.item.tmdbId) === "920042"
+          && searchHotUniqueYearResolution.identityTier === 4,
+        "the unique exact title and year candidate is STRONG even when less popular", "RUNTIME_MOCK");
       check("SEARCH_HOT_STRONG_OPENS_DETAIL",
         searchHotActivateSource.includes('resolved.verdict === "STRONG"')
           && searchHotActivateSource.includes("resolved.item")

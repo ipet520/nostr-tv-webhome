@@ -577,16 +577,23 @@
       return String(item && (item.media_type === "tv" ? item.original_name || item.original_title : item.original_title || item.original_name) || "").trim();
     }
 
-    function searchHotMatchScore(item, query, year) {
+    function searchHotIdentityEvidence(item, query, year) {
       const normalizedQuery = normalizeTitle(query);
       const localExact = normalizeTitle(searchHotCandidateLocalTitle(item)) === normalizedQuery;
       const originalExact = normalizeTitle(searchHotCandidateOriginalTitle(item)) === normalizedQuery;
-      if (!localExact && !originalExact) return 0;
-      const yearMatch = !!year && searchHotCandidateYear(item) === year;
-      if (localExact && yearMatch) return 400;
-      if (localExact) return 300;
-      if (originalExact && yearMatch) return 200;
-      return 100;
+      const candidateYear = searchHotCandidateYear(item);
+      const yearState = !year
+        ? "not-required"
+        : candidateYear
+          ? candidateYear === year ? "match" : "mismatch"
+          : "unknown";
+      if ((!localExact && !originalExact) || yearState === "mismatch") {
+        return { identityTier: 0, yearState, localExact, originalExact };
+      }
+      if (localExact) {
+        return { identityTier: yearState === "match" ? 4 : 3, yearState, localExact, originalExact };
+      }
+      return { identityTier: yearState === "match" ? 2 : 1, yearState, localExact, originalExact };
     }
 
     async function resolveSearchHotTmdbItem(hotItem, requestOverride) {
@@ -599,22 +606,37 @@
       const year = searchHotMetaYear(hot);
       const ranked = rawResults
         .filter((item) => item && (item.media_type === "movie" || item.media_type === "tv") && item.id != null)
-        .map((item, index) => ({
-          raw: item,
-          item: normalizeTmdb(item, { id: "search-hot", title: "Search Hot", mediaType: item.media_type }, index),
-          score: searchHotMatchScore(item, query, year),
-          popularity: Number(item.popularity || 0),
-          votes: Number(item.vote_count || 0)
-        }))
-        .filter((entry) => entry.score > 0)
-        .sort((a, b) => b.score - a.score || b.popularity - a.popularity || b.votes - a.votes);
+        .map((item, index) => {
+          const identity = searchHotIdentityEvidence(item, query, year);
+          return {
+            item: normalizeTmdb(item, { id: "search-hot", title: "Search Hot", mediaType: item.media_type }, index),
+            identityTier: identity.identityTier,
+            yearState: identity.yearState,
+            popularity: Number(item.popularity || 0),
+            votes: Number(item.vote_count || 0)
+          };
+        })
+        .filter((entry) => entry.identityTier > 0)
+        .sort((a, b) => b.identityTier - a.identityTier || b.popularity - a.popularity || b.votes - a.votes);
       if (!ranked.length) return { verdict: "NO_MATCH", item: null, candidates: [] };
-      const winner = ranked[0];
-      const sameTie = ranked.filter((entry) => entry.score === winner.score
-        && entry.popularity === winner.popularity
-        && entry.votes === winner.votes);
-      if (sameTie.length > 1) return { verdict: "AMBIGUOUS", item: null, candidates: sameTie.map((entry) => entry.item) };
-      return { verdict: "STRONG", item: winner.item, candidates: [winner.item] };
+      const highestIdentityTier = ranked[0].identityTier;
+      const highestTier = ranked.filter((entry) => entry.identityTier === highestIdentityTier);
+      if (highestTier.length > 1) {
+        return {
+          verdict: "AMBIGUOUS",
+          item: null,
+          candidates: highestTier.map((entry) => entry.item),
+          identityTier: highestIdentityTier
+        };
+      }
+      const winner = highestTier[0];
+      return {
+        verdict: "STRONG",
+        item: winner.item,
+        candidates: [winner.item],
+        identityTier: winner.identityTier,
+        yearState: winner.yearState
+      };
     }
 
     function activateSearchHotFallback(query) {
