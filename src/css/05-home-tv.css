@@ -750,6 +750,14 @@
       transform-origin: center center;
     }
 
+    html.tv-mode .secondary-page button.secondary-filter-option:focus:not(.card):not(.person-card),
+    html.tv-preview .secondary-page button.secondary-filter-option:focus:not(.card):not(.person-card) {
+      transform: none !important;
+      outline: 2px solid rgba(120, 210, 255, .95) !important;
+      outline-offset: -2px !important;
+      box-shadow: none !important;
+    }
+
     html.tv-mode .card:focus,
     html.tv-mode .person-card:focus,
     html.tv-preview .card:focus,

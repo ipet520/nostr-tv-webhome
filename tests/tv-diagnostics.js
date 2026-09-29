@@ -402,6 +402,115 @@
           && searchHotStyleText.includes("box-shadow:")
           && searchHotStyleText.includes("transform: scale(1.06)"),
         "TV Secondary button focus visuals remain unchanged", "STATIC_HOOK");
+      const secondaryFilterFocusSelector = "html.tv-mode .secondary-page button.secondary-filter-option:focus:not(.card):not(.person-card)";
+      const secondaryFilterFocusOverrideStart = searchHotStyleText.indexOf(secondaryFilterFocusSelector);
+      const secondaryFilterFocusOverrideEnd = secondaryFilterFocusOverrideStart >= 0
+        ? searchHotStyleText.indexOf("html.tv-mode .card:focus", secondaryFilterFocusOverrideStart)
+        : -1;
+      const secondaryFilterFocusOverride = secondaryFilterFocusOverrideStart >= 0 && secondaryFilterFocusOverrideEnd > secondaryFilterFocusOverrideStart
+        ? searchHotStyleText.slice(secondaryFilterFocusOverrideStart, secondaryFilterFocusOverrideEnd)
+        : "";
+      check("SECONDARY_FILTER_FOCUS_INTERNAL_OUTLINE",
+        secondaryFilterFocusOverride.includes("outline: 2px solid rgba(120, 210, 255, .95) !important")
+          && secondaryFilterFocusOverride.includes("outline-offset: -2px !important"),
+        "TV filter focus uses an internal two-pixel outline", "STATIC_HOOK");
+      check("SECONDARY_FILTER_FOCUS_NO_SCALE",
+        secondaryFilterFocusOverride.includes("transform: none !important"),
+        "TV filter focus does not scale the pill", "STATIC_HOOK");
+      check("SECONDARY_FILTER_FOCUS_NO_EXTERNAL_GLOW",
+        secondaryFilterFocusOverride.includes("box-shadow: none !important"),
+        "TV filter focus does not paint an external glow", "STATIC_HOOK");
+      check("SECONDARY_FILTER_HORIZONTAL_SCROLL_UNCHANGED",
+        searchHotStyleText.includes(".secondary-filter-row")
+          && searchHotStyleText.includes("overflow-x: auto"),
+        "Secondary filter rows retain horizontal scrolling", "STATIC_HOOK");
+      check("SECONDARY_FILTER_ROW_HEIGHT_UNCHANGED",
+        searchHotStyleText.includes(".secondary-filter-row")
+          && searchHotStyleText.includes("min-height: 38px")
+          && searchHotStyleText.includes(".secondary-filter-option")
+          && searchHotStyleText.includes("min-height: 34px"),
+        "Secondary filter row and option heights remain unchanged", "STATIC_HOOK");
+      check("SECONDARY_FILTER_SELECTED_STATE_UNCHANGED",
+        searchHotStyleText.includes('html.tv-mode .secondary-filter-option[aria-pressed="true"]:focus')
+          && searchHotStyleText.includes('html.tv-preview .secondary-filter-option[aria-pressed="true"]:focus')
+          && !secondaryFilterFocusOverride.includes("background:")
+          && !secondaryFilterFocusOverride.includes("border-color:")
+          && !secondaryFilterFocusOverride.includes("color:"),
+        "the filter focus override leaves selected-state colors to the existing rules", "STATIC_HOOK");
+
+      const previousDocumentClassName = document.documentElement.className;
+      const previousFilterFocus = document.activeElement;
+      let filterFocusFixture = null;
+      let filterTvStyle = null;
+      let filterPreviewStyle = null;
+      let filterRowStyle = null;
+      let filterOptionStyle = null;
+      let secondaryBackStyle = null;
+      let recentManageStyle = null;
+      try {
+        filterFocusFixture = document.createElement("div");
+        filterFocusFixture.className = "secondary-page";
+        filterFocusFixture.innerHTML = '<div class="secondary-filter-row"><div class="secondary-filter-options"><button class="secondary-filter-option" aria-pressed="false">全部</button></div></div><button class="secondary-page-back">返回</button><button class="recent-manage-button">管理</button>';
+        document.body.appendChild(filterFocusFixture);
+        const filterRow = filterFocusFixture.querySelector(".secondary-filter-row");
+        const filterOption = filterFocusFixture.querySelector(".secondary-filter-option");
+        const secondaryBack = filterFocusFixture.querySelector(".secondary-page-back");
+        const recentManage = filterFocusFixture.querySelector(".recent-manage-button");
+        const readFocusStyle = (style) => ({
+          transform: style.transform,
+          outlineWidth: style.outlineWidth,
+          outlineOffset: style.outlineOffset,
+          boxShadow: style.boxShadow,
+          overflowX: style.overflowX,
+          minHeight: style.minHeight
+        });
+        document.documentElement.className = "tv-mode";
+        filterOption.focus();
+        filterTvStyle = readFocusStyle(getComputedStyle(filterOption));
+        filterRowStyle = readFocusStyle(getComputedStyle(filterRow));
+        secondaryBack.focus();
+        secondaryBackStyle = readFocusStyle(getComputedStyle(secondaryBack));
+        recentManage.focus();
+        recentManageStyle = readFocusStyle(getComputedStyle(recentManage));
+        document.documentElement.className = "tv-preview";
+        filterOption.focus();
+        filterPreviewStyle = readFocusStyle(getComputedStyle(filterOption));
+        filterOptionStyle = filterPreviewStyle;
+        const identityTransform = (value) => value === "none" || value === "matrix(1, 0, 0, 1, 0, 0)";
+        check("SECONDARY_FILTER_FOCUS_INTERNAL_OUTLINE_DOM",
+          (filterTvStyle.outlineWidth === "2px" && filterTvStyle.outlineOffset === "-2px")
+            && (filterPreviewStyle.outlineWidth === "2px" && filterPreviewStyle.outlineOffset === "-2px"),
+          "TV and TV Preview computed filter focus outlines stay inside the pill", "DOM_ASSERTION");
+        check("SECONDARY_FILTER_FOCUS_NO_SCALE_DOM",
+          identityTransform(filterTvStyle.transform) && identityTransform(filterPreviewStyle.transform),
+          "TV and TV Preview computed filter focus transforms are identity", "DOM_ASSERTION");
+        check("SECONDARY_FILTER_FOCUS_NO_EXTERNAL_GLOW_DOM",
+          (filterTvStyle.boxShadow === "none" || filterTvStyle.boxShadow === "none none")
+            && (filterPreviewStyle.boxShadow === "none" || filterPreviewStyle.boxShadow === "none none"),
+          "TV and TV Preview computed filter focus shadows are none", "DOM_ASSERTION");
+        check("SECONDARY_FILTER_HORIZONTAL_SCROLL_UNCHANGED_DOM",
+          filterRowStyle.overflowX === "auto",
+          "computed filter row overflow remains horizontal auto", "DOM_ASSERTION");
+        check("SECONDARY_FILTER_ROW_HEIGHT_UNCHANGED_DOM",
+          filterRowStyle.minHeight === "38px" && filterOptionStyle.minHeight === "34px",
+          "computed filter row and pill heights remain unchanged", "DOM_ASSERTION");
+        check("SECONDARY_OTHER_BUTTON_FOCUS_UNCHANGED",
+          !!secondaryBackStyle && !!recentManageStyle
+            && !identityTransform(secondaryBackStyle.transform)
+            && !identityTransform(recentManageStyle.transform),
+          "ordinary Secondary buttons retain the shared TV focus transform", "DOM_ASSERTION");
+      } catch (error) {
+        check("SECONDARY_FILTER_FOCUS_INTERNAL_OUTLINE_DOM", false, String(error && error.message || error || "unknown"), "DOM_ASSERTION");
+        check("SECONDARY_FILTER_FOCUS_NO_SCALE_DOM", false, String(error && error.message || error || "unknown"), "DOM_ASSERTION");
+        check("SECONDARY_FILTER_FOCUS_NO_EXTERNAL_GLOW_DOM", false, String(error && error.message || error || "unknown"), "DOM_ASSERTION");
+        check("SECONDARY_FILTER_HORIZONTAL_SCROLL_UNCHANGED_DOM", false, String(error && error.message || error || "unknown"), "DOM_ASSERTION");
+        check("SECONDARY_FILTER_ROW_HEIGHT_UNCHANGED_DOM", false, String(error && error.message || error || "unknown"), "DOM_ASSERTION");
+        check("SECONDARY_OTHER_BUTTON_FOCUS_UNCHANGED", false, String(error && error.message || error || "unknown"), "DOM_ASSERTION");
+      } finally {
+        if (filterFocusFixture && filterFocusFixture.parentNode) filterFocusFixture.parentNode.removeChild(filterFocusFixture);
+        document.documentElement.className = previousDocumentClassName;
+        if (previousFilterFocus && previousFilterFocus.focus) previousFilterFocus.focus();
+      }
       let searchHotReturnFixture = {
         snapshot: null,
         exact: null,
