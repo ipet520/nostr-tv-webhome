@@ -769,7 +769,8 @@
       check("SEARCH_HOT_INITIAL_AMBIGUOUS",
         !!searchHotWinterInitialResolution
           && searchHotWinterInitialResolution.verdict === "AMBIGUOUS"
-          && searchHotWinterInitialResolution.identityTier === 4
+          && searchHotWinterInitialResolution.identityTier === 3
+          && searchHotWinterInitialResolution.yearState == null
           && Array.isArray(searchHotWinterInitialResolution.candidates)
           && searchHotWinterInitialResolution.candidates.length === 3,
         "Winter Solstice remains ambiguous before qipu metadata enrichment", "RUNTIME_MOCK");
