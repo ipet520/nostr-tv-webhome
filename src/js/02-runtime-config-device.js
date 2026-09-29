@@ -304,6 +304,15 @@
       },
       searchItems: [],
       searchSubmittedKeyword: "",
+      searchHot: {
+        items: [],
+        loading: false,
+        loaded: false,
+        error: "",
+        fetchedAt: 0,
+        lastAttemptAt: 0,
+        requestSeq: 0
+      },
       searchLive: {
         timer: 0,
         composing: false,

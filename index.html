@@ -6676,6 +6676,78 @@
       scroll-padding-right: 0;
     }
 
+    #searchHotRail > .search-hot-card {
+      position: relative;
+      flex: 0 0 var(--home-card-width);
+      width: var(--home-card-width);
+      max-width: var(--home-card-width);
+      min-width: 0;
+      overflow: visible;
+    }
+
+    #searchHotRail > .search-hot-card .search-hot-poster {
+      position: relative;
+      aspect-ratio: 2 / 3;
+      overflow: hidden;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, .08);
+    }
+
+    #searchHotRail > .search-hot-card .search-hot-poster .poster {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    #searchHotRail > .search-hot-card .card-body {
+      min-height: 62px;
+      padding: 8px 0 0;
+      background: transparent;
+      border: 0;
+      box-shadow: none;
+    }
+
+    #searchHotRail > .search-hot-card .card-title,
+    #searchHotRail > .search-hot-card .search-hot-label,
+    #searchHotRail > .search-hot-card .search-hot-meta {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #searchHotRail > .search-hot-card .card-title {
+      color: rgba(255, 255, 255, .94);
+      font-size: clamp(13px, .86vw, 16px);
+      font-weight: 650;
+      line-height: 1.25;
+    }
+
+    #searchHotRail > .search-hot-card .search-hot-label,
+    #searchHotRail > .search-hot-card .search-hot-meta {
+      margin-top: 3px;
+      color: rgba(255, 255, 255, .58);
+      font-size: clamp(11px, .68vw, 13px);
+      line-height: 1.2;
+    }
+
+    #searchHotRail > .search-hot-card .search-hot-rank {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      z-index: 2;
+      min-width: 24px;
+      padding: 2px 6px;
+      border-radius: 999px;
+      color: #fff;
+      background: rgba(0, 0, 0, .62);
+      font-size: 12px;
+      font-weight: 750;
+      line-height: 1.2;
+      text-align: center;
+    }
+
     #searchEmptyState {
       margin: 0 0 12px;
       color: var(--home-v14-muted);
@@ -7344,7 +7416,7 @@
       </section>
       <section class="home-section search-hot-section" id="searchHotSection" hidden aria-labelledby="searchHotTitle">
         <div class="home-section-head">
-          <h2 class="home-section-title" id="searchHotTitle">真实热搜</h2>
+          <h2 class="home-section-title" id="searchHotTitle">热搜</h2>
           <span class="home-section-line" aria-hidden="true"></span>
         </div>
         <div class="home-rail rail search-hot-rail" id="searchHotRail" data-home-variant="portrait" data-rail-key="search:hot"></div>
@@ -17043,6 +17115,15 @@ utils.encode = function encode(arr, enc) {
       },
       searchItems: [],
       searchSubmittedKeyword: "",
+      searchHot: {
+        items: [],
+        loading: false,
+        loaded: false,
+        error: "",
+        fetchedAt: 0,
+        lastAttemptAt: 0,
+        requestSeq: 0
+      },
       searchLive: {
         timer: 0,
         composing: false,
@@ -24485,28 +24566,226 @@ utils.encode = function encode(arr, enc) {
       scheduleLiveSearch();
     }
 
+    const SEARCH_HOT_ENDPOINT = "https://search.video.iqiyi.com/m";
+    const SEARCH_HOT_LIMIT = 10;
+    const SEARCH_HOT_TTL_MS = 10 * 60 * 1000;
+    const SEARCH_HOT_CALLBACK = "webhomeSearchHot";
+
+    function searchHotState() {
+      if (!state.searchHot || typeof state.searchHot !== "object") {
+        state.searchHot = {
+          items: [],
+          loading: false,
+          loaded: false,
+          error: "",
+          fetchedAt: 0,
+          lastAttemptAt: 0,
+          requestSeq: 0
+        };
+      }
+      return state.searchHot;
+    }
+
+    function searchHotUrl() {
+      const url = new URL(SEARCH_HOT_ENDPOINT);
+      url.searchParams.set("if", "defaultQuery");
+      url.searchParams.set("is_qipu_platform", "1");
+      url.searchParams.set("platform", "14");
+      url.searchParams.set("pu", "");
+      url.searchParams.set("response_type", "2");
+      url.searchParams.set("u", "");
+      url.searchParams.set("callback", SEARCH_HOT_CALLBACK);
+      return url.toString();
+    }
+
+    function parseSearchHotResponse(body) {
+      if (body && typeof body === "object") return body;
+      const text = String(body || "").replace(/^\uFEFF/, "").trim();
+      if (!text) throw new Error("empty search hot response");
+      try {
+        return JSON.parse(text);
+      } catch (e) {}
+      const open = text.indexOf("(");
+      if (open < 0) throw new Error("invalid search hot response");
+      let depth = 0;
+      let quote = "";
+      let escaped = false;
+      let close = -1;
+      for (let index = open; index < text.length; index += 1) {
+        const char = text[index];
+        if (quote) {
+          if (escaped) escaped = false;
+          else if (char === "\\") escaped = true;
+          else if (char === quote) quote = "";
+          continue;
+        }
+        if (char === '"' || char === "'") {
+          quote = char;
+          continue;
+        }
+        if (char === "(") depth += 1;
+        else if (char === ")") {
+          depth -= 1;
+          if (depth === 0) {
+            close = index;
+            break;
+          }
+        }
+      }
+      if (close < 0) throw new Error("invalid search hot jsonp response");
+      const suffix = text.slice(close + 1).trim();
+      if (suffix && !/^(?:;|;?}\s*catch\s*\([^)]*\)\s*\{\s*\})$/.test(suffix)) throw new Error("invalid search hot jsonp suffix");
+      return JSON.parse(text.slice(open + 1, close).trim());
+    }
+
+    function searchHotRawItems(body) {
+      if (Array.isArray(body)) return body;
+      if (!body || typeof body !== "object") return [];
+      if (Array.isArray(body.data)) return body.data;
+      if (body.data && Array.isArray(body.data.data)) return body.data.data;
+      if (body.data && Array.isArray(body.data.list)) return body.data.list;
+      if (Array.isArray(body.result)) return body.result;
+      if (Array.isArray(body.list)) return body.list;
+      return [];
+    }
+
+    function normalizeSearchHotItems(body) {
+      const seen = new Set();
+      const normalized = [];
+      searchHotRawItems(body).forEach((item, index) => {
+        const query = String(item && item.query || "").trim();
+        if (!query || seen.has(query)) return;
+        const order = Number(item && item.order);
+        const image = String(item && item.show_image_url || "").trim().replace(/^http:\/\//i, "https://");
+        const labelObject = item && item.query_label;
+        const label = String(labelObject && labelObject.label_text || "").trim();
+        const heat = item && item.search_mark != null ? String(item.search_mark).trim() : "";
+        normalized.push({
+          query,
+          rank: Number.isFinite(order) && order > 0 ? order : index + 1,
+          image,
+          meta: String(item && item.tag_content || "").trim(),
+          label,
+          heat
+        });
+        seen.add(query);
+      });
+      return normalized.slice(0, SEARCH_HOT_LIMIT);
+    }
+
+    async function requestSearchHotText(url, timeout) {
+      const response = await sdk().req(url, { responseType: "text", timeout: timeout || 18 });
+      if (response && response.error) throw new Error(String(response.error));
+      if (response && response.ok === false || response && Number(response.status || 0) >= 400) {
+        throw new Error("HTTP " + Number(response.status || 0));
+      }
+      const body = response && Object.prototype.hasOwnProperty.call(response, "body") ? response.body : response;
+      if (typeof body === "string") return body;
+      if (body && typeof body.text === "string") return body.text;
+      if (body && typeof body.body === "string") return body.body;
+      if (body && typeof body === "object") return body;
+      throw new Error("invalid search hot response body");
+    }
+
+    async function loadSearchHot(seq) {
+      const hot = searchHotState();
+      try {
+        const raw = await requestSearchHotText(searchHotUrl(), 18);
+        const data = parseSearchHotResponse(raw);
+        const items = normalizeSearchHotItems(data);
+        if (seq !== hot.requestSeq) return false;
+        hot.items = items;
+        hot.loaded = true;
+        hot.loading = false;
+        hot.error = "";
+        hot.fetchedAt = Date.now();
+        if (homeUiRoute() === "search" && !currentSearchKeyword()) renderSearchHot();
+        return true;
+      } catch (error) {
+        if (seq !== hot.requestSeq) return false;
+        hot.loading = false;
+        hot.error = String(error && error.message || error || "search hot request failed");
+        if (!hot.loaded) hot.items = [];
+        if (homeUiRoute() === "search" && !currentSearchKeyword()) renderSearchHot();
+        return false;
+      }
+    }
+
     function getSearchHotItems() {
+      const hot = searchHotState();
       return {
-        source: "not-present",
-        items: [],
-        loading: false,
-        error: "",
-        path: "real-hot-search:not-present"
+        source: "iqiyi-search-hot",
+        items: Array.isArray(hot.items) ? hot.items : [],
+        loading: !!hot.loading,
+        loaded: !!hot.loaded,
+        error: String(hot.error || ""),
+        fetchedAt: Number(hot.fetchedAt || 0),
+        path: SEARCH_HOT_ENDPOINT
       };
     }
 
     function ensureSearchHotData() {
-      return false;
+      const hot = searchHotState();
+      const now = Date.now();
+      const cacheFresh = hot.loaded && hot.fetchedAt > 0 && now - hot.fetchedAt < SEARCH_HOT_TTL_MS;
+      const attemptRecent = hot.lastAttemptAt > 0 && now - hot.lastAttemptAt < SEARCH_HOT_TTL_MS;
+      if (hot.loading || cacheFresh || attemptRecent) return false;
+      hot.loading = true;
+      hot.error = "";
+      hot.lastAttemptAt = now;
+      hot.requestSeq = Number(hot.requestSeq || 0) + 1;
+      const seq = hot.requestSeq;
+      if (homeUiRoute() === "search" && !currentSearchKeyword()) renderSearchHot();
+      void loadSearchHot(seq);
+      return true;
+    }
+
+    function activateSearchHotItem(query) {
+      const input = $("searchInput");
+      const normalized = String(query || "").trim();
+      if (!input || !normalized) return false;
+      input.value = normalized;
+      enableSearchEditing();
+      hideSearchSuggest();
+      recordSearchHistory(normalized);
+      focusRemoteTarget(input);
+      searchTmdb(normalized, { source: "hot" });
+      return true;
+    }
+
+    function searchHotCard(item, index) {
+      const hot = item || {};
+      const query = String(hot.query || "").trim();
+      const image = displayImage(hot.image, { size: "w342" });
+      const rank = Number(hot.rank || index + 1);
+      const rankText = Number.isFinite(rank) && rank > 0 ? String(rank) : String(index + 1);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "card focusable search-hot-card";
+      button.dataset.cardIndex = String(index);
+      button.dataset.searchHotQuery = query;
+      button.setAttribute("aria-label", query);
+      button.innerHTML = `<div class="search-hot-poster">${image ? `<img class="poster" ${imageAttrs(image, { loading: "lazy" })} alt="">` : ""}<span class="search-hot-rank" aria-hidden="true">${escapeHtml(rankText)}</span></div><div class="card-body"><div class="card-title">${escapeHtml(query)}</div>${hot.label ? `<div class="search-hot-label">${escapeHtml(hot.label)}</div>` : ""}${hot.meta || hot.heat ? `<div class="search-hot-meta">${escapeHtml([hot.meta, hot.heat].filter(Boolean).join(" · "))}</div>` : ""}</div>`;
+      button.addEventListener("click", () => activateSearchHotItem(query));
+      return button;
     }
 
     function renderSearchHot() {
       const section = $("searchHotSection");
       const rail = $("searchHotRail");
-      if (section) section.hidden = true;
+      const hot = searchHotState();
+      const show = homeUiRoute() === "search" && !currentSearchKeyword() && hot.loaded && Array.isArray(hot.items) && hot.items.length > 0;
+      if (section) {
+        section.hidden = !show;
+        section.setAttribute("aria-hidden", show ? "false" : "true");
+      }
       if (rail) {
-        rail.dataset.hotSource = "not-present";
-        rail.dataset.hotDataPath = "real-hot-search:not-present";
+        rail.dataset.hotSource = "iqiyi-search-hot";
+        rail.dataset.hotDataPath = SEARCH_HOT_ENDPOINT;
+        rail.dataset.hotStatus = hot.loading ? "loading" : hot.error ? "error" : show ? "ready" : "hidden";
+        rail.dataset.hotCount = String(show ? hot.items.length : 0);
         rail.replaceChildren();
+        if (show) hot.items.forEach((item, index) => rail.appendChild(searchHotCard(item, index)));
       }
     }
 
@@ -24537,6 +24816,7 @@ utils.encode = function encode(arr, enc) {
         searchQuery: resultKeyword
       });
       renderSearchHot();
+      if (homeUiRoute() === "search" && !keyword) ensureSearchHotData();
     }
 
     function clearSearchResults() {

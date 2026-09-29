@@ -195,13 +195,113 @@
         "TV Secondary Back consumes the open Sidebar layer before returning Home", "STATIC_HOOK");
 
       const searchHot = getSearchHotItems();
-      check("REAL_HOT_SEARCH_NOT_PRESENT",
-        searchHot && searchHot.source === "not-present"
-          && Array.isArray(searchHot.items)
-          && searchHot.items.length === 0
-          && ensureSearchHotData() === false
-          && sourceOf(renderSearchHot).includes("hidden"),
-        "old content-trend shell is not presented as real hot search", "RUNTIME_MOCK");
+      const searchHotUrlSource = sourceOf(searchHotUrl);
+      const searchHotRequestSource = sourceOf(requestSearchHotText);
+      const searchHotParserSource = sourceOf(parseSearchHotResponse);
+      const searchHotNormalizeSource = sourceOf(normalizeSearchHotItems);
+      const searchHotRenderSource = sourceOf(renderSearchHot);
+      const searchHotPipelineSource = [
+        searchHotUrlSource,
+        searchHotRequestSource,
+        sourceOf(loadSearchHot),
+        sourceOf(ensureSearchHotData),
+        searchHotRenderSource
+      ].join("\n");
+      const hotFixture = {
+        data: [
+          { query: "热词 A", order: 3, show_image_url: "http://img.example/a.jpg", tag_content: "电影", query_label: { label_text: "荐" }, search_mark: "99" },
+          { query: "热词 A", order: 4, show_image_url: "http://img.example/duplicate.jpg" },
+          { query: "热词 B", tag_content: "综艺", query_label: { label_text: "新" }, search_mark: "88" }
+        ]
+      };
+      let hotJsonItems = [];
+      let hotJsonpItems = [];
+      let hotNormalizationPass = false;
+      try {
+        hotJsonItems = normalizeSearchHotItems(parseSearchHotResponse(JSON.stringify(hotFixture)));
+        hotJsonpItems = normalizeSearchHotItems(parseSearchHotResponse("try{webhomeSearchHot(" + JSON.stringify(hotFixture) + ")}catch(e){}"));
+        hotNormalizationPass = hotJsonItems.length === 2
+          && hotJsonItems[0].query === "热词 A"
+          && hotJsonItems[0].rank === 3
+          && hotJsonItems[0].image === "https://img.example/a.jpg"
+          && hotJsonItems[0].label === "荐"
+          && hotJsonItems[0].meta === "电影"
+          && hotJsonItems[0].heat === "99"
+          && hotJsonItems[1].rank === 3;
+      } catch (error) {}
+      check("SEARCH_HOT_IQIYI_AUTHORITY",
+        SEARCH_HOT_ENDPOINT === "https://search.video.iqiyi.com/m"
+          && searchHot && searchHot.source === "iqiyi-search-hot"
+          && searchHotUrlSource.includes("response_type")
+          && searchHotUrlSource.includes("SEARCH_HOT_CALLBACK"),
+        "Search Hot uses the dedicated iQiyi search-hot endpoint", "STATIC_HOOK");
+      check("SEARCH_HOT_NOT_CONTENT_TREND",
+        !searchHotPipelineSource.includes("trending")
+          && !searchHotPipelineSource.includes("state.hot")
+          && !searchHotPipelineSource.includes("suggest"),
+        "Search Hot does not fall back to TMDB trend, Nostr hot, or input suggest data", "STATIC_HOOK");
+      check("SEARCH_HOT_JSON_PARSE",
+        !!hotJsonItems.length && searchHotParserSource.includes("JSON.parse"),
+        "pure JSON Search Hot responses are parsed", "RUNTIME_MOCK");
+      check("SEARCH_HOT_JSONP_PARSE",
+        !!hotJsonpItems.length
+          && searchHotParserSource.includes("jsonp")
+          && searchHotParserSource.includes("depth")
+          && !searchHotParserSource.includes("eval(")
+          && !searchHotParserSource.includes("Function(")
+          && !searchHotPipelineSource.includes('createElement("script")'),
+        "JSONP is parsed without script injection or eval", "RUNTIME_MOCK");
+      check("SEARCH_HOT_NORMALIZATION",
+        hotNormalizationPass
+          && searchHotNormalizeSource.includes("show_image_url")
+          && searchHotNormalizeSource.includes("tag_content")
+          && searchHotNormalizeSource.includes("search_mark"),
+        "Search Hot items preserve rank and normalize image, label, meta, and heat", "RUNTIME_MOCK");
+      check("SEARCH_HOT_DEDUPE_AND_LIMIT",
+        hotNormalizationPass
+          && searchHotNormalizeSource.includes("seen")
+          && searchHotNormalizeSource.includes("SEARCH_HOT_LIMIT")
+          && SEARCH_HOT_LIMIT === 10,
+        "Search Hot deduplicates by query and caps the rail at ten items", "STATIC_HOOK");
+      check("SEARCH_HOT_CACHE_TTL",
+        SEARCH_HOT_TTL_MS === 10 * 60 * 1000
+          && sourceOf(ensureSearchHotData).includes("requestSeq")
+          && sourceOf(ensureSearchHotData).includes("lastAttemptAt")
+          && sourceOf(loadSearchHot).includes("seq !== hot.requestSeq"),
+        "Search Hot uses a ten-minute cache and stale-request guard", "STATIC_HOOK");
+      check("SEARCH_HOT_FAILURE_NON_BLOCKING",
+        sourceOf(loadSearchHot).includes("catch")
+          && sourceOf(loadSearchHot).includes("hot.error")
+          && sourceOf(loadSearchHot).includes("if (!hot.loaded) hot.items = []")
+          && !sourceOf(loadSearchHot).includes("toast("),
+        "a failed hot request only hides the rail and does not block Search", "STATIC_HOOK");
+      check("SEARCH_HOT_DEDICATED_CARD",
+        sourceOf(searchHotCard).includes("search-hot-card")
+          && sourceOf(searchHotCard).includes("searchHotQuery")
+          && !sourceOf(searchHotCard).includes("mediaCard("),
+        "Search Hot uses a dedicated card and does not enter TMDB detail directly", "STATIC_HOOK");
+      check("SEARCH_HOT_CLICK_TO_TMDB",
+        hasAll(sourceOf(activateSearchHotItem), [
+          "enableSearchEditing",
+          "hideSearchSuggest",
+          "recordSearchHistory",
+          "focusRemoteTarget",
+          'searchTmdb(normalized, { source: "hot" })'
+        ]),
+        "clicking a hot query reuses the existing TMDB Search path", "STATIC_HOOK");
+      check("SEARCH_HOT_EMPTY_QUERY_VISIBILITY",
+        searchHotRenderSource.includes('homeUiRoute() === "search"')
+          && searchHotRenderSource.includes("!currentSearchKeyword()")
+          && sourceOf(renderSearch).includes("renderSearchHistory")
+          && sourceOf(renderSearch).includes("renderSearchHot")
+          && sourceOf(renderSearch).includes("ensureSearchHotData"),
+        "empty Search shows History and Hot while a typed query hides both", "STATIC_HOOK");
+      check("SEARCH_HOT_FOCUS_CONTRACT",
+        typeof firstSearchHotFocusTarget === "function"
+          && sourceOf(firstSearchHotFocusTarget).includes("searchHotRail")
+          && sourceOf(fastHomeSearchRailTarget).includes("searchHotRail")
+          && sourceOf(searchHotCard).includes('className = "card focusable search-hot-card"'),
+        "Search Hot remains in the existing TV rail focus contract", "STATIC_HOOK");
       check("SEARCH_CORE_PATHS_PRESERVED",
         typeof restoreSearchSnapshot === "function"
           && typeof searchTmdb === "function"
