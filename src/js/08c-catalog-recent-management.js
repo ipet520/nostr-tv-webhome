@@ -1,3 +1,44 @@
+    function recentSecondaryDeleteFocusPlan(card, beforeCards) {
+      const cards = Array.isArray(beforeCards) ? beforeCards : [];
+      const deletedIndex = Math.max(0, cards.indexOf(card));
+      const deletedKey = recentWatchingMediaKey(card && card.__mediaItem);
+      const keys = cards.map((candidate) => recentWatchingMediaKey(candidate && candidate.__mediaItem));
+      return {
+        deletedKey,
+        deletedIndex,
+        nextKey: keys.slice(deletedIndex + 1).find((value) => !!value) || "",
+        previousKey: keys.slice(0, deletedIndex).reverse().find((value) => !!value) || ""
+      };
+    }
+
+    function recentSecondaryDeleteFocusTarget(grid, plan) {
+      if (!grid || !plan) return null;
+      const visibleCards = () => Array.from(grid.querySelectorAll(".recent-watching-card")).filter(canFastHomeFocus);
+      const findByKey = (cards, key) => {
+        if (!key) return null;
+        return cards.find((candidate) => recentWatchingMediaKey(candidate && candidate.__mediaItem) === String(key)) || null;
+      };
+      let cards = visibleCards();
+      let target = findByKey(cards, plan.nextKey) || findByKey(cards, plan.previousKey);
+      if (!target) {
+        const info = state.gridRender[gridRenderId(grid)];
+        const items = info && Array.isArray(info.items) ? info.items : [];
+        const preferredKeys = [plan.nextKey, plan.previousKey].filter(Boolean);
+        for (const preferredKey of preferredKeys) {
+          const itemIndex = items.findIndex((item) => recentWatchingMediaKey(item) === String(preferredKey));
+          if (itemIndex >= 0 && Number(info.rendered || 0) <= itemIndex) {
+            appendGridItems(grid, items, itemIndex + 1);
+            cards = visibleCards();
+            target = findByKey(cards, preferredKey);
+            if (target) break;
+          }
+        }
+      }
+      if (target) return target;
+      cards = visibleCards();
+      return cards[Math.min(Math.max(0, Number(plan.deletedIndex || 0)), cards.length - 1)] || null;
+    }
+
     async function deleteRecentWatchingBatch(items) {
       if (!isRecentManagePage()) return false;
       const manage = recentManageRuntime();
@@ -205,7 +246,15 @@
       if (!key) return false;
       const grid = card && card.closest && card.closest("#homeRecentRail, #secondaryCatalogGrid, .list-panel:not([hidden]) .media-grid");
       const beforeCards = grid ? Array.from(grid.querySelectorAll(".recent-watching-card")) : [];
-      const focusIndex = Math.max(0, beforeCards.indexOf(card));
+      const secondaryRecentDelete = !!(grid
+        && grid.id === "secondaryCatalogGrid"
+        && homeUiRoute() === "secondary"
+        && state.homeV14.secondaryListId === "recent");
+      const deleteFocusPlan = secondaryRecentDelete
+        ? recentSecondaryDeleteFocusPlan(card, beforeCards)
+        : null;
+      const focusIndex = deleteFocusPlan ? deleteFocusPlan.deletedIndex : Math.max(0, beforeCards.indexOf(card));
+      if (secondaryRecentDelete) cancelSecondaryMediaFocusRestore();
       cancelRecentDeleteArm();
       await loadContinueIndex();
       await loadHistoryContextIndex();
@@ -282,7 +331,9 @@
         if (grid && grid.id === "homeRecentRail") targetGrid = $("homeRecentRail");
         else if (grid && grid.id === "secondaryCatalogGrid") targetGrid = $("secondaryCatalogGrid");
         const cards = targetGrid ? Array.from(targetGrid.querySelectorAll(".recent-watching-card")).filter(canFastHomeFocus) : [];
-        let target = cards.length ? cards[Math.min(focusIndex, cards.length - 1)] : null;
+        let target = secondaryRecentDelete
+          ? recentSecondaryDeleteFocusTarget(targetGrid, deleteFocusPlan)
+          : (cards.length ? cards[Math.min(focusIndex, cards.length - 1)] : null);
         if (!target && targetGrid && targetGrid.id === "secondaryCatalogGrid") target = $("secondaryCatalogBack");
         if (!target && targetGrid && targetGrid.id === "homeRecentRail") target = $("homeRecentMore") || homeFirstTarget();
         if (!target && state.activeList === "recent") target = initialHomeFocus();

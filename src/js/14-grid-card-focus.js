@@ -59,6 +59,7 @@
       if (opts.home === true) replaceHomeRailChildren(rail, children, homeFocus);
       else rail.replaceChildren(...children);
       observeTvCardEnrichment(rail);
+      observeMovieCardEnrichment(rail);
       if (opts.weekly) children.forEach((card) => {
         if (!card || !card.classList || !card.classList.contains("weekly-card")) return;
         card.addEventListener("focus", () => updateWeeklySecondaryHero(card.__mediaItem || null));
@@ -122,6 +123,7 @@
       if (sameRendered && items.length > oldTotal && oldRendered >= oldTotal) target = Math.min(items.length, oldRendered + appendGridBatchSize(grid));
       appendGridItems(grid, items, target);
       observeTvCardEnrichment(grid);
+      observeMovieCardEnrichment(grid);
       ensureRemoteInitialFocus();
     }
 
@@ -473,10 +475,20 @@
       const tvEpisodeCard = String(item && item.mediaType || "").toLowerCase() === "tv" && !!tvDetailCacheId(item);
       const initialTvDetail = tvEpisodeCard ? tvDetailCacheValue(item) || item.tvDetail || item.weeklyDetail || item.heroDetail || null : null;
       const initialTvEpisodeStatus = tvEpisodeCard ? (isVarietyCard ? varietyEpisodeStatusLabel(initialTvDetail) : tvEpisodeStatusLabel(initialTvDetail)) : "";
-      const movieReleaseStatus = movieReleaseStatusText(item, weeklyHome || weekly ? weeklyUpdate : undefined);
+      const nostrMovieReleaseCard = item && item.source === "nostr-hot"
+        && String(item.mediaType || item.media_type || "").toLowerCase() === "movie"
+        && !!movieDetailCacheId(item);
+      const initialMovieDetail = nostrMovieReleaseCard ? movieDetailCacheValue(item) : null;
+      const initialMovieReleaseDate = latestDateOnly(item && (item.releaseDate || item.release_date) || "")
+        || latestDateOnly(initialMovieDetail && (initialMovieDetail.release_date || initialMovieDetail.releaseDate) || "");
+      const moviePresentationItem = initialMovieReleaseDate
+        ? Object.assign({}, item, { releaseDate: initialMovieReleaseDate })
+        : item;
+      const movieReleaseStatus = movieReleaseStatusText(moviePresentationItem, weeklyHome || weekly ? weeklyUpdate : undefined);
       const airStatusText = weeklyUpdate || initialTvEpisodeStatus || movieReleaseStatus;
       const airStatusClass = weeklyUpdate ? "card-air-status weekly-air-status" : "card-air-status";
-      const airStatusHtml = (weeklyUpdate || tvEpisodeCard || movieReleaseStatus)
+      const movieReleaseStatusPlaceholder = nostrMovieReleaseCard && !initialMovieReleaseDate;
+      const airStatusHtml = (weeklyUpdate || tvEpisodeCard || movieReleaseStatus || movieReleaseStatusPlaceholder)
         ? `<div class="${airStatusClass}"${airStatusText ? "" : " hidden"}>${escapeHtml(airStatusText)}</div>`
         : "";
       const hasAirStatus = !!airStatusText;

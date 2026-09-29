@@ -17056,7 +17056,7 @@ utils.encode = function encode(arr, enc) {
       catalog: {},
       catalogPage: {},
       recent: { items: [], loading: false, loadingPromise: null, loaded: false, error: "", refreshedAt: 0, diag: null, nativeItems: [], nativeLoaded: false, nativeLoading: false, nativeRefreshedAt: 0, nativeKeyFlow: {}, runSeq: 0, activeRun: null, pendingRefresh: false, pendingRefreshSilent: true, pendingRefreshReconcileDetail: true },
-      movieDetail: { cache: {} },
+      movieDetail: { cache: {}, cardTasks: {}, cardQueue: [], cardActive: 0, observer: null, scrollBound: false, scanTimer: 0 },
       tvDetail: { cache: {}, cardTasks: {}, cardQueue: [], cardActive: 0, observer: null, scrollBound: false, scanTimer: 0, generation: 0 },
       homeLatest: { items: [], loading: false, loaded: false, error: "", loadedAt: 0, lastRefreshAt: 0, requestSeq: 0, diag: null, promise: null, cacheChecked: false, cacheHydrated: false, cacheWeekStart: "", cacheSavedAt: 0, cacheItemCount: 0, cacheHydratedAt: 0, networkRefreshReason: "", networkRefreshSucceeded: false, refreshStartedAt: 0, firstRenderableAt: 0 },
       gridRender: {},
@@ -17559,6 +17559,8 @@ utils.encode = function encode(arr, enc) {
     const TV_DETAIL_CACHE_TTL_MS = 45 * 60 * 1000;
     const TV_CARD_DETAIL_CONCURRENCY = 3;
     const TV_CARD_DETAIL_ROOT_MARGIN = "560px 0px";
+    const MOVIE_CARD_DETAIL_CONCURRENCY = 3;
+    const MOVIE_CARD_DETAIL_ROOT_MARGIN = "560px 0px";
 
     function latestDateOnly(value) {
       const match = String(value == null ? "" : value).trim().match(/^(\d{4}-\d{2}-\d{2})/);
@@ -23878,6 +23880,47 @@ utils.encode = function encode(arr, enc) {
       };
     }
 
+    function recentSecondaryDeleteFocusPlan(card, beforeCards) {
+      const cards = Array.isArray(beforeCards) ? beforeCards : [];
+      const deletedIndex = Math.max(0, cards.indexOf(card));
+      const deletedKey = recentWatchingMediaKey(card && card.__mediaItem);
+      const keys = cards.map((candidate) => recentWatchingMediaKey(candidate && candidate.__mediaItem));
+      return {
+        deletedKey,
+        deletedIndex,
+        nextKey: keys.slice(deletedIndex + 1).find((value) => !!value) || "",
+        previousKey: keys.slice(0, deletedIndex).reverse().find((value) => !!value) || ""
+      };
+    }
+
+    function recentSecondaryDeleteFocusTarget(grid, plan) {
+      if (!grid || !plan) return null;
+      const visibleCards = () => Array.from(grid.querySelectorAll(".recent-watching-card")).filter(canFastHomeFocus);
+      const findByKey = (cards, key) => {
+        if (!key) return null;
+        return cards.find((candidate) => recentWatchingMediaKey(candidate && candidate.__mediaItem) === String(key)) || null;
+      };
+      let cards = visibleCards();
+      let target = findByKey(cards, plan.nextKey) || findByKey(cards, plan.previousKey);
+      if (!target) {
+        const info = state.gridRender[gridRenderId(grid)];
+        const items = info && Array.isArray(info.items) ? info.items : [];
+        const preferredKeys = [plan.nextKey, plan.previousKey].filter(Boolean);
+        for (const preferredKey of preferredKeys) {
+          const itemIndex = items.findIndex((item) => recentWatchingMediaKey(item) === String(preferredKey));
+          if (itemIndex >= 0 && Number(info.rendered || 0) <= itemIndex) {
+            appendGridItems(grid, items, itemIndex + 1);
+            cards = visibleCards();
+            target = findByKey(cards, preferredKey);
+            if (target) break;
+          }
+        }
+      }
+      if (target) return target;
+      cards = visibleCards();
+      return cards[Math.min(Math.max(0, Number(plan.deletedIndex || 0)), cards.length - 1)] || null;
+    }
+
     async function deleteRecentWatchingBatch(items) {
       if (!isRecentManagePage()) return false;
       const manage = recentManageRuntime();
@@ -24085,7 +24128,15 @@ utils.encode = function encode(arr, enc) {
       if (!key) return false;
       const grid = card && card.closest && card.closest("#homeRecentRail, #secondaryCatalogGrid, .list-panel:not([hidden]) .media-grid");
       const beforeCards = grid ? Array.from(grid.querySelectorAll(".recent-watching-card")) : [];
-      const focusIndex = Math.max(0, beforeCards.indexOf(card));
+      const secondaryRecentDelete = !!(grid
+        && grid.id === "secondaryCatalogGrid"
+        && homeUiRoute() === "secondary"
+        && state.homeV14.secondaryListId === "recent");
+      const deleteFocusPlan = secondaryRecentDelete
+        ? recentSecondaryDeleteFocusPlan(card, beforeCards)
+        : null;
+      const focusIndex = deleteFocusPlan ? deleteFocusPlan.deletedIndex : Math.max(0, beforeCards.indexOf(card));
+      if (secondaryRecentDelete) cancelSecondaryMediaFocusRestore();
       cancelRecentDeleteArm();
       await loadContinueIndex();
       await loadHistoryContextIndex();
@@ -24162,7 +24213,9 @@ utils.encode = function encode(arr, enc) {
         if (grid && grid.id === "homeRecentRail") targetGrid = $("homeRecentRail");
         else if (grid && grid.id === "secondaryCatalogGrid") targetGrid = $("secondaryCatalogGrid");
         const cards = targetGrid ? Array.from(targetGrid.querySelectorAll(".recent-watching-card")).filter(canFastHomeFocus) : [];
-        let target = cards.length ? cards[Math.min(focusIndex, cards.length - 1)] : null;
+        let target = secondaryRecentDelete
+          ? recentSecondaryDeleteFocusTarget(targetGrid, deleteFocusPlan)
+          : (cards.length ? cards[Math.min(focusIndex, cards.length - 1)] : null);
         if (!target && targetGrid && targetGrid.id === "secondaryCatalogGrid") target = $("secondaryCatalogBack");
         if (!target && targetGrid && targetGrid.id === "homeRecentRail") target = $("homeRecentMore") || homeFirstTarget();
         if (!target && state.activeList === "recent") target = initialHomeFocus();
@@ -27090,6 +27143,114 @@ utils.encode = function encode(arr, enc) {
       else cards.filter(tvCardNearViewport).forEach(queueTvCardEpisodeEnrichment);
     }
 
+    function isNostrMovieReleaseStatusCard(card) {
+      const item = card && card.__mediaItem;
+      if (!card || !item || item.source !== "nostr-hot") return false;
+      if (String(item.mediaType || item.media_type || "").toLowerCase() !== "movie") return false;
+      if (!movieDetailCacheId(item)) return false;
+      if (latestDateOnly(item.releaseDate || item.release_date || "")) return false;
+      const cached = movieDetailCacheValue(item);
+      if (cached && latestDateOnly(cached.release_date || cached.releaseDate || "")) return false;
+      return !!(card.querySelector && card.querySelector(".card-air-status"));
+    }
+
+    function updateMovieReleaseStatusCards(itemOrId, detail) {
+      const id = movieDetailCacheId(itemOrId);
+      if (!id || !detail) return;
+      document.querySelectorAll(".card").forEach((card) => {
+        const cardItem = card.__mediaItem;
+        if (!cardItem || cardItem.source !== "nostr-hot") return;
+        if (String(cardItem.mediaType || cardItem.media_type || "").toLowerCase() !== "movie") return;
+        if (movieDetailCacheId(cardItem) !== id) return;
+        const status = card.querySelector && card.querySelector(".card-air-status");
+        if (!status) return;
+        const releaseDate = latestDateOnly(detail.release_date || detail.releaseDate || "");
+        const presentationItem = releaseDate ? Object.assign({}, cardItem, { releaseDate }) : cardItem;
+        syncCardAirStatusLayout(card, movieReleaseStatusText(presentationItem));
+      });
+    }
+
+    function movieCardNearViewport(card) {
+      return tvCardNearViewport(card);
+    }
+
+    function flushMovieCardDetailQueue() {
+      const runtime = state.movieDetail;
+      if (!runtime) return;
+      if (!runtime.cardTasks) runtime.cardTasks = {};
+      if (!Array.isArray(runtime.cardQueue)) runtime.cardQueue = [];
+      runtime.cardActive = Number(runtime.cardActive || 0);
+      while (runtime.cardActive < MOVIE_CARD_DETAIL_CONCURRENCY && runtime.cardQueue.length) {
+        const job = runtime.cardQueue.shift();
+        if (!job || runtime.cardTasks[job.key] !== job) continue;
+        runtime.cardActive += 1;
+        requestMovieDetailShared(job.item).then((detail) => {
+          if (detail) updateMovieReleaseStatusCards(job.item, detail);
+        }).catch(() => {}).finally(() => {
+          runtime.cardActive = Math.max(0, runtime.cardActive - 1);
+          if (runtime.cardTasks[job.key] === job) delete runtime.cardTasks[job.key];
+          flushMovieCardDetailQueue();
+        });
+      }
+    }
+
+    function queueMovieCardReleaseEnrichment(card) {
+      if (!isNostrMovieReleaseStatusCard(card)) return;
+      const item = card.__mediaItem;
+      const cached = movieDetailCacheValue(item);
+      if (cached) {
+        updateMovieReleaseStatusCards(item, cached);
+        return;
+      }
+      const runtime = state.movieDetail;
+      const key = movieDetailCacheKey(item);
+      if (!runtime || !key) return;
+      if (!runtime.cardTasks) runtime.cardTasks = {};
+      if (!Array.isArray(runtime.cardQueue)) runtime.cardQueue = [];
+      if (runtime.cardTasks[key]) return;
+      const job = { key, item };
+      runtime.cardTasks[key] = job;
+      runtime.cardQueue.push(job);
+      flushMovieCardDetailQueue();
+    }
+
+    function ensureMovieCardDetailObserver() {
+      const runtime = state.movieDetail;
+      if (!runtime) return null;
+      if (!Array.isArray(runtime.cardQueue)) runtime.cardQueue = [];
+      if (!runtime.cardTasks) runtime.cardTasks = {};
+      if (!("IntersectionObserver" in window)) {
+        if (!runtime.scrollBound) {
+          runtime.scrollBound = true;
+          window.addEventListener("scroll", () => {
+            if (runtime.scanTimer) return;
+            runtime.scanTimer = setTimeout(() => {
+              runtime.scanTimer = 0;
+              observeMovieCardEnrichment(document);
+            }, 100);
+          }, { passive: true });
+        }
+        return null;
+      }
+      if (runtime.observer) return runtime.observer;
+      runtime.observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          runtime.observer.unobserve(entry.target);
+          queueMovieCardReleaseEnrichment(entry.target);
+        });
+      }, { root: null, rootMargin: MOVIE_CARD_DETAIL_ROOT_MARGIN, threshold: 0.01 });
+      return runtime.observer;
+    }
+
+    function observeMovieCardEnrichment(root) {
+      if (!root || !root.querySelectorAll) return;
+      const cards = Array.from(root.querySelectorAll(".card")).filter(isNostrMovieReleaseStatusCard);
+      const observer = ensureMovieCardDetailObserver();
+      if (observer) cards.forEach((card) => observer.observe(card));
+      else cards.filter(movieCardNearViewport).forEach(queueMovieCardReleaseEnrichment);
+    }
+
     function updateHomeRails() {
       const home = $("home");
       if (!home || !isHomeRouteActive()) return;
@@ -28808,6 +28969,7 @@ utils.encode = function encode(arr, enc) {
       if (opts.home === true) replaceHomeRailChildren(rail, children, homeFocus);
       else rail.replaceChildren(...children);
       observeTvCardEnrichment(rail);
+      observeMovieCardEnrichment(rail);
       if (opts.weekly) children.forEach((card) => {
         if (!card || !card.classList || !card.classList.contains("weekly-card")) return;
         card.addEventListener("focus", () => updateWeeklySecondaryHero(card.__mediaItem || null));
@@ -28871,6 +29033,7 @@ utils.encode = function encode(arr, enc) {
       if (sameRendered && items.length > oldTotal && oldRendered >= oldTotal) target = Math.min(items.length, oldRendered + appendGridBatchSize(grid));
       appendGridItems(grid, items, target);
       observeTvCardEnrichment(grid);
+      observeMovieCardEnrichment(grid);
       ensureRemoteInitialFocus();
     }
 
@@ -29222,10 +29385,20 @@ utils.encode = function encode(arr, enc) {
       const tvEpisodeCard = String(item && item.mediaType || "").toLowerCase() === "tv" && !!tvDetailCacheId(item);
       const initialTvDetail = tvEpisodeCard ? tvDetailCacheValue(item) || item.tvDetail || item.weeklyDetail || item.heroDetail || null : null;
       const initialTvEpisodeStatus = tvEpisodeCard ? (isVarietyCard ? varietyEpisodeStatusLabel(initialTvDetail) : tvEpisodeStatusLabel(initialTvDetail)) : "";
-      const movieReleaseStatus = movieReleaseStatusText(item, weeklyHome || weekly ? weeklyUpdate : undefined);
+      const nostrMovieReleaseCard = item && item.source === "nostr-hot"
+        && String(item.mediaType || item.media_type || "").toLowerCase() === "movie"
+        && !!movieDetailCacheId(item);
+      const initialMovieDetail = nostrMovieReleaseCard ? movieDetailCacheValue(item) : null;
+      const initialMovieReleaseDate = latestDateOnly(item && (item.releaseDate || item.release_date) || "")
+        || latestDateOnly(initialMovieDetail && (initialMovieDetail.release_date || initialMovieDetail.releaseDate) || "");
+      const moviePresentationItem = initialMovieReleaseDate
+        ? Object.assign({}, item, { releaseDate: initialMovieReleaseDate })
+        : item;
+      const movieReleaseStatus = movieReleaseStatusText(moviePresentationItem, weeklyHome || weekly ? weeklyUpdate : undefined);
       const airStatusText = weeklyUpdate || initialTvEpisodeStatus || movieReleaseStatus;
       const airStatusClass = weeklyUpdate ? "card-air-status weekly-air-status" : "card-air-status";
-      const airStatusHtml = (weeklyUpdate || tvEpisodeCard || movieReleaseStatus)
+      const movieReleaseStatusPlaceholder = nostrMovieReleaseCard && !initialMovieReleaseDate;
+      const airStatusHtml = (weeklyUpdate || tvEpisodeCard || movieReleaseStatus || movieReleaseStatusPlaceholder)
         ? `<div class="${airStatusClass}"${airStatusText ? "" : " hidden"}>${escapeHtml(airStatusText)}</div>`
         : "";
       const hasAirStatus = !!airStatusText;

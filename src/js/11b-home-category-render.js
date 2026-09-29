@@ -486,6 +486,114 @@
       else cards.filter(tvCardNearViewport).forEach(queueTvCardEpisodeEnrichment);
     }
 
+    function isNostrMovieReleaseStatusCard(card) {
+      const item = card && card.__mediaItem;
+      if (!card || !item || item.source !== "nostr-hot") return false;
+      if (String(item.mediaType || item.media_type || "").toLowerCase() !== "movie") return false;
+      if (!movieDetailCacheId(item)) return false;
+      if (latestDateOnly(item.releaseDate || item.release_date || "")) return false;
+      const cached = movieDetailCacheValue(item);
+      if (cached && latestDateOnly(cached.release_date || cached.releaseDate || "")) return false;
+      return !!(card.querySelector && card.querySelector(".card-air-status"));
+    }
+
+    function updateMovieReleaseStatusCards(itemOrId, detail) {
+      const id = movieDetailCacheId(itemOrId);
+      if (!id || !detail) return;
+      document.querySelectorAll(".card").forEach((card) => {
+        const cardItem = card.__mediaItem;
+        if (!cardItem || cardItem.source !== "nostr-hot") return;
+        if (String(cardItem.mediaType || cardItem.media_type || "").toLowerCase() !== "movie") return;
+        if (movieDetailCacheId(cardItem) !== id) return;
+        const status = card.querySelector && card.querySelector(".card-air-status");
+        if (!status) return;
+        const releaseDate = latestDateOnly(detail.release_date || detail.releaseDate || "");
+        const presentationItem = releaseDate ? Object.assign({}, cardItem, { releaseDate }) : cardItem;
+        syncCardAirStatusLayout(card, movieReleaseStatusText(presentationItem));
+      });
+    }
+
+    function movieCardNearViewport(card) {
+      return tvCardNearViewport(card);
+    }
+
+    function flushMovieCardDetailQueue() {
+      const runtime = state.movieDetail;
+      if (!runtime) return;
+      if (!runtime.cardTasks) runtime.cardTasks = {};
+      if (!Array.isArray(runtime.cardQueue)) runtime.cardQueue = [];
+      runtime.cardActive = Number(runtime.cardActive || 0);
+      while (runtime.cardActive < MOVIE_CARD_DETAIL_CONCURRENCY && runtime.cardQueue.length) {
+        const job = runtime.cardQueue.shift();
+        if (!job || runtime.cardTasks[job.key] !== job) continue;
+        runtime.cardActive += 1;
+        requestMovieDetailShared(job.item).then((detail) => {
+          if (detail) updateMovieReleaseStatusCards(job.item, detail);
+        }).catch(() => {}).finally(() => {
+          runtime.cardActive = Math.max(0, runtime.cardActive - 1);
+          if (runtime.cardTasks[job.key] === job) delete runtime.cardTasks[job.key];
+          flushMovieCardDetailQueue();
+        });
+      }
+    }
+
+    function queueMovieCardReleaseEnrichment(card) {
+      if (!isNostrMovieReleaseStatusCard(card)) return;
+      const item = card.__mediaItem;
+      const cached = movieDetailCacheValue(item);
+      if (cached) {
+        updateMovieReleaseStatusCards(item, cached);
+        return;
+      }
+      const runtime = state.movieDetail;
+      const key = movieDetailCacheKey(item);
+      if (!runtime || !key) return;
+      if (!runtime.cardTasks) runtime.cardTasks = {};
+      if (!Array.isArray(runtime.cardQueue)) runtime.cardQueue = [];
+      if (runtime.cardTasks[key]) return;
+      const job = { key, item };
+      runtime.cardTasks[key] = job;
+      runtime.cardQueue.push(job);
+      flushMovieCardDetailQueue();
+    }
+
+    function ensureMovieCardDetailObserver() {
+      const runtime = state.movieDetail;
+      if (!runtime) return null;
+      if (!Array.isArray(runtime.cardQueue)) runtime.cardQueue = [];
+      if (!runtime.cardTasks) runtime.cardTasks = {};
+      if (!("IntersectionObserver" in window)) {
+        if (!runtime.scrollBound) {
+          runtime.scrollBound = true;
+          window.addEventListener("scroll", () => {
+            if (runtime.scanTimer) return;
+            runtime.scanTimer = setTimeout(() => {
+              runtime.scanTimer = 0;
+              observeMovieCardEnrichment(document);
+            }, 100);
+          }, { passive: true });
+        }
+        return null;
+      }
+      if (runtime.observer) return runtime.observer;
+      runtime.observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          runtime.observer.unobserve(entry.target);
+          queueMovieCardReleaseEnrichment(entry.target);
+        });
+      }, { root: null, rootMargin: MOVIE_CARD_DETAIL_ROOT_MARGIN, threshold: 0.01 });
+      return runtime.observer;
+    }
+
+    function observeMovieCardEnrichment(root) {
+      if (!root || !root.querySelectorAll) return;
+      const cards = Array.from(root.querySelectorAll(".card")).filter(isNostrMovieReleaseStatusCard);
+      const observer = ensureMovieCardDetailObserver();
+      if (observer) cards.forEach((card) => observer.observe(card));
+      else cards.filter(movieCardNearViewport).forEach(queueMovieCardReleaseEnrichment);
+    }
+
     function updateHomeRails() {
       const home = $("home");
       if (!home || !isHomeRouteActive()) return;

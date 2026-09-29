@@ -60,6 +60,8 @@
     const TV_DETAIL_CACHE_TTL_MS = 45 * 60 * 1000;
     const TV_CARD_DETAIL_CONCURRENCY = 3;
     const TV_CARD_DETAIL_ROOT_MARGIN = "560px 0px";
+    const MOVIE_CARD_DETAIL_CONCURRENCY = 3;
+    const MOVIE_CARD_DETAIL_ROOT_MARGIN = "560px 0px";
 
     function latestDateOnly(value) {
       const match = String(value == null ? "" : value).trim().match(/^(\d{4}-\d{2}-\d{2})/);

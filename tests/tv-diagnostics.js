@@ -1043,6 +1043,186 @@
           && typeof prepareDetailPlaybackForDetail === "function"
           && typeof restoreHomeReturn === "function",
         "Recent, Weekly, Detail preparation, and return authorities remain", "STATIC_HOOK");
+      const recentDeleteSource = sourceOf(deleteRecentWatchingMedia);
+      const recentDeleteBatchSource = sourceOf(deleteRecentWatchingBatch);
+      const makeRecentDeleteCard = (key) => {
+        const card = document.createElement("button");
+        card.className = "card focusable recent-watching-card";
+        card.__mediaItem = { recentMediaKey: String(key), title: "Recent " + key };
+        return card;
+      };
+      const runRecentDeleteFixture = (deletedKey, afterKeys) => {
+        const grid = document.createElement("div");
+        grid.id = "secondaryCatalogGrid";
+        const beforeCards = [1, 2, 3, 4, 5, 6, 7, 8].map(makeRecentDeleteCard);
+        const deletedCard = beforeCards.find((card) => card.__mediaItem.recentMediaKey === String(deletedKey));
+        const plan = recentSecondaryDeleteFocusPlan(deletedCard, beforeCards);
+        grid.replaceChildren(...afterKeys.filter((key) => String(key) !== String(deletedKey)).map(makeRecentDeleteCard));
+        const target = recentSecondaryDeleteFocusTarget(grid, plan);
+        return {
+          plan,
+          targetKey: target && target.__mediaItem && target.__mediaItem.recentMediaKey || ""
+        };
+      };
+      const recentDelete6 = runRecentDeleteFixture(6, [1, 2, 3, 4, 5, 7, 8]);
+      const recentDelete7 = runRecentDeleteFixture(7, [1, 2, 3, 4, 5, 6, 8]);
+      const recentDelete8 = runRecentDeleteFixture(8, [1, 2, 3, 4, 5, 6, 7]);
+      const recentDeleteReordered = runRecentDeleteFixture(6, [1, 2, 3, 4, 5, 8, 7]);
+      const recentDeleteEmptyGrid = document.createElement("div");
+      const recentDeleteEmptyPlan = recentSecondaryDeleteFocusPlan(makeRecentDeleteCard(8), [makeRecentDeleteCard(8)]);
+      check("RECENT_SECONDARY_DELETE_NEXT_KEY_AUTHORITY",
+        recentDelete6.targetKey === "7"
+          && recentDelete7.targetKey === "8"
+          && recentDeleteSource.includes("nextKey")
+          && recentDeleteSource.includes("recentSecondaryDeleteFocusTarget"),
+        "secondary single-delete restores the surviving next media key", "RUNTIME_MOCK");
+      check("RECENT_SECONDARY_DELETE_PREVIOUS_KEY_FALLBACK",
+        recentDelete8.targetKey === "7"
+          && recentDelete8.plan.nextKey === ""
+          && recentDelete8.plan.previousKey === "7"
+          && recentDeleteSource.includes("previousKey"),
+        "the previous surviving media key is used when no next key remains", "RUNTIME_MOCK");
+      check("RECENT_SECONDARY_DELETE_REORDER_RESILIENT",
+        recentDeleteReordered.targetKey === "7"
+          && recentDeleteReordered.plan.nextKey === "7"
+          && recentDeleteSource.includes("recentWatchingMediaKey"),
+        "delete focus follows media identity after a refreshed order change", "RUNTIME_MOCK");
+      check("RECENT_SECONDARY_DELETE_STALE_RESTORE_CANCELLED",
+        recentDeleteSource.includes("cancelSecondaryMediaFocusRestore")
+          && recentDeleteSource.includes("secondaryRecentDelete")
+          && recentDeleteSource.includes('grid.id === "secondaryCatalogGrid"'),
+        "a Recent Secondary single delete cancels stale media return focus", "STATIC_HOOK");
+      check("RECENT_SECONDARY_DELETE_EMPTY_TO_BACK",
+        !recentSecondaryDeleteFocusTarget(recentDeleteEmptyGrid, recentDeleteEmptyPlan)
+          && recentDeleteSource.includes('target = $("secondaryCatalogBack")'),
+        "an empty Recent Secondary grid falls back to the Secondary back control", "RUNTIME_MOCK");
+      check("RECENT_HOME_DELETE_UNCHANGED",
+        recentDeleteSource.includes('grid.id === "homeRecentRail"')
+          && recentDeleteSource.includes("cards[Math.min(focusIndex, cards.length - 1)]")
+          && recentDeleteSource.includes("secondaryRecentDelete")
+          && recentDeleteSource.includes("recentSecondaryDeleteFocusTarget"),
+        "Home Recent retains its existing index fallback outside Secondary", "STATIC_HOOK");
+      check("RECENT_BATCH_DELETE_UNCHANGED",
+        recentDeleteBatchSource.includes("recentManageRuntime")
+          && recentDeleteBatchSource.includes("deleteNativeHistoryViaLocalApi")
+          && !recentDeleteBatchSource.includes("recentSecondaryDeleteFocusPlan"),
+        "batch Recent deletion remains outside the single-card focus path", "STATIC_HOOK");
+
+      const movieCardSource = sourceOf(mediaCard);
+      const movieObserveSource = sourceOf(isNostrMovieReleaseStatusCard)
+        + sourceOf(queueMovieCardReleaseEnrichment)
+        + sourceOf(flushMovieCardDetailQueue)
+        + sourceOf(ensureMovieCardDetailObserver)
+        + sourceOf(observeMovieCardEnrichment);
+      const movieFixture = {
+        source: "nostr-hot",
+        mediaType: "movie",
+        tmdbId: "991001",
+        title: "Recommendation Movie",
+        pic: "https://image.tmdb.org/t/p/w342/recommendation-fixture.jpg",
+        people: 10
+      };
+      const diagToday = today();
+      const diagYear = Number(String(diagToday).slice(0, 4));
+      const pastMovieDate = `${diagYear - 1}-01-01`;
+      const sameYearFutureDate = `${diagYear}-12-31`;
+      const nextYearFutureDate = `${diagYear + 1}-01-01`;
+      const sameYearFutureAvailable = sameYearFutureDate > diagToday;
+      const previousMovieRuntime = state.movieDetail;
+      let placeholderMovieCard = null;
+      let cachedMovieCard = null;
+      let failedMovieCard = null;
+      try {
+        state.movieDetail = { cache: {} };
+        placeholderMovieCard = mediaCard(movieFixture, 0, {});
+        const placeholderStatus = placeholderMovieCard.querySelector(".card-air-status");
+        check("RECOMMENDATION_MOVIE_STATUS_PLACEHOLDER",
+          !!placeholderStatus && placeholderStatus.hidden && !placeholderMovieCard.classList.contains("has-air-status"),
+          "missing Nostr movie release metadata still creates a hidden status placeholder", "RUNTIME_MOCK");
+        storeMovieDetailCache(movieFixture, { id: Number(movieFixture.tmdbId), release_date: pastMovieDate });
+        cachedMovieCard = mediaCard(movieFixture, 0, {});
+        document.body.appendChild(cachedMovieCard);
+        const cachedStatus = cachedMovieCard.querySelector(".card-air-status");
+        check("RECOMMENDATION_MOVIE_CACHE_FIRST_RUNTIME",
+          !!cachedStatus && cachedStatus.textContent === "已上映",
+          "movie cards can render a status node and consume cached release metadata", "RUNTIME_MOCK");
+        document.body.removeChild(cachedMovieCard);
+        cachedMovieCard = null;
+
+        state.movieDetail = { cache: {} };
+        failedMovieCard = mediaCard(movieFixture, 0, {});
+        document.body.appendChild(failedMovieCard);
+        updateMovieReleaseStatusCards(movieFixture, { id: Number(movieFixture.tmdbId) });
+        const failedStatus = failedMovieCard.querySelector(".card-air-status");
+        check("RECOMMENDATION_MOVIE_DETAIL_FAILURE_HIDDEN",
+          !!failedStatus && failedStatus.hidden && !failedMovieCard.classList.contains("has-air-status"),
+          "missing release metadata keeps the status hidden without guessing", "RUNTIME_MOCK");
+        document.body.removeChild(failedMovieCard);
+        failedMovieCard = null;
+      } catch (error) {
+        check("RECOMMENDATION_MOVIE_STATUS_PLACEHOLDER", false, String(error && error.message || error || "unknown"), "RUNTIME_MOCK");
+        check("RECOMMENDATION_MOVIE_CACHE_FIRST_RUNTIME", false, String(error && error.message || error || "unknown"), "RUNTIME_MOCK");
+        check("RECOMMENDATION_MOVIE_DETAIL_FAILURE_HIDDEN", false, String(error && error.message || error || "unknown"), "RUNTIME_MOCK");
+      } finally {
+        if (placeholderMovieCard && placeholderMovieCard.parentNode) placeholderMovieCard.parentNode.removeChild(placeholderMovieCard);
+        if (cachedMovieCard && cachedMovieCard.parentNode) cachedMovieCard.parentNode.removeChild(cachedMovieCard);
+        if (failedMovieCard && failedMovieCard.parentNode) failedMovieCard.parentNode.removeChild(failedMovieCard);
+        state.movieDetail = previousMovieRuntime;
+      }
+      const scopedMovieSource = movieCardSource + sourceOf(isNostrMovieReleaseStatusCard);
+      const pastMovie = { mediaType: "movie", releaseDate: pastMovieDate };
+      const sameYearMovie = { mediaType: "movie", releaseDate: sameYearFutureDate };
+      const nextYearMovie = { mediaType: "movie", releaseDate: nextYearFutureDate };
+      check("RECOMMENDATION_MOVIE_SCOPE_NOSTR_ONLY",
+        scopedMovieSource.includes('item.source === "nostr-hot"')
+          && scopedMovieSource.includes('mediaType || item.media_type')
+          && scopedMovieSource.includes("movieDetailCacheId"),
+        "movie card enrichment is limited to Nostr movie items with a valid TMDB ID", "STATIC_HOOK");
+      check("RECOMMENDATION_MOVIE_CACHE_FIRST",
+        movieCardSource.includes("movieDetailCacheValue(item)")
+          && movieCardSource.includes("initialMovieReleaseDate")
+          && movieCardSource.includes("moviePresentationItem"),
+        "initial movie presentation consumes an existing shared detail cache", "STATIC_HOOK");
+      check("RECOMMENDATION_MOVIE_NEAR_VIEWPORT_ENRICHMENT",
+        movieObserveSource.includes("IntersectionObserver")
+          && movieObserveSource.includes("MOVIE_CARD_DETAIL_ROOT_MARGIN")
+          && movieObserveSource.includes("movieCardNearViewport"),
+        "movie detail enrichment uses the existing near-viewport observer model", "STATIC_HOOK");
+      check("RECOMMENDATION_MOVIE_SHARED_DETAIL_DEDUP",
+        movieObserveSource.includes("requestMovieDetailShared")
+          && movieObserveSource.includes("cardTasks")
+          && movieObserveSource.includes("MOVIE_CARD_DETAIL_CONCURRENCY"),
+        "movie card enrichment reuses shared detail cache and bounded pending jobs", "STATIC_HOOK");
+      check("RECOMMENDATION_MOVIE_RELEASED_LABEL",
+        movieReleaseStatusText(pastMovie) === "已上映",
+        "a past movie release renders 已上映", "RUNTIME_MOCK");
+      check("RECOMMENDATION_MOVIE_FUTURE_SAME_YEAR_LABEL",
+        (sameYearFutureAvailable && movieReleaseStatusText(sameYearMovie) === "12月31日上映")
+          || (!sameYearFutureAvailable && sourceOf(movieReleaseStatusText).includes("year === currentYear")),
+        "a same-year future movie uses the month/day release label", "RUNTIME_MOCK");
+      check("RECOMMENDATION_MOVIE_FUTURE_CROSS_YEAR_LABEL",
+        movieReleaseStatusText(nextYearMovie) === `${diagYear + 1}年1月1日上映`,
+        "a cross-year future movie includes the release year", "RUNTIME_MOCK");
+      check("RECOMMENDATION_MOVIE_NO_TOP1000_EAGER_FETCH",
+        !movieCardSource.includes("requestMovieDetailShared")
+          && (sourceOf(fillRail) + sourceOf(fillGrid)).includes("observeMovieCardEnrichment")
+          && movieObserveSource.includes("rootMargin"),
+        "Recommendation does not eagerly fetch movie details for the full pool", "STATIC_HOOK");
+      check("HOME_RECOMMENDATION_MOVIE_STATUS",
+        sourceOf(renderHomeRecommendation).includes("recommendationPoolItems")
+          && sourceOf(fillRail).includes("observeMovieCardEnrichment"),
+        "Home Recommendation uses the same movie status enrichment path", "STATIC_HOOK");
+      check("SECONDARY_RECOMMENDATION_MOVIE_STATUS",
+        sourceOf(loadRecommendationSecondaryPage).includes("recommendationPoolItems")
+          && sourceOf(fillGrid).includes("observeMovieCardEnrichment"),
+        "Recommendation Secondary uses the same movie status enrichment path", "STATIC_HOOK");
+      check("TV_CARD_ENRICHMENT_UNCHANGED",
+        sourceOf(observeTvCardEnrichment).includes("isTvEpisodeStatusCard")
+          && sourceOf(flushTvCardDetailQueue).includes("requestTvDetailShared")
+          && sourceOf(ensureTvCardDetailObserver).includes("TV_CARD_DETAIL_ROOT_MARGIN")
+          && sourceOf(fillRail).includes("observeTvCardEnrichment")
+          && sourceOf(fillGrid).includes("observeTvCardEnrichment"),
+        "existing TV episode enrichment remains on its original scheduler", "STATIC_HOOK");
       check("PLAYBACK_AUTHORITY_MARKERS_PRESERVED",
         hasAll(sourceOf(prepareDetailPlaybackForDetail) + sourceOf(tryCommitDetailProvider) + sourceOf(detailRaceLaneTerminal),
           ["History", "Curated", "Direct"])
