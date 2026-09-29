@@ -340,6 +340,13 @@
       const searchHotParserSource = sourceOf(parseSearchHotResponse);
       const searchHotNormalizeSource = sourceOf(normalizeSearchHotItems);
       const searchHotRenderSource = sourceOf(renderSearchHot);
+      const searchHotCardSource = sourceOf(searchHotCard);
+      const searchHotResolveSource = sourceOf(resolveSearchHotTmdbItem);
+      const searchHotActivateSource = sourceOf(activateSearchHotItem);
+      const searchHotFallbackSource = sourceOf(activateSearchHotFallback);
+      const searchHotStyleText = Array.from(document.querySelectorAll("style"))
+        .map((style) => String(style.textContent || ""))
+        .join("\n");
       const searchHotPipelineSource = [
         searchHotUrlSource,
         searchHotRequestSource,
@@ -349,7 +356,7 @@
       ].join("\n");
       const hotFixture = {
         data: [
-          { query: "热词 A", order: 3, show_image_url: "http://img.example/a.jpg", tag_content: "电影", query_label: { label_text: "荐" }, search_mark: "99" },
+          { query: "热词 A", order: 3, show_image_url: "http://img.example/a.jpg", tag_content: "电影", query_label: { label_text: "荐" }, search_mark: "99", qipu_id: "qipu-a", doc_channel: "movie" },
           { query: "热词 A", order: 4, show_image_url: "http://img.example/duplicate.jpg" },
           { query: "热词 B", tag_content: "综艺", query_label: { label_text: "新" }, search_mark: "88" }
         ]
@@ -367,7 +374,40 @@
           && hotJsonItems[0].label === "荐"
           && hotJsonItems[0].meta === "电影"
           && hotJsonItems[0].heat === "99"
+          && hotJsonItems[0].qipu_id === "qipu-a"
+          && hotJsonItems[0].doc_channel === "movie"
           && hotJsonItems[1].rank === 3;
+      } catch (error) {}
+      let searchHotStrongResolution = null;
+      let searchHotAmbiguousResolution = null;
+      let searchHotNoMatchResolution = null;
+      let searchHotResolveRequestUrl = "";
+      try {
+        const resolveBody = {
+          results: [
+            { id: 920001, media_type: "tv", name: "热剧", original_name: "Hot Drama", first_air_date: "2024-02-01", popularity: 1, vote_count: 2 },
+            { id: 920002, media_type: "tv", name: "热剧", original_name: "Hot Drama", first_air_date: "2023-02-01", popularity: 100, vote_count: 100 },
+            { id: 920003, media_type: "movie", title: "Hot Drama", original_title: "热剧", release_date: "2024-03-01", popularity: 100, vote_count: 100 },
+            { id: 920004, media_type: "tv", name: "热剧相关", original_name: "Related", first_air_date: "2024-04-01", popularity: 999, vote_count: 999 }
+          ]
+        };
+        searchHotStrongResolution = await resolveSearchHotTmdbItem(
+          { query: "热剧", meta: "2024" },
+          (url) => { searchHotResolveRequestUrl = String(url || ""); return Promise.resolve(resolveBody); }
+        );
+        searchHotAmbiguousResolution = await resolveSearchHotTmdbItem(
+          { query: "同名剧", meta: "2024" },
+          () => Promise.resolve({ results: [
+            { id: 920011, media_type: "tv", name: "同名剧", first_air_date: "2024-01-01", popularity: 5, vote_count: 5 },
+            { id: 920012, media_type: "tv", name: "同名剧", first_air_date: "2024-01-02", popularity: 5, vote_count: 5 }
+          ] })
+        );
+        searchHotNoMatchResolution = await resolveSearchHotTmdbItem(
+          { query: "不存在的热词" },
+          () => Promise.resolve({ results: [
+            { id: 920021, media_type: "movie", title: "不存在的热词外传", release_date: "2024-01-01", popularity: 999, vote_count: 999 }
+          ] })
+        );
       } catch (error) {}
       check("SEARCH_HOT_IQIYI_AUTHORITY",
         SEARCH_HOT_ENDPOINT === "https://search.video.iqiyi.com/m"
@@ -416,19 +456,131 @@
           && !sourceOf(loadSearchHot).includes("toast("),
         "a failed hot request only hides the rail and does not block Search", "STATIC_HOOK");
       check("SEARCH_HOT_DEDICATED_CARD",
-        sourceOf(searchHotCard).includes("search-hot-card")
-          && sourceOf(searchHotCard).includes("searchHotQuery")
-          && !sourceOf(searchHotCard).includes("mediaCard("),
-        "Search Hot uses a dedicated card and does not enter TMDB detail directly", "STATIC_HOOK");
+        searchHotCardSource.includes("search-hot-card")
+          && searchHotCardSource.includes("searchHotQuery")
+          && !searchHotCardSource.includes("mediaCard("),
+        "Search Hot uses a dedicated card while preserving the existing rail", "STATIC_HOOK");
+      check("SEARCH_HOT_TEXT_ONLY",
+        searchHotCardSource.includes("search-hot-copy")
+          && searchHotCardSource.includes("search-hot-title")
+          && searchHotCardSource.includes("search-hot-subtitle")
+          && !searchHotCardSource.includes("displayImage")
+          && !searchHotCardSource.includes("imageAttrs")
+          && !searchHotCardSource.includes("<img"),
+        "Search Hot cards are compact text-only tiles", "STATIC_HOOK");
+      check("SEARCH_HOT_NO_POSTER_RENDER",
+        !searchHotCardSource.includes("search-hot-poster")
+          && !searchHotCardSource.includes("<img"),
+        "Search Hot does not render poster markup", "STATIC_HOOK");
+      check("SEARCH_HOT_NO_IMAGE_REQUEST",
+        !searchHotCardSource.includes("displayImage")
+          && !searchHotCardSource.includes("imageAttrs")
+          && !searchHotCardSource.includes("hot.image"),
+        "Search Hot presentation does not invoke image URL or image attribute helpers", "STATIC_HOOK");
+      check("SEARCH_HOT_COMPACT_TILE",
+        searchHotStyleText.includes("clamp(220px, 16vw, 300px)")
+          && searchHotStyleText.includes("min-height: 76px")
+          && searchHotStyleText.includes("max-height: 90px")
+          && !searchHotStyleText.includes("#searchHotRail > .search-hot-card .search-hot-poster"),
+        "Search Hot uses a compact landscape tile rather than the portrait card width", "STATIC_HOOK");
+      check("SEARCH_HOT_RANK_VISIBLE",
+        searchHotCardSource.includes("search-hot-rank")
+          && searchHotCardSource.includes("padStart(2, \"0\")")
+          && searchHotCardSource.includes("escapeHtml(rankText)"),
+        "Search Hot renders a two-digit visible rank", "STATIC_HOOK");
+      check("SEARCH_HOT_TITLE_VISIBLE",
+        searchHotCardSource.includes("search-hot-title")
+          && searchHotCardSource.includes("escapeHtml(query)")
+          && searchHotStyleText.includes("-webkit-line-clamp: 2"),
+        "Search Hot renders the query as a two-line title", "STATIC_HOOK");
       check("SEARCH_HOT_CLICK_TO_TMDB",
-        hasAll(sourceOf(activateSearchHotItem), [
-          "enableSearchEditing",
-          "hideSearchSuggest",
-          "recordSearchHistory",
-          "focusRemoteTarget",
-          'searchTmdb(normalized, { source: "hot" })'
-        ]),
-        "clicking a hot query reuses the existing TMDB Search path", "STATIC_HOOK");
+        hasAll(searchHotActivateSource, [
+          "resolveSearchHotTmdbItem",
+          "openDetail(resolved.item, { returnTarget: target })",
+          "activateSearchHotFallback"
+        ])
+          && hasAll(searchHotFallbackSource, [
+            "enableSearchEditing",
+            "hideSearchSuggest",
+            "recordSearchHistory",
+            "focusRemoteTarget",
+            'searchTmdb(normalized, { source: "hot-fallback" })'
+          ]),
+        "Search Hot first resolves a strong TMDB detail and keeps the existing search fallback", "STATIC_HOOK");
+      check("SEARCH_HOT_TMDB_RESOLVE",
+        searchHotResolveSource.includes("tmdbSearchUrl")
+          && searchHotResolveSource.includes("requestJson")
+          && searchHotResolveSource.includes("media_type === \"movie\"")
+          && searchHotResolveSource.includes("media_type === \"tv\"")
+          && searchHotResolveRequestUrl.includes("/search/multi"),
+        "Search Hot resolves only through the existing TMDB multi-search authority", "RUNTIME_MOCK");
+      check("SEARCH_HOT_EXACT_TITLE_PRIORITY",
+        !!searchHotStrongResolution
+          && searchHotStrongResolution.verdict === "STRONG"
+          && searchHotStrongResolution.item
+          && String(searchHotStrongResolution.item.tmdbId) === "920001"
+          && searchHotResolveSource.includes("normalizeTitle")
+          && searchHotResolveSource.includes("searchHotMatchScore"),
+        "exact localized title plus year outranks original-title and weaker matches", "RUNTIME_MOCK");
+      check("SEARCH_HOT_YEAR_DISAMBIGUATION",
+        !!searchHotStrongResolution
+          && searchHotStrongResolution.item
+          && String(searchHotStrongResolution.item.tmdbId) === "920001"
+          && searchHotResolveSource.includes("searchHotMetaYear")
+          && searchHotResolveSource.includes("release_date")
+          && searchHotResolveSource.includes("first_air_date"),
+        "the hot metadata year participates in TMDB title selection", "RUNTIME_MOCK");
+      check("SEARCH_HOT_STRONG_OPENS_DETAIL",
+        searchHotActivateSource.includes('resolved.verdict === "STRONG"')
+          && searchHotActivateSource.includes("resolved.item")
+          && searchHotActivateSource.includes("openDetail(resolved.item"),
+        "only a strong resolver result can take the direct Detail path", "STATIC_HOOK");
+      check("SEARCH_HOT_AMBIGUOUS_FALLBACK",
+        !!searchHotAmbiguousResolution
+          && searchHotAmbiguousResolution.verdict === "AMBIGUOUS"
+          && searchHotActivateSource.includes("activateSearchHotFallback(query)"),
+        "equally strong unresolved matches fall back to typed Search", "RUNTIME_MOCK");
+      check("SEARCH_HOT_NO_MATCH_FALLBACK",
+        !!searchHotNoMatchResolution
+          && searchHotNoMatchResolution.verdict === "NO_MATCH"
+          && searchHotActivateSource.includes("catch (error)"),
+        "no exact TMDB match and transport failure use the existing fallback", "RUNTIME_MOCK");
+      check("SEARCH_HOT_CLICK_DOES_NOT_MUTATE_INPUT",
+        !searchHotActivateSource.includes("input.value =")
+          && searchHotActivateSource.includes("openDetail(resolved.item"),
+        "a strong hot click does not mutate the search input", "STATIC_HOOK");
+      check("SEARCH_HOT_CLICK_DOES_NOT_RECORD_HISTORY",
+        !searchHotActivateSource.includes("recordSearchHistory")
+          && searchHotActivateSource.includes("openDetail(resolved.item"),
+        "a strong hot click does not record search history", "STATIC_HOOK");
+      check("SEARCH_HOT_DIRECT_DETAIL_RETURN_TARGET",
+        searchHotActivateSource.includes("returnTarget: target")
+          && sourceOf(openDetail).includes("opts.returnTarget"),
+        "direct Detail retains the hot card as the return target", "STATIC_HOOK");
+      check("SEARCH_HOT_DIRECT_DETAIL_BACK_TO_SEARCH",
+        sourceOf(rememberHomeReturn).includes("searchHotRail")
+          && sourceOf(restoreHomeReturn).includes("searchHotRail")
+          && sourceOf(closeDetail).includes("restoreHomeReturn"),
+        "existing Detail return restoration can return to the Search Hot rail", "STATIC_HOOK");
+      check("SEARCH_HOT_DOUBLE_CLICK_GUARD",
+        searchHotActivateSource.includes("hotResolving")
+          && searchHotActivateSource.includes("return false")
+          && searchHotCardSource.includes("activateSearchHotItem(hot, button)"),
+        "a card ignores a second click while its TMDB resolution is pending", "STATIC_HOOK");
+      check("SEARCH_HOT_RESOLVE_STALE_GUARD",
+        searchHotActivateSource.includes("searchHotResolveSeq")
+          && searchHotActivateSource.includes("resolveSeq !== Number(state.searchHotResolveSeq || 0)"),
+        "a stale hot resolver cannot navigate after a newer click", "STATIC_HOOK");
+      check("SEARCH_HOT_EXISTING_RAIL_PRESERVED",
+        searchHotRenderSource.includes("searchHotSection")
+          && searchHotRenderSource.includes("searchHotRail")
+          && searchHotCardSource.includes('className = "card focusable search-hot-card"'),
+        "Search Hot keeps its existing section and rail DOM contract", "STATIC_HOOK");
+      check("SEARCH_HOT_EXISTING_FOCUS_CONTRACT_PRESERVED",
+        typeof firstSearchHotFocusTarget === "function"
+          && sourceOf(firstSearchHotFocusTarget).includes("searchHotRail")
+          && sourceOf(fastHomeSearchRailTarget).includes("searchHotRail"),
+        "Search Hot remains in the existing TV rail focus contract", "STATIC_HOOK");
       check("SEARCH_HOT_EMPTY_QUERY_VISIBILITY",
         searchHotRenderSource.includes('homeUiRoute() === "search"')
           && searchHotRenderSource.includes("!currentSearchKeyword()")

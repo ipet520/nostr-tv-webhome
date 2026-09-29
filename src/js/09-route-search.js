@@ -397,6 +397,7 @@
           requestSeq: 0
         };
       }
+      state.searchHotResolveSeq = Number(state.searchHotResolveSeq || 0);
       return state.searchHot;
     }
 
@@ -480,7 +481,9 @@
           image,
           meta: String(item && item.tag_content || "").trim(),
           label,
-          heat
+          heat,
+          qipu_id: String(item && item.qipu_id || "").trim(),
+          doc_channel: String(item && item.doc_channel || "").trim()
         });
         seen.add(query);
       });
@@ -554,7 +557,67 @@
       return true;
     }
 
-    function activateSearchHotItem(query) {
+    function searchHotMetaYear(item) {
+      const text = String(item && item.meta || "");
+      const match = text.match(/(?:19|20)\d{2}/);
+      return match ? match[0] : "";
+    }
+
+    function searchHotCandidateYear(item) {
+      const value = String(item && (item.media_type === "tv" ? item.first_air_date : item.release_date) || "");
+      const match = value.match(/^(?:19|20)\d{2}/);
+      return match ? match[0] : "";
+    }
+
+    function searchHotCandidateLocalTitle(item) {
+      return String(item && (item.media_type === "tv" ? item.name || item.title : item.title || item.name) || "").trim();
+    }
+
+    function searchHotCandidateOriginalTitle(item) {
+      return String(item && (item.media_type === "tv" ? item.original_name || item.original_title : item.original_title || item.original_name) || "").trim();
+    }
+
+    function searchHotMatchScore(item, query, year) {
+      const normalizedQuery = normalizeTitle(query);
+      const localExact = normalizeTitle(searchHotCandidateLocalTitle(item)) === normalizedQuery;
+      const originalExact = normalizeTitle(searchHotCandidateOriginalTitle(item)) === normalizedQuery;
+      if (!localExact && !originalExact) return 0;
+      const yearMatch = !!year && searchHotCandidateYear(item) === year;
+      if (localExact && yearMatch) return 400;
+      if (localExact) return 300;
+      if (originalExact && yearMatch) return 200;
+      return 100;
+    }
+
+    async function resolveSearchHotTmdbItem(hotItem, requestOverride) {
+      const hot = hotItem || {};
+      const query = String(hot.query || "").trim();
+      if (!query) return { verdict: "NO_MATCH", item: null, candidates: [] };
+      const request = typeof requestOverride === "function" ? requestOverride : requestJson;
+      const body = await request(tmdbSearchUrl(query), 18);
+      const rawResults = body && Array.isArray(body.results) ? body.results : [];
+      const year = searchHotMetaYear(hot);
+      const ranked = rawResults
+        .filter((item) => item && (item.media_type === "movie" || item.media_type === "tv") && item.id != null)
+        .map((item, index) => ({
+          raw: item,
+          item: normalizeTmdb(item, { id: "search-hot", title: "Search Hot", mediaType: item.media_type }, index),
+          score: searchHotMatchScore(item, query, year),
+          popularity: Number(item.popularity || 0),
+          votes: Number(item.vote_count || 0)
+        }))
+        .filter((entry) => entry.score > 0)
+        .sort((a, b) => b.score - a.score || b.popularity - a.popularity || b.votes - a.votes);
+      if (!ranked.length) return { verdict: "NO_MATCH", item: null, candidates: [] };
+      const winner = ranked[0];
+      const sameTie = ranked.filter((entry) => entry.score === winner.score
+        && entry.popularity === winner.popularity
+        && entry.votes === winner.votes);
+      if (sameTie.length > 1) return { verdict: "AMBIGUOUS", item: null, candidates: sameTie.map((entry) => entry.item) };
+      return { verdict: "STRONG", item: winner.item, candidates: [winner.item] };
+    }
+
+    function activateSearchHotFallback(query) {
       const input = $("searchInput");
       const normalized = String(query || "").trim();
       if (!input || !normalized) return false;
@@ -563,24 +626,48 @@
       hideSearchSuggest();
       recordSearchHistory(normalized);
       focusRemoteTarget(input);
-      searchTmdb(normalized, { source: "hot" });
+      searchTmdb(normalized, { source: "hot-fallback" });
       return true;
+    }
+
+    async function activateSearchHotItem(item, card) {
+      const hot = item || {};
+      const query = String(hot.query || "").trim();
+      const target = card && card.dataset ? card : null;
+      if (!query || target && target.dataset.hotResolving === "1") return false;
+      const resolveSeq = Number(state.searchHotResolveSeq || 0) + 1;
+      state.searchHotResolveSeq = resolveSeq;
+      if (target) target.dataset.hotResolving = "1";
+      try {
+        const resolved = await resolveSearchHotTmdbItem(hot);
+        if (resolveSeq !== Number(state.searchHotResolveSeq || 0)) return false;
+        if (resolved && resolved.verdict === "STRONG" && resolved.item) {
+          openDetail(resolved.item, { returnTarget: target });
+          return true;
+        }
+        return activateSearchHotFallback(query);
+      } catch (error) {
+        if (resolveSeq !== Number(state.searchHotResolveSeq || 0)) return false;
+        return activateSearchHotFallback(query);
+      } finally {
+        if (target && resolveSeq === Number(state.searchHotResolveSeq || 0)) delete target.dataset.hotResolving;
+      }
     }
 
     function searchHotCard(item, index) {
       const hot = item || {};
       const query = String(hot.query || "").trim();
-      const image = displayImage(hot.image, { size: "w342" });
       const rank = Number(hot.rank || index + 1);
-      const rankText = Number.isFinite(rank) && rank > 0 ? String(rank) : String(index + 1);
+      const rankText = Number.isFinite(rank) && rank > 0 ? String(rank).padStart(2, "0") : String(index + 1).padStart(2, "0");
+      const subtitle = [hot.label, hot.meta].filter(Boolean).join(" · ");
       const button = document.createElement("button");
       button.type = "button";
       button.className = "card focusable search-hot-card";
       button.dataset.cardIndex = String(index);
       button.dataset.searchHotQuery = query;
       button.setAttribute("aria-label", query);
-      button.innerHTML = `<div class="search-hot-poster">${image ? `<img class="poster" ${imageAttrs(image, { loading: "lazy" })} alt="">` : ""}<span class="search-hot-rank" aria-hidden="true">${escapeHtml(rankText)}</span></div><div class="card-body"><div class="card-title">${escapeHtml(query)}</div>${hot.label ? `<div class="search-hot-label">${escapeHtml(hot.label)}</div>` : ""}${hot.meta || hot.heat ? `<div class="search-hot-meta">${escapeHtml([hot.meta, hot.heat].filter(Boolean).join(" · "))}</div>` : ""}</div>`;
-      button.addEventListener("click", () => activateSearchHotItem(query));
+      button.innerHTML = `<span class="search-hot-rank" aria-hidden="true">${escapeHtml(rankText)}</span><div class="search-hot-copy"><div class="card-title search-hot-title">${escapeHtml(query)}</div>${subtitle ? `<div class="search-hot-subtitle">${escapeHtml(subtitle)}</div>` : ""}</div>`;
+      button.addEventListener("click", () => { void activateSearchHotItem(hot, button); });
       return button;
     }
 
