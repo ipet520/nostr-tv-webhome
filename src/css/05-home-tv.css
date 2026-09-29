@@ -846,6 +846,22 @@
       text-align: center;
     }
 
+    #searchHotRail > .search-hot-card.search-hot-top .search-hot-rank {
+      color: rgba(220, 246, 255, .98);
+      background: rgba(191, 233, 255, .12);
+      border-radius: 7px;
+      font-weight: 820;
+    }
+
+    #searchHotRail > .search-hot-card.search-hot-top .search-hot-title {
+      color: #fff;
+      font-weight: 720;
+    }
+
+    #searchHotRail > .search-hot-card[data-hot-rank="1"] .search-hot-rank {
+      background: rgba(191, 233, 255, .20);
+    }
+
     #searchHotRail > .search-hot-card .search-hot-copy {
       min-width: 0;
       overflow: hidden;

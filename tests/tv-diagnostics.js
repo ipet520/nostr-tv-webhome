@@ -341,6 +341,9 @@
       const searchHotNormalizeSource = sourceOf(normalizeSearchHotItems);
       const searchHotRenderSource = sourceOf(renderSearchHot);
       const searchHotCardSource = sourceOf(searchHotCard);
+      const homeFocusSnapshotSource = sourceOf(homeFocusSnapshot);
+      const searchHotReturnSource = sourceOf(findSearchHotReturnTarget);
+      const homeReturnTargetSource = sourceOf(findHomeReturnTarget);
       const searchHotIdentitySource = sourceOf(searchHotIdentityEvidence);
       const searchHotResolveSource = sourceOf(resolveSearchHotTmdbItem);
       const searchHotActivateSource = sourceOf(activateSearchHotItem);
@@ -368,6 +371,60 @@
         sourceOf(ensureSearchHotData),
         searchHotRenderSource
       ].join("\n");
+      let searchHotReturnFixture = {
+        snapshot: null,
+        exact: null,
+        queryFirst: null,
+        indexFallback: null,
+        top1Fallback: null,
+        cards: []
+      };
+      let searchHotRankFixture = [];
+      try {
+        searchHotRankFixture = [1, 2, 3, 4].map((rank, index) => searchHotCard({ query: "rank-" + rank, rank }, index));
+        const rail = $("searchHotRail");
+        const section = $("searchHotSection");
+        const page = $("searchPage");
+        if (rail && section && page) {
+          const previousChildren = Array.from(rail.childNodes);
+          const previousPageHidden = page.hidden;
+          const previousSectionHidden = section.hidden;
+          const previousSectionAria = section.getAttribute("aria-hidden");
+          try {
+            page.hidden = false;
+            section.hidden = false;
+            section.setAttribute("aria-hidden", "false");
+            const fixtureItems = Array.from({ length: 10 }, (_, index) => ({
+              query: "hot-return-" + (index + 1),
+              rank: index + 1,
+              label: "fixture"
+            }));
+            rail.replaceChildren(...fixtureItems.map((item, index) => searchHotCard(item, index)));
+            const cards = Array.from(rail.querySelectorAll(".search-hot-card"));
+            const selected = cards[6] || null;
+            searchHotReturnFixture.cards = cards;
+            searchHotReturnFixture.snapshot = selected ? homeFocusSnapshot(selected, { tmdbId: "resolved-07" }) : null;
+            searchHotReturnFixture.exact = searchHotReturnFixture.snapshot
+              ? findHomeReturnTarget({ focus: searchHotReturnFixture.snapshot })
+              : null;
+            searchHotReturnFixture.queryFirst = findHomeReturnTarget({
+              focus: { type: "search-hot", key: "hot-return-7", cardIndex: 0, gridId: "searchHotRail", sectionId: "searchHotSection" }
+            });
+            searchHotReturnFixture.indexFallback = findHomeReturnTarget({
+              focus: { type: "search-hot", key: "missing-hot-query", cardIndex: 6, gridId: "searchHotRail", sectionId: "searchHotSection" }
+            });
+            searchHotReturnFixture.top1Fallback = findHomeReturnTarget({
+              focus: { type: "search-hot", key: "", cardIndex: -1, gridId: "searchHotRail", sectionId: "searchHotSection" }
+            });
+          } finally {
+            rail.replaceChildren(...previousChildren);
+            page.hidden = previousPageHidden;
+            section.hidden = previousSectionHidden;
+            if (previousSectionAria == null) section.removeAttribute("aria-hidden");
+            else section.setAttribute("aria-hidden", previousSectionAria);
+          }
+        }
+      } catch (error) {}
       const hotFixture = {
         data: [
           { query: "热词 A", order: 3, show_image_url: "http://img.example/a.jpg", tag_content: "电影", query_label: { label_text: "荐" }, search_mark: "99", qipu_id: "qipu-a", doc_channel: "movie" },
@@ -664,6 +721,67 @@
           && sourceOf(restoreHomeReturn).includes("searchHotRail")
           && sourceOf(closeDetail).includes("restoreHomeReturn"),
         "existing Detail return restoration can return to the Search Hot rail", "STATIC_HOOK");
+      check("SEARCH_HOT_RETURN_SNAPSHOT_TYPE",
+        !!searchHotReturnFixture.snapshot
+          && searchHotReturnFixture.snapshot.type === "search-hot"
+          && searchHotReturnFixture.snapshot.gridId === "searchHotRail"
+          && searchHotReturnFixture.snapshot.sectionId === "searchHotSection"
+          && homeFocusSnapshotSource.includes("search-hot"),
+        "Search Hot stores a dedicated return-focus snapshot type", "RUNTIME_MOCK");
+      check("SEARCH_HOT_RETURN_QUERY_IDENTITY",
+        !!searchHotReturnFixture.snapshot
+          && searchHotReturnFixture.snapshot.key === "hot-return-7"
+          && searchHotReturnFixture.exact === searchHotReturnFixture.cards[6]
+          && searchHotReturnFixture.exact !== searchHotReturnFixture.cards[0]
+          && searchHotReturnSource.includes("searchHotQuery"),
+        "Search Hot returns to the clicked card by query identity", "RUNTIME_MOCK");
+      check("SEARCH_HOT_RETURN_CARD_INDEX_FALLBACK",
+        searchHotReturnFixture.indexFallback === searchHotReturnFixture.cards[6]
+          && searchHotReturnSource.includes("focus.cardIndex"),
+        "a refreshed Search Hot list falls back to the saved card index", "RUNTIME_MOCK");
+      check("SEARCH_HOT_RETURN_TOP1_LAST_RESORT_ONLY",
+        searchHotReturnFixture.top1Fallback === searchHotReturnFixture.cards[0]
+          && searchHotReturnFixture.indexFallback !== searchHotReturnFixture.cards[0]
+          && searchHotReturnSource.includes("cards[0]"),
+        "Search Hot Top 1 is used only after identity and index recovery fail", "RUNTIME_MOCK");
+      check("SEARCH_HOT_EXACT_RETURN_TARGET",
+        searchHotReturnFixture.exact === searchHotReturnFixture.cards[6],
+        "the exact clicked Search Hot card is the preferred return target", "RUNTIME_MOCK");
+      check("SEARCH_HOT_RETURN_NOT_FIRST_ITEM",
+        searchHotReturnFixture.exact && searchHotReturnFixture.exact !== searchHotReturnFixture.cards[0],
+        "a non-first Search Hot card does not collapse to Top 1 on return", "RUNTIME_MOCK");
+      check("SEARCH_HOT_RETURN_QUERY_FIRST",
+        searchHotReturnFixture.queryFirst === searchHotReturnFixture.cards[6]
+          && homeReturnTargetSource.includes('focus.type === "search-hot"'),
+        "query identity takes precedence over a stale card index", "RUNTIME_MOCK");
+      check("SEARCH_HOT_RETURN_INDEX_SECONDARY",
+        searchHotReturnFixture.indexFallback === searchHotReturnFixture.cards[6]
+          && searchHotReturnFixture.top1Fallback === searchHotReturnFixture.cards[0],
+        "card index is secondary and Top 1 remains the last fallback", "RUNTIME_MOCK");
+      check("SEARCH_HOT_TOP3_MARKER",
+        searchHotRankFixture.length === 4
+          && searchHotRankFixture.slice(0, 3).every((card, index) => card.classList.contains("search-hot-top") && card.dataset.hotRank === String(index + 1))
+          && !searchHotRankFixture[3].classList.contains("search-hot-top")
+          && searchHotCardSource.includes("dataset.hotRank")
+          && searchHotCardSource.includes("search-hot-top"),
+        "Search Hot ranks 1 through 3 receive a shared presentation marker", "RUNTIME_MOCK");
+      check("SEARCH_HOT_TOP3_STYLE",
+        searchHotStyleText.includes(".search-hot-card.search-hot-top .search-hot-rank")
+          && searchHotStyleText.includes("rgba(191, 233, 255, .12)")
+          && searchHotStyleText.includes("font-weight: 820")
+          && searchHotStyleText.includes(".search-hot-card.search-hot-top .search-hot-title")
+          && searchHotStyleText.includes('data-hot-rank="1"'),
+        "Top 3 use a restrained shared rank/title emphasis", "STATIC_HOOK");
+      check("SEARCH_HOT_RANK4_NOT_EMPHASIZED",
+        searchHotRankFixture[3] && !searchHotRankFixture[3].classList.contains("search-hot-top")
+          && !searchHotStyleText.includes('data-hot-rank="4"')
+          && searchHotCardSource.includes("normalizedRank <= 3"),
+        "rank 4 and later keep the normal Search Hot presentation", "RUNTIME_MOCK");
+      check("SEARCH_HOT_TOP3_MOBILE_PRESERVED",
+        searchHotStyleText.includes(".search-hot-card.search-hot-top .search-hot-rank")
+          && searchHotPortraitStyleText.includes("#searchHotRail > .search-hot-card")
+          && !searchHotPortraitStyleText.includes("search-hot-top"),
+        "the same Top 3 marker survives the mobile grid without a second UI", "STATIC_HOOK");
       check("SEARCH_HOT_DOUBLE_CLICK_GUARD",
         searchHotActivateSource.includes("hotResolving")
           && searchHotActivateSource.includes("return false")

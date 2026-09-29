@@ -4,6 +4,16 @@
 
     function homeFocusSnapshot(target, item) {
       const el = target && target.closest ? target : null;
+      const searchHotCard = el && el.closest ? el.closest("#searchHotRail .search-hot-card[data-search-hot-query]") : null;
+      if (searchHotCard) {
+        return {
+          type: "search-hot",
+          key: String(searchHotCard.dataset.searchHotQuery || ""),
+          cardIndex: Number(searchHotCard.dataset.cardIndex || -1),
+          gridId: "searchHotRail",
+          sectionId: "searchHotSection"
+        };
+      }
       const card = el && el.closest(".card[data-media-key]");
       if (card) {
         const grid = card.closest(".media-grid,.rail");
@@ -78,6 +88,24 @@
       return isVisibleFocusable(indexed) ? indexed : null;
     }
 
+    function findSearchHotReturnTarget(saved, focus) {
+      const rail = $("searchHotRail");
+      if (!rail || !focus) return null;
+      const cards = Array.from(rail.querySelectorAll(".search-hot-card"));
+      const key = String(focus.key || "");
+      if (key) {
+        const exact = cards.find((card) => String(card.dataset.searchHotQuery || "") === key && isVisibleFocusable(card));
+        if (exact) return exact;
+      }
+      const index = Number(focus.cardIndex);
+      if (Number.isFinite(index) && index >= 0) {
+        const indexed = cards[index] || null;
+        if (isVisibleFocusable(indexed)) return indexed;
+      }
+      const first = cards[0] || null;
+      return isVisibleFocusable(first) ? first : null;
+    }
+
     function findHomeReturnSection(saved) {
       const focus = saved && saved.focus || {};
       if (focus.sectionId) return document.getElementById(focus.sectionId);
@@ -97,6 +125,7 @@
     function findHomeReturnTarget(saved) {
       if (!saved) return null;
       const focus = saved.focus || {};
+      if (focus.type === "search-hot") return findSearchHotReturnTarget(saved, focus);
       if (focus.type === "media") return findHomeReturnMediaTarget(saved, focus);
       if (focus.type === "id" && focus.key === "homeHeroAction") return $("homeHero");
       if (focus.type === "id" && focus.key) return $(focus.key);

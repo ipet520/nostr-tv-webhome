@@ -680,13 +680,16 @@
       const hot = item || {};
       const query = String(hot.query || "").trim();
       const rank = Number(hot.rank || index + 1);
-      const rankText = Number.isFinite(rank) && rank > 0 ? String(rank).padStart(2, "0") : String(index + 1).padStart(2, "0");
+      const normalizedRank = Number.isFinite(rank) && rank > 0 ? rank : index + 1;
+      const rankText = String(normalizedRank).padStart(2, "0");
       const subtitle = [hot.label, hot.meta].filter(Boolean).join(" · ");
       const button = document.createElement("button");
       button.type = "button";
       button.className = "card focusable search-hot-card";
       button.dataset.cardIndex = String(index);
+      button.dataset.hotRank = String(normalizedRank);
       button.dataset.searchHotQuery = query;
+      if (normalizedRank >= 1 && normalizedRank <= 3) button.classList.add("search-hot-top");
       button.setAttribute("aria-label", query);
       button.innerHTML = `<span class="search-hot-rank" aria-hidden="true">${escapeHtml(rankText)}</span><div class="search-hot-copy"><div class="card-title search-hot-title">${escapeHtml(query)}</div>${subtitle ? `<div class="search-hot-subtitle">${escapeHtml(subtitle)}</div>` : ""}</div>`;
       button.addEventListener("click", () => { void activateSearchHotItem(hot, button); });

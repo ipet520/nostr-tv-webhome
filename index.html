@@ -6704,6 +6704,22 @@
       text-align: center;
     }
 
+    #searchHotRail > .search-hot-card.search-hot-top .search-hot-rank {
+      color: rgba(220, 246, 255, .98);
+      background: rgba(191, 233, 255, .12);
+      border-radius: 7px;
+      font-weight: 820;
+    }
+
+    #searchHotRail > .search-hot-card.search-hot-top .search-hot-title {
+      color: #fff;
+      font-weight: 720;
+    }
+
+    #searchHotRail > .search-hot-card[data-hot-rank="1"] .search-hot-rank {
+      background: rgba(191, 233, 255, .20);
+    }
+
     #searchHotRail > .search-hot-card .search-hot-copy {
       min-width: 0;
       overflow: hidden;
@@ -24872,13 +24888,16 @@ utils.encode = function encode(arr, enc) {
       const hot = item || {};
       const query = String(hot.query || "").trim();
       const rank = Number(hot.rank || index + 1);
-      const rankText = Number.isFinite(rank) && rank > 0 ? String(rank).padStart(2, "0") : String(index + 1).padStart(2, "0");
+      const normalizedRank = Number.isFinite(rank) && rank > 0 ? rank : index + 1;
+      const rankText = String(normalizedRank).padStart(2, "0");
       const subtitle = [hot.label, hot.meta].filter(Boolean).join(" · ");
       const button = document.createElement("button");
       button.type = "button";
       button.className = "card focusable search-hot-card";
       button.dataset.cardIndex = String(index);
+      button.dataset.hotRank = String(normalizedRank);
       button.dataset.searchHotQuery = query;
+      if (normalizedRank >= 1 && normalizedRank <= 3) button.classList.add("search-hot-top");
       button.setAttribute("aria-label", query);
       button.innerHTML = `<span class="search-hot-rank" aria-hidden="true">${escapeHtml(rankText)}</span><div class="search-hot-copy"><div class="card-title search-hot-title">${escapeHtml(query)}</div>${subtitle ? `<div class="search-hot-subtitle">${escapeHtml(subtitle)}</div>` : ""}</div>`;
       button.addEventListener("click", () => { void activateSearchHotItem(hot, button); });
@@ -31261,6 +31280,16 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
     function homeFocusSnapshot(target, item) {
       const el = target && target.closest ? target : null;
+      const searchHotCard = el && el.closest ? el.closest("#searchHotRail .search-hot-card[data-search-hot-query]") : null;
+      if (searchHotCard) {
+        return {
+          type: "search-hot",
+          key: String(searchHotCard.dataset.searchHotQuery || ""),
+          cardIndex: Number(searchHotCard.dataset.cardIndex || -1),
+          gridId: "searchHotRail",
+          sectionId: "searchHotSection"
+        };
+      }
       const card = el && el.closest(".card[data-media-key]");
       if (card) {
         const grid = card.closest(".media-grid,.rail");
@@ -31335,6 +31364,24 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return isVisibleFocusable(indexed) ? indexed : null;
     }
 
+    function findSearchHotReturnTarget(saved, focus) {
+      const rail = $("searchHotRail");
+      if (!rail || !focus) return null;
+      const cards = Array.from(rail.querySelectorAll(".search-hot-card"));
+      const key = String(focus.key || "");
+      if (key) {
+        const exact = cards.find((card) => String(card.dataset.searchHotQuery || "") === key && isVisibleFocusable(card));
+        if (exact) return exact;
+      }
+      const index = Number(focus.cardIndex);
+      if (Number.isFinite(index) && index >= 0) {
+        const indexed = cards[index] || null;
+        if (isVisibleFocusable(indexed)) return indexed;
+      }
+      const first = cards[0] || null;
+      return isVisibleFocusable(first) ? first : null;
+    }
+
     function findHomeReturnSection(saved) {
       const focus = saved && saved.focus || {};
       if (focus.sectionId) return document.getElementById(focus.sectionId);
@@ -31354,6 +31401,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     function findHomeReturnTarget(saved) {
       if (!saved) return null;
       const focus = saved.focus || {};
+      if (focus.type === "search-hot") return findSearchHotReturnTarget(saved, focus);
       if (focus.type === "media") return findHomeReturnMediaTarget(saved, focus);
       if (focus.type === "id" && focus.key === "homeHeroAction") return $("homeHero");
       if (focus.type === "id" && focus.key) return $(focus.key);
