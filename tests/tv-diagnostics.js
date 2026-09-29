@@ -371,6 +371,30 @@
         sourceOf(ensureSearchHotData),
         searchHotRenderSource
       ].join("\n");
+      const clearSearchSectionStyleMatch = searchHotStyleText.match(/#searchPageResultsHost\s*>\s*#searchSection\s*\{[^}]*\}/);
+      const clearSearchSectionStyle = clearSearchSectionStyleMatch ? clearSearchSectionStyleMatch[0] : "";
+      check("CLEAR_SEARCH_SECTION_OVERFLOW_VISIBLE",
+        clearSearchSectionStyle.includes("margin-top: 0")
+          && clearSearchSectionStyle.includes("overflow: visible"),
+        "Search Results Section allows TV focus visuals to extend beyond its boundary", "STATIC_HOOK");
+      check("CLEAR_SEARCH_FOCUS_CLIP_GUARD",
+        !!$("clearSearchBtn")
+          && searchHotStyleText.includes(".section")
+          && searchHotStyleText.includes("overflow: hidden")
+          && clearSearchSectionStyle.includes("overflow: visible"),
+        "the clear-search focus clipping ancestor has a scoped overflow override", "DOM_ASSERTION");
+      check("SEARCH_RAIL_OVERFLOW_UNCHANGED",
+        searchHotStyleText.includes(".rail")
+          && searchHotStyleText.includes("overflow-x: auto")
+          && searchHotStyleText.includes("overflow-y: hidden")
+          && searchHotStyleText.includes("#searchRail"),
+        "Search results rail keeps its existing horizontal overflow behavior", "STATIC_HOOK");
+      check("TV_SECONDARY_BUTTON_FOCUS_UNCHANGED",
+        searchHotStyleText.includes("html.tv-mode .secondary-page button:focus")
+          && searchHotStyleText.includes("outline: 2px solid")
+          && searchHotStyleText.includes("box-shadow:")
+          && searchHotStyleText.includes("transform: scale(1.06)"),
+        "TV Secondary button focus visuals remain unchanged", "STATIC_HOOK");
       let searchHotReturnFixture = {
         snapshot: null,
         exact: null,

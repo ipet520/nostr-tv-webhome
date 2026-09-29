@@ -792,7 +792,10 @@
     #searchPageFormHost #searchInput { display: block !important; min-height: 48px; }
     #searchPageFormHost #searchSubmitBtn { position: static !important; min-height: 48px; }
     #searchPageResultsHost { width: 100%; min-width: 0; }
-    #searchPageResultsHost > #searchSection { margin-top: 0; }
+    #searchPageResultsHost > #searchSection {
+      margin-top: 0;
+      overflow: visible;
+    }
 
     #searchHotSection[hidden],
     #searchEmptyState[hidden] {
