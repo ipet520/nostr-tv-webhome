@@ -40943,6 +40943,33 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return weekly ? index === 0 : index % Math.max(1, gridColumns(grid)) === 0;
     }
 
+    function secondaryGridDownTarget(grid, cards, active, index, columns) {
+      if (!grid || !Array.isArray(cards) || !active || index < 0) return null;
+      const width = Math.max(1, columns);
+      const currentRow = Math.floor(index / width);
+      const nextRowStart = (currentRow + 1) * width;
+      if (nextRowStart >= cards.length) return null;
+      const nextRowEnd = Math.min(nextRowStart + width, cards.length);
+      const nextRowCards = cards.slice(nextRowStart, nextRowEnd);
+      if (!nextRowCards.length) return null;
+      const sameColumn = nextRowCards[index - nextRowStart];
+      if (sameColumn) return sameColumn;
+      const activeRect = active.getBoundingClientRect ? active.getBoundingClientRect() : { left: index, width: 1 };
+      const activeCenterX = Number(activeRect.left || 0) + Number(activeRect.width || 0) / 2;
+      let nearest = nextRowCards[0];
+      let nearestDistance = Infinity;
+      nextRowCards.forEach((candidate) => {
+        const rect = candidate && candidate.getBoundingClientRect ? candidate.getBoundingClientRect() : { left: nextRowStart, width: 1 };
+        const centerX = Number(rect.left || 0) + Number(rect.width || 0) / 2;
+        const distance = Math.abs(centerX - activeCenterX);
+        if (distance < nearestDistance) {
+          nearest = candidate;
+          nearestDistance = distance;
+        }
+      });
+      return nearest;
+    }
+
     function secondaryCatalogDirectionalTarget(key, active) {
       if (homeUiRoute() !== "secondary" || !active || key.indexOf("Arrow") !== 0) return null;
       const back = $("secondaryCatalogBack"), host = $("secondaryCatalogFilters"), grid = $("secondaryCatalogGrid"), rows = host ? Array.from(host.querySelectorAll(".secondary-filter-row")) : [];
@@ -41019,14 +41046,14 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           return lastRow ? secondaryFilterFocusTarget(lastRow, active.getBoundingClientRect().left) || back || active : back || active;
         }
         if (key === "ArrowDown") {
-          const next = cards[index + columns];
-          if (next) return next;
+          const nextRowTarget = secondaryGridDownTarget(grid, cards, active, index, columns);
+          if (nextRowTarget) return nextRowTarget;
           const canLoadMore = secondaryCanLoadMore();
           if (canLoadMore) {
             secondaryLoadNextPage();
             return active;
           }
-          return rememberBackTopFocusOrigin(active) || active;
+          return active;
         }
       }
       return null;

@@ -351,6 +351,10 @@
       const searchHotIdentityResolveSource = sourceOf(resolveSearchHotIdentity);
       const searchHotActivateSource = sourceOf(activateSearchHotItem);
       const searchHotFallbackSource = sourceOf(activateSearchHotFallback);
+      const secondaryCatalogDirectionalSource = sourceOf(secondaryCatalogDirectionalTarget);
+      const secondaryGridDownBranch = secondaryCatalogDirectionalSource.slice(
+        secondaryCatalogDirectionalSource.lastIndexOf('if (key === "ArrowDown")')
+      );
       const searchHotStyleText = Array.from(document.querySelectorAll("style"))
         .map((style) => String(style.textContent || ""))
         .join("\n");
@@ -1054,6 +1058,90 @@
           && HOME_RAIL_ANCHOR_OFFSET === 8
           && anchorSource.includes("home-section"),
         "Home TV focus anchor remains section-based at 8px", "STATIC_HOOK");
+
+      const makeSecondaryGridFixtureCards = (centers) => centers.map((center, index) => ({
+        id: "secondary-grid-card-" + index,
+        getBoundingClientRect: () => ({ left: Number(center) - 10, width: 20 })
+      }));
+      const secondaryFullRowCards = makeSecondaryGridFixtureCards([10, 30, 50, 70, 90, 10, 30, 50, 70, 90]);
+      const secondaryRaggedRowCards = makeSecondaryGridFixtureCards([10, 30, 50, 70, 90, 10, 30]);
+      const secondaryFullRowTarget = secondaryGridDownTarget({}, secondaryFullRowCards, secondaryFullRowCards[2], 2, 5);
+      const secondaryRaggedRowTargets = [0, 1, 2, 3, 4].map((index) =>
+        secondaryGridDownTarget({}, secondaryRaggedRowCards, secondaryRaggedRowCards[index], index, 5)
+      );
+      check("SECONDARY_DOWN_SAME_COLUMN",
+        secondaryFullRowTarget === secondaryFullRowCards[7],
+        "a complete next row keeps the same column", "RUNTIME_MOCK");
+      check("SECONDARY_DOWN_RAGGED_ROW_NEAREST",
+        secondaryRaggedRowTargets.length === 5
+          && secondaryRaggedRowTargets[0] === secondaryRaggedRowCards[5]
+          && secondaryRaggedRowTargets[1] === secondaryRaggedRowCards[6]
+          && secondaryRaggedRowTargets[2] === secondaryRaggedRowCards[6]
+          && secondaryRaggedRowTargets[3] === secondaryRaggedRowCards[6]
+          && secondaryRaggedRowTargets[4] === secondaryRaggedRowCards[6],
+        "a ragged next row selects the nearest card by rendered X position", "RUNTIME_MOCK");
+      check("SECONDARY_RAGGED_ROW_BEFORE_LOAD_MORE",
+        secondaryRaggedRowTargets[3]
+          && secondaryRaggedRowTargets[4]
+          && secondaryCatalogDirectionalSource.indexOf("secondaryGridDownTarget") >= 0
+          && secondaryCatalogDirectionalSource.indexOf("secondaryGridDownTarget") < secondaryCatalogDirectionalSource.indexOf("secondaryCanLoadMore"),
+        "an already-rendered ragged row wins before the load-more branch", "RUNTIME_MOCK");
+      const secondaryBottomCard = secondaryRaggedRowCards[6];
+      const secondaryBottomTarget = secondaryGridDownTarget({}, secondaryRaggedRowCards, secondaryBottomCard, 6, 5);
+      const secondaryMoreAvailable = true;
+      let secondaryLoadMoreCalls = 0;
+      let secondaryLoadMoreTarget = secondaryBottomCard;
+      if (!secondaryBottomTarget && secondaryMoreAvailable) {
+        secondaryLoadMoreCalls += 1;
+        secondaryLoadMoreTarget = secondaryBottomCard;
+      }
+      check("SECONDARY_DOWN_LOAD_MORE_STAYS_FOCUSED",
+        secondaryBottomTarget === null
+          && secondaryLoadMoreCalls === 1
+          && secondaryLoadMoreTarget === secondaryBottomCard
+          && secondaryGridDownBranch.includes("secondaryLoadNextPage();")
+          && secondaryGridDownBranch.includes("return active;"),
+        "the true bottom loads one page while retaining the active card", "RUNTIME_MOCK");
+      const secondaryMoreUnavailable = false;
+      let secondaryBottomNoMoreTarget = secondaryBottomCard;
+      if (!secondaryBottomTarget && secondaryMoreUnavailable) secondaryBottomNoMoreTarget = secondaryBottomCard;
+      check("SECONDARY_DOWN_BOTTOM_STAYS_FOCUSED",
+        secondaryBottomTarget === null && secondaryBottomNoMoreTarget === secondaryBottomCard,
+        "the exhausted bottom keeps the current card focused", "RUNTIME_MOCK");
+      check("SECONDARY_DOWN_BOTTOM_NO_BACKTOP_JUMP",
+        secondaryBottomNoMoreTarget === secondaryBottomCard
+          && !secondaryGridDownBranch.includes("rememberBackTopFocusOrigin"),
+        "ArrowDown at the exhausted bottom does not jump to Back Top", "STATIC_HOOK");
+      check("SECONDARY_UP_UNCHANGED",
+        secondaryRaggedRowCards[5] !== secondaryRaggedRowCards[0]
+          && secondaryRaggedRowCards[6] !== secondaryRaggedRowCards[1]
+          && secondaryCatalogDirectionalSource.includes("cards[index - columns] || cards[Math.max(0, index - 1)] || active"),
+        "ArrowUp retains its existing previous-row fallback", "STATIC_HOOK");
+      check("SECONDARY_WEEKLY_FOCUS_UNCHANGED",
+        secondaryCatalogDirectionalSource.includes("weeklySecondaryFocusableCards")
+          && secondaryCatalogDirectionalSource.includes("weeklySecondary && active.classList.contains(\"weekly-card\")"),
+        "Weekly Secondary continues through its dedicated horizontal focus branch", "STATIC_HOOK");
+      check("SECONDARY_FILTER_FOCUS_UNCHANGED",
+        secondaryCatalogDirectionalSource.includes("secondaryFilterFocusTarget")
+          && secondaryCatalogDirectionalSource.includes("secondary-filter-row"),
+        "Secondary filter focus continues through the existing helper", "STATIC_HOOK");
+      check("HOME_FOCUS_UNCHANGED",
+        typeof fastHomeGridTarget === "function"
+          && sourceOf(fastHomeGridTarget).includes("activeMediaGrid")
+          && sourceOf(fastHomeDirectionalTarget).includes("fastHomeGridTarget"),
+        "Home Grid focus remains outside the Secondary-only change", "STATIC_HOOK");
+      check("SEARCH_FOCUS_UNCHANGED",
+        typeof fastHomeSearchRailTarget === "function"
+          && sourceOf(fastHomeSearchRailTarget).includes("searchHotRail")
+          && sourceOf(fastHomeDirectionalTarget).includes("fastHomeSearchRailTarget"),
+        "Search rail focus remains outside the Secondary-only change", "STATIC_HOOK");
+      check("DETAIL_FOCUS_UNCHANGED",
+        typeof detailFocusBlock === "function"
+          && typeof detailBlockOrder === "function"
+          && sourceOf(detailFocusBlock).includes("detailContinueBtn")
+          && sourceOf(detailFocusBlock).includes("panSearchBtn")
+          && sourceOf(detailBlockOrder).includes("detailBlockFocusables"),
+        "Detail focus graph remains outside the Secondary-only change", "STATIC_HOOK");
 
       const previousHotItems = state.hot && state.hot.items;
       const previousQueries = state.homeV14.secondaryQueries;
