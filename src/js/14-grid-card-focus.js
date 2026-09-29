@@ -179,6 +179,7 @@
       grid.dataset.renderKeys = items.slice(0, end).map(mediaRenderKey).join("\n");
       updateBlockSelectUi();
       observeTvCardEnrichment(grid);
+      observeMovieCardEnrichment(grid);
     }
 
     function appendGridBatch(grid) {

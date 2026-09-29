@@ -1223,6 +1223,91 @@
           && sourceOf(fillRail).includes("observeTvCardEnrichment")
           && sourceOf(fillGrid).includes("observeTvCardEnrichment"),
         "existing TV episode enrichment remains on its original scheduler", "STATIC_HOOK");
+
+      const appendGridSource = sourceOf(appendGridItems);
+      const appendMovieHookSource = sourceOf(observeMovieCardEnrichment);
+      check("MOVIE_APPEND_GRID_ENRICHMENT_HOOK",
+        appendGridSource.includes("observeTvCardEnrichment(grid)")
+          && appendGridSource.includes("observeMovieCardEnrichment(grid)")
+          && appendMovieHookSource.includes("queueMovieCardReleaseEnrichment"),
+        "appended grid batches enter the existing movie near-viewport enrichment hook", "STATIC_HOOK");
+      check("TV_APPEND_GRID_ENRICHMENT_UNCHANGED",
+        (appendGridSource.match(/observeTvCardEnrichment\(grid\)/g) || []).length === 1
+          && appendGridSource.includes("observeTvCardEnrichment(grid)"),
+        "appended grid batches retain the existing TV enrichment hook", "STATIC_HOOK");
+
+      const previousGridRenderForAppend = state.gridRender;
+      const previousMovieRuntimeForAppend = state.movieDetail;
+      let appendFixtureGrid = null;
+      let appendObservedMovieCards = [];
+      let appendInitialEligible = 0;
+      let appendLazyEligible = false;
+      let appendLazyPlaceholder = false;
+      try {
+        const appendFixtureItems = Array.from({ length: 28 }, (_, index) => ({
+          mediaKey: "recommendation-append-fixture-" + index,
+          tmdbId: String(982000 + index),
+          source: "nostr-hot",
+          mediaType: "movie",
+          title: "Recommendation Append " + index,
+          pic: "https://example.invalid/append-poster-" + index,
+          releaseDate: ""
+        }));
+        appendFixtureItems[21] = Object.assign({}, appendFixtureItems[21], { source: "tmdb" });
+        appendFixtureItems[22] = Object.assign({}, appendFixtureItems[22], { mediaType: "tv" });
+        state.gridRender = {};
+        appendObservedMovieCards = [];
+        state.movieDetail = {
+          cache: {},
+          cardTasks: {},
+          cardQueue: [],
+          cardActive: 0,
+          observer: {
+            observe(card) { appendObservedMovieCards.push(card); },
+            unobserve() {}
+          }
+        };
+        appendFixtureGrid = document.createElement("div");
+        appendFixtureGrid.id = "recommendationAppendEnrichmentFixture";
+        appendFixtureGrid.className = "media-grid";
+        document.body.appendChild(appendFixtureGrid);
+        appendGridItems(appendFixtureGrid, appendFixtureItems, 18);
+        appendInitialEligible = appendFixtureGrid.querySelectorAll(".card-air-status").length;
+        appendGridItems(appendFixtureGrid, appendFixtureItems, 28);
+        const appendedMovieCard = appendFixtureGrid.children[20];
+        appendLazyEligible = !!appendedMovieCard && isNostrMovieReleaseStatusCard(appendedMovieCard);
+        const appendedMovieStatus = appendedMovieCard && appendedMovieCard.querySelector(".card-air-status");
+        appendLazyPlaceholder = !!appendedMovieStatus
+          && (appendedMovieStatus.hidden || appendedMovieStatus.classList.contains("hidden"));
+        const observedMovieItems = appendObservedMovieCards.map((card) => card && card.__mediaItem).filter(Boolean);
+        check("MOVIE_INITIAL_GRID_ENRICHMENT",
+          appendFixtureGrid.children.length >= 18 && appendInitialEligible === 18,
+          "the initial Recommendation batch creates eligible movie status placeholders", "RUNTIME_MOCK");
+        check("MOVIE_LAZY_APPEND_ENRICHMENT",
+          appendFixtureGrid.children.length === 28
+            && appendLazyEligible
+            && appendLazyPlaceholder
+            && appendObservedMovieCards.indexOf(appendedMovieCard) >= 0,
+          "a later Recommendation batch is observed for movie release enrichment", "RUNTIME_MOCK");
+        check("MOVIE_APPEND_SCOPE_NOSTR_ONLY",
+          observedMovieItems.length > 0
+            && observedMovieItems.every((item) => item.source === "nostr-hot"
+              && String(item.mediaType || item.media_type || "").toLowerCase() === "movie"),
+          "the appended movie hook observes only eligible Nostr movie cards", "RUNTIME_MOCK");
+      } catch (error) {
+        check("MOVIE_INITIAL_GRID_ENRICHMENT", false, String(error && error.message || error || "unknown"), "RUNTIME_MOCK");
+        check("MOVIE_LAZY_APPEND_ENRICHMENT", false, String(error && error.message || error || "unknown"), "RUNTIME_MOCK");
+        check("MOVIE_APPEND_SCOPE_NOSTR_ONLY", false, String(error && error.message || error || "unknown"), "RUNTIME_MOCK");
+      } finally {
+        if (appendFixtureGrid && appendFixtureGrid.parentNode) appendFixtureGrid.parentNode.removeChild(appendFixtureGrid);
+        state.gridRender = previousGridRenderForAppend;
+        state.movieDetail = previousMovieRuntimeForAppend;
+      }
+      check("MOVIE_APPEND_NO_EAGER_TOP1000",
+        !appendGridSource.includes("requestMovieDetailShared")
+          && appendGridSource.includes("observeMovieCardEnrichment(grid)")
+          && movieObserveSource.includes("rootMargin"),
+        "appended batches use the bounded near-viewport hook instead of eager pool detail requests", "STATIC_HOOK");
       check("PLAYBACK_AUTHORITY_MARKERS_PRESERVED",
         hasAll(sourceOf(prepareDetailPlaybackForDetail) + sourceOf(tryCommitDetailProvider) + sourceOf(detailRaceLaneTerminal),
           ["History", "Curated", "Direct"])
