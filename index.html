@@ -6616,6 +6616,14 @@
       box-shadow: none !important;
     }
 
+    html.tv-mode .secondary-page #searchHistoryRail button.search-history-item:focus:not(.card):not(.person-card),
+    html.tv-preview .secondary-page #searchHistoryRail button.search-history-item:focus:not(.card):not(.person-card) {
+      transform: none !important;
+      outline: 2px solid rgba(120, 210, 255, .95) !important;
+      outline-offset: -2px !important;
+      box-shadow: none !important;
+    }
+
     html.tv-mode .card:focus,
     html.tv-mode .person-card:focus,
     html.tv-preview .card:focus,
@@ -6641,6 +6649,10 @@
     }
 
     .search-history-clear-top {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
       max-width: none;
       min-height: 40px;
     }
@@ -6656,6 +6668,11 @@
 
     #searchPageFormHost #connectionDock { display: none !important; }
     #searchPageFormHost #searchInput { display: block !important; min-height: 48px; }
+    html.tv-mode #searchInput::-webkit-search-cancel-button,
+    html.tv-preview #searchInput::-webkit-search-cancel-button {
+      display: none;
+      -webkit-appearance: none;
+    }
     #searchPageFormHost #searchSubmitBtn { position: static !important; min-height: 48px; }
     #searchPageResultsHost { width: 100%; min-width: 0; }
     #searchPageResultsHost > #searchSection {

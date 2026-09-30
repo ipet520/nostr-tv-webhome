@@ -402,6 +402,184 @@
           && searchHotStyleText.includes("box-shadow:")
           && searchHotStyleText.includes("transform: scale(1.06)"),
         "TV Secondary button focus visuals remain unchanged", "STATIC_HOOK");
+      const searchHistoryClearTopStyleMatch = searchHotStyleText.match(/\.search-history-clear-top\s*\{[^}]*\}/);
+      const searchHistoryClearTopStyle = searchHistoryClearTopStyleMatch ? searchHistoryClearTopStyleMatch[0] : "";
+      const searchHistoryClearStyleMatch = searchHotStyleText.match(/\.search-history-clear\s*\{[^}]*\}/);
+      const searchHistoryClearStyle = searchHistoryClearStyleMatch ? searchHistoryClearStyleMatch[0] : "";
+      const searchHistoryRailStyleMatch = searchHotStyleText.match(/#searchHistoryRail\s*\{[^}]*\}/);
+      const searchHistoryRailStyle = searchHistoryRailStyleMatch ? searchHistoryRailStyleMatch[0] : "";
+      const searchHistoryItemFocusStyleMatch = searchHotStyleText.match(/\.search-history-item:focus,\s*\.search-history-clear:focus\s*\{[^}]*\}/);
+      const searchHistoryItemFocusStyle = searchHistoryItemFocusStyleMatch ? searchHistoryItemFocusStyleMatch[0] : "";
+      const searchHistoryFocusSelector = "html.tv-mode .secondary-page #searchHistoryRail button.search-history-item:focus:not(.card):not(.person-card)";
+      const searchHistoryFocusOverrideStart = searchHotStyleText.indexOf(searchHistoryFocusSelector);
+      const searchHistoryFocusOverrideEnd = searchHistoryFocusOverrideStart >= 0
+        ? searchHotStyleText.indexOf("html.tv-mode .card:focus", searchHistoryFocusOverrideStart)
+        : -1;
+      const searchHistoryFocusOverride = searchHistoryFocusOverrideStart >= 0 && searchHistoryFocusOverrideEnd > searchHistoryFocusOverrideStart
+        ? searchHotStyleText.slice(searchHistoryFocusOverrideStart, searchHistoryFocusOverrideEnd)
+        : "";
+      const searchInputCancelLines = searchHotStyleText.split("\n")
+        .filter((line) => line.includes("#searchInput::-webkit-search-cancel-button"));
+      const searchInputCancelIsUnscoped = searchInputCancelLines.some((line) =>
+        line.trim().startsWith("#searchInput::-webkit-search-cancel-button"));
+      check("SEARCH_HISTORY_CLEAR_TEXT_CENTERED",
+        searchHistoryClearTopStyle.includes("display: inline-flex")
+          && searchHistoryClearTopStyle.includes("align-items: center")
+          && searchHistoryClearTopStyle.includes("justify-content: center")
+          && searchHistoryClearTopStyle.includes("text-align: center"),
+        "Search History clear text uses an explicitly centered inline-flex button", "STATIC_HOOK");
+      check("SEARCH_HISTORY_CLEAR_WIDTH_UNCHANGED",
+        searchHistoryClearStyle.includes("min-width: 104px")
+          && searchHistoryClearTopStyle.includes("max-width: none")
+          && searchHistoryClearTopStyle.includes("min-height: 40px"),
+        "Search History clear button width and height constraints remain unchanged", "STATIC_HOOK");
+      check("SEARCH_HISTORY_ITEM_FOCUS_INTERNAL_OUTLINE",
+        searchHistoryFocusOverride.includes("outline: 2px solid rgba(120, 210, 255, .95) !important")
+          && searchHistoryFocusOverride.includes("outline-offset: -2px !important"),
+        "TV Search History focus uses an internal two-pixel outline", "STATIC_HOOK");
+      check("SEARCH_HISTORY_ITEM_FOCUS_NO_SCALE",
+        searchHistoryFocusOverride.includes("transform: none !important"),
+        "TV Search History focus does not scale the history item", "STATIC_HOOK");
+      check("SEARCH_HISTORY_ITEM_FOCUS_NO_EXTERNAL_GLOW",
+        searchHistoryFocusOverride.includes("box-shadow: none !important"),
+        "TV Search History focus does not paint an external glow", "STATIC_HOOK");
+      check("SEARCH_HISTORY_RAIL_LAYOUT_UNCHANGED",
+        searchHistoryRailStyle.includes("gap: 10px")
+          && searchHistoryRailStyle.includes("padding: 2px 0 14px !important")
+          && searchHistoryRailStyle.includes("scroll-padding-inline: 0"),
+        "Search History rail gap, padding, and scroll padding remain unchanged", "STATIC_HOOK");
+      check("SEARCH_HISTORY_FOCUS_FILL_UNCHANGED",
+        searchHistoryItemFocusStyle.includes("background: rgba(191, 233, 255, .16)")
+          && searchHistoryItemFocusStyle.includes("color: #fff")
+          && !searchHistoryFocusOverride.includes("background:")
+          && !searchHistoryFocusOverride.includes("border-color:")
+          && !searchHistoryFocusOverride.includes("color:"),
+        "Search History focus keeps its existing fill and text-color authority", "STATIC_HOOK");
+      check("SEARCH_INPUT_TV_NATIVE_CANCEL_HIDDEN",
+        searchHotStyleText.includes("html.tv-mode #searchInput::-webkit-search-cancel-button")
+          && searchHotStyleText.includes("display: none")
+          && searchHotStyleText.includes("-webkit-appearance: none"),
+        "TV mode hides the native search cancel affordance", "STATIC_HOOK");
+      check("SEARCH_INPUT_TV_PREVIEW_NATIVE_CANCEL_HIDDEN",
+        searchHotStyleText.includes("html.tv-preview #searchInput::-webkit-search-cancel-button")
+          && searchHotStyleText.includes("display: none")
+          && searchHotStyleText.includes("-webkit-appearance: none"),
+        "TV Preview hides the native search cancel affordance", "STATIC_HOOK");
+      check("SEARCH_INPUT_TYPE_SEARCH_UNCHANGED",
+        !!$("searchInput") && String($("searchInput").type || "").toLowerCase() === "search",
+        "Search input remains a native type=search control", "DOM_ASSERTION");
+      check("SEARCH_INPUT_NON_TV_CANCEL_UNCHANGED",
+        searchInputCancelLines.length === 2
+          && searchInputCancelLines.every((line) => line.trim().startsWith("html.tv-mode") || line.trim().startsWith("html.tv-preview"))
+          && !searchInputCancelIsUnscoped,
+        "Native search cancel behavior remains unmodified outside TV and TV Preview", "STATIC_HOOK");
+      check("SEARCH_HISTORY_NAVIGATION_UNCHANGED",
+        typeof renderSearchHistory === "function"
+          && typeof activateSearchHistoryItem === "function"
+          && sourceOf(renderSearchHistory).includes("searchHistoryRail")
+          && sourceOf(renderSearchHistory).includes("activateSearchHistoryItem")
+          && sourceOf(activateSearchHistoryItem).includes("searchTmdb"),
+        "Search History rendering and activation remain on the existing navigation path", "STATIC_HOOK");
+      check("SEARCH_CLEAR_BUSINESS_LOGIC_UNCHANGED",
+        typeof clearSearchHistory === "function"
+          && sourceOf(clearSearchHistory).includes("SEARCH_HISTORY_STORAGE_KEY")
+          && sourceOf(clearSearchHistory).includes("renderSearchHistory")
+          && sourceOf(clearSearchHistory).includes("focusRemoteTarget"),
+        "Search History clearing keeps its existing storage, render, and focus behavior", "STATIC_HOOK");
+
+      const previousSearchDocumentClassName = document.documentElement.className;
+      const previousSearchFocus = document.activeElement;
+      let searchHistoryFixture = null;
+      try {
+        searchHistoryFixture = document.createElement("section");
+        searchHistoryFixture.className = "secondary-page search-page";
+        searchHistoryFixture.innerHTML = '<div class="secondary-page-head"><button class="search-history-clear search-history-clear-top">清空历史</button></div><div class="home-rail rail search-history-rail" id="searchHistoryRail"><button class="search-history-item focusable">历史 A</button></div>';
+        document.body.appendChild(searchHistoryFixture);
+        const clearButton = searchHistoryFixture.querySelector(".search-history-clear-top");
+        const historyRail = searchHistoryFixture.querySelector("#searchHistoryRail");
+        const historyItem = searchHistoryFixture.querySelector(".search-history-item");
+        const readSearchClearStyle = (style) => ({
+          display: style.display,
+          alignItems: style.alignItems,
+          justifyContent: style.justifyContent,
+          textAlign: style.textAlign,
+          minWidth: style.minWidth
+        });
+        const readSearchHistoryFocusStyle = (style) => ({
+          transform: style.transform,
+          outlineWidth: style.outlineWidth,
+          outlineOffset: style.outlineOffset,
+          boxShadow: style.boxShadow,
+          backgroundColor: style.backgroundColor,
+          color: style.color
+        });
+        const clearButtonStyle = readSearchClearStyle(getComputedStyle(clearButton));
+        const historyRailStyle = getComputedStyle(historyRail);
+        const historyRailSnapshot = {
+          gap: historyRailStyle.gap,
+          overflowX: historyRailStyle.overflowX,
+          paddingTop: historyRailStyle.paddingTop,
+          paddingRight: historyRailStyle.paddingRight,
+          paddingBottom: historyRailStyle.paddingBottom,
+          paddingLeft: historyRailStyle.paddingLeft,
+          scrollPaddingInline: historyRailStyle.scrollPaddingInline
+        };
+        document.documentElement.className = "tv-mode";
+        historyItem.focus();
+        const historyTvStyle = readSearchHistoryFocusStyle(getComputedStyle(historyItem));
+        document.documentElement.className = "tv-preview";
+        historyItem.focus();
+        const historyPreviewStyle = readSearchHistoryFocusStyle(getComputedStyle(historyItem));
+        const identityTransform = (value) => value === "none" || value === "matrix(1, 0, 0, 1, 0, 0)";
+        const noExternalShadow = (value) => value === "none" || value === "none none";
+        check("SEARCH_HISTORY_CLEAR_TEXT_CENTERED_DOM",
+          clearButtonStyle.display === "inline-flex"
+            && clearButtonStyle.alignItems === "center"
+            && clearButtonStyle.justifyContent === "center"
+            && clearButtonStyle.textAlign === "center",
+          "computed Search History clear text alignment is centered", "DOM_ASSERTION");
+        check("SEARCH_HISTORY_CLEAR_WIDTH_UNCHANGED_DOM",
+          clearButtonStyle.minWidth === "104px",
+          "computed Search History clear button width remains 104px", "DOM_ASSERTION");
+        check("SEARCH_HISTORY_ITEM_FOCUS_INTERNAL_OUTLINE_DOM",
+          historyTvStyle.outlineWidth === "2px"
+            && historyTvStyle.outlineOffset === "-2px"
+            && historyPreviewStyle.outlineWidth === "2px"
+            && historyPreviewStyle.outlineOffset === "-2px",
+          "TV and TV Preview computed Search History outlines stay inside the item", "DOM_ASSERTION");
+        check("SEARCH_HISTORY_ITEM_FOCUS_NO_SCALE_DOM",
+          identityTransform(historyTvStyle.transform) && identityTransform(historyPreviewStyle.transform),
+          "TV and TV Preview computed Search History transforms are identity", "DOM_ASSERTION");
+        check("SEARCH_HISTORY_ITEM_FOCUS_NO_EXTERNAL_GLOW_DOM",
+          noExternalShadow(historyTvStyle.boxShadow) && noExternalShadow(historyPreviewStyle.boxShadow),
+          "TV and TV Preview computed Search History shadows are none", "DOM_ASSERTION");
+        check("SEARCH_HISTORY_RAIL_LAYOUT_UNCHANGED_DOM",
+          historyRailSnapshot.gap === "10px"
+            && historyRailSnapshot.overflowX === "auto"
+            && historyRailSnapshot.paddingTop === "2px"
+            && historyRailSnapshot.paddingBottom === "14px"
+            && historyRailSnapshot.scrollPaddingInline === "0px",
+          "computed Search History rail layout remains unchanged", "DOM_ASSERTION");
+        check("SEARCH_HISTORY_FOCUS_FILL_UNCHANGED_DOM",
+          historyTvStyle.backgroundColor !== "rgba(0, 0, 0, 0)"
+            && historyPreviewStyle.backgroundColor !== "rgba(0, 0, 0, 0)"
+            && historyTvStyle.color !== "rgba(0, 0, 0, 0)"
+            && historyPreviewStyle.color !== "rgba(0, 0, 0, 0)",
+          "computed Search History focus retains a visible fill and text color", "DOM_ASSERTION");
+      } catch (error) {
+        const detail = String(error && error.message || error || "unknown");
+        check("SEARCH_HISTORY_CLEAR_TEXT_CENTERED_DOM", false, detail, "DOM_ASSERTION");
+        check("SEARCH_HISTORY_CLEAR_WIDTH_UNCHANGED_DOM", false, detail, "DOM_ASSERTION");
+        check("SEARCH_HISTORY_ITEM_FOCUS_INTERNAL_OUTLINE_DOM", false, detail, "DOM_ASSERTION");
+        check("SEARCH_HISTORY_ITEM_FOCUS_NO_SCALE_DOM", false, detail, "DOM_ASSERTION");
+        check("SEARCH_HISTORY_ITEM_FOCUS_NO_EXTERNAL_GLOW_DOM", false, detail, "DOM_ASSERTION");
+        check("SEARCH_HISTORY_RAIL_LAYOUT_UNCHANGED_DOM", false, detail, "DOM_ASSERTION");
+        check("SEARCH_HISTORY_FOCUS_FILL_UNCHANGED_DOM", false, detail, "DOM_ASSERTION");
+      } finally {
+        if (searchHistoryFixture && searchHistoryFixture.parentNode) searchHistoryFixture.parentNode.removeChild(searchHistoryFixture);
+        document.documentElement.className = previousSearchDocumentClassName;
+        if (previousSearchFocus && previousSearchFocus.focus) previousSearchFocus.focus();
+      }
       const secondaryFilterFocusSelector = "html.tv-mode .secondary-page button.secondary-filter-option:focus:not(.card):not(.person-card)";
       const secondaryFilterFocusOverrideStart = searchHotStyleText.indexOf(secondaryFilterFocusSelector);
       const secondaryFilterFocusOverrideEnd = secondaryFilterFocusOverrideStart >= 0
