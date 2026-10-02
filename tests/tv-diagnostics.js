@@ -76,6 +76,152 @@
       ].join("\n");
       const home = $("home");
 
+      const styleText = Array.from(document.querySelectorAll("style"))
+        .map((style) => String(style.textContent || ""))
+        .join("\n");
+      const cssRuleText = (selector) => {
+        const escaped = String(selector).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const match = styleText.match(new RegExp(escaped + "\\s*\\{([^}]*)\\}", "m"));
+        return match ? match[1] : "";
+      };
+      const compactCss = (value) => String(value || "").replace(/\s+/g, " ");
+      const syncSheetCss = compactCss(cssRuleText("#syncSheet"));
+      const syncPanelCss = compactCss(cssRuleText("#syncSheet .sync-panel"));
+      const sheetCss = compactCss(cssRuleText(".sheet"));
+      const returnControlCss = compactCss(cssRuleText(".return-control"));
+      const syncMobileCss = /@media\s*\(max-width:\s*719px\)[\s\S]*?#syncSheet\s+\.sync-panel\s*\{[\s\S]*?max-width:\s*100%[\s\S]*?\}/.test(styleText);
+      const syncTvCss = /html\.tv-mode\s+#syncSheet\s+\.sync-panel,[\s\S]*?html\.tv-preview\s+#syncSheet\s+\.sync-panel\s*\{[\s\S]*?width:\s*calc\(100%\s*-\s*96px\)[\s\S]*?max-width:\s*760px/.test(styleText);
+      const syncSheet = $("syncSheet");
+      const syncPanel = syncSheet && syncSheet.querySelector(".sync-panel");
+      const closeSyncBtn = $("closeSyncBtn");
+
+      check("SYNC_SHEET_DEDICATED_BACKGROUND",
+        syncSheetCss.includes("background: rgba(6, 10, 16, .94);")
+          && syncSheetCss.includes("-webkit-backdrop-filter: none;")
+          && syncSheetCss.includes("backdrop-filter: none;"),
+        "#syncSheet owns an opaque dark layer without relying on backdrop-filter", "STATIC_HOOK");
+      check("SYNC_SHEET_GLOBAL_SHEET_UNCHANGED",
+        sheetCss.includes("background: transparent;")
+          && sheetCss.includes("-webkit-backdrop-filter: none;")
+          && sheetCss.includes("backdrop-filter: none;"),
+        "the shared .sheet transparency contract remains unchanged", "STATIC_HOOK");
+      check("SYNC_PANEL_SOLID_CARD",
+        syncPanelCss.includes("background: rgba(18, 25, 34, .98);")
+          && syncPanelCss.includes("border: 1px solid rgba(255, 255, 255, .12);")
+          && syncPanelCss.includes("border-radius: 14px;")
+          && syncPanelCss.includes("padding: 28px 30px;"),
+        "the Sync panel is a bounded solid card with a restrained border and radius", "STATIC_HOOK");
+      check("SYNC_PANEL_CENTERED",
+        syncPanelCss.includes("margin: 28px auto 0;"),
+        "the Sync card uses an auto-centered horizontal margin", "STATIC_HOOK");
+      check("SYNC_PANEL_WIDTH_BOUNDED",
+        syncPanelCss.includes("width: 100%;")
+          && syncPanelCss.includes("max-width: 760px;")
+          && syncTvCss,
+        "the Sync card is width-bounded and keeps a TV-safe horizontal gutter", "STATIC_HOOK");
+      check("SYNC_PANEL_MOBILE_SAFE",
+        syncMobileCss
+          && syncPanelCss.includes("max-width: 760px;"),
+        "the small-screen override restores a full available width and compact padding", "STATIC_HOOK");
+      check("SYNC_RETURN_CONTROL_UNCHANGED",
+        returnControlCss.includes("width: 44px !important;")
+          && returnControlCss.includes("height: 44px !important;")
+          && styleText.includes("#closeSyncBtn.return-control")
+          && !!closeSyncBtn
+          && closeSyncBtn.parentElement === syncSheet,
+        "the existing return-control contract remains independent of the card", "STATIC_HOOK");
+      const detailSyncColorLeak = (styleText.match(/#detailSheet[^{]*\{[^}]*\}/g) || [])
+        .some((block) => block.includes("rgba(6, 10, 16, .94)"));
+      check("DETAIL_SHEET_TRANSPARENCY_UNCHANGED",
+        !detailSyncColorLeak
+          && styleText.includes(".detail-hero-bg")
+          && styleText.includes(".sheet-blur-layer"),
+        "the Detail sheet keeps its existing immersive hero and blur-layer authorities", "STATIC_HOOK");
+      check("SYNC_IDENTITY_BUSINESS_LOGIC_UNCHANGED",
+        typeof openSync === "function"
+          && typeof closeSync === "function"
+          && typeof setIdentity === "function"
+          && hasAll(sourceOf(openSync), ["ensureSheetViewport", "history.pushState", "focusRemoteTarget"])
+          && hasAll(sourceOf(closeSync), ["sheet.classList.remove(\"active\")", "history.back"])
+          && hasAll(sourceOf(setIdentity), ["NostrTools.nip19.decode", "state.identity", "hotLoadMyVector"]),
+        "Sync open/close and identity import authorities remain on the existing JS path", "STATIC_HOOK");
+
+      const previousSyncClassName = syncSheet && syncSheet.className;
+      const previousSyncStyle = syncSheet && syncSheet.getAttribute("style");
+      const previousSyncAriaHidden = syncSheet && syncSheet.getAttribute("aria-hidden");
+      let syncComputed = null;
+      let syncPanelComputed = null;
+      let syncPanelRect = null;
+      try {
+        if (syncSheet) syncSheet.classList.add("active");
+        if (syncSheet) syncSheet.style.display = "block";
+        syncComputed = syncSheet ? getComputedStyle(syncSheet) : null;
+        syncPanelComputed = syncPanel ? getComputedStyle(syncPanel) : null;
+        syncPanelRect = syncPanel ? syncPanel.getBoundingClientRect() : null;
+        const viewportWidth = Number(window.innerWidth || document.documentElement.clientWidth || 0);
+        const panelWidth = syncPanelRect ? Number(syncPanelRect.width || 0) : 0;
+        const panelCenter = syncPanelRect ? (Number(syncPanelRect.left || 0) + Number(syncPanelRect.right || 0)) / 2 : 0;
+        const sheetContentCenter = syncSheet
+          ? Number(syncSheet.clientWidth || viewportWidth) / 2
+          : viewportWidth / 2;
+        const panelPadding = syncPanelComputed
+          ? Number.parseFloat(syncPanelComputed.paddingTop || 0) + Number.parseFloat(syncPanelComputed.paddingRight || 0)
+          : 0;
+        check("SYNC_SHEET_BACKGROUND_DOM",
+          !!syncComputed
+            && syncComputed.backgroundColor !== "rgba(0, 0, 0, 0)"
+            && syncComputed.backgroundColor !== "transparent"
+            && syncComputed.backdropFilter === "none",
+          "computed Sync sheet background is non-transparent and does not require blur", "DOM_ASSERTION");
+        check("SYNC_PANEL_SOLID_CARD_DOM",
+          !!syncPanelComputed
+            && syncPanelComputed.backgroundColor !== "rgba(0, 0, 0, 0)"
+            && syncPanelComputed.backgroundColor !== "transparent"
+            && Number.parseFloat(syncPanelComputed.borderTopWidth || 0) > 0
+            && Number.parseFloat(syncPanelComputed.borderRadius || 0) > 0,
+          "computed Sync panel surface, border, and radius are present", "DOM_ASSERTION");
+        check("SYNC_PANEL_CENTERED_DOM",
+          !!syncPanelRect
+            && viewportWidth > 0
+            && Math.abs(panelCenter - sheetContentCenter) <= 2,
+          "computed Sync panel bounds are centered in the available sheet content box", "DOM_ASSERTION");
+        check("SYNC_PANEL_WIDTH_BOUNDED_DOM",
+          !!syncPanelRect
+            && panelWidth > 0
+            && panelWidth <= viewportWidth + 1
+            && !!syncPanelComputed
+            && syncPanelComputed.maxWidth !== "none",
+          "computed Sync panel width stays within the viewport and has a max-width", "DOM_ASSERTION");
+        check("SYNC_PANEL_RADIUS_PADDING_DOM",
+          !!syncPanelComputed
+            && Number.parseFloat(syncPanelComputed.borderRadius || 0) > 0
+            && panelPadding > 0,
+          "computed Sync panel radius and padding are positive", "DOM_ASSERTION");
+        check("SYNC_RETURN_CONTROL_DOM",
+          !!closeSyncBtn
+            && closeSyncBtn.parentElement === syncSheet
+            && closeSyncBtn !== syncPanel
+            && !!syncPanelRect
+            && closeSyncBtn.getBoundingClientRect().top <= syncPanelRect.top + 1,
+          "computed return control remains a separate upper-left control", "DOM_ASSERTION");
+      } catch (error) {
+        const detail = String(error && error.message || error || "unknown");
+        check("SYNC_SHEET_BACKGROUND_DOM", false, detail, "DOM_ASSERTION");
+        check("SYNC_PANEL_SOLID_CARD_DOM", false, detail, "DOM_ASSERTION");
+        check("SYNC_PANEL_CENTERED_DOM", false, detail, "DOM_ASSERTION");
+        check("SYNC_PANEL_WIDTH_BOUNDED_DOM", false, detail, "DOM_ASSERTION");
+        check("SYNC_PANEL_RADIUS_PADDING_DOM", false, detail, "DOM_ASSERTION");
+        check("SYNC_RETURN_CONTROL_DOM", false, detail, "DOM_ASSERTION");
+      } finally {
+        if (syncSheet) {
+          syncSheet.className = previousSyncClassName || "";
+          if (previousSyncStyle == null) syncSheet.removeAttribute("style");
+          else syncSheet.setAttribute("style", previousSyncStyle);
+          if (previousSyncAriaHidden == null) syncSheet.removeAttribute("aria-hidden");
+          else syncSheet.setAttribute("aria-hidden", previousSyncAriaHidden);
+        }
+      }
+
       check("HOME_LEGACY_HEADER_REMOVED",
         document.querySelectorAll("#homeHeader, #homeHeaderInner, #homeIndependentNav, #chips, #homeToolbar").length === 0,
         "legacy Home header nodes are absent", "DOM_ASSERTION");

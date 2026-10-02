@@ -1193,6 +1193,41 @@
       padding: max(16px, var(--safe-t)) var(--sheet-x) calc(22px + max(var(--fm-safe-bottom, 0px), env(safe-area-inset-bottom, 0px)));
     }
 
+    /* Nostr 同步身份是实体设置面板；只在专属 sheet 上恢复遮罩和卡片层级，
+       不改变全局透明 sheet，也不干扰详情页沉浸式背景。 */
+    #syncSheet {
+      background: rgba(6, 10, 16, .94);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+
+    #syncSheet .sync-panel {
+      width: 100%;
+      max-width: 760px;
+      margin: 28px auto 0;
+      padding: 28px 30px;
+      box-sizing: border-box;
+      border: 1px solid rgba(255, 255, 255, .12);
+      border-radius: 14px;
+      background: rgba(18, 25, 34, .98);
+      box-shadow: 0 18px 56px rgba(0, 0, 0, .34);
+    }
+
+    html.tv-mode #syncSheet .sync-panel,
+    html.tv-preview #syncSheet .sync-panel {
+      width: calc(100% - 96px);
+      max-width: 760px;
+    }
+
+    @media (max-width: 719px) {
+      #syncSheet .sync-panel {
+        width: 100%;
+        max-width: 100%;
+        margin-top: 20px;
+        padding: 20px 18px;
+      }
+    }
+
     /* 同 .app：旧内核解析不了 max()/env() 会整条 padding 声明失效，通用面板贴边。
        只用 calc()+var() 兜底，不影响支持这些函数的正常内核。 */
     html.no-css-functions .sheet {
