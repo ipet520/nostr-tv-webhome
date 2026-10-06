@@ -273,7 +273,7 @@
 
     /* Mobile Secondary filters stay in normal flow: one full-width group per row,
        with each group's chips wrapping instead of shrinking or becoming a scroller. */
-    @media (max-width: 719px) {
+    @media (pointer: coarse), (max-width: 719px) {
       html:not(.tv-mode):not(.tv-preview) .secondary-catalog-filters {
         display: flex;
         flex-direction: column;

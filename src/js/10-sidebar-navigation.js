@@ -138,7 +138,8 @@
         const sameSecondary = action.type === "secondary"
           && homeUiRoute() === "secondary"
           && currentListId === targetListId;
-        if (!sameSecondary && home.sidebarOpen && isSidebarRouteActive()) {
+        // Native Live returns to this open Sidebar; keep its saved Home target.
+        if (action.type !== "live" && !sameSecondary && home.sidebarOpen && isSidebarRouteActive()) {
           home.sidebarReturnInvalidated = true;
           home.sidebarReturnTarget = null;
           home.sidebarReturnFocus = null;
