@@ -358,14 +358,14 @@
       const tmdbId = String(candidate && candidate.tmdbId || "").trim();
       if (!candidate || !tmdbId || (mediaType !== "movie" && mediaType !== "tv") || candidate.heroDetailEnriched) return candidate;
       const detail = mediaType === "tv"
-        ? await requestTvDetailShared({ mediaType: "tv", tmdbId })
-        : await requestJson(tmdbUrl({
+        ? await requestTvDetailShared({ mediaType: "tv", tmdbId }, homeEnrichmentRequest)
+        : await homeRequestJson(tmdbUrl({
           id: "home-hero-detail",
           title: "首页 Hero",
           endpoint: mediaType + "/" + encodeURIComponent(tmdbId),
           mediaType,
           params: { language: "zh-CN", append_to_response: "images" }
-        }), 18);
+        }), 18, "enrichment");
       const heroRaw = candidate.heroRaw && typeof candidate.heroRaw === "object" ? candidate.heroRaw : {};
       const localizedBase = Object.assign({}, heroRaw);
       if (mediaType === "tv") {
@@ -445,18 +445,29 @@
           { kind: "tmdb-movie-now-playing", endpoint: "movie/now_playing", mediaType: "movie" },
           { kind: "tmdb-tv-on-the-air", endpoint: "tv/on_the_air", mediaType: "tv" }
         ];
-        const responses = await Promise.all(sources.map((sourceItem) => requestJson(tmdbUrl({
+        let provisionalRendered = !!feed.items.length;
+        await Promise.all(sources.map((sourceItem) => homeRequestJson(tmdbUrl({
           id: "home-hero-source", title: "首页 Hero", endpoint: sourceItem.endpoint, mediaType: sourceItem.mediaType,
           params: { language: "zh-CN" }
-        }), 18).then((body) => ({ source: sourceItem, body: body || {}, ok: true })).catch((error) => ({ source: sourceItem, body: null, ok: false, error }))));
-        if (!runCurrent()) return feed;
-        responses.forEach((result) => {
-          const sourceItem = result.source;
+        }), 18, "foreground").then((body) => ({ source: sourceItem, body: body || {}, ok: true })).catch((error) => ({ source: sourceItem, body: null, ok: false, error })).then((result) => {
+          if (!runCurrent()) return result;
           const values = result.ok && result.body && Array.isArray(result.body.results) ? result.body.results : [];
-          sourceStats[sourceItem.kind] = values.length;
+          sourceStats[result.source.kind] = values.length;
           if (result.ok) successCount += 1;
-          values.forEach((raw, index) => homeHeroMergeCandidate(candidates, homeHeroNormalizeSourceItem(raw, sourceItem, index)));
-        });
+          values.forEach((raw, index) => homeHeroMergeCandidate(candidates, homeHeroNormalizeSourceItem(raw, result.source, index)));
+          if (!provisionalRendered && candidates.size) {
+            const renderable = Array.from(candidates.values()).filter((candidate) => homeHeroIsTmdbCandidate(candidate)
+              && (candidate.pic || candidate.landscape || candidate.image));
+            const provisional = homeHeroSelect(renderable, HOME_HERO_FINAL_LIMIT);
+            if (provisional.length) {
+              feed.items = provisional;
+              provisionalRendered = true;
+              if (isHomeRouteActive()) renderHomeHero();
+            }
+          }
+          return result;
+        })));
+        if (!runCurrent()) return feed;
         if (state.homeLatest && state.homeLatest.loaded) {
           const weeklyItems = filterBlocked(state.homeLatest.items || []).slice(0, 12);
           weeklyItems.forEach((item) => homeHeroMergeCandidate(candidates, Object.assign({}, item, { heroSourceKinds: ["weekly-feed"], heroRaw: item.weeklyDetail || item })));
@@ -936,6 +947,10 @@
         return dot;
       }));
       updateHomeHeroPresentation(item);
+      const home = state.homeV14;
+      if (item && home && home.firstHeroReadyMs == null && Number(home.coldStartAt || 0) > 0) {
+        home.firstHeroReadyMs = Math.max(0, Date.now() - Number(home.coldStartAt));
+      }
       focusColdHomeHeroIfReady();
       scheduleHomeHeroAutoplay();
       ensureHomeHeroFeed();

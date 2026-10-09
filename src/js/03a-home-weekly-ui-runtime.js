@@ -475,6 +475,7 @@
       publishHomeWeeklySnapshot("cache", { refreshing: !!latest.loading });
       if (isHomeRouteActive()) {
         renderHomeWeekly();
+        recordHomeV14Diag();
       }
       return true;
     }
@@ -517,11 +518,14 @@
       if (!weekChanged && !latest.loadedAt && latest.loaded && latest.lastRefreshAt > 0 && ageFromAttempt < HOME_WEEKLY_REFRESH_TTL_MS) return latest;
       if (!weekChanged && !latest.networkRefreshSucceeded && latest.loaded && latest.lastRefreshAt > 0 && ageFromAttempt < HOME_WEEKLY_REFRESH_TTL_MS) return latest;
       latest.refreshStartedAt = Date.now();
+      latest.networkRefreshStartedAt = 0;
+      latest.networkRefreshEndedAt = 0;
       latest.firstRenderableAt = 0;
       const promise = Promise.resolve().then(() => loadHomeLatestInternal(latest)).catch((error) => {
         const hasItems = homeLatestHasItems(latest);
         latest.loading = false;
         latest.loaded = true;
+        latest.networkRefreshEndedAt = Date.now();
         latest.error = hasItems ? "" : "加载失败";
         latest.networkRefreshSucceeded = false;
         recordHomeLatestDiag({
@@ -537,6 +541,7 @@
           error: String(error && error.message || "加载失败")
         });
         publishHomeWeeklySnapshot("network-final", { final: true, refreshing: false });
+        if (isHomeRouteActive()) recordHomeV14Diag();
         throw error;
       });
       latest.promise = promise;
@@ -558,6 +563,8 @@
         latest.loaded = false;
         latest.loadedAt = 0;
         latest.lastRefreshAt = 0;
+        latest.networkRefreshStartedAt = 0;
+        latest.networkRefreshEndedAt = 0;
         latest.cacheChecked = false;
         latest.cacheHydrated = false;
         latest.cacheWeekStart = "";
@@ -577,9 +584,10 @@
       if (isHomeRouteActive()) renderHomeWeekly();
       const networkStartedAt = Date.now();
       latest.lastRefreshAt = networkStartedAt;
+      latest.networkRefreshStartedAt = networkStartedAt;
       const sources = homeLatestSources();
       const responses = await Promise.all(sources.map((source) => Promise.resolve()
-        .then(() => requestJson(tmdbUrl(source, source.page || 1), 18))
+        .then(() => homeRequestJson(tmdbUrl(source, source.page || 1), 18, "background"))
         .then((body) => ({ source, body: body || {}, error: null }))
         .catch((error) => ({ source, body: null, error }))));
       if (latest.requestSeq !== requestSeq) return latest;
@@ -653,7 +661,7 @@
           if (tvItems.length === 1 || tvItems.length % 4 === 0) publishColdWeeklyPartial();
         }
       };
-      await weeklyMapLimit(tvCandidates, HOME_WEEKLY_DETAIL_CONCURRENCY, (candidate) => requestTvDetailShared(candidate), handleTvDetailResult);
+      await weeklyMapLimit(tvCandidates, HOME_WEEKLY_DETAIL_CONCURRENCY, (candidate) => requestTvDetailShared(candidate, homeEnrichmentRequest), handleTvDetailResult);
       const movieItemsById = new Map();
       Array.from(movieCandidatesById.values()).forEach((raw, index) => {
         const releaseDate = latestDateOnly(raw.release_date);
@@ -682,6 +690,7 @@
       const networkRefreshSucceeded = networkSucceeded && nextItems.length > 0;
       latest.loading = false;
       latest.loaded = true;
+      latest.networkRefreshEndedAt = Date.now();
       if (networkRefreshSucceeded) latest.loadedAt = Date.now();
       latest.networkRefreshSucceeded = networkRefreshSucceeded;
       latest.error = networkSucceeded || homeLatestHasItems(latest) ? "" : "加载失败";
@@ -710,6 +719,7 @@
         mergeHomeLatestIntoHeroFeed({ render: true });
       }
       if (networkRefreshSucceeded && latest.requestSeq === requestSeq) await persistHomeLatestCache(latest, range);
+      if (isHomeRouteActive()) recordHomeV14Diag();
       return latest;
     }
 

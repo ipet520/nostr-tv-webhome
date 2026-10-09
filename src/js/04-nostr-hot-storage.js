@@ -167,7 +167,7 @@
       if (!db) {
         state.hot.ready = true;
         markHomeHotVersion();
-        scheduleRender();
+        scheduleHomeNostrRender();
         return;
       }
       try {
@@ -181,7 +181,7 @@
         state.hot.ready = true;
       }
       markHomeHotVersion();
-      scheduleRender();
+      scheduleHomeNostrRender();
     }
 
     async function hotIngestEvent(event) {
@@ -635,7 +635,7 @@
         updateNostrRefreshProgress({ indexed: state.hot.items.length });
         maybeFinishNostrRefresh();
       }
-      if (homeUiRoute() === "home") scheduleRender();
+      if (homeUiRoute() === "home") scheduleHomeNostrRender();
     }
 
     function scheduleHotRefresh(delay) {
@@ -645,7 +645,6 @@
       state.hot.refreshTimer = setTimeout(() => {
         state.hot.refreshTimer = 0;
         hotRefreshItems();
-        scheduleRender();
       }, wait);
     }
 

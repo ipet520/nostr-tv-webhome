@@ -183,7 +183,7 @@
       return detail;
     }
 
-    function requestTvDetailShared(itemOrId) {
+    function requestTvDetailShared(itemOrId, requestOverride) {
       const runtime = state.tvDetail;
       const id = tvDetailCacheId(itemOrId);
       const key = id ? `tv:${id}` : "";
@@ -194,7 +194,8 @@
       if (entry.promise) return entry.promise;
       const generation = runtime.generation || 0;
       const requestItem = { mediaType: "tv", tmdbId: id };
-      const promise = requestJson(tmdbDetailUrl(requestItem), 18).then((body) => {
+      const request = typeof requestOverride === "function" ? requestOverride : requestJson;
+      const promise = request(tmdbDetailUrl(requestItem), 18).then((body) => {
         const detail = body && typeof body === "object" ? body : {};
         storeTvDetailCache(requestItem, detail, generation);
         return detail;

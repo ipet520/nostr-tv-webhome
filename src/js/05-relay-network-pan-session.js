@@ -336,8 +336,110 @@
       });
     }
 
-    async function requestJson(url, timeout) {
-      const response = await sdk().req(url, { responseType: "text", timeout: timeout || 18 });
+    function homeRequestBudgetState() {
+      const home = state.homeV14;
+      if (!home.requestBudget || typeof home.requestBudget !== "object") {
+        home.requestBudget = {
+          queue: [], active: 0, maxActive: 0, nextSeq: 0,
+          activeByClass: { foreground: 0, prefetch: 0, background: 0, enrichment: 0 },
+          maxByClass: { foreground: 0, prefetch: 0, background: 0, enrichment: 0 }
+        };
+      }
+      const budget = home.requestBudget;
+      budget.queue = Array.isArray(budget.queue) ? budget.queue : [];
+      budget.active = Number(budget.active || 0);
+      budget.maxActive = Number(budget.maxActive || 0);
+      budget.nextSeq = Number(budget.nextSeq || 0);
+      budget.activeByClass = Object.assign({ foreground: 0, prefetch: 0, background: 0, enrichment: 0 }, budget.activeByClass || {});
+      budget.maxByClass = Object.assign({ foreground: 0, prefetch: 0, background: 0, enrichment: 0 }, budget.maxByClass || {});
+      return budget;
+    }
+
+    function recordHomeRequestBudgetDiag(budget) {
+      const current = state.tvDiag && state.tvDiag.homeV14 || {};
+      const active = budget.activeByClass || {};
+      const maxima = budget.maxByClass || {};
+      const backgroundActive = Number(active.prefetch || 0) + Number(active.background || 0);
+      budget.maxBackground = Math.max(Number(budget.maxBackground || 0), backgroundActive);
+      const fields = {
+        FOREGROUND_REQUEST_MAX: Number(maxima.foreground || 0),
+        BACKGROUND_REQUEST_MAX: Number(budget.maxBackground || 0),
+        ENRICHMENT_REQUEST_MAX: Number(maxima.enrichment || 0),
+        HOME_REQUEST_ACTIVE: Number(budget.active || 0),
+        HOME_REQUEST_QUEUED: budget.queue.length
+      };
+      if (state.tvDiag) state.tvDiag.homeV14 = Object.assign({}, current, fields);
+    }
+
+    function pumpHomeRequestBudget() {
+      const budget = homeRequestBudgetState();
+      while (Number(budget.active || 0) < HOME_REQUEST_BUDGET_MAX_ACTIVE && budget.queue.length) {
+        budget.queue.sort((a, b) => Number(HOME_REQUEST_PRIORITY[a.requestClass] || 0) - Number(HOME_REQUEST_PRIORITY[b.requestClass] || 0) || a.sequence - b.sequence);
+        const index = budget.queue.findIndex((job) => Number(budget.activeByClass[job.requestClass] || 0) < Number(HOME_REQUEST_CLASS_MAX_ACTIVE[job.requestClass] || 1));
+        if (index < 0) break;
+        const job = budget.queue.splice(index, 1)[0];
+        budget.active += 1;
+        budget.activeByClass[job.requestClass] = Number(budget.activeByClass[job.requestClass] || 0) + 1;
+        budget.maxActive = Math.max(Number(budget.maxActive || 0), budget.active);
+        budget.maxByClass[job.requestClass] = Math.max(Number(budget.maxByClass[job.requestClass] || 0), budget.activeByClass[job.requestClass]);
+        recordHomeRequestBudgetDiag(budget);
+        Promise.resolve().then(job.run).then(job.resolve, job.reject).finally(() => {
+          budget.active = Math.max(0, Number(budget.active || 0) - 1);
+          budget.activeByClass[job.requestClass] = Math.max(0, Number(budget.activeByClass[job.requestClass] || 0) - 1);
+          recordHomeRequestBudgetDiag(budget);
+          pumpHomeRequestBudget();
+        });
+      }
+      recordHomeRequestBudgetDiag(budget);
+    }
+
+    function scheduleHomeBudgetRequest(requestClass, run, requestKey) {
+      const normalized = Object.prototype.hasOwnProperty.call(HOME_REQUEST_PRIORITY, requestClass) ? requestClass : "background";
+      const budget = homeRequestBudgetState();
+      return new Promise((resolve, reject) => {
+        budget.queue.push({
+          requestClass: normalized,
+          requestKey: String(requestKey || ""),
+          sequence: ++budget.nextSeq,
+          run,
+          resolve,
+          reject
+        });
+        recordHomeRequestBudgetDiag(budget);
+        pumpHomeRequestBudget();
+      });
+    }
+
+    function promoteHomeBudgetRequests(requestKey, requestClass) {
+      const key = String(requestKey || "");
+      if (!key || !Object.prototype.hasOwnProperty.call(HOME_REQUEST_PRIORITY, requestClass)) return false;
+      const budget = homeRequestBudgetState();
+      let promoted = false;
+      budget.queue.forEach((job) => {
+        if (job.requestKey !== key) return;
+        if (Number(HOME_REQUEST_PRIORITY[requestClass]) < Number(HOME_REQUEST_PRIORITY[job.requestClass])) {
+          job.requestClass = requestClass;
+          promoted = true;
+        }
+      });
+      if (promoted) pumpHomeRequestBudget();
+      return promoted;
+    }
+
+    function homeRequestJson(url, timeout, requestClass, requestKey) {
+      return requestJson(url, timeout, { homeRequestClass: requestClass || "foreground", homeRequestKey: requestKey || "" });
+    }
+
+    function homeEnrichmentRequest(url, timeout) {
+      return homeRequestJson(url, timeout, "enrichment");
+    }
+
+    async function requestJson(url, timeout, options) {
+      const opts = options || {};
+      const performRequest = () => sdk().req(url, { responseType: "text", timeout: timeout || 18 });
+      const response = opts.homeRequestClass
+        ? await scheduleHomeBudgetRequest(opts.homeRequestClass, performRequest, opts.homeRequestKey)
+        : await performRequest();
       if (response && response.error) {
         const error = new Error(String(response.error));
         const status = Number(response.status || response.statusCode || response.httpStatus || 0);

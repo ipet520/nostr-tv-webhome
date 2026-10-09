@@ -284,8 +284,12 @@
 
       const homeHotMarkSource = sourceOf(markHomeHotVersion);
       const homeHeroInputSource = sourceOf(homeHeroInputKey);
+      const movieHomeIdentity = JSON.parse(homeCategoryFeedKey("movie"));
       check("HOME_CATEGORY_SOURCE_IS_TMDB_ONLY",
-        homeCategoryFeedKey("movie") === JSON.stringify(["movie", "tmdb"])
+        movieHomeIdentity[0] === "movie"
+          && movieHomeIdentity[1] === "tmdb"
+          && Array.isArray(movieHomeIdentity[2])
+          && movieHomeIdentity[2].length > 0
           && homeHotMarkSource.includes("state.hot.version")
           && !homeHotMarkSource.includes("invalidateHomeCategoryFeeds"),
         "Home category feed identity remains TMDB-only and independent from Nostr hot version marking", "STATIC_HOOK");

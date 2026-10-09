@@ -10,6 +10,8 @@
     }
 
     const HOME_CATEGORY_IDS = new Set(["movie", "tv", "anime", "documentary", "variety"]);
+    const HOME_CATEGORY_CACHE_VERSION = 1;
+    const HOME_CATEGORY_CACHE_TTL_MS = 30 * 60 * 1000;
 
     function isHomeCategoryId(id) {
       return HOME_CATEGORY_IDS.has(normalizeLegacyCategoryId(id));
@@ -17,7 +19,12 @@
 
     function homeCategoryFeedKey(id) {
       id = normalizeLegacyCategoryId(id);
-      return JSON.stringify([id, "tmdb"]);
+      const sourceIdentity = homeCategoryTmdbSources(id).map((source) => ({
+        endpoint: source.endpoint,
+        mediaType: source.mediaType,
+        params: source.params || {}
+      }));
+      return JSON.stringify([id, "tmdb", sourceIdentity]);
     }
 
     function homeCategoryFeed(id) {
@@ -34,9 +41,16 @@
           items: [],
           loading: false,
           loaded: false,
+          loadedAt: 0,
           error: "",
           promise: null,
           requestSeq: 0,
+          cacheChecked: false,
+          cacheHydrated: false,
+          cacheSavedAt: 0,
+          networkLoaded: false,
+          partial: false,
+          requestClass: "foreground",
           dataVersion: "",
           signature: ""
         };
@@ -48,9 +62,15 @@
         feed.items = [];
         feed.loading = false;
         feed.loaded = false;
+        feed.loadedAt = 0;
         feed.error = "";
         feed.promise = null;
         feed.requestSeq = Number(feed.requestSeq || 0) + 1;
+        feed.cacheChecked = false;
+        feed.cacheHydrated = false;
+        feed.cacheSavedAt = 0;
+        feed.networkLoaded = false;
+        feed.partial = false;
         feed.dataVersion = key;
         feed.signature = key;
       }
@@ -68,14 +88,27 @@
         feed.items = [];
         feed.loading = false;
         feed.loaded = false;
+        feed.loadedAt = 0;
         feed.error = "";
         feed.promise = null;
         feed.requestSeq = Number(feed.requestSeq || 0) + 1;
+        feed.cacheChecked = false;
+        feed.cacheHydrated = false;
+        feed.cacheSavedAt = 0;
+        feed.networkLoaded = false;
+        feed.partial = false;
       });
     }
 
     function homeCategoryFeedIsCurrent(feed, key, requestSeq) {
       return !!(feed && feed.key === key && Number(feed.requestSeq || 0) === Number(requestSeq || 0));
+    }
+
+    function homeCategoryFeedNeedsRefresh(feed, now) {
+      if (!feed || !feed.loaded) return true;
+      const loadedAt = Number(feed.loadedAt || feed.cacheSavedAt || 0);
+      const age = Number(now || Date.now()) - loadedAt;
+      return loadedAt <= 0 || age < 0 || age >= HOME_CATEGORY_CACHE_TTL_MS;
     }
 
     function homeCategoryDefaultFilters() {
@@ -90,26 +123,32 @@
         .map((result) => result.entry);
     }
 
-    async function loadHomeCategoryTmdbPool(id) {
+    async function loadHomeCategoryTmdbPool(id, requestClass, requestKey, onSourceResult) {
       const sources = homeCategoryTmdbSources(id);
-      if (!sources.length) return { items: [], error: "暂无可用来源" };
-      const results = await Promise.all(sources.map((source) => Promise.resolve()
-        .then(() => requestJson(tmdbUrl(source, 1), 18))
-        .then((body) => ({ source, body: body || {}, error: null }))
-        .catch((error) => ({ source, body: null, error }))));
-      const incoming = [];
+      if (!sources.length) return { items: [], error: "暂无可用来源", goodCount: 0, totalSources: 0 };
       let goodCount = 0;
-      results.forEach((result) => {
-        if (result.error || !result.body) return;
-        goodCount += 1;
-        (Array.isArray(result.body.results) ? result.body.results : []).forEach((item, index) => {
-          const normalized = normalizeTmdb(item, result.source, index);
-          if (hasPoster(normalized) && (!isReleaseFilteredCatalogId(id) || isReleasedAsOfToday(normalized))) incoming.push(normalized);
-        });
-      });
+      const sourceItems = sources.map(() => []);
+      await Promise.all(sources.map((source, sourceIndex) => Promise.resolve()
+        .then(() => homeRequestJson(tmdbUrl(source, 1), 18, requestClass, requestKey))
+        .then((body) => {
+          goodCount += 1;
+          sourceItems[sourceIndex] = (Array.isArray(body && body.results) ? body.results : [])
+            .map((item, index) => normalizeTmdb(item, source, index))
+            .filter((item) => hasPoster(item) && (!isReleaseFilteredCatalogId(id) || isReleasedAsOfToday(item)));
+          if (typeof onSourceResult === "function") {
+            const partialItems = uniqueMedia(filterReleasedCatalogItems(id, sourceItems.reduce((all, items) => all.concat(items), [])));
+            if (partialItems.length) {
+              try { onSourceResult(partialItems, { sourceIndex, goodCount, totalSources: sources.length }); } catch (e) {}
+            }
+          }
+        })
+        .catch(() => { sourceItems[sourceIndex] = []; })));
+      const incoming = sourceItems.reduce((all, items) => all.concat(items), []);
       return {
         items: uniqueMedia(filterReleasedCatalogItems(id, incoming)),
-        error: goodCount ? "" : "加载失败"
+        error: goodCount ? "" : "加载失败",
+        goodCount,
+        totalSources: sources.length
       };
     }
 
@@ -118,36 +157,169 @@
       return Number(config && config.initialLimit || homeRailLimit("portrait"));
     }
 
-    function loadHomeCategoryFeed(id) {
+    function homeCategoryCacheKey(id) {
+      return "fish2018_home_v1_home_category_" + normalizeLegacyCategoryId(id);
+    }
+
+    function homeCategoryCacheItem(item, categoryId) {
+      if (!item || typeof item !== "object" || String(item.source || "") !== "tmdb") return null;
+      const mediaType = String(item.mediaType || "").toLowerCase();
+      const tmdbId = String(item.tmdbId || "").trim();
+      if ((mediaType !== "movie" && mediaType !== "tv") || !/^\d+$/.test(tmdbId) || !String(item.pic || "").trim()) return null;
+      return {
+        id: `tmdb:${mediaType}:${tmdbId}`,
+        source: "tmdb",
+        tmdbId,
+        mediaType,
+        listId: normalizeLegacyCategoryId(categoryId),
+        listTitle: String(item.listTitle || categoryId).slice(0, 80),
+        title: String(item.title || "未命名").slice(0, 240),
+        originalTitle: String(item.originalTitle || "").slice(0, 240),
+        aliases: (Array.isArray(item.aliases) ? item.aliases : []).map((value) => String(value || "").slice(0, 240)).filter(Boolean).slice(0, 12),
+        resourceSearchTitle: String(item.resourceSearchTitle || item.title || "").slice(0, 240),
+        pic: String(item.pic || ""),
+        landscape: String(item.landscape || ""),
+        image: String(item.image || item.landscape || item.pic || ""),
+        remark: String(item.remark || "").slice(0, 120),
+        desc: String(item.desc || "").slice(0, 1800),
+        releaseDate: String(item.releaseDate || "").slice(0, 32),
+        genreIds: (Array.isArray(item.genreIds) ? item.genreIds : []).map((value) => String(value || "")).filter(Boolean).slice(0, 32),
+        originCountries: (Array.isArray(item.originCountries) ? item.originCountries : []).map((value) => String(value || "")).filter(Boolean).slice(0, 16),
+        originalLanguage: String(item.originalLanguage || "").slice(0, 16),
+        popularity: Number(item.popularity || 0),
+        voteAverage: Number(item.voteAverage || 0),
+        baseRank: Math.max(0, Number(item.baseRank || 0))
+      };
+    }
+
+    function homeCategorySnapshotIsValid(snapshot, id, key, now) {
+      if (!snapshot || typeof snapshot !== "object" || Number(snapshot.version) !== HOME_CATEGORY_CACHE_VERSION) return false;
+      if (String(snapshot.categoryId || "") !== normalizeLegacyCategoryId(id) || String(snapshot.feedKey || "") !== String(key || "")) return false;
+      const savedAt = Number(snapshot.savedAt || 0);
+      const age = Number(now || Date.now()) - savedAt;
+      return savedAt > 0 && age >= 0 && age <= HOME_CATEGORY_CACHE_TTL_MS && Array.isArray(snapshot.items) && snapshot.items.length > 0;
+    }
+
+    async function hydrateHomeCategoryCache(feed, id, key, requestSeq) {
+      if (!feed || feed.cacheChecked) return false;
+      feed.cacheChecked = true;
+      const storageKey = homeCategoryCacheKey(id);
+      let saved = null;
+      try { saved = safeJson(await sdk().cache.get(storageKey), null); } catch (e) { saved = null; }
+      if (!homeCategoryFeedIsCurrent(feed, key, requestSeq) || feed.networkLoaded || feed.partial) return false;
+      const home = state.homeV14;
+      const items = homeCategorySnapshotIsValid(saved, id, key, Date.now())
+        ? saved.items.map((item) => homeCategoryCacheItem(item, id)).filter(Boolean)
+        : [];
+      if (!items.length) {
+        home.categoryCacheMissCount = Number(home.categoryCacheMissCount || 0) + 1;
+        if (saved) {
+          try { if (sdk().cache && typeof sdk().cache.del === "function") await sdk().cache.del(storageKey); } catch (e) {}
+        }
+        return false;
+      }
+      feed.items = items;
+      feed.loaded = true;
+      feed.loadedAt = Number(saved.savedAt || 0);
+      feed.error = "";
+      feed.cacheHydrated = true;
+      feed.cacheSavedAt = Number(saved.savedAt || 0);
+      feed.partial = false;
+      feed.dataVersion = key;
+      feed.signature = key;
+      home.categoryCacheHitCount = Number(home.categoryCacheHitCount || 0) + 1;
+      recordHomeCategoryReady(id);
+      renderHomeCategoryRail(id);
+      maybePrefetchHomeTail();
+      recordHomeV14Diag();
+      return true;
+    }
+
+    async function persistHomeCategoryCache(feed, id, key, requestSeq) {
+      if (!feed || !homeCategoryFeedIsCurrent(feed, key, requestSeq) || !feed.items.length) return false;
+      const items = feed.items.map((item) => homeCategoryCacheItem(item, id)).filter(Boolean).slice(0, homeCategoryFeedLimit(id));
+      if (!items.length) return false;
+      const snapshot = {
+        version: HOME_CATEGORY_CACHE_VERSION,
+        categoryId: normalizeLegacyCategoryId(id),
+        feedKey: key,
+        savedAt: Date.now(),
+        items
+      };
+      try {
+        await sdk().cache.set(homeCategoryCacheKey(id), JSON.stringify(snapshot));
+        feed.cacheSavedAt = snapshot.savedAt;
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function loadHomeCategoryFeed(id, options) {
       id = normalizeLegacyCategoryId(id);
       if (!isHomeCategoryId(id)) return Promise.resolve(null);
+      const opts = options || {};
       const feed = homeCategoryFeed(id);
       const key = feed.key;
       if (feed.loading && feed.promise) return feed.promise;
-      if (feed.loaded) return Promise.resolve(feed);
+      if (feed.loaded && !homeCategoryFeedNeedsRefresh(feed)) return Promise.resolve(feed);
       const requestSeq = Number(feed.requestSeq || 0) + 1;
       feed.requestSeq = requestSeq;
       feed.loading = true;
-      feed.loaded = false;
+      feed.requestClass = opts.requestClass === "prefetch" ? "prefetch" : "foreground";
+      feed.networkLoaded = false;
+      feed.partial = false;
       feed.error = "";
-      const target = homeCategoryFeedLimit(id);
+      const requestKey = `home-category:${id}:${requestSeq}`;
+      hydrateHomeCategoryCache(feed, id, key, requestSeq).catch(() => {});
       const task = Promise.resolve().then(async () => {
-        const tmdbResult = await loadHomeCategoryTmdbPool(id);
+        const tmdbResult = await loadHomeCategoryTmdbPool(id, feed.requestClass, requestKey, (partialItems) => {
+          if (!homeCategoryFeedIsCurrent(feed, key, requestSeq) || feed.cacheHydrated) return;
+          const items = filterBlocked(uniqueMedia(partialItems));
+          if (!items.length) return;
+          feed.source = "tmdb";
+          feed.items = items.slice();
+          feed.loaded = true;
+          feed.partial = true;
+          feed.error = "";
+          recordHomeCategoryReady(id);
+          recordHomeCategoryFirstRender(id);
+          renderHomeCategoryRail(id);
+        });
         if (!homeCategoryFeedIsCurrent(feed, key, requestSeq)) return feed;
         const items = filterBlocked(uniqueMedia(Array.isArray(tmdbResult.items) ? tmdbResult.items : []));
-        if (!items.length && tmdbResult.error) throw new Error(tmdbResult.error);
+        if (!tmdbResult.goodCount) throw new Error(tmdbResult.error || "加载失败");
+        if (feed.cacheHydrated && tmdbResult.goodCount < tmdbResult.totalSources) {
+          feed.error = "";
+          return feed;
+        }
         feed.source = "tmdb";
         feed.items = items.slice();
         feed.loaded = true;
+        feed.loadedAt = Date.now();
+        feed.networkLoaded = true;
+        feed.cacheHydrated = false;
+        feed.cacheSavedAt = 0;
+        feed.partial = false;
         feed.error = "";
         feed.dataVersion = key;
         feed.signature = key;
+        recordHomeCategoryReady(id);
+        recordHomeCategoryFinalReady(id);
+        if (tmdbResult.goodCount === tmdbResult.totalSources) persistHomeCategoryCache(feed, id, key, requestSeq).catch(() => {});
+        feed.loading = false;
+        renderHomeCategoryRail(id);
+        maybePrefetchHomeTail();
         return feed;
       }).catch((error) => {
         if (homeCategoryFeedIsCurrent(feed, key, requestSeq)) {
           feed.loaded = true;
-          feed.error = String(error && error.message || "加载失败");
-          feed.items = [];
+          feed.error = feed.items.length ? "" : String(error && error.message || "加载失败");
+          if (!feed.items.length) feed.loadedAt = Date.now();
+          feed.partial = false;
+          feed.loading = false;
+          renderHomeCategoryRail(id);
+          maybePrefetchHomeTail();
         }
         return feed;
       }).finally(() => {
@@ -227,18 +399,102 @@
       return section;
     }
 
+    function homeColdStartElapsedMs() {
+      const startedAt = Number(state.homeV14 && state.homeV14.coldStartAt || 0);
+      return startedAt > 0 ? Math.max(0, Date.now() - startedAt) : null;
+    }
+
+    function recordHomeCategoryFirstRender(id) {
+      const home = state.homeV14;
+      const categoryId = normalizeLegacyCategoryId(id);
+      const elapsed = homeColdStartElapsedMs();
+      if (!home || elapsed == null) return null;
+      home.categoryFirstRenderMs = home.categoryFirstRenderMs || {};
+      if (home.categoryFirstRenderMs[categoryId] == null) home.categoryFirstRenderMs[categoryId] = elapsed;
+      if (home.firstCategoryReadyMs == null) home.firstCategoryReadyMs = elapsed;
+      return home.categoryFirstRenderMs[categoryId];
+    }
+
+    function recordHomeCategoryReady(id) {
+      const home = state.homeV14;
+      const categoryId = normalizeLegacyCategoryId(id);
+      const elapsed = homeColdStartElapsedMs();
+      if (!home || elapsed == null) return null;
+      recordHomeCategoryFirstRender(categoryId);
+      home.categoryReadyMs = home.categoryReadyMs || {};
+      if (home.categoryReadyMs[categoryId] == null) home.categoryReadyMs[categoryId] = elapsed;
+      maybePrefetchHomeTail();
+      return home.categoryReadyMs[categoryId];
+    }
+
+    function recordHomeCategoryFinalReady(id) {
+      const home = state.homeV14;
+      const categoryId = normalizeLegacyCategoryId(id);
+      const elapsed = homeColdStartElapsedMs();
+      if (!home || elapsed == null) return null;
+      home.categoryFinalReadyMs = home.categoryFinalReadyMs || {};
+      if (home.categoryFinalReadyMs[categoryId] == null) home.categoryFinalReadyMs[categoryId] = elapsed;
+      return home.categoryFinalReadyMs[categoryId];
+    }
+
+    function renderHomeCategoryRail(id) {
+      if (!isHomeRouteActive()) return false;
+      const categoryId = normalizeLegacyCategoryId(id);
+      const section = document.getElementById(homeSectionDomId(categoryId));
+      const config = homeSectionConfig().find((entry) => entry.listId === categoryId);
+      if (!section || !config) return false;
+      renderHomeDynamicSection(section, config);
+      requestAnimationFrame(updateHomeRails);
+      recordHomeV14Diag();
+      return true;
+    }
+
+    function maybePrefetchHomeTail() {
+      const home = state.homeV14;
+      if (!home || home.tailPrefetchStarted || !isHomeRouteActive()) return false;
+      const configs = homeSectionConfig().filter((entry) => isHomeCategoryId(entry.listId));
+      if (configs.length <= 2) return false;
+      const initial = configs.slice(0, 2);
+      const ready = initial.every((config) => {
+        const feed = home.categoryFeeds && home.categoryFeeds[config.listId];
+        return !!(feed && feed.loaded);
+      });
+      if (!ready) return false;
+      home.tailPrefetchStarted = true;
+      configs.slice(2).forEach((config) => enqueueHomeListLoad(config.listId, "prefetch"));
+      return true;
+    }
+
+    function homeBaseFeedsReady() {
+      const configs = homeSectionConfig().filter((entry) => isHomeCategoryId(entry.listId));
+      return configs.length > 0 && configs.every((config) => {
+        const feed = state.homeV14.categoryFeeds && state.homeV14.categoryFeeds[config.listId];
+        return !!(feed && feed.loaded);
+      });
+    }
+
+    function recordHomeCardEnrichmentStart(kind) {
+      if (kind === "tv" && homeUiRoute() === "home" && !homeBaseFeedsReady()) {
+        if (!state.homeV14.tvCardEnrichmentStartedBeforeBaseFeedsReady) {
+          state.homeV14.tvCardEnrichmentStartedBeforeBaseFeedsReady = true;
+          recordHomeV14Diag();
+        }
+      }
+    }
+
     function renderHomeDynamicSection(section, config) {
       if (!isHomeRouteActive()) {
         if (section) section.hidden = true;
         return;
       }
+      state.homeV14.homeRailUpdateCount = Number(state.homeV14.homeRailUpdateCount || 0) + 1;
       const title = section.querySelector(".home-section-title");
       const rail = section.querySelector(".home-rail");
       if (title) title.textContent = config.title;
       if (!rail) return;
       rail.dataset.homeVariant = config.variant;
       const feed = homeCategoryFeed(config.listId);
-      const hasPartialItems = false;
+      const hasPartialItems = !!(feed && feed.loaded && Array.isArray(feed.items) && feed.items.length);
       const items = feed && feed.loaded ? feed.items : [];
       rail.dataset.homeFeedSource = feed && feed.source || "";
       rail.dataset.homeFeedVersion = feed && feed.dataVersion || "";
@@ -424,7 +680,9 @@
         const job = runtime.cardQueue.shift();
         if (!job || runtime.cardTasks[job.key] !== job) continue;
         runtime.cardActive += 1;
-        requestTvDetailShared(job.item).then((detail) => {
+        if (job.home) recordHomeCardEnrichmentStart("tv");
+        const request = job.home ? homeEnrichmentRequest : requestJson;
+        requestTvDetailShared(job.item, request).then((detail) => {
           if (job.generation === runtime.generation && detail) updateTvEpisodeStatusCards(job.item, detail);
         }).catch(() => {}).finally(() => {
           runtime.cardActive = Math.max(0, runtime.cardActive - 1);
@@ -445,7 +703,7 @@
       const runtime = state.tvDetail;
       const key = tvDetailCacheKey(item);
       if (!runtime || !key || runtime.cardTasks[key]) return;
-      const job = { key, item, generation: runtime.generation };
+      const job = { key, item, generation: runtime.generation, home: !!(card.closest && card.closest("#home")) };
       runtime.cardTasks[key] = job;
       runtime.cardQueue.push(job);
       flushTvCardDetailQueue();
@@ -527,7 +785,8 @@
         const job = runtime.cardQueue.shift();
         if (!job || runtime.cardTasks[job.key] !== job) continue;
         runtime.cardActive += 1;
-        requestMovieDetailShared(job.item).then((detail) => {
+        const request = job.home ? homeEnrichmentRequest : requestJson;
+        requestMovieDetailShared(job.item, request).then((detail) => {
           if (detail) updateMovieReleaseStatusCards(job.item, detail);
         }).catch(() => {}).finally(() => {
           runtime.cardActive = Math.max(0, runtime.cardActive - 1);
@@ -551,7 +810,7 @@
       if (!runtime.cardTasks) runtime.cardTasks = {};
       if (!Array.isArray(runtime.cardQueue)) runtime.cardQueue = [];
       if (runtime.cardTasks[key]) return;
-      const job = { key, item };
+      const job = { key, item, home: !!(card.closest && card.closest("#home")) };
       runtime.cardTasks[key] = job;
       runtime.cardQueue.push(job);
       flushMovieCardDetailQueue();
@@ -630,27 +889,52 @@
       window.addEventListener("resize", scheduleHomeRailResize, { passive: true });
     }
 
-    function enqueueHomeListLoad(id) {
+    function enqueueHomeListLoad(id, requestClass) {
       if (!isHomeRouteActive() || !id || id === "all" || id === "recent" || id === "live") return;
+      id = normalizeLegacyCategoryId(id);
+      if (!isHomeCategoryId(id)) return;
+      const desiredClass = requestClass === "prefetch" ? "prefetch" : "foreground";
       const feed = homeCategoryFeed(id);
       const home = state.homeV14;
-      if (feed && (feed.loading || feed.loaded) || home.loadQueue.includes(id)) return;
-      home.loadQueue.push(id);
+      if (feed && feed.loading) {
+        if (desiredClass === "foreground" && feed.requestClass === "prefetch") {
+          feed.requestClass = "foreground";
+          promoteHomeBudgetRequests(`home-category:${id}:${Number(feed.requestSeq || 0)}`, "foreground");
+        }
+        return;
+      }
+      if (feed && feed.loaded && !homeCategoryFeedNeedsRefresh(feed)) return;
+      const queued = home.loadQueue.find((entry) => entry.id === id);
+      if (queued) {
+        if (desiredClass === "foreground" && queued.requestClass === "prefetch") {
+          queued.requestClass = "foreground";
+          home.loadQueue.splice(home.loadQueue.indexOf(queued), 1);
+          home.loadQueue.unshift(queued);
+        }
+        pumpHomeListLoads();
+        return;
+      }
+      const entry = { id, requestClass: desiredClass };
+      const priority = Number(HOME_REQUEST_PRIORITY[desiredClass] || 0);
+      const insertAt = home.loadQueue.findIndex((queuedEntry) => Number(HOME_REQUEST_PRIORITY[queuedEntry.requestClass] || 0) > priority);
+      if (insertAt < 0) home.loadQueue.push(entry);
+      else home.loadQueue.splice(insertAt, 0, entry);
       pumpHomeListLoads();
     }
 
     function pumpHomeListLoads() {
       const home = state.homeV14;
       while (isHomeRouteActive() && home.activeLoads < HOME_V14_MAX_CONCURRENT && home.loadQueue.length) {
-        const id = home.loadQueue.shift();
+        const request = home.loadQueue.shift();
+        const id = request.id;
         const feed = homeCategoryFeed(id);
-        if (feed && (feed.loading || feed.loaded)) continue;
+        if (feed && (feed.loading || (feed.loaded && !homeCategoryFeedNeedsRefresh(feed)))) continue;
         home.activeLoads += 1;
         home.requestCount += 1;
         home.maxConcurrent = Math.max(home.maxConcurrent, home.activeLoads);
-        Promise.resolve(loadHomeCategoryFeed(id)).catch(() => {}).finally(() => {
+        Promise.resolve(loadHomeCategoryFeed(id, { requestClass: request.requestClass })).catch(() => {}).finally(() => {
           home.activeLoads = Math.max(0, home.activeLoads - 1);
-          if (isHomeRouteActive()) renderHome();
+          if (isHomeRouteActive()) recordHomeV14Diag();
           pumpHomeListLoads();
         });
       }
@@ -671,7 +955,7 @@
           const br = b.getBoundingClientRect ? b.getBoundingClientRect().top : 0;
           return ar - br;
         })
-        .forEach((section) => enqueueHomeListLoad(section.dataset.homeListId));
+        .forEach((section) => enqueueHomeListLoad(section.dataset.homeListId, "foreground"));
     }
 
     function ensureHomeSectionObserver() {
@@ -680,7 +964,7 @@
         if (!home.sectionObserver) {
           home.sectionObserver = new IntersectionObserver((entries) => {
             entries.forEach((entry) => {
-              if (entry.isIntersecting) enqueueHomeListLoad(entry.target.dataset.homeListId);
+              if (entry.isIntersecting) enqueueHomeListLoad(entry.target.dataset.homeListId, "foreground");
             });
             recordHomeV14Diag();
           }, { root: null, rootMargin: HOME_V14_SECTION_ROOT_MARGIN, threshold: 0.01 });
@@ -696,6 +980,9 @@
       const homeRoot = $("home");
       const home = state.homeV14;
       if (!homeRoot) return null;
+      const budget = homeRequestBudgetState();
+      const latest = state.homeLatest || {};
+      const elapsed = homeColdStartElapsedMs();
       const root = document.documentElement;
       const viewportHeight = Number(window.visualViewport && window.visualViewport.height)
         || Number(root.clientHeight)
@@ -752,7 +1039,31 @@
         detailSheetBottomOverrunPx: detailRect ? Math.max(0, Number(detailRect.bottom || 0) - viewportHeight) : 0,
         detailSheetClientHeightPx: detailActive ? Number(detailSheet.clientHeight || 0) : 0,
         detailSheetScrollHeightPx: detailActive ? Number(detailSheet.scrollHeight || 0) : 0,
-        detailSheetScrollRangePx: detailActive ? Math.max(0, Number(detailSheet.scrollHeight || 0) - Number(detailSheet.clientHeight || 0)) : 0
+        detailSheetScrollRangePx: detailActive ? Math.max(0, Number(detailSheet.scrollHeight || 0) - Number(detailSheet.clientHeight || 0)) : 0,
+        HOME_COLD_START_AT: Number(home.coldStartAt || 0),
+        FIRST_HOME_RENDER_MS: home.firstHomeRenderMs,
+        FIRST_HERO_READY_MS: home.firstHeroReadyMs,
+        FIRST_CATEGORY_READY_MS: home.firstCategoryReadyMs,
+        MOVIE_READY_MS: home.categoryReadyMs && home.categoryReadyMs.movie != null ? home.categoryReadyMs.movie : null,
+        TV_READY_MS: home.categoryReadyMs && home.categoryReadyMs.tv != null ? home.categoryReadyMs.tv : null,
+        ANIME_FIRST_RENDER_MS: home.categoryFirstRenderMs && home.categoryFirstRenderMs.anime != null ? home.categoryFirstRenderMs.anime : null,
+        ANIME_FINAL_READY_MS: home.categoryFinalReadyMs && home.categoryFinalReadyMs.anime != null ? home.categoryFinalReadyMs.anime : null,
+        DOCUMENTARY_FIRST_RENDER_MS: home.categoryFirstRenderMs && home.categoryFirstRenderMs.documentary != null ? home.categoryFirstRenderMs.documentary : null,
+        DOCUMENTARY_FINAL_READY_MS: home.categoryFinalReadyMs && home.categoryFinalReadyMs.documentary != null ? home.categoryFinalReadyMs.documentary : null,
+        VARIETY_READY_MS: home.categoryReadyMs && home.categoryReadyMs.variety != null ? home.categoryReadyMs.variety : null,
+        CATEGORY_CACHE_HIT_COUNT: Number(home.categoryCacheHitCount || 0),
+        CATEGORY_CACHE_MISS_COUNT: Number(home.categoryCacheMissCount || 0),
+        FOREGROUND_REQUEST_MAX: Number(budget.maxByClass && budget.maxByClass.foreground || 0),
+        BACKGROUND_REQUEST_MAX: Number(budget.maxBackground || 0),
+        ENRICHMENT_REQUEST_MAX: Number(budget.maxByClass && budget.maxByClass.enrichment || 0),
+        HOME_REQUEST_ACTIVE: Number(budget.active || 0),
+        HOME_REQUEST_QUEUED: Array.isArray(budget.queue) ? budget.queue.length : 0,
+        HOME_WHOLE_RENDER_COUNT: Number(home.wholeHomeRenderCount || 0),
+        HOME_RAIL_UPDATE_COUNT: Number(home.homeRailUpdateCount || 0),
+        WEEKLY_CACHE_HIT: latest.cacheChecked ? !!latest.cacheHydrated : null,
+        WEEKLY_NETWORK_REFRESH_START_MS: Number(latest.networkRefreshStartedAt || 0) > 0 && elapsed != null ? Math.max(0, Number(latest.networkRefreshStartedAt) - Number(home.coldStartAt)) : null,
+        WEEKLY_NETWORK_REFRESH_END_MS: Number(latest.networkRefreshEndedAt || 0) > 0 && elapsed != null ? Math.max(0, Number(latest.networkRefreshEndedAt) - Number(home.coldStartAt)) : null,
+        TV_CARD_ENRICHMENT_STARTED_BEFORE_BASE_FEEDS_READY: home.tvCardEnrichmentStartedBeforeBaseFeedsReady == null ? false : !!home.tvCardEnrichmentStartedBeforeBaseFeedsReady
       };
       home.imageSrcCount = diag.imageSrcCount;
       home.imageDeferredCount = diag.imageDeferredCount;
@@ -767,6 +1078,10 @@
     function renderHome() {
       const homeRoot = $("home");
       if (!homeRoot || !isHomeRouteActive()) return;
+      const home = state.homeV14;
+      if (!home.coldStartAt) home.coldStartAt = Date.now();
+      if (home.firstHomeRenderMs == null) home.firstHomeRenderMs = 0;
+      home.wholeHomeRenderCount = Number(home.wholeHomeRenderCount || 0) + 1;
       setHomeOnlyPresentationVisible(true);
       renderSidebar();
       renderHomeHero();

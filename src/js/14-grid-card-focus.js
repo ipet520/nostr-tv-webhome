@@ -10,6 +10,13 @@
       fillRail(rail, items, options);
     }
 
+    function homeRailIsInViewport(rail) {
+      if (!rail || !rail.getBoundingClientRect) return true;
+      const rect = rail.getBoundingClientRect();
+      const height = window.innerHeight || document.documentElement.clientHeight || 0;
+      return rect.bottom >= 0 && rect.top <= height;
+    }
+
     function createHomeRailMoreCard(listId, landscape) {
       const button = document.createElement("button");
       const id = normalizeLegacyCategoryId(listId || "");
@@ -43,12 +50,16 @@
       const savedLeft = key ? state.railScroll[key] || 0 : 0;
       const detailRail = !!($("detailSheet") && $("detailSheet").contains(rail));
       const landscape = typeof opts.landscape === "boolean" ? opts.landscape : detailRail && useLargeDetailLayout();
+      const requestedHomeEagerCount = Number(opts.homeEagerCount == null ? 4 : opts.homeEagerCount);
+      const homeEagerCount = opts.home === true && opts.homeLazy && isTvLikeDevice() && !homeRailIsInViewport(rail)
+        ? 0
+        : requestedHomeEagerCount;
       const children = items.map((item, index) => mediaCard(item, index, {
         landscape,
         home: !!opts.home,
         weeklyHome: !!opts.weeklyHome,
         weekly: !!opts.weekly,
-        homeLazy: !!opts.homeLazy && isTvLikeDevice() && index >= Number(opts.homeEagerCount == null ? 4 : opts.homeEagerCount),
+        homeLazy: !!opts.homeLazy && isTvLikeDevice() && index >= homeEagerCount,
         searchResult: opts.searchResult === true,
         searchQuery: opts.searchQuery || ""
       }));

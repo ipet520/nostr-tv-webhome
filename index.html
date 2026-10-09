@@ -17150,7 +17150,7 @@ utils.encode = function encode(arr, enc) {
       recent: { items: [], loading: false, loadingPromise: null, loaded: false, error: "", refreshedAt: 0, diag: null, nativeItems: [], nativeLoaded: false, nativeLoading: false, nativeRefreshedAt: 0, nativeKeyFlow: {}, runSeq: 0, activeRun: null, pendingRefresh: false, pendingRefreshSilent: true, pendingRefreshReconcileDetail: true },
       movieDetail: { cache: {}, cardTasks: {}, cardQueue: [], cardActive: 0, observer: null, scrollBound: false, scanTimer: 0 },
       tvDetail: { cache: {}, cardTasks: {}, cardQueue: [], cardActive: 0, observer: null, scrollBound: false, scanTimer: 0, generation: 0 },
-      homeLatest: { items: [], loading: false, loaded: false, error: "", loadedAt: 0, lastRefreshAt: 0, requestSeq: 0, diag: null, promise: null, cacheChecked: false, cacheHydrated: false, cacheWeekStart: "", cacheSavedAt: 0, cacheItemCount: 0, cacheHydratedAt: 0, networkRefreshReason: "", networkRefreshSucceeded: false, refreshStartedAt: 0, firstRenderableAt: 0 },
+      homeLatest: { items: [], loading: false, loaded: false, error: "", loadedAt: 0, lastRefreshAt: 0, requestSeq: 0, diag: null, promise: null, cacheChecked: false, cacheHydrated: false, cacheWeekStart: "", cacheSavedAt: 0, cacheItemCount: 0, cacheHydratedAt: 0, networkRefreshReason: "", networkRefreshSucceeded: false, refreshStartedAt: 0, networkRefreshStartedAt: 0, networkRefreshEndedAt: 0, firstRenderableAt: 0 },
       gridRender: {},
       gridColumnCache: {},
       loadingMore: false,
@@ -17163,6 +17163,28 @@ utils.encode = function encode(arr, enc) {
         loadQueue: [],
         activeLoads: 0,
         maxConcurrent: 0,
+        requestBudget: {
+          queue: [],
+          active: 0,
+          maxActive: 0,
+          nextSeq: 0,
+          activeByClass: { foreground: 0, prefetch: 0, background: 0, enrichment: 0 },
+          maxByClass: { foreground: 0, prefetch: 0, background: 0, enrichment: 0 }
+        },
+        coldStartAt: 0,
+        firstHomeRenderMs: null,
+        firstHeroReadyMs: null,
+        firstCategoryReadyMs: null,
+        categoryFirstRenderMs: {},
+        categoryReadyMs: {},
+        categoryFinalReadyMs: {},
+        categoryCacheHitCount: 0,
+        categoryCacheMissCount: 0,
+        tailPrefetchStarted: false,
+        wholeHomeRenderCount: 0,
+        homeRailUpdateCount: 0,
+        tvCardEnrichmentStartedBeforeBaseFeedsReady: false,
+        nostrRenderFrame: 0,
         requestCount: 0,
         renderedSectionCount: 0,
         loadedSectionCount: 0,
@@ -17381,6 +17403,9 @@ utils.encode = function encode(arr, enc) {
     const HOME_V14_MAX_CONCURRENT = 2;
     const HOME_V14_SECTION_ROOT_MARGIN = "760px 0px";
     const HOME_V14_IMAGE_ROOT_MARGIN = "700px 250px";
+    const HOME_REQUEST_BUDGET_MAX_ACTIVE = 4;
+    const HOME_REQUEST_CLASS_MAX_ACTIVE = { foreground: 3, prefetch: 2, background: 1, enrichment: 1 };
+    const HOME_REQUEST_PRIORITY = { foreground: 0, prefetch: 1, background: 2, enrichment: 3 };
     // Keep only a minimal safety gap above the active Home section.  The
     // section itself, rather than its title or card row, is the anchor.
     const HOME_RAIL_ANCHOR_OFFSET = 8;
@@ -18066,6 +18091,7 @@ utils.encode = function encode(arr, enc) {
       publishHomeWeeklySnapshot("cache", { refreshing: !!latest.loading });
       if (isHomeRouteActive()) {
         renderHomeWeekly();
+        recordHomeV14Diag();
       }
       return true;
     }
@@ -18108,11 +18134,14 @@ utils.encode = function encode(arr, enc) {
       if (!weekChanged && !latest.loadedAt && latest.loaded && latest.lastRefreshAt > 0 && ageFromAttempt < HOME_WEEKLY_REFRESH_TTL_MS) return latest;
       if (!weekChanged && !latest.networkRefreshSucceeded && latest.loaded && latest.lastRefreshAt > 0 && ageFromAttempt < HOME_WEEKLY_REFRESH_TTL_MS) return latest;
       latest.refreshStartedAt = Date.now();
+      latest.networkRefreshStartedAt = 0;
+      latest.networkRefreshEndedAt = 0;
       latest.firstRenderableAt = 0;
       const promise = Promise.resolve().then(() => loadHomeLatestInternal(latest)).catch((error) => {
         const hasItems = homeLatestHasItems(latest);
         latest.loading = false;
         latest.loaded = true;
+        latest.networkRefreshEndedAt = Date.now();
         latest.error = hasItems ? "" : "加载失败";
         latest.networkRefreshSucceeded = false;
         recordHomeLatestDiag({
@@ -18128,6 +18157,7 @@ utils.encode = function encode(arr, enc) {
           error: String(error && error.message || "加载失败")
         });
         publishHomeWeeklySnapshot("network-final", { final: true, refreshing: false });
+        if (isHomeRouteActive()) recordHomeV14Diag();
         throw error;
       });
       latest.promise = promise;
@@ -18149,6 +18179,8 @@ utils.encode = function encode(arr, enc) {
         latest.loaded = false;
         latest.loadedAt = 0;
         latest.lastRefreshAt = 0;
+        latest.networkRefreshStartedAt = 0;
+        latest.networkRefreshEndedAt = 0;
         latest.cacheChecked = false;
         latest.cacheHydrated = false;
         latest.cacheWeekStart = "";
@@ -18168,9 +18200,10 @@ utils.encode = function encode(arr, enc) {
       if (isHomeRouteActive()) renderHomeWeekly();
       const networkStartedAt = Date.now();
       latest.lastRefreshAt = networkStartedAt;
+      latest.networkRefreshStartedAt = networkStartedAt;
       const sources = homeLatestSources();
       const responses = await Promise.all(sources.map((source) => Promise.resolve()
-        .then(() => requestJson(tmdbUrl(source, source.page || 1), 18))
+        .then(() => homeRequestJson(tmdbUrl(source, source.page || 1), 18, "background"))
         .then((body) => ({ source, body: body || {}, error: null }))
         .catch((error) => ({ source, body: null, error }))));
       if (latest.requestSeq !== requestSeq) return latest;
@@ -18244,7 +18277,7 @@ utils.encode = function encode(arr, enc) {
           if (tvItems.length === 1 || tvItems.length % 4 === 0) publishColdWeeklyPartial();
         }
       };
-      await weeklyMapLimit(tvCandidates, HOME_WEEKLY_DETAIL_CONCURRENCY, (candidate) => requestTvDetailShared(candidate), handleTvDetailResult);
+      await weeklyMapLimit(tvCandidates, HOME_WEEKLY_DETAIL_CONCURRENCY, (candidate) => requestTvDetailShared(candidate, homeEnrichmentRequest), handleTvDetailResult);
       const movieItemsById = new Map();
       Array.from(movieCandidatesById.values()).forEach((raw, index) => {
         const releaseDate = latestDateOnly(raw.release_date);
@@ -18273,6 +18306,7 @@ utils.encode = function encode(arr, enc) {
       const networkRefreshSucceeded = networkSucceeded && nextItems.length > 0;
       latest.loading = false;
       latest.loaded = true;
+      latest.networkRefreshEndedAt = Date.now();
       if (networkRefreshSucceeded) latest.loadedAt = Date.now();
       latest.networkRefreshSucceeded = networkRefreshSucceeded;
       latest.error = networkSucceeded || homeLatestHasItems(latest) ? "" : "加载失败";
@@ -18301,6 +18335,7 @@ utils.encode = function encode(arr, enc) {
         mergeHomeLatestIntoHeroFeed({ render: true });
       }
       if (networkRefreshSucceeded && latest.requestSeq === requestSeq) await persistHomeLatestCache(latest, range);
+      if (isHomeRouteActive()) recordHomeV14Diag();
       return latest;
     }
 
@@ -18953,7 +18988,7 @@ utils.encode = function encode(arr, enc) {
       if (!db) {
         state.hot.ready = true;
         markHomeHotVersion();
-        scheduleRender();
+        scheduleHomeNostrRender();
         return;
       }
       try {
@@ -18967,7 +19002,7 @@ utils.encode = function encode(arr, enc) {
         state.hot.ready = true;
       }
       markHomeHotVersion();
-      scheduleRender();
+      scheduleHomeNostrRender();
     }
 
     async function hotIngestEvent(event) {
@@ -19421,7 +19456,7 @@ utils.encode = function encode(arr, enc) {
         updateNostrRefreshProgress({ indexed: state.hot.items.length });
         maybeFinishNostrRefresh();
       }
-      if (homeUiRoute() === "home") scheduleRender();
+      if (homeUiRoute() === "home") scheduleHomeNostrRender();
     }
 
     function scheduleHotRefresh(delay) {
@@ -19431,7 +19466,6 @@ utils.encode = function encode(arr, enc) {
       state.hot.refreshTimer = setTimeout(() => {
         state.hot.refreshTimer = 0;
         hotRefreshItems();
-        scheduleRender();
       }, wait);
     }
 
@@ -19971,8 +20005,110 @@ utils.encode = function encode(arr, enc) {
       });
     }
 
-    async function requestJson(url, timeout) {
-      const response = await sdk().req(url, { responseType: "text", timeout: timeout || 18 });
+    function homeRequestBudgetState() {
+      const home = state.homeV14;
+      if (!home.requestBudget || typeof home.requestBudget !== "object") {
+        home.requestBudget = {
+          queue: [], active: 0, maxActive: 0, nextSeq: 0,
+          activeByClass: { foreground: 0, prefetch: 0, background: 0, enrichment: 0 },
+          maxByClass: { foreground: 0, prefetch: 0, background: 0, enrichment: 0 }
+        };
+      }
+      const budget = home.requestBudget;
+      budget.queue = Array.isArray(budget.queue) ? budget.queue : [];
+      budget.active = Number(budget.active || 0);
+      budget.maxActive = Number(budget.maxActive || 0);
+      budget.nextSeq = Number(budget.nextSeq || 0);
+      budget.activeByClass = Object.assign({ foreground: 0, prefetch: 0, background: 0, enrichment: 0 }, budget.activeByClass || {});
+      budget.maxByClass = Object.assign({ foreground: 0, prefetch: 0, background: 0, enrichment: 0 }, budget.maxByClass || {});
+      return budget;
+    }
+
+    function recordHomeRequestBudgetDiag(budget) {
+      const current = state.tvDiag && state.tvDiag.homeV14 || {};
+      const active = budget.activeByClass || {};
+      const maxima = budget.maxByClass || {};
+      const backgroundActive = Number(active.prefetch || 0) + Number(active.background || 0);
+      budget.maxBackground = Math.max(Number(budget.maxBackground || 0), backgroundActive);
+      const fields = {
+        FOREGROUND_REQUEST_MAX: Number(maxima.foreground || 0),
+        BACKGROUND_REQUEST_MAX: Number(budget.maxBackground || 0),
+        ENRICHMENT_REQUEST_MAX: Number(maxima.enrichment || 0),
+        HOME_REQUEST_ACTIVE: Number(budget.active || 0),
+        HOME_REQUEST_QUEUED: budget.queue.length
+      };
+      if (state.tvDiag) state.tvDiag.homeV14 = Object.assign({}, current, fields);
+    }
+
+    function pumpHomeRequestBudget() {
+      const budget = homeRequestBudgetState();
+      while (Number(budget.active || 0) < HOME_REQUEST_BUDGET_MAX_ACTIVE && budget.queue.length) {
+        budget.queue.sort((a, b) => Number(HOME_REQUEST_PRIORITY[a.requestClass] || 0) - Number(HOME_REQUEST_PRIORITY[b.requestClass] || 0) || a.sequence - b.sequence);
+        const index = budget.queue.findIndex((job) => Number(budget.activeByClass[job.requestClass] || 0) < Number(HOME_REQUEST_CLASS_MAX_ACTIVE[job.requestClass] || 1));
+        if (index < 0) break;
+        const job = budget.queue.splice(index, 1)[0];
+        budget.active += 1;
+        budget.activeByClass[job.requestClass] = Number(budget.activeByClass[job.requestClass] || 0) + 1;
+        budget.maxActive = Math.max(Number(budget.maxActive || 0), budget.active);
+        budget.maxByClass[job.requestClass] = Math.max(Number(budget.maxByClass[job.requestClass] || 0), budget.activeByClass[job.requestClass]);
+        recordHomeRequestBudgetDiag(budget);
+        Promise.resolve().then(job.run).then(job.resolve, job.reject).finally(() => {
+          budget.active = Math.max(0, Number(budget.active || 0) - 1);
+          budget.activeByClass[job.requestClass] = Math.max(0, Number(budget.activeByClass[job.requestClass] || 0) - 1);
+          recordHomeRequestBudgetDiag(budget);
+          pumpHomeRequestBudget();
+        });
+      }
+      recordHomeRequestBudgetDiag(budget);
+    }
+
+    function scheduleHomeBudgetRequest(requestClass, run, requestKey) {
+      const normalized = Object.prototype.hasOwnProperty.call(HOME_REQUEST_PRIORITY, requestClass) ? requestClass : "background";
+      const budget = homeRequestBudgetState();
+      return new Promise((resolve, reject) => {
+        budget.queue.push({
+          requestClass: normalized,
+          requestKey: String(requestKey || ""),
+          sequence: ++budget.nextSeq,
+          run,
+          resolve,
+          reject
+        });
+        recordHomeRequestBudgetDiag(budget);
+        pumpHomeRequestBudget();
+      });
+    }
+
+    function promoteHomeBudgetRequests(requestKey, requestClass) {
+      const key = String(requestKey || "");
+      if (!key || !Object.prototype.hasOwnProperty.call(HOME_REQUEST_PRIORITY, requestClass)) return false;
+      const budget = homeRequestBudgetState();
+      let promoted = false;
+      budget.queue.forEach((job) => {
+        if (job.requestKey !== key) return;
+        if (Number(HOME_REQUEST_PRIORITY[requestClass]) < Number(HOME_REQUEST_PRIORITY[job.requestClass])) {
+          job.requestClass = requestClass;
+          promoted = true;
+        }
+      });
+      if (promoted) pumpHomeRequestBudget();
+      return promoted;
+    }
+
+    function homeRequestJson(url, timeout, requestClass, requestKey) {
+      return requestJson(url, timeout, { homeRequestClass: requestClass || "foreground", homeRequestKey: requestKey || "" });
+    }
+
+    function homeEnrichmentRequest(url, timeout) {
+      return homeRequestJson(url, timeout, "enrichment");
+    }
+
+    async function requestJson(url, timeout, options) {
+      const opts = options || {};
+      const performRequest = () => sdk().req(url, { responseType: "text", timeout: timeout || 18 });
+      const response = opts.homeRequestClass
+        ? await scheduleHomeBudgetRequest(opts.homeRequestClass, performRequest, opts.homeRequestKey)
+        : await performRequest();
       if (response && response.error) {
         const error = new Error(String(response.error));
         const status = Number(response.status || response.statusCode || response.httpStatus || 0);
@@ -20735,7 +20871,7 @@ utils.encode = function encode(arr, enc) {
       return detail;
     }
 
-    function requestTvDetailShared(itemOrId) {
+    function requestTvDetailShared(itemOrId, requestOverride) {
       const runtime = state.tvDetail;
       const id = tvDetailCacheId(itemOrId);
       const key = id ? `tv:${id}` : "";
@@ -20746,7 +20882,8 @@ utils.encode = function encode(arr, enc) {
       if (entry.promise) return entry.promise;
       const generation = runtime.generation || 0;
       const requestItem = { mediaType: "tv", tmdbId: id };
-      const promise = requestJson(tmdbDetailUrl(requestItem), 18).then((body) => {
+      const request = typeof requestOverride === "function" ? requestOverride : requestJson;
+      const promise = request(tmdbDetailUrl(requestItem), 18).then((body) => {
         const detail = body && typeof body === "object" ? body : {};
         storeTvDetailCache(requestItem, detail, generation);
         return detail;
@@ -26140,14 +26277,14 @@ utils.encode = function encode(arr, enc) {
       const tmdbId = String(candidate && candidate.tmdbId || "").trim();
       if (!candidate || !tmdbId || (mediaType !== "movie" && mediaType !== "tv") || candidate.heroDetailEnriched) return candidate;
       const detail = mediaType === "tv"
-        ? await requestTvDetailShared({ mediaType: "tv", tmdbId })
-        : await requestJson(tmdbUrl({
+        ? await requestTvDetailShared({ mediaType: "tv", tmdbId }, homeEnrichmentRequest)
+        : await homeRequestJson(tmdbUrl({
           id: "home-hero-detail",
           title: "首页 Hero",
           endpoint: mediaType + "/" + encodeURIComponent(tmdbId),
           mediaType,
           params: { language: "zh-CN", append_to_response: "images" }
-        }), 18);
+        }), 18, "enrichment");
       const heroRaw = candidate.heroRaw && typeof candidate.heroRaw === "object" ? candidate.heroRaw : {};
       const localizedBase = Object.assign({}, heroRaw);
       if (mediaType === "tv") {
@@ -26227,18 +26364,29 @@ utils.encode = function encode(arr, enc) {
           { kind: "tmdb-movie-now-playing", endpoint: "movie/now_playing", mediaType: "movie" },
           { kind: "tmdb-tv-on-the-air", endpoint: "tv/on_the_air", mediaType: "tv" }
         ];
-        const responses = await Promise.all(sources.map((sourceItem) => requestJson(tmdbUrl({
+        let provisionalRendered = !!feed.items.length;
+        await Promise.all(sources.map((sourceItem) => homeRequestJson(tmdbUrl({
           id: "home-hero-source", title: "首页 Hero", endpoint: sourceItem.endpoint, mediaType: sourceItem.mediaType,
           params: { language: "zh-CN" }
-        }), 18).then((body) => ({ source: sourceItem, body: body || {}, ok: true })).catch((error) => ({ source: sourceItem, body: null, ok: false, error }))));
-        if (!runCurrent()) return feed;
-        responses.forEach((result) => {
-          const sourceItem = result.source;
+        }), 18, "foreground").then((body) => ({ source: sourceItem, body: body || {}, ok: true })).catch((error) => ({ source: sourceItem, body: null, ok: false, error })).then((result) => {
+          if (!runCurrent()) return result;
           const values = result.ok && result.body && Array.isArray(result.body.results) ? result.body.results : [];
-          sourceStats[sourceItem.kind] = values.length;
+          sourceStats[result.source.kind] = values.length;
           if (result.ok) successCount += 1;
-          values.forEach((raw, index) => homeHeroMergeCandidate(candidates, homeHeroNormalizeSourceItem(raw, sourceItem, index)));
-        });
+          values.forEach((raw, index) => homeHeroMergeCandidate(candidates, homeHeroNormalizeSourceItem(raw, result.source, index)));
+          if (!provisionalRendered && candidates.size) {
+            const renderable = Array.from(candidates.values()).filter((candidate) => homeHeroIsTmdbCandidate(candidate)
+              && (candidate.pic || candidate.landscape || candidate.image));
+            const provisional = homeHeroSelect(renderable, HOME_HERO_FINAL_LIMIT);
+            if (provisional.length) {
+              feed.items = provisional;
+              provisionalRendered = true;
+              if (isHomeRouteActive()) renderHomeHero();
+            }
+          }
+          return result;
+        })));
+        if (!runCurrent()) return feed;
         if (state.homeLatest && state.homeLatest.loaded) {
           const weeklyItems = filterBlocked(state.homeLatest.items || []).slice(0, 12);
           weeklyItems.forEach((item) => homeHeroMergeCandidate(candidates, Object.assign({}, item, { heroSourceKinds: ["weekly-feed"], heroRaw: item.weeklyDetail || item })));
@@ -26718,6 +26866,10 @@ utils.encode = function encode(arr, enc) {
         return dot;
       }));
       updateHomeHeroPresentation(item);
+      const home = state.homeV14;
+      if (item && home && home.firstHeroReadyMs == null && Number(home.coldStartAt || 0) > 0) {
+        home.firstHeroReadyMs = Math.max(0, Date.now() - Number(home.coldStartAt));
+      }
       focusColdHomeHeroIfReady();
       scheduleHomeHeroAutoplay();
       ensureHomeHeroFeed();
@@ -26760,6 +26912,8 @@ utils.encode = function encode(arr, enc) {
     }
 
     const HOME_CATEGORY_IDS = new Set(["movie", "tv", "anime", "documentary", "variety"]);
+    const HOME_CATEGORY_CACHE_VERSION = 1;
+    const HOME_CATEGORY_CACHE_TTL_MS = 30 * 60 * 1000;
 
     function isHomeCategoryId(id) {
       return HOME_CATEGORY_IDS.has(normalizeLegacyCategoryId(id));
@@ -26767,7 +26921,12 @@ utils.encode = function encode(arr, enc) {
 
     function homeCategoryFeedKey(id) {
       id = normalizeLegacyCategoryId(id);
-      return JSON.stringify([id, "tmdb"]);
+      const sourceIdentity = homeCategoryTmdbSources(id).map((source) => ({
+        endpoint: source.endpoint,
+        mediaType: source.mediaType,
+        params: source.params || {}
+      }));
+      return JSON.stringify([id, "tmdb", sourceIdentity]);
     }
 
     function homeCategoryFeed(id) {
@@ -26784,9 +26943,16 @@ utils.encode = function encode(arr, enc) {
           items: [],
           loading: false,
           loaded: false,
+          loadedAt: 0,
           error: "",
           promise: null,
           requestSeq: 0,
+          cacheChecked: false,
+          cacheHydrated: false,
+          cacheSavedAt: 0,
+          networkLoaded: false,
+          partial: false,
+          requestClass: "foreground",
           dataVersion: "",
           signature: ""
         };
@@ -26798,9 +26964,15 @@ utils.encode = function encode(arr, enc) {
         feed.items = [];
         feed.loading = false;
         feed.loaded = false;
+        feed.loadedAt = 0;
         feed.error = "";
         feed.promise = null;
         feed.requestSeq = Number(feed.requestSeq || 0) + 1;
+        feed.cacheChecked = false;
+        feed.cacheHydrated = false;
+        feed.cacheSavedAt = 0;
+        feed.networkLoaded = false;
+        feed.partial = false;
         feed.dataVersion = key;
         feed.signature = key;
       }
@@ -26818,14 +26990,27 @@ utils.encode = function encode(arr, enc) {
         feed.items = [];
         feed.loading = false;
         feed.loaded = false;
+        feed.loadedAt = 0;
         feed.error = "";
         feed.promise = null;
         feed.requestSeq = Number(feed.requestSeq || 0) + 1;
+        feed.cacheChecked = false;
+        feed.cacheHydrated = false;
+        feed.cacheSavedAt = 0;
+        feed.networkLoaded = false;
+        feed.partial = false;
       });
     }
 
     function homeCategoryFeedIsCurrent(feed, key, requestSeq) {
       return !!(feed && feed.key === key && Number(feed.requestSeq || 0) === Number(requestSeq || 0));
+    }
+
+    function homeCategoryFeedNeedsRefresh(feed, now) {
+      if (!feed || !feed.loaded) return true;
+      const loadedAt = Number(feed.loadedAt || feed.cacheSavedAt || 0);
+      const age = Number(now || Date.now()) - loadedAt;
+      return loadedAt <= 0 || age < 0 || age >= HOME_CATEGORY_CACHE_TTL_MS;
     }
 
     function homeCategoryDefaultFilters() {
@@ -26840,26 +27025,32 @@ utils.encode = function encode(arr, enc) {
         .map((result) => result.entry);
     }
 
-    async function loadHomeCategoryTmdbPool(id) {
+    async function loadHomeCategoryTmdbPool(id, requestClass, requestKey, onSourceResult) {
       const sources = homeCategoryTmdbSources(id);
-      if (!sources.length) return { items: [], error: "暂无可用来源" };
-      const results = await Promise.all(sources.map((source) => Promise.resolve()
-        .then(() => requestJson(tmdbUrl(source, 1), 18))
-        .then((body) => ({ source, body: body || {}, error: null }))
-        .catch((error) => ({ source, body: null, error }))));
-      const incoming = [];
+      if (!sources.length) return { items: [], error: "暂无可用来源", goodCount: 0, totalSources: 0 };
       let goodCount = 0;
-      results.forEach((result) => {
-        if (result.error || !result.body) return;
-        goodCount += 1;
-        (Array.isArray(result.body.results) ? result.body.results : []).forEach((item, index) => {
-          const normalized = normalizeTmdb(item, result.source, index);
-          if (hasPoster(normalized) && (!isReleaseFilteredCatalogId(id) || isReleasedAsOfToday(normalized))) incoming.push(normalized);
-        });
-      });
+      const sourceItems = sources.map(() => []);
+      await Promise.all(sources.map((source, sourceIndex) => Promise.resolve()
+        .then(() => homeRequestJson(tmdbUrl(source, 1), 18, requestClass, requestKey))
+        .then((body) => {
+          goodCount += 1;
+          sourceItems[sourceIndex] = (Array.isArray(body && body.results) ? body.results : [])
+            .map((item, index) => normalizeTmdb(item, source, index))
+            .filter((item) => hasPoster(item) && (!isReleaseFilteredCatalogId(id) || isReleasedAsOfToday(item)));
+          if (typeof onSourceResult === "function") {
+            const partialItems = uniqueMedia(filterReleasedCatalogItems(id, sourceItems.reduce((all, items) => all.concat(items), [])));
+            if (partialItems.length) {
+              try { onSourceResult(partialItems, { sourceIndex, goodCount, totalSources: sources.length }); } catch (e) {}
+            }
+          }
+        })
+        .catch(() => { sourceItems[sourceIndex] = []; })));
+      const incoming = sourceItems.reduce((all, items) => all.concat(items), []);
       return {
         items: uniqueMedia(filterReleasedCatalogItems(id, incoming)),
-        error: goodCount ? "" : "加载失败"
+        error: goodCount ? "" : "加载失败",
+        goodCount,
+        totalSources: sources.length
       };
     }
 
@@ -26868,36 +27059,169 @@ utils.encode = function encode(arr, enc) {
       return Number(config && config.initialLimit || homeRailLimit("portrait"));
     }
 
-    function loadHomeCategoryFeed(id) {
+    function homeCategoryCacheKey(id) {
+      return "fish2018_home_v1_home_category_" + normalizeLegacyCategoryId(id);
+    }
+
+    function homeCategoryCacheItem(item, categoryId) {
+      if (!item || typeof item !== "object" || String(item.source || "") !== "tmdb") return null;
+      const mediaType = String(item.mediaType || "").toLowerCase();
+      const tmdbId = String(item.tmdbId || "").trim();
+      if ((mediaType !== "movie" && mediaType !== "tv") || !/^\d+$/.test(tmdbId) || !String(item.pic || "").trim()) return null;
+      return {
+        id: `tmdb:${mediaType}:${tmdbId}`,
+        source: "tmdb",
+        tmdbId,
+        mediaType,
+        listId: normalizeLegacyCategoryId(categoryId),
+        listTitle: String(item.listTitle || categoryId).slice(0, 80),
+        title: String(item.title || "未命名").slice(0, 240),
+        originalTitle: String(item.originalTitle || "").slice(0, 240),
+        aliases: (Array.isArray(item.aliases) ? item.aliases : []).map((value) => String(value || "").slice(0, 240)).filter(Boolean).slice(0, 12),
+        resourceSearchTitle: String(item.resourceSearchTitle || item.title || "").slice(0, 240),
+        pic: String(item.pic || ""),
+        landscape: String(item.landscape || ""),
+        image: String(item.image || item.landscape || item.pic || ""),
+        remark: String(item.remark || "").slice(0, 120),
+        desc: String(item.desc || "").slice(0, 1800),
+        releaseDate: String(item.releaseDate || "").slice(0, 32),
+        genreIds: (Array.isArray(item.genreIds) ? item.genreIds : []).map((value) => String(value || "")).filter(Boolean).slice(0, 32),
+        originCountries: (Array.isArray(item.originCountries) ? item.originCountries : []).map((value) => String(value || "")).filter(Boolean).slice(0, 16),
+        originalLanguage: String(item.originalLanguage || "").slice(0, 16),
+        popularity: Number(item.popularity || 0),
+        voteAverage: Number(item.voteAverage || 0),
+        baseRank: Math.max(0, Number(item.baseRank || 0))
+      };
+    }
+
+    function homeCategorySnapshotIsValid(snapshot, id, key, now) {
+      if (!snapshot || typeof snapshot !== "object" || Number(snapshot.version) !== HOME_CATEGORY_CACHE_VERSION) return false;
+      if (String(snapshot.categoryId || "") !== normalizeLegacyCategoryId(id) || String(snapshot.feedKey || "") !== String(key || "")) return false;
+      const savedAt = Number(snapshot.savedAt || 0);
+      const age = Number(now || Date.now()) - savedAt;
+      return savedAt > 0 && age >= 0 && age <= HOME_CATEGORY_CACHE_TTL_MS && Array.isArray(snapshot.items) && snapshot.items.length > 0;
+    }
+
+    async function hydrateHomeCategoryCache(feed, id, key, requestSeq) {
+      if (!feed || feed.cacheChecked) return false;
+      feed.cacheChecked = true;
+      const storageKey = homeCategoryCacheKey(id);
+      let saved = null;
+      try { saved = safeJson(await sdk().cache.get(storageKey), null); } catch (e) { saved = null; }
+      if (!homeCategoryFeedIsCurrent(feed, key, requestSeq) || feed.networkLoaded || feed.partial) return false;
+      const home = state.homeV14;
+      const items = homeCategorySnapshotIsValid(saved, id, key, Date.now())
+        ? saved.items.map((item) => homeCategoryCacheItem(item, id)).filter(Boolean)
+        : [];
+      if (!items.length) {
+        home.categoryCacheMissCount = Number(home.categoryCacheMissCount || 0) + 1;
+        if (saved) {
+          try { if (sdk().cache && typeof sdk().cache.del === "function") await sdk().cache.del(storageKey); } catch (e) {}
+        }
+        return false;
+      }
+      feed.items = items;
+      feed.loaded = true;
+      feed.loadedAt = Number(saved.savedAt || 0);
+      feed.error = "";
+      feed.cacheHydrated = true;
+      feed.cacheSavedAt = Number(saved.savedAt || 0);
+      feed.partial = false;
+      feed.dataVersion = key;
+      feed.signature = key;
+      home.categoryCacheHitCount = Number(home.categoryCacheHitCount || 0) + 1;
+      recordHomeCategoryReady(id);
+      renderHomeCategoryRail(id);
+      maybePrefetchHomeTail();
+      recordHomeV14Diag();
+      return true;
+    }
+
+    async function persistHomeCategoryCache(feed, id, key, requestSeq) {
+      if (!feed || !homeCategoryFeedIsCurrent(feed, key, requestSeq) || !feed.items.length) return false;
+      const items = feed.items.map((item) => homeCategoryCacheItem(item, id)).filter(Boolean).slice(0, homeCategoryFeedLimit(id));
+      if (!items.length) return false;
+      const snapshot = {
+        version: HOME_CATEGORY_CACHE_VERSION,
+        categoryId: normalizeLegacyCategoryId(id),
+        feedKey: key,
+        savedAt: Date.now(),
+        items
+      };
+      try {
+        await sdk().cache.set(homeCategoryCacheKey(id), JSON.stringify(snapshot));
+        feed.cacheSavedAt = snapshot.savedAt;
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function loadHomeCategoryFeed(id, options) {
       id = normalizeLegacyCategoryId(id);
       if (!isHomeCategoryId(id)) return Promise.resolve(null);
+      const opts = options || {};
       const feed = homeCategoryFeed(id);
       const key = feed.key;
       if (feed.loading && feed.promise) return feed.promise;
-      if (feed.loaded) return Promise.resolve(feed);
+      if (feed.loaded && !homeCategoryFeedNeedsRefresh(feed)) return Promise.resolve(feed);
       const requestSeq = Number(feed.requestSeq || 0) + 1;
       feed.requestSeq = requestSeq;
       feed.loading = true;
-      feed.loaded = false;
+      feed.requestClass = opts.requestClass === "prefetch" ? "prefetch" : "foreground";
+      feed.networkLoaded = false;
+      feed.partial = false;
       feed.error = "";
-      const target = homeCategoryFeedLimit(id);
+      const requestKey = `home-category:${id}:${requestSeq}`;
+      hydrateHomeCategoryCache(feed, id, key, requestSeq).catch(() => {});
       const task = Promise.resolve().then(async () => {
-        const tmdbResult = await loadHomeCategoryTmdbPool(id);
+        const tmdbResult = await loadHomeCategoryTmdbPool(id, feed.requestClass, requestKey, (partialItems) => {
+          if (!homeCategoryFeedIsCurrent(feed, key, requestSeq) || feed.cacheHydrated) return;
+          const items = filterBlocked(uniqueMedia(partialItems));
+          if (!items.length) return;
+          feed.source = "tmdb";
+          feed.items = items.slice();
+          feed.loaded = true;
+          feed.partial = true;
+          feed.error = "";
+          recordHomeCategoryReady(id);
+          recordHomeCategoryFirstRender(id);
+          renderHomeCategoryRail(id);
+        });
         if (!homeCategoryFeedIsCurrent(feed, key, requestSeq)) return feed;
         const items = filterBlocked(uniqueMedia(Array.isArray(tmdbResult.items) ? tmdbResult.items : []));
-        if (!items.length && tmdbResult.error) throw new Error(tmdbResult.error);
+        if (!tmdbResult.goodCount) throw new Error(tmdbResult.error || "加载失败");
+        if (feed.cacheHydrated && tmdbResult.goodCount < tmdbResult.totalSources) {
+          feed.error = "";
+          return feed;
+        }
         feed.source = "tmdb";
         feed.items = items.slice();
         feed.loaded = true;
+        feed.loadedAt = Date.now();
+        feed.networkLoaded = true;
+        feed.cacheHydrated = false;
+        feed.cacheSavedAt = 0;
+        feed.partial = false;
         feed.error = "";
         feed.dataVersion = key;
         feed.signature = key;
+        recordHomeCategoryReady(id);
+        recordHomeCategoryFinalReady(id);
+        if (tmdbResult.goodCount === tmdbResult.totalSources) persistHomeCategoryCache(feed, id, key, requestSeq).catch(() => {});
+        feed.loading = false;
+        renderHomeCategoryRail(id);
+        maybePrefetchHomeTail();
         return feed;
       }).catch((error) => {
         if (homeCategoryFeedIsCurrent(feed, key, requestSeq)) {
           feed.loaded = true;
-          feed.error = String(error && error.message || "加载失败");
-          feed.items = [];
+          feed.error = feed.items.length ? "" : String(error && error.message || "加载失败");
+          if (!feed.items.length) feed.loadedAt = Date.now();
+          feed.partial = false;
+          feed.loading = false;
+          renderHomeCategoryRail(id);
+          maybePrefetchHomeTail();
         }
         return feed;
       }).finally(() => {
@@ -26977,18 +27301,102 @@ utils.encode = function encode(arr, enc) {
       return section;
     }
 
+    function homeColdStartElapsedMs() {
+      const startedAt = Number(state.homeV14 && state.homeV14.coldStartAt || 0);
+      return startedAt > 0 ? Math.max(0, Date.now() - startedAt) : null;
+    }
+
+    function recordHomeCategoryFirstRender(id) {
+      const home = state.homeV14;
+      const categoryId = normalizeLegacyCategoryId(id);
+      const elapsed = homeColdStartElapsedMs();
+      if (!home || elapsed == null) return null;
+      home.categoryFirstRenderMs = home.categoryFirstRenderMs || {};
+      if (home.categoryFirstRenderMs[categoryId] == null) home.categoryFirstRenderMs[categoryId] = elapsed;
+      if (home.firstCategoryReadyMs == null) home.firstCategoryReadyMs = elapsed;
+      return home.categoryFirstRenderMs[categoryId];
+    }
+
+    function recordHomeCategoryReady(id) {
+      const home = state.homeV14;
+      const categoryId = normalizeLegacyCategoryId(id);
+      const elapsed = homeColdStartElapsedMs();
+      if (!home || elapsed == null) return null;
+      recordHomeCategoryFirstRender(categoryId);
+      home.categoryReadyMs = home.categoryReadyMs || {};
+      if (home.categoryReadyMs[categoryId] == null) home.categoryReadyMs[categoryId] = elapsed;
+      maybePrefetchHomeTail();
+      return home.categoryReadyMs[categoryId];
+    }
+
+    function recordHomeCategoryFinalReady(id) {
+      const home = state.homeV14;
+      const categoryId = normalizeLegacyCategoryId(id);
+      const elapsed = homeColdStartElapsedMs();
+      if (!home || elapsed == null) return null;
+      home.categoryFinalReadyMs = home.categoryFinalReadyMs || {};
+      if (home.categoryFinalReadyMs[categoryId] == null) home.categoryFinalReadyMs[categoryId] = elapsed;
+      return home.categoryFinalReadyMs[categoryId];
+    }
+
+    function renderHomeCategoryRail(id) {
+      if (!isHomeRouteActive()) return false;
+      const categoryId = normalizeLegacyCategoryId(id);
+      const section = document.getElementById(homeSectionDomId(categoryId));
+      const config = homeSectionConfig().find((entry) => entry.listId === categoryId);
+      if (!section || !config) return false;
+      renderHomeDynamicSection(section, config);
+      requestAnimationFrame(updateHomeRails);
+      recordHomeV14Diag();
+      return true;
+    }
+
+    function maybePrefetchHomeTail() {
+      const home = state.homeV14;
+      if (!home || home.tailPrefetchStarted || !isHomeRouteActive()) return false;
+      const configs = homeSectionConfig().filter((entry) => isHomeCategoryId(entry.listId));
+      if (configs.length <= 2) return false;
+      const initial = configs.slice(0, 2);
+      const ready = initial.every((config) => {
+        const feed = home.categoryFeeds && home.categoryFeeds[config.listId];
+        return !!(feed && feed.loaded);
+      });
+      if (!ready) return false;
+      home.tailPrefetchStarted = true;
+      configs.slice(2).forEach((config) => enqueueHomeListLoad(config.listId, "prefetch"));
+      return true;
+    }
+
+    function homeBaseFeedsReady() {
+      const configs = homeSectionConfig().filter((entry) => isHomeCategoryId(entry.listId));
+      return configs.length > 0 && configs.every((config) => {
+        const feed = state.homeV14.categoryFeeds && state.homeV14.categoryFeeds[config.listId];
+        return !!(feed && feed.loaded);
+      });
+    }
+
+    function recordHomeCardEnrichmentStart(kind) {
+      if (kind === "tv" && homeUiRoute() === "home" && !homeBaseFeedsReady()) {
+        if (!state.homeV14.tvCardEnrichmentStartedBeforeBaseFeedsReady) {
+          state.homeV14.tvCardEnrichmentStartedBeforeBaseFeedsReady = true;
+          recordHomeV14Diag();
+        }
+      }
+    }
+
     function renderHomeDynamicSection(section, config) {
       if (!isHomeRouteActive()) {
         if (section) section.hidden = true;
         return;
       }
+      state.homeV14.homeRailUpdateCount = Number(state.homeV14.homeRailUpdateCount || 0) + 1;
       const title = section.querySelector(".home-section-title");
       const rail = section.querySelector(".home-rail");
       if (title) title.textContent = config.title;
       if (!rail) return;
       rail.dataset.homeVariant = config.variant;
       const feed = homeCategoryFeed(config.listId);
-      const hasPartialItems = false;
+      const hasPartialItems = !!(feed && feed.loaded && Array.isArray(feed.items) && feed.items.length);
       const items = feed && feed.loaded ? feed.items : [];
       rail.dataset.homeFeedSource = feed && feed.source || "";
       rail.dataset.homeFeedVersion = feed && feed.dataVersion || "";
@@ -27174,7 +27582,9 @@ utils.encode = function encode(arr, enc) {
         const job = runtime.cardQueue.shift();
         if (!job || runtime.cardTasks[job.key] !== job) continue;
         runtime.cardActive += 1;
-        requestTvDetailShared(job.item).then((detail) => {
+        if (job.home) recordHomeCardEnrichmentStart("tv");
+        const request = job.home ? homeEnrichmentRequest : requestJson;
+        requestTvDetailShared(job.item, request).then((detail) => {
           if (job.generation === runtime.generation && detail) updateTvEpisodeStatusCards(job.item, detail);
         }).catch(() => {}).finally(() => {
           runtime.cardActive = Math.max(0, runtime.cardActive - 1);
@@ -27195,7 +27605,7 @@ utils.encode = function encode(arr, enc) {
       const runtime = state.tvDetail;
       const key = tvDetailCacheKey(item);
       if (!runtime || !key || runtime.cardTasks[key]) return;
-      const job = { key, item, generation: runtime.generation };
+      const job = { key, item, generation: runtime.generation, home: !!(card.closest && card.closest("#home")) };
       runtime.cardTasks[key] = job;
       runtime.cardQueue.push(job);
       flushTvCardDetailQueue();
@@ -27277,7 +27687,8 @@ utils.encode = function encode(arr, enc) {
         const job = runtime.cardQueue.shift();
         if (!job || runtime.cardTasks[job.key] !== job) continue;
         runtime.cardActive += 1;
-        requestMovieDetailShared(job.item).then((detail) => {
+        const request = job.home ? homeEnrichmentRequest : requestJson;
+        requestMovieDetailShared(job.item, request).then((detail) => {
           if (detail) updateMovieReleaseStatusCards(job.item, detail);
         }).catch(() => {}).finally(() => {
           runtime.cardActive = Math.max(0, runtime.cardActive - 1);
@@ -27301,7 +27712,7 @@ utils.encode = function encode(arr, enc) {
       if (!runtime.cardTasks) runtime.cardTasks = {};
       if (!Array.isArray(runtime.cardQueue)) runtime.cardQueue = [];
       if (runtime.cardTasks[key]) return;
-      const job = { key, item };
+      const job = { key, item, home: !!(card.closest && card.closest("#home")) };
       runtime.cardTasks[key] = job;
       runtime.cardQueue.push(job);
       flushMovieCardDetailQueue();
@@ -27380,27 +27791,52 @@ utils.encode = function encode(arr, enc) {
       window.addEventListener("resize", scheduleHomeRailResize, { passive: true });
     }
 
-    function enqueueHomeListLoad(id) {
+    function enqueueHomeListLoad(id, requestClass) {
       if (!isHomeRouteActive() || !id || id === "all" || id === "recent" || id === "live") return;
+      id = normalizeLegacyCategoryId(id);
+      if (!isHomeCategoryId(id)) return;
+      const desiredClass = requestClass === "prefetch" ? "prefetch" : "foreground";
       const feed = homeCategoryFeed(id);
       const home = state.homeV14;
-      if (feed && (feed.loading || feed.loaded) || home.loadQueue.includes(id)) return;
-      home.loadQueue.push(id);
+      if (feed && feed.loading) {
+        if (desiredClass === "foreground" && feed.requestClass === "prefetch") {
+          feed.requestClass = "foreground";
+          promoteHomeBudgetRequests(`home-category:${id}:${Number(feed.requestSeq || 0)}`, "foreground");
+        }
+        return;
+      }
+      if (feed && feed.loaded && !homeCategoryFeedNeedsRefresh(feed)) return;
+      const queued = home.loadQueue.find((entry) => entry.id === id);
+      if (queued) {
+        if (desiredClass === "foreground" && queued.requestClass === "prefetch") {
+          queued.requestClass = "foreground";
+          home.loadQueue.splice(home.loadQueue.indexOf(queued), 1);
+          home.loadQueue.unshift(queued);
+        }
+        pumpHomeListLoads();
+        return;
+      }
+      const entry = { id, requestClass: desiredClass };
+      const priority = Number(HOME_REQUEST_PRIORITY[desiredClass] || 0);
+      const insertAt = home.loadQueue.findIndex((queuedEntry) => Number(HOME_REQUEST_PRIORITY[queuedEntry.requestClass] || 0) > priority);
+      if (insertAt < 0) home.loadQueue.push(entry);
+      else home.loadQueue.splice(insertAt, 0, entry);
       pumpHomeListLoads();
     }
 
     function pumpHomeListLoads() {
       const home = state.homeV14;
       while (isHomeRouteActive() && home.activeLoads < HOME_V14_MAX_CONCURRENT && home.loadQueue.length) {
-        const id = home.loadQueue.shift();
+        const request = home.loadQueue.shift();
+        const id = request.id;
         const feed = homeCategoryFeed(id);
-        if (feed && (feed.loading || feed.loaded)) continue;
+        if (feed && (feed.loading || (feed.loaded && !homeCategoryFeedNeedsRefresh(feed)))) continue;
         home.activeLoads += 1;
         home.requestCount += 1;
         home.maxConcurrent = Math.max(home.maxConcurrent, home.activeLoads);
-        Promise.resolve(loadHomeCategoryFeed(id)).catch(() => {}).finally(() => {
+        Promise.resolve(loadHomeCategoryFeed(id, { requestClass: request.requestClass })).catch(() => {}).finally(() => {
           home.activeLoads = Math.max(0, home.activeLoads - 1);
-          if (isHomeRouteActive()) renderHome();
+          if (isHomeRouteActive()) recordHomeV14Diag();
           pumpHomeListLoads();
         });
       }
@@ -27421,7 +27857,7 @@ utils.encode = function encode(arr, enc) {
           const br = b.getBoundingClientRect ? b.getBoundingClientRect().top : 0;
           return ar - br;
         })
-        .forEach((section) => enqueueHomeListLoad(section.dataset.homeListId));
+        .forEach((section) => enqueueHomeListLoad(section.dataset.homeListId, "foreground"));
     }
 
     function ensureHomeSectionObserver() {
@@ -27430,7 +27866,7 @@ utils.encode = function encode(arr, enc) {
         if (!home.sectionObserver) {
           home.sectionObserver = new IntersectionObserver((entries) => {
             entries.forEach((entry) => {
-              if (entry.isIntersecting) enqueueHomeListLoad(entry.target.dataset.homeListId);
+              if (entry.isIntersecting) enqueueHomeListLoad(entry.target.dataset.homeListId, "foreground");
             });
             recordHomeV14Diag();
           }, { root: null, rootMargin: HOME_V14_SECTION_ROOT_MARGIN, threshold: 0.01 });
@@ -27446,6 +27882,9 @@ utils.encode = function encode(arr, enc) {
       const homeRoot = $("home");
       const home = state.homeV14;
       if (!homeRoot) return null;
+      const budget = homeRequestBudgetState();
+      const latest = state.homeLatest || {};
+      const elapsed = homeColdStartElapsedMs();
       const root = document.documentElement;
       const viewportHeight = Number(window.visualViewport && window.visualViewport.height)
         || Number(root.clientHeight)
@@ -27502,7 +27941,31 @@ utils.encode = function encode(arr, enc) {
         detailSheetBottomOverrunPx: detailRect ? Math.max(0, Number(detailRect.bottom || 0) - viewportHeight) : 0,
         detailSheetClientHeightPx: detailActive ? Number(detailSheet.clientHeight || 0) : 0,
         detailSheetScrollHeightPx: detailActive ? Number(detailSheet.scrollHeight || 0) : 0,
-        detailSheetScrollRangePx: detailActive ? Math.max(0, Number(detailSheet.scrollHeight || 0) - Number(detailSheet.clientHeight || 0)) : 0
+        detailSheetScrollRangePx: detailActive ? Math.max(0, Number(detailSheet.scrollHeight || 0) - Number(detailSheet.clientHeight || 0)) : 0,
+        HOME_COLD_START_AT: Number(home.coldStartAt || 0),
+        FIRST_HOME_RENDER_MS: home.firstHomeRenderMs,
+        FIRST_HERO_READY_MS: home.firstHeroReadyMs,
+        FIRST_CATEGORY_READY_MS: home.firstCategoryReadyMs,
+        MOVIE_READY_MS: home.categoryReadyMs && home.categoryReadyMs.movie != null ? home.categoryReadyMs.movie : null,
+        TV_READY_MS: home.categoryReadyMs && home.categoryReadyMs.tv != null ? home.categoryReadyMs.tv : null,
+        ANIME_FIRST_RENDER_MS: home.categoryFirstRenderMs && home.categoryFirstRenderMs.anime != null ? home.categoryFirstRenderMs.anime : null,
+        ANIME_FINAL_READY_MS: home.categoryFinalReadyMs && home.categoryFinalReadyMs.anime != null ? home.categoryFinalReadyMs.anime : null,
+        DOCUMENTARY_FIRST_RENDER_MS: home.categoryFirstRenderMs && home.categoryFirstRenderMs.documentary != null ? home.categoryFirstRenderMs.documentary : null,
+        DOCUMENTARY_FINAL_READY_MS: home.categoryFinalReadyMs && home.categoryFinalReadyMs.documentary != null ? home.categoryFinalReadyMs.documentary : null,
+        VARIETY_READY_MS: home.categoryReadyMs && home.categoryReadyMs.variety != null ? home.categoryReadyMs.variety : null,
+        CATEGORY_CACHE_HIT_COUNT: Number(home.categoryCacheHitCount || 0),
+        CATEGORY_CACHE_MISS_COUNT: Number(home.categoryCacheMissCount || 0),
+        FOREGROUND_REQUEST_MAX: Number(budget.maxByClass && budget.maxByClass.foreground || 0),
+        BACKGROUND_REQUEST_MAX: Number(budget.maxBackground || 0),
+        ENRICHMENT_REQUEST_MAX: Number(budget.maxByClass && budget.maxByClass.enrichment || 0),
+        HOME_REQUEST_ACTIVE: Number(budget.active || 0),
+        HOME_REQUEST_QUEUED: Array.isArray(budget.queue) ? budget.queue.length : 0,
+        HOME_WHOLE_RENDER_COUNT: Number(home.wholeHomeRenderCount || 0),
+        HOME_RAIL_UPDATE_COUNT: Number(home.homeRailUpdateCount || 0),
+        WEEKLY_CACHE_HIT: latest.cacheChecked ? !!latest.cacheHydrated : null,
+        WEEKLY_NETWORK_REFRESH_START_MS: Number(latest.networkRefreshStartedAt || 0) > 0 && elapsed != null ? Math.max(0, Number(latest.networkRefreshStartedAt) - Number(home.coldStartAt)) : null,
+        WEEKLY_NETWORK_REFRESH_END_MS: Number(latest.networkRefreshEndedAt || 0) > 0 && elapsed != null ? Math.max(0, Number(latest.networkRefreshEndedAt) - Number(home.coldStartAt)) : null,
+        TV_CARD_ENRICHMENT_STARTED_BEFORE_BASE_FEEDS_READY: home.tvCardEnrichmentStartedBeforeBaseFeedsReady == null ? false : !!home.tvCardEnrichmentStartedBeforeBaseFeedsReady
       };
       home.imageSrcCount = diag.imageSrcCount;
       home.imageDeferredCount = diag.imageDeferredCount;
@@ -27517,6 +27980,10 @@ utils.encode = function encode(arr, enc) {
     function renderHome() {
       const homeRoot = $("home");
       if (!homeRoot || !isHomeRouteActive()) return;
+      const home = state.homeV14;
+      if (!home.coldStartAt) home.coldStartAt = Date.now();
+      if (home.firstHomeRenderMs == null) home.firstHomeRenderMs = 0;
+      home.wholeHomeRenderCount = Number(home.wholeHomeRenderCount || 0) + 1;
       setHomeOnlyPresentationVisible(true);
       renderSidebar();
       renderHomeHero();
@@ -27563,6 +28030,25 @@ utils.encode = function encode(arr, enc) {
         }
         renderAll({ deferContent: uiSnapshotRoute() === "home" });
       }, delay);
+    }
+
+    function scheduleHomeNostrRender() {
+      if (homeUiRoute() !== "home" || !isHomeRouteActive()) {
+        scheduleRender();
+        return;
+      }
+      const home = state.homeV14;
+      if (home.nostrRenderFrame) cancelAnimationFrame(home.nostrRenderFrame);
+      home.nostrRenderFrame = requestAnimationFrame(() => {
+        home.nostrRenderFrame = 0;
+        if (homeUiRoute() !== "home" || !isHomeRouteActive()) {
+          scheduleRender();
+          return;
+        }
+        renderHomeHero();
+        renderHomeRecommendation();
+        recordHomeV14Diag();
+      });
     }
 
     function homeSectionDomId(listId) {
@@ -29033,6 +29519,13 @@ utils.encode = function encode(arr, enc) {
       fillRail(rail, items, options);
     }
 
+    function homeRailIsInViewport(rail) {
+      if (!rail || !rail.getBoundingClientRect) return true;
+      const rect = rail.getBoundingClientRect();
+      const height = window.innerHeight || document.documentElement.clientHeight || 0;
+      return rect.bottom >= 0 && rect.top <= height;
+    }
+
     function createHomeRailMoreCard(listId, landscape) {
       const button = document.createElement("button");
       const id = normalizeLegacyCategoryId(listId || "");
@@ -29066,12 +29559,16 @@ utils.encode = function encode(arr, enc) {
       const savedLeft = key ? state.railScroll[key] || 0 : 0;
       const detailRail = !!($("detailSheet") && $("detailSheet").contains(rail));
       const landscape = typeof opts.landscape === "boolean" ? opts.landscape : detailRail && useLargeDetailLayout();
+      const requestedHomeEagerCount = Number(opts.homeEagerCount == null ? 4 : opts.homeEagerCount);
+      const homeEagerCount = opts.home === true && opts.homeLazy && isTvLikeDevice() && !homeRailIsInViewport(rail)
+        ? 0
+        : requestedHomeEagerCount;
       const children = items.map((item, index) => mediaCard(item, index, {
         landscape,
         home: !!opts.home,
         weeklyHome: !!opts.weeklyHome,
         weekly: !!opts.weekly,
-        homeLazy: !!opts.homeLazy && isTvLikeDevice() && index >= Number(opts.homeEagerCount == null ? 4 : opts.homeEagerCount),
+        homeLazy: !!opts.homeLazy && isTvLikeDevice() && index >= homeEagerCount,
         searchResult: opts.searchResult === true,
         searchQuery: opts.searchQuery || ""
       }));

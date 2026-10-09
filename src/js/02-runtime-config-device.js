@@ -221,7 +221,7 @@
       recent: { items: [], loading: false, loadingPromise: null, loaded: false, error: "", refreshedAt: 0, diag: null, nativeItems: [], nativeLoaded: false, nativeLoading: false, nativeRefreshedAt: 0, nativeKeyFlow: {}, runSeq: 0, activeRun: null, pendingRefresh: false, pendingRefreshSilent: true, pendingRefreshReconcileDetail: true },
       movieDetail: { cache: {}, cardTasks: {}, cardQueue: [], cardActive: 0, observer: null, scrollBound: false, scanTimer: 0 },
       tvDetail: { cache: {}, cardTasks: {}, cardQueue: [], cardActive: 0, observer: null, scrollBound: false, scanTimer: 0, generation: 0 },
-      homeLatest: { items: [], loading: false, loaded: false, error: "", loadedAt: 0, lastRefreshAt: 0, requestSeq: 0, diag: null, promise: null, cacheChecked: false, cacheHydrated: false, cacheWeekStart: "", cacheSavedAt: 0, cacheItemCount: 0, cacheHydratedAt: 0, networkRefreshReason: "", networkRefreshSucceeded: false, refreshStartedAt: 0, firstRenderableAt: 0 },
+      homeLatest: { items: [], loading: false, loaded: false, error: "", loadedAt: 0, lastRefreshAt: 0, requestSeq: 0, diag: null, promise: null, cacheChecked: false, cacheHydrated: false, cacheWeekStart: "", cacheSavedAt: 0, cacheItemCount: 0, cacheHydratedAt: 0, networkRefreshReason: "", networkRefreshSucceeded: false, refreshStartedAt: 0, networkRefreshStartedAt: 0, networkRefreshEndedAt: 0, firstRenderableAt: 0 },
       gridRender: {},
       gridColumnCache: {},
       loadingMore: false,
@@ -234,6 +234,28 @@
         loadQueue: [],
         activeLoads: 0,
         maxConcurrent: 0,
+        requestBudget: {
+          queue: [],
+          active: 0,
+          maxActive: 0,
+          nextSeq: 0,
+          activeByClass: { foreground: 0, prefetch: 0, background: 0, enrichment: 0 },
+          maxByClass: { foreground: 0, prefetch: 0, background: 0, enrichment: 0 }
+        },
+        coldStartAt: 0,
+        firstHomeRenderMs: null,
+        firstHeroReadyMs: null,
+        firstCategoryReadyMs: null,
+        categoryFirstRenderMs: {},
+        categoryReadyMs: {},
+        categoryFinalReadyMs: {},
+        categoryCacheHitCount: 0,
+        categoryCacheMissCount: 0,
+        tailPrefetchStarted: false,
+        wholeHomeRenderCount: 0,
+        homeRailUpdateCount: 0,
+        tvCardEnrichmentStartedBeforeBaseFeedsReady: false,
+        nostrRenderFrame: 0,
         requestCount: 0,
         renderedSectionCount: 0,
         loadedSectionCount: 0,
@@ -452,6 +474,9 @@
     const HOME_V14_MAX_CONCURRENT = 2;
     const HOME_V14_SECTION_ROOT_MARGIN = "760px 0px";
     const HOME_V14_IMAGE_ROOT_MARGIN = "700px 250px";
+    const HOME_REQUEST_BUDGET_MAX_ACTIVE = 4;
+    const HOME_REQUEST_CLASS_MAX_ACTIVE = { foreground: 3, prefetch: 2, background: 1, enrichment: 1 };
+    const HOME_REQUEST_PRIORITY = { foreground: 0, prefetch: 1, background: 2, enrichment: 3 };
     // Keep only a minimal safety gap above the active Home section.  The
     // section itself, rather than its title or card row, is the anchor.
     const HOME_RAIL_ANCHOR_OFFSET = 8;

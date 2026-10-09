@@ -33,6 +33,25 @@
       }, delay);
     }
 
+    function scheduleHomeNostrRender() {
+      if (homeUiRoute() !== "home" || !isHomeRouteActive()) {
+        scheduleRender();
+        return;
+      }
+      const home = state.homeV14;
+      if (home.nostrRenderFrame) cancelAnimationFrame(home.nostrRenderFrame);
+      home.nostrRenderFrame = requestAnimationFrame(() => {
+        home.nostrRenderFrame = 0;
+        if (homeUiRoute() !== "home" || !isHomeRouteActive()) {
+          scheduleRender();
+          return;
+        }
+        renderHomeHero();
+        renderHomeRecommendation();
+        recordHomeV14Diag();
+      });
+    }
+
     function homeSectionDomId(listId) {
       return `homeSection-${String(listId || "section").replace(/[^a-zA-Z0-9_-]/g, "-")}`;
     }
