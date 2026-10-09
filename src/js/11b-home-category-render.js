@@ -652,6 +652,8 @@
     function updateTvEpisodeStatusCards(itemOrId, detail) {
       const id = tvDetailCacheId(itemOrId);
       if (!id || !detail) return;
+      let updatedHomeCard = false;
+      const readyAt = Date.now();
       document.querySelectorAll(".card").forEach((card) => {
         if (!isTvEpisodeStatusCard(card)) return;
         const cardItem = card.__mediaItem;
@@ -662,7 +664,16 @@
         const isVariety = normalizeLegacyCategoryId(cardItem.listId || cardItem.categoryId || cardItem.category) === "variety";
         const label = weeklyText || (isVariety ? varietyEpisodeStatusLabel(detail) : tvEpisodeStatusLabel(detail));
         syncCardAirStatusLayout(card, label);
+        if (card.closest && card.closest("#home")) {
+          updatedHomeCard = true;
+          if (!Number(card.dataset.tvStatusReadyAt || 0)) {
+            const baseCardRenderAt = Number(card.dataset.tvStatusBaseCardRenderAt || 0);
+            card.dataset.tvStatusReadyAt = String(readyAt);
+            if (baseCardRenderAt) card.dataset.tvStatusDelayMs = String(Math.max(0, readyAt - baseCardRenderAt));
+          }
+        }
       });
+      if (updatedHomeCard) recordHomeV14Diag();
     }
 
     function tvCardNearViewport(card) {
@@ -680,8 +691,12 @@
         const job = runtime.cardQueue.shift();
         if (!job || runtime.cardTasks[job.key] !== job) continue;
         runtime.cardActive += 1;
-        if (job.home) recordHomeCardEnrichmentStart("tv");
-        const request = job.home ? homeEnrichmentRequest : requestJson;
+        if (job.home) {
+          recordHomeCardEnrichmentStart("tv");
+        }
+        const request = job.home
+          ? (url, timeout) => homeTvStatusRequest(url, timeout, job.key)
+          : requestJson;
         requestTvDetailShared(job.item, request).then((detail) => {
           if (job.generation === runtime.generation && detail) updateTvEpisodeStatusCards(job.item, detail);
         }).catch(() => {}).finally(() => {
@@ -707,6 +722,16 @@
       runtime.cardTasks[key] = job;
       runtime.cardQueue.push(job);
       flushTvCardDetailQueue();
+    }
+
+    function promoteHomeTvCardStatusOnFocus(card) {
+      if (!card || !card.closest || !card.closest("#home") || !isTvEpisodeStatusCard(card)) return false;
+      const status = card.querySelector(".card-air-status");
+      if (status && String(status.textContent || "").trim()) return false;
+      const key = tvDetailCacheKey(card.__mediaItem);
+      const promoted = promoteHomeBudgetRequests(key, "visible-status", "focus");
+      queueTvCardEpisodeEnrichment(card);
+      return promoted;
     }
 
     function ensureTvCardDetailObserver() {
@@ -994,6 +1019,11 @@
       const detailRect = detailActive && detailSheet.getBoundingClientRect ? detailSheet.getBoundingClientRect() : null;
       const configs = homeSectionConfig();
       const cards = Array.from(homeRoot.querySelectorAll(".home-rail > .card"));
+      const tvStatusCards = cards.filter((card) => Number(card.dataset.tvStatusBaseCardRenderAt || 0) > 0);
+      const latestTvStatusCard = tvStatusCards.reduce((latest, card) => {
+        if (!latest) return card;
+        return Number(card.dataset.tvStatusReadyAt || 0) > Number(latest.dataset.tvStatusReadyAt || 0) ? card : latest;
+      }, null);
       const images = Array.from(homeRoot.querySelectorAll("img"));
       const pageLoaded = configs.filter((config) => {
         const feed = home.categoryFeeds && home.categoryFeeds[config.listId];
@@ -1056,6 +1086,15 @@
         FOREGROUND_REQUEST_MAX: Number(budget.maxByClass && budget.maxByClass.foreground || 0),
         BACKGROUND_REQUEST_MAX: Number(budget.maxBackground || 0),
         ENRICHMENT_REQUEST_MAX: Number(budget.maxByClass && budget.maxByClass.enrichment || 0),
+        HOME_TV_STATUS_REQUEST_QUEUED: Number(budget.tvStatusRequestQueued || 0),
+        HOME_TV_STATUS_REQUEST_STARTED: Number(budget.tvStatusRequestStarted || 0),
+        HOME_TV_STATUS_REQUEST_DONE: Number(budget.tvStatusRequestDone || 0),
+        HOME_TV_STATUS_MAX_ACTIVE: Number(budget.maxByClass && budget.maxByClass["visible-status"] || 0),
+        HOME_TV_STATUS_PROMOTED_ON_FOCUS: Number(budget.tvStatusPromotedOnFocus || 0),
+        TV_CARD_STATUS_WAIT_MS: budget.lastTvCardStatusWaitMs == null ? null : Number(budget.lastTvCardStatusWaitMs),
+        BASE_CARD_RENDER_AT: latestTvStatusCard ? Number(latestTvStatusCard.dataset.tvStatusBaseCardRenderAt || 0) : null,
+        TV_STATUS_READY_AT: latestTvStatusCard && Number(latestTvStatusCard.dataset.tvStatusReadyAt || 0) ? Number(latestTvStatusCard.dataset.tvStatusReadyAt) : null,
+        TV_STATUS_DELAY_MS: latestTvStatusCard && latestTvStatusCard.dataset.tvStatusDelayMs != null ? Number(latestTvStatusCard.dataset.tvStatusDelayMs) : null,
         HOME_REQUEST_ACTIVE: Number(budget.active || 0),
         HOME_REQUEST_QUEUED: Array.isArray(budget.queue) ? budget.queue.length : 0,
         HOME_WHOLE_RENDER_COUNT: Number(home.wholeHomeRenderCount || 0),

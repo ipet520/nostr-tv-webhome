@@ -475,8 +475,8 @@
     const HOME_V14_SECTION_ROOT_MARGIN = "760px 0px";
     const HOME_V14_IMAGE_ROOT_MARGIN = "700px 250px";
     const HOME_REQUEST_BUDGET_MAX_ACTIVE = 4;
-    const HOME_REQUEST_CLASS_MAX_ACTIVE = { foreground: 3, prefetch: 2, background: 1, enrichment: 1 };
-    const HOME_REQUEST_PRIORITY = { foreground: 0, prefetch: 1, background: 2, enrichment: 3 };
+    const HOME_REQUEST_CLASS_MAX_ACTIVE = { foreground: 3, "visible-status": 2, prefetch: 2, background: 1, enrichment: 1 };
+    const HOME_REQUEST_PRIORITY = { foreground: 0, "visible-status": 1, prefetch: 2, background: 3, enrichment: 4 };
     // Keep only a minimal safety gap above the active Home section.  The
     // section itself, rather than its title or card row, is the anchor.
     const HOME_RAIL_ANCHOR_OFFSET = 8;

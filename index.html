@@ -17404,8 +17404,8 @@ utils.encode = function encode(arr, enc) {
     const HOME_V14_SECTION_ROOT_MARGIN = "760px 0px";
     const HOME_V14_IMAGE_ROOT_MARGIN = "700px 250px";
     const HOME_REQUEST_BUDGET_MAX_ACTIVE = 4;
-    const HOME_REQUEST_CLASS_MAX_ACTIVE = { foreground: 3, prefetch: 2, background: 1, enrichment: 1 };
-    const HOME_REQUEST_PRIORITY = { foreground: 0, prefetch: 1, background: 2, enrichment: 3 };
+    const HOME_REQUEST_CLASS_MAX_ACTIVE = { foreground: 3, "visible-status": 2, prefetch: 2, background: 1, enrichment: 1 };
+    const HOME_REQUEST_PRIORITY = { foreground: 0, "visible-status": 1, prefetch: 2, background: 3, enrichment: 4 };
     // Keep only a minimal safety gap above the active Home section.  The
     // section itself, rather than its title or card row, is the anchor.
     const HOME_RAIL_ANCHOR_OFFSET = 8;
@@ -20010,8 +20010,10 @@ utils.encode = function encode(arr, enc) {
       if (!home.requestBudget || typeof home.requestBudget !== "object") {
         home.requestBudget = {
           queue: [], active: 0, maxActive: 0, nextSeq: 0,
-          activeByClass: { foreground: 0, prefetch: 0, background: 0, enrichment: 0 },
-          maxByClass: { foreground: 0, prefetch: 0, background: 0, enrichment: 0 }
+          activeByClass: { foreground: 0, "visible-status": 0, prefetch: 0, background: 0, enrichment: 0 },
+          maxByClass: { foreground: 0, "visible-status": 0, prefetch: 0, background: 0, enrichment: 0 },
+          tvStatusRequestQueued: 0, tvStatusRequestStarted: 0, tvStatusRequestDone: 0,
+          tvStatusPromotedOnFocus: 0, lastTvCardStatusWaitMs: null
         };
       }
       const budget = home.requestBudget;
@@ -20019,8 +20021,12 @@ utils.encode = function encode(arr, enc) {
       budget.active = Number(budget.active || 0);
       budget.maxActive = Number(budget.maxActive || 0);
       budget.nextSeq = Number(budget.nextSeq || 0);
-      budget.activeByClass = Object.assign({ foreground: 0, prefetch: 0, background: 0, enrichment: 0 }, budget.activeByClass || {});
-      budget.maxByClass = Object.assign({ foreground: 0, prefetch: 0, background: 0, enrichment: 0 }, budget.maxByClass || {});
+      budget.activeByClass = Object.assign({ foreground: 0, "visible-status": 0, prefetch: 0, background: 0, enrichment: 0 }, budget.activeByClass || {});
+      budget.maxByClass = Object.assign({ foreground: 0, "visible-status": 0, prefetch: 0, background: 0, enrichment: 0 }, budget.maxByClass || {});
+      budget.tvStatusRequestQueued = Number(budget.tvStatusRequestQueued || 0);
+      budget.tvStatusRequestStarted = Number(budget.tvStatusRequestStarted || 0);
+      budget.tvStatusRequestDone = Number(budget.tvStatusRequestDone || 0);
+      budget.tvStatusPromotedOnFocus = Number(budget.tvStatusPromotedOnFocus || 0);
       return budget;
     }
 
@@ -20034,6 +20040,12 @@ utils.encode = function encode(arr, enc) {
         FOREGROUND_REQUEST_MAX: Number(maxima.foreground || 0),
         BACKGROUND_REQUEST_MAX: Number(budget.maxBackground || 0),
         ENRICHMENT_REQUEST_MAX: Number(maxima.enrichment || 0),
+        HOME_TV_STATUS_REQUEST_QUEUED: Number(budget.tvStatusRequestQueued || 0),
+        HOME_TV_STATUS_REQUEST_STARTED: Number(budget.tvStatusRequestStarted || 0),
+        HOME_TV_STATUS_REQUEST_DONE: Number(budget.tvStatusRequestDone || 0),
+        HOME_TV_STATUS_MAX_ACTIVE: Number(maxima["visible-status"] || 0),
+        HOME_TV_STATUS_PROMOTED_ON_FOCUS: Number(budget.tvStatusPromotedOnFocus || 0),
+        TV_CARD_STATUS_WAIT_MS: budget.lastTvCardStatusWaitMs == null ? null : Number(budget.lastTvCardStatusWaitMs),
         HOME_REQUEST_ACTIVE: Number(budget.active || 0),
         HOME_REQUEST_QUEUED: budget.queue.length
       };
@@ -20049,10 +20061,16 @@ utils.encode = function encode(arr, enc) {
         const job = budget.queue.splice(index, 1)[0];
         budget.active += 1;
         budget.activeByClass[job.requestClass] = Number(budget.activeByClass[job.requestClass] || 0) + 1;
+        job.startedClass = job.requestClass;
+        if (job.startedClass === "visible-status") budget.tvStatusRequestStarted += 1;
         budget.maxActive = Math.max(Number(budget.maxActive || 0), budget.active);
         budget.maxByClass[job.requestClass] = Math.max(Number(budget.maxByClass[job.requestClass] || 0), budget.activeByClass[job.requestClass]);
         recordHomeRequestBudgetDiag(budget);
         Promise.resolve().then(job.run).then(job.resolve, job.reject).finally(() => {
+          if (job.startedClass === "visible-status") {
+            budget.tvStatusRequestDone += 1;
+            budget.lastTvCardStatusWaitMs = Math.max(0, Date.now() - Number(job.queuedAt || Date.now()));
+          }
           budget.active = Math.max(0, Number(budget.active || 0) - 1);
           budget.activeByClass[job.requestClass] = Math.max(0, Number(budget.activeByClass[job.requestClass] || 0) - 1);
           recordHomeRequestBudgetDiag(budget);
@@ -20062,24 +20080,33 @@ utils.encode = function encode(arr, enc) {
       recordHomeRequestBudgetDiag(budget);
     }
 
+    function markHomeTvStatusRequestQueued(budget, job) {
+      if (!job || job.tvStatusCounted) return;
+      job.tvStatusCounted = true;
+      budget.tvStatusRequestQueued += 1;
+    }
+
     function scheduleHomeBudgetRequest(requestClass, run, requestKey) {
       const normalized = Object.prototype.hasOwnProperty.call(HOME_REQUEST_PRIORITY, requestClass) ? requestClass : "background";
       const budget = homeRequestBudgetState();
       return new Promise((resolve, reject) => {
-        budget.queue.push({
+        const job = {
           requestClass: normalized,
           requestKey: String(requestKey || ""),
           sequence: ++budget.nextSeq,
+          queuedAt: Date.now(),
           run,
           resolve,
           reject
-        });
+        };
+        if (normalized === "visible-status") markHomeTvStatusRequestQueued(budget, job);
+        budget.queue.push(job);
         recordHomeRequestBudgetDiag(budget);
         pumpHomeRequestBudget();
       });
     }
 
-    function promoteHomeBudgetRequests(requestKey, requestClass) {
+    function promoteHomeBudgetRequests(requestKey, requestClass, reason) {
       const key = String(requestKey || "");
       if (!key || !Object.prototype.hasOwnProperty.call(HOME_REQUEST_PRIORITY, requestClass)) return false;
       const budget = homeRequestBudgetState();
@@ -20088,10 +20115,17 @@ utils.encode = function encode(arr, enc) {
         if (job.requestKey !== key) return;
         if (Number(HOME_REQUEST_PRIORITY[requestClass]) < Number(HOME_REQUEST_PRIORITY[job.requestClass])) {
           job.requestClass = requestClass;
+          if (requestClass === "visible-status") {
+            markHomeTvStatusRequestQueued(budget, job);
+            if (reason === "focus") budget.tvStatusPromotedOnFocus += 1;
+          }
           promoted = true;
         }
       });
-      if (promoted) pumpHomeRequestBudget();
+      if (promoted) {
+        recordHomeRequestBudgetDiag(budget);
+        pumpHomeRequestBudget();
+      }
       return promoted;
     }
 
@@ -20099,8 +20133,17 @@ utils.encode = function encode(arr, enc) {
       return requestJson(url, timeout, { homeRequestClass: requestClass || "foreground", homeRequestKey: requestKey || "" });
     }
 
-    function homeEnrichmentRequest(url, timeout) {
-      return homeRequestJson(url, timeout, "enrichment");
+    function homeTvStatusRequest(url, timeout, requestKey) {
+      return homeRequestJson(url, timeout, "visible-status", requestKey);
+    }
+
+    function homeTvDetailRequestKey(url) {
+      const match = String(url || "").match(/\/tv\/(\d+)(?:[/?#]|$)/i);
+      return match ? `tv:${match[1]}` : "";
+    }
+
+    function homeEnrichmentRequest(url, timeout, requestKey) {
+      return homeRequestJson(url, timeout, "enrichment", requestKey || homeTvDetailRequestKey(url));
     }
 
     async function requestJson(url, timeout, options) {
@@ -27554,6 +27597,8 @@ utils.encode = function encode(arr, enc) {
     function updateTvEpisodeStatusCards(itemOrId, detail) {
       const id = tvDetailCacheId(itemOrId);
       if (!id || !detail) return;
+      let updatedHomeCard = false;
+      const readyAt = Date.now();
       document.querySelectorAll(".card").forEach((card) => {
         if (!isTvEpisodeStatusCard(card)) return;
         const cardItem = card.__mediaItem;
@@ -27564,7 +27609,16 @@ utils.encode = function encode(arr, enc) {
         const isVariety = normalizeLegacyCategoryId(cardItem.listId || cardItem.categoryId || cardItem.category) === "variety";
         const label = weeklyText || (isVariety ? varietyEpisodeStatusLabel(detail) : tvEpisodeStatusLabel(detail));
         syncCardAirStatusLayout(card, label);
+        if (card.closest && card.closest("#home")) {
+          updatedHomeCard = true;
+          if (!Number(card.dataset.tvStatusReadyAt || 0)) {
+            const baseCardRenderAt = Number(card.dataset.tvStatusBaseCardRenderAt || 0);
+            card.dataset.tvStatusReadyAt = String(readyAt);
+            if (baseCardRenderAt) card.dataset.tvStatusDelayMs = String(Math.max(0, readyAt - baseCardRenderAt));
+          }
+        }
       });
+      if (updatedHomeCard) recordHomeV14Diag();
     }
 
     function tvCardNearViewport(card) {
@@ -27582,8 +27636,12 @@ utils.encode = function encode(arr, enc) {
         const job = runtime.cardQueue.shift();
         if (!job || runtime.cardTasks[job.key] !== job) continue;
         runtime.cardActive += 1;
-        if (job.home) recordHomeCardEnrichmentStart("tv");
-        const request = job.home ? homeEnrichmentRequest : requestJson;
+        if (job.home) {
+          recordHomeCardEnrichmentStart("tv");
+        }
+        const request = job.home
+          ? (url, timeout) => homeTvStatusRequest(url, timeout, job.key)
+          : requestJson;
         requestTvDetailShared(job.item, request).then((detail) => {
           if (job.generation === runtime.generation && detail) updateTvEpisodeStatusCards(job.item, detail);
         }).catch(() => {}).finally(() => {
@@ -27609,6 +27667,16 @@ utils.encode = function encode(arr, enc) {
       runtime.cardTasks[key] = job;
       runtime.cardQueue.push(job);
       flushTvCardDetailQueue();
+    }
+
+    function promoteHomeTvCardStatusOnFocus(card) {
+      if (!card || !card.closest || !card.closest("#home") || !isTvEpisodeStatusCard(card)) return false;
+      const status = card.querySelector(".card-air-status");
+      if (status && String(status.textContent || "").trim()) return false;
+      const key = tvDetailCacheKey(card.__mediaItem);
+      const promoted = promoteHomeBudgetRequests(key, "visible-status", "focus");
+      queueTvCardEpisodeEnrichment(card);
+      return promoted;
     }
 
     function ensureTvCardDetailObserver() {
@@ -27896,6 +27964,11 @@ utils.encode = function encode(arr, enc) {
       const detailRect = detailActive && detailSheet.getBoundingClientRect ? detailSheet.getBoundingClientRect() : null;
       const configs = homeSectionConfig();
       const cards = Array.from(homeRoot.querySelectorAll(".home-rail > .card"));
+      const tvStatusCards = cards.filter((card) => Number(card.dataset.tvStatusBaseCardRenderAt || 0) > 0);
+      const latestTvStatusCard = tvStatusCards.reduce((latest, card) => {
+        if (!latest) return card;
+        return Number(card.dataset.tvStatusReadyAt || 0) > Number(latest.dataset.tvStatusReadyAt || 0) ? card : latest;
+      }, null);
       const images = Array.from(homeRoot.querySelectorAll("img"));
       const pageLoaded = configs.filter((config) => {
         const feed = home.categoryFeeds && home.categoryFeeds[config.listId];
@@ -27958,6 +28031,15 @@ utils.encode = function encode(arr, enc) {
         FOREGROUND_REQUEST_MAX: Number(budget.maxByClass && budget.maxByClass.foreground || 0),
         BACKGROUND_REQUEST_MAX: Number(budget.maxBackground || 0),
         ENRICHMENT_REQUEST_MAX: Number(budget.maxByClass && budget.maxByClass.enrichment || 0),
+        HOME_TV_STATUS_REQUEST_QUEUED: Number(budget.tvStatusRequestQueued || 0),
+        HOME_TV_STATUS_REQUEST_STARTED: Number(budget.tvStatusRequestStarted || 0),
+        HOME_TV_STATUS_REQUEST_DONE: Number(budget.tvStatusRequestDone || 0),
+        HOME_TV_STATUS_MAX_ACTIVE: Number(budget.maxByClass && budget.maxByClass["visible-status"] || 0),
+        HOME_TV_STATUS_PROMOTED_ON_FOCUS: Number(budget.tvStatusPromotedOnFocus || 0),
+        TV_CARD_STATUS_WAIT_MS: budget.lastTvCardStatusWaitMs == null ? null : Number(budget.lastTvCardStatusWaitMs),
+        BASE_CARD_RENDER_AT: latestTvStatusCard ? Number(latestTvStatusCard.dataset.tvStatusBaseCardRenderAt || 0) : null,
+        TV_STATUS_READY_AT: latestTvStatusCard && Number(latestTvStatusCard.dataset.tvStatusReadyAt || 0) ? Number(latestTvStatusCard.dataset.tvStatusReadyAt) : null,
+        TV_STATUS_DELAY_MS: latestTvStatusCard && latestTvStatusCard.dataset.tvStatusDelayMs != null ? Number(latestTvStatusCard.dataset.tvStatusDelayMs) : null,
         HOME_REQUEST_ACTIVE: Number(budget.active || 0),
         HOME_REQUEST_QUEUED: Array.isArray(budget.queue) ? budget.queue.length : 0,
         HOME_WHOLE_RENDER_COUNT: Number(home.wholeHomeRenderCount || 0),
@@ -30031,6 +30113,15 @@ utils.encode = function encode(arr, enc) {
       }
       button.__mediaItem = item;
       button.__weeklyHome = weeklyHome;
+      if (home && tvEpisodeCard) {
+        const baseCardRenderAt = Date.now();
+        button.dataset.tvStatusBaseCardRenderAt = String(baseCardRenderAt);
+        if (airStatusText) {
+          button.dataset.tvStatusReadyAt = String(baseCardRenderAt);
+          button.dataset.tvStatusDelayMs = "0";
+        }
+        button.addEventListener("focus", () => promoteHomeTvCardStatusOnFocus(button));
+      }
       if (recentWatching) recordRecentNativeKeyFlow("RECENT_NATIVE_KEY_AT_CARD", item);
       button.classList.toggle("blocked", isBlocked(item));
       const rawRating = item && item.voteAverage != null && item.voteAverage !== ""

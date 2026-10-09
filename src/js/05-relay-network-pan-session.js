@@ -341,8 +341,10 @@
       if (!home.requestBudget || typeof home.requestBudget !== "object") {
         home.requestBudget = {
           queue: [], active: 0, maxActive: 0, nextSeq: 0,
-          activeByClass: { foreground: 0, prefetch: 0, background: 0, enrichment: 0 },
-          maxByClass: { foreground: 0, prefetch: 0, background: 0, enrichment: 0 }
+          activeByClass: { foreground: 0, "visible-status": 0, prefetch: 0, background: 0, enrichment: 0 },
+          maxByClass: { foreground: 0, "visible-status": 0, prefetch: 0, background: 0, enrichment: 0 },
+          tvStatusRequestQueued: 0, tvStatusRequestStarted: 0, tvStatusRequestDone: 0,
+          tvStatusPromotedOnFocus: 0, lastTvCardStatusWaitMs: null
         };
       }
       const budget = home.requestBudget;
@@ -350,8 +352,12 @@
       budget.active = Number(budget.active || 0);
       budget.maxActive = Number(budget.maxActive || 0);
       budget.nextSeq = Number(budget.nextSeq || 0);
-      budget.activeByClass = Object.assign({ foreground: 0, prefetch: 0, background: 0, enrichment: 0 }, budget.activeByClass || {});
-      budget.maxByClass = Object.assign({ foreground: 0, prefetch: 0, background: 0, enrichment: 0 }, budget.maxByClass || {});
+      budget.activeByClass = Object.assign({ foreground: 0, "visible-status": 0, prefetch: 0, background: 0, enrichment: 0 }, budget.activeByClass || {});
+      budget.maxByClass = Object.assign({ foreground: 0, "visible-status": 0, prefetch: 0, background: 0, enrichment: 0 }, budget.maxByClass || {});
+      budget.tvStatusRequestQueued = Number(budget.tvStatusRequestQueued || 0);
+      budget.tvStatusRequestStarted = Number(budget.tvStatusRequestStarted || 0);
+      budget.tvStatusRequestDone = Number(budget.tvStatusRequestDone || 0);
+      budget.tvStatusPromotedOnFocus = Number(budget.tvStatusPromotedOnFocus || 0);
       return budget;
     }
 
@@ -365,6 +371,12 @@
         FOREGROUND_REQUEST_MAX: Number(maxima.foreground || 0),
         BACKGROUND_REQUEST_MAX: Number(budget.maxBackground || 0),
         ENRICHMENT_REQUEST_MAX: Number(maxima.enrichment || 0),
+        HOME_TV_STATUS_REQUEST_QUEUED: Number(budget.tvStatusRequestQueued || 0),
+        HOME_TV_STATUS_REQUEST_STARTED: Number(budget.tvStatusRequestStarted || 0),
+        HOME_TV_STATUS_REQUEST_DONE: Number(budget.tvStatusRequestDone || 0),
+        HOME_TV_STATUS_MAX_ACTIVE: Number(maxima["visible-status"] || 0),
+        HOME_TV_STATUS_PROMOTED_ON_FOCUS: Number(budget.tvStatusPromotedOnFocus || 0),
+        TV_CARD_STATUS_WAIT_MS: budget.lastTvCardStatusWaitMs == null ? null : Number(budget.lastTvCardStatusWaitMs),
         HOME_REQUEST_ACTIVE: Number(budget.active || 0),
         HOME_REQUEST_QUEUED: budget.queue.length
       };
@@ -380,10 +392,16 @@
         const job = budget.queue.splice(index, 1)[0];
         budget.active += 1;
         budget.activeByClass[job.requestClass] = Number(budget.activeByClass[job.requestClass] || 0) + 1;
+        job.startedClass = job.requestClass;
+        if (job.startedClass === "visible-status") budget.tvStatusRequestStarted += 1;
         budget.maxActive = Math.max(Number(budget.maxActive || 0), budget.active);
         budget.maxByClass[job.requestClass] = Math.max(Number(budget.maxByClass[job.requestClass] || 0), budget.activeByClass[job.requestClass]);
         recordHomeRequestBudgetDiag(budget);
         Promise.resolve().then(job.run).then(job.resolve, job.reject).finally(() => {
+          if (job.startedClass === "visible-status") {
+            budget.tvStatusRequestDone += 1;
+            budget.lastTvCardStatusWaitMs = Math.max(0, Date.now() - Number(job.queuedAt || Date.now()));
+          }
           budget.active = Math.max(0, Number(budget.active || 0) - 1);
           budget.activeByClass[job.requestClass] = Math.max(0, Number(budget.activeByClass[job.requestClass] || 0) - 1);
           recordHomeRequestBudgetDiag(budget);
@@ -393,24 +411,33 @@
       recordHomeRequestBudgetDiag(budget);
     }
 
+    function markHomeTvStatusRequestQueued(budget, job) {
+      if (!job || job.tvStatusCounted) return;
+      job.tvStatusCounted = true;
+      budget.tvStatusRequestQueued += 1;
+    }
+
     function scheduleHomeBudgetRequest(requestClass, run, requestKey) {
       const normalized = Object.prototype.hasOwnProperty.call(HOME_REQUEST_PRIORITY, requestClass) ? requestClass : "background";
       const budget = homeRequestBudgetState();
       return new Promise((resolve, reject) => {
-        budget.queue.push({
+        const job = {
           requestClass: normalized,
           requestKey: String(requestKey || ""),
           sequence: ++budget.nextSeq,
+          queuedAt: Date.now(),
           run,
           resolve,
           reject
-        });
+        };
+        if (normalized === "visible-status") markHomeTvStatusRequestQueued(budget, job);
+        budget.queue.push(job);
         recordHomeRequestBudgetDiag(budget);
         pumpHomeRequestBudget();
       });
     }
 
-    function promoteHomeBudgetRequests(requestKey, requestClass) {
+    function promoteHomeBudgetRequests(requestKey, requestClass, reason) {
       const key = String(requestKey || "");
       if (!key || !Object.prototype.hasOwnProperty.call(HOME_REQUEST_PRIORITY, requestClass)) return false;
       const budget = homeRequestBudgetState();
@@ -419,10 +446,17 @@
         if (job.requestKey !== key) return;
         if (Number(HOME_REQUEST_PRIORITY[requestClass]) < Number(HOME_REQUEST_PRIORITY[job.requestClass])) {
           job.requestClass = requestClass;
+          if (requestClass === "visible-status") {
+            markHomeTvStatusRequestQueued(budget, job);
+            if (reason === "focus") budget.tvStatusPromotedOnFocus += 1;
+          }
           promoted = true;
         }
       });
-      if (promoted) pumpHomeRequestBudget();
+      if (promoted) {
+        recordHomeRequestBudgetDiag(budget);
+        pumpHomeRequestBudget();
+      }
       return promoted;
     }
 
@@ -430,8 +464,17 @@
       return requestJson(url, timeout, { homeRequestClass: requestClass || "foreground", homeRequestKey: requestKey || "" });
     }
 
-    function homeEnrichmentRequest(url, timeout) {
-      return homeRequestJson(url, timeout, "enrichment");
+    function homeTvStatusRequest(url, timeout, requestKey) {
+      return homeRequestJson(url, timeout, "visible-status", requestKey);
+    }
+
+    function homeTvDetailRequestKey(url) {
+      const match = String(url || "").match(/\/tv\/(\d+)(?:[/?#]|$)/i);
+      return match ? `tv:${match[1]}` : "";
+    }
+
+    function homeEnrichmentRequest(url, timeout, requestKey) {
+      return homeRequestJson(url, timeout, "enrichment", requestKey || homeTvDetailRequestKey(url));
     }
 
     async function requestJson(url, timeout, options) {

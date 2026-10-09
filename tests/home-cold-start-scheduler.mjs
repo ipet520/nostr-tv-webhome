@@ -56,6 +56,8 @@ enqueue("prefetch-2", "prefetch");
 enqueue("background-1", "background");
 enqueue("enrichment-1", "enrichment");
 enqueue("foreground-4", "foreground");
+enqueue("visible-status-1", "visible-status", "tv:1");
+enqueue("visible-status-2", "visible-status", "tv:2");
 await tick();
 assert.deepEqual(started, ["foreground-1", "foreground-2", "foreground-3", "prefetch-1"]);
 assert.equal(schedulerState.homeV14.requestBudget.maxActive, maxActiveRequests);
@@ -65,14 +67,20 @@ await tick();
 assert.equal(started.at(-1), "foreground-4", "queued visible work outranks tail prefetch");
 gates["foreground-2"]();
 await tick();
-assert.equal(started.at(-1), "prefetch-2", "tail prefetch outranks background refresh and enrichment");
+assert.equal(started.at(-1), "visible-status-1", "visible TV status outranks queued prefetch and enrichment");
 gates["prefetch-1"]();
 await tick();
-assert.equal(started.at(-1), "background-1", "Weekly background refresh outranks detail enrichment");
+assert.equal(started.at(-1), "visible-status-2", "visible TV status can use its second class slot within the global cap");
 gates["foreground-3"]();
 await tick();
-assert.equal(started.at(-1), "enrichment-1", "enrichment starts only after higher-priority queued work");
-for (const name of ["foreground-4", "prefetch-2", "background-1", "enrichment-1"]) gates[name]();
+assert.equal(started.at(-1), "prefetch-2", "tail prefetch starts after queued visible TV status");
+gates["foreground-4"]();
+await tick();
+assert.equal(started.at(-1), "background-1", "Weekly background refresh outranks detail enrichment");
+gates["prefetch-2"]();
+await tick();
+assert.equal(started.at(-1), "enrichment-1", "Hero and Weekly enrichment starts after visible and base work");
+for (const name of ["visible-status-1", "visible-status-2", "background-1", "enrichment-1"]) gates[name]();
 await Promise.all(scheduled);
 await tick();
 const budget = schedulerState.homeV14.requestBudget;
@@ -81,6 +89,132 @@ assert.ok(budget.maxByClass.foreground <= 3, "foreground cap is enforced");
 assert.ok(budget.maxByClass.prefetch <= 2, "prefetch cap is enforced");
 assert.ok(budget.maxByClass.background <= 1, "background cap is enforced");
 assert.ok(budget.maxByClass.enrichment <= 1, "enrichment cap is enforced");
+assert.ok(budget.maxByClass["visible-status"] <= 2, "visible TV status class cap is enforced");
+assert.equal(budget.tvStatusRequestQueued, 2, "visible status queued diagnostic counts scheduled card requests");
+assert.equal(budget.tvStatusRequestStarted, 2, "visible status started diagnostic counts actual starts");
+assert.equal(budget.tvStatusRequestDone, 2, "visible status done diagnostic counts completed requests");
+assert.ok(budget.maxActive <= maxActiveRequests, "visible status does not raise the global concurrency cap");
+
+const promotionState = {
+  homeV14: { requestBudget: { queue: [], active: 0, maxActive: 0, nextSeq: 0, activeByClass: {}, maxByClass: {} } },
+  tvDiag: {}
+};
+const promotionScheduler = vm.runInNewContext(`${schedulerSource[0]}\n({ scheduleHomeBudgetRequest, promoteHomeBudgetRequests })`, {
+  state: promotionState,
+  HOME_REQUEST_BUDGET_MAX_ACTIVE: maxActiveRequests,
+  HOME_REQUEST_CLASS_MAX_ACTIVE: classLimits,
+  HOME_REQUEST_PRIORITY: priorities
+});
+const promotionStarted = [];
+const promotionGates = {};
+const promotionPromises = [];
+function enqueuePromotion(name, requestClass, requestKey) {
+  let release;
+  const work = new Promise((resolve) => { release = resolve; });
+  promotionGates[name] = () => release(name);
+  promotionPromises.push(promotionScheduler.scheduleHomeBudgetRequest(requestClass, () => {
+    promotionStarted.push(name);
+    return work;
+  }, requestKey || ""));
+}
+enqueuePromotion("hold-fg-1", "foreground");
+enqueuePromotion("hold-fg-2", "foreground");
+enqueuePromotion("hold-fg-3", "foreground");
+enqueuePromotion("hold-prefetch", "prefetch");
+enqueuePromotion("queued-tv-detail", "enrichment", "tv:777");
+enqueuePromotion("queued-tail", "prefetch");
+await tick();
+assert.deepEqual(promotionStarted, ["hold-fg-1", "hold-fg-2", "hold-fg-3", "hold-prefetch"]);
+assert.equal(promotionScheduler.promoteHomeBudgetRequests("tv:777", "visible-status", "focus"), true, "focus promotes the existing queued TV detail request");
+assert.equal(promotionState.homeV14.requestBudget.tvStatusRequestQueued, 1, "promoted request is counted once in visible status queue diagnostics");
+assert.equal(promotionState.homeV14.requestBudget.tvStatusPromotedOnFocus, 1, "focus promotion diagnostic increments only on an actual promotion");
+promotionGates["hold-prefetch"]();
+await tick();
+assert.equal(promotionStarted.at(-1), "queued-tv-detail", "focused TV status starts before queued tail prefetch");
+for (const name of ["hold-fg-1", "hold-fg-2", "hold-fg-3", "queued-tv-detail", "queued-tail"]) promotionGates[name]();
+await Promise.all(promotionPromises);
+await tick();
+
+const requestHelpers = networkJs.match(/    function homeRequestJson\([\s\S]*?(?=\n    async function requestJson\()/);
+assert.ok(requestHelpers, "Home request wrappers can be isolated for an executable class and key test");
+const homeRequestCalls = [];
+const requestWrapper = vm.runInNewContext(`${requestHelpers[0]}\n({ homeTvStatusRequest, homeTvDetailRequestKey, homeEnrichmentRequest })`, {
+  requestJson: (url, timeout, options) => {
+    homeRequestCalls.push({ url, timeout, options });
+    return options;
+  }
+});
+requestWrapper.homeEnrichmentRequest("https://api.themoviedb.org/3/tv/777?language=zh-CN", 18);
+assert.equal(homeRequestCalls.at(-1).options.homeRequestClass, "enrichment", "Hero and Weekly TV detail keeps the low-priority enrichment class");
+assert.equal(homeRequestCalls.at(-1).options.homeRequestKey, "tv:777", "shared Home TV detail gets a stable key for an eligible card to promote");
+requestWrapper.homeTvStatusRequest("https://api.themoviedb.org/3/tv/777?language=zh-CN", 18, "tv:777");
+assert.equal(homeRequestCalls.at(-1).options.homeRequestClass, "visible-status", "eligible Home TV status uses its dedicated higher-priority class");
+assert.equal(homeRequestCalls.at(-1).options.homeRequestKey, "tv:777", "Home status and enrichment use the same dedupe and promotion key");
+requestWrapper.homeEnrichmentRequest("https://api.themoviedb.org/3/movie/777?language=zh-CN", 18);
+assert.equal(homeRequestCalls.at(-1).options.homeRequestClass, "enrichment");
+assert.equal(homeRequestCalls.at(-1).options.homeRequestKey, "", "Movie detail requests do not receive a TV promotion key");
+
+const sharedDetailSource = detailJs.match(/    function requestTvDetailShared\([\s\S]*?(?=\n    function tmdbRecommendationsUrl\()/);
+assert.ok(sharedDetailSource, "shared TV detail request can be isolated for a dedupe test");
+const sharedDetailState = { tvDetail: { cache: {}, generation: 1 } };
+let defaultTvDetailRequestCount = 0;
+const requestSharedTvDetail = vm.runInNewContext(`${sharedDetailSource[0]}\nrequestTvDetailShared`, {
+  state: sharedDetailState,
+  tvDetailCacheId: (item) => String(item && (item.tmdbId || item.id) || item || ""),
+  tvDetailCacheKey: (item) => `tv:${String(item && (item.tmdbId || item.id) || item || "")}`,
+  tvDetailCacheValue: (item) => {
+    const entry = sharedDetailState.tvDetail.cache[`tv:${String(item && (item.tmdbId || item.id) || item || "")}`];
+    if (!entry || !entry.detail || !entry.fetchedAt || Date.now() - entry.fetchedAt >= 3600000) return null;
+    return entry.detail;
+  },
+  tmdbDetailUrl: () => "https://api.themoviedb.org/3/tv/777",
+  storeTvDetailCache: (item, detail, generation) => {
+    if (generation !== sharedDetailState.tvDetail.generation) return detail;
+    const entry = sharedDetailState.tvDetail.cache[`tv:${item.tmdbId}`];
+    entry.detail = detail;
+    entry.fetchedAt = Date.now();
+    entry.promise = null;
+    return detail;
+  },
+  TV_DETAIL_CACHE_TTL_MS: 3600000,
+  requestJson: () => {
+    defaultTvDetailRequestCount += 1;
+    return Promise.resolve({ number_of_episodes: 2 });
+  }
+});
+let sharedRequestCount = 0;
+let resolveSharedRequest;
+const sharedItem = { mediaType: "tv", tmdbId: 777 };
+const sharedRequest = requestSharedTvDetail(sharedItem, () => {
+  sharedRequestCount += 1;
+  return new Promise((resolve) => { resolveSharedRequest = resolve; });
+});
+const duplicateRequest = requestSharedTvDetail(sharedItem, () => {
+  sharedRequestCount += 1;
+  return Promise.resolve({ number_of_episodes: 99 });
+});
+assert.equal(sharedRequestCount, 1, "Home visibility joins an existing Hero or Weekly detail promise instead of duplicating the request");
+resolveSharedRequest({ number_of_episodes: 4 });
+const sharedDetails = await Promise.all([sharedRequest, duplicateRequest]);
+assert.deepEqual(sharedDetails.map((detail) => detail.number_of_episodes), [4, 4]);
+sharedDetailState.tvDetail = { cache: {}, generation: 2 };
+const defaultPathDetail = await requestSharedTvDetail({ mediaType: "tv", tmdbId: 888 });
+assert.equal(defaultTvDetailRequestCount, 1, "non-Home TV detail without an override keeps using requestJson");
+assert.equal(defaultPathDetail.number_of_episodes, 2);
+
+const observerSource = categoryJs.match(/    function ensureTvCardDetailObserver\(\) \{[\s\S]*?(?=\n    function observeTvCardEnrichment\()/)?.[0] || "";
+const observeCardsSource = categoryJs.match(/    function observeTvCardEnrichment\(root\) \{[\s\S]*?(?=\n    function isNostrMovieReleaseStatusCard\()/)?.[0] || "";
+const flushTvSource = categoryJs.match(/    function flushTvCardDetailQueue\(\) \{[\s\S]*?(?=\n    function queueTvCardEpisodeEnrichment\()/)?.[0] || "";
+const focusPromoteSource = categoryJs.match(/    function promoteHomeTvCardStatusOnFocus\(card\) \{[\s\S]*?(?=\n    function ensureTvCardDetailObserver\()/)?.[0] || "";
+check(observerSource.includes("rootMargin: TV_CARD_DETAIL_ROOT_MARGIN") && observerSource.includes("if (!entry.isIntersecting) return") && observerSource.includes("queueTvCardEpisodeEnrichment(entry.target)"), "TV_STATUS_IO_GATE", "Home TV status work remains behind the existing IntersectionObserver near-viewport gate");
+check(observeCardsSource.includes("cards.filter(tvCardNearViewport).forEach(queueTvCardEpisodeEnrichment)"), "TV_STATUS_FALLBACK_NEAR_VIEWPORT", "without IntersectionObserver only cards passing the existing near-viewport check are queued");
+check(flushTvSource.includes("const request = job.home") && flushTvSource.includes("homeTvStatusRequest(url, timeout, job.key)") && flushTvSource.includes(": requestJson;"), "HOME_TV_STATUS_CLASS_SCOPE", "only Home TV card jobs use the visible status class; other grids keep requestJson");
+check(!flushTvSource.includes("promoteHomeBudgetRequests") && focusPromoteSource.includes('promoteHomeBudgetRequests(key, "visible-status", "focus")') && focusPromoteSource.includes("queueTvCardEpisodeEnrichment(card)"), "FOCUSED_TV_STATUS_PROMOTION", "focus promotes a matching queued request while ordinary Hero/Weekly deep enrichment stays low priority");
+check(cardsJs.includes("button.addEventListener(\"focus\", () => promoteHomeTvCardStatusOnFocus(button))"), "HOME_TV_FOCUS_HOOK", "only generated Home TV cards opt into the focused-status promotion helper");
+const movieFlushSource = categoryJs.match(/    function flushMovieCardDetailQueue\(\) \{[\s\S]*?(?=\n    function queueMovieCardReleaseEnrichment\()/)?.[0] || "";
+check(movieFlushSource.includes("job.home ? homeEnrichmentRequest : requestJson") && !movieFlushSource.includes("visible-status"), "MOVIE_STATUS_PATH_PRESERVED", "Movie list release status and existing Nostr Movie detail enrichment do not enter the TV status class");
+check(cardsJs.includes("movieReleaseStatusText(moviePresentationItem") && cardsJs.includes("latestDateOnly(item && (item.releaseDate || item.release_date)"), "TMDB_MOVIE_STATUS_FROM_LIST", "ordinary Movie status remains derived from list release_date data");
+check(networkJs.includes('return homeRequestJson(url, timeout, "enrichment", requestKey || homeTvDetailRequestKey(url))'), "HERO_WEEKLY_STAY_LOW_PRIORITY", "stable TV request keys do not promote Hero or Weekly detail unless a Home card is eligible");
 
 const categoryPool = categoryJs.match(/    async function loadHomeCategoryTmdbPool\(id, requestClass, requestKey, onSourceResult\) \{[\s\S]*?(?=\n    function homeCategoryFeedLimit\()/);
 assert.ok(categoryPool, "Home multi-source category loader can be isolated for an executable test");
@@ -189,6 +323,9 @@ const requiredDiagnostics = [
   "HOME_COLD_START_AT", "FIRST_HOME_RENDER_MS", "FIRST_HERO_READY_MS", "FIRST_CATEGORY_READY_MS",
   "MOVIE_READY_MS", "TV_READY_MS", "ANIME_FIRST_RENDER_MS", "ANIME_FINAL_READY_MS",
   "DOCUMENTARY_FIRST_RENDER_MS", "DOCUMENTARY_FINAL_READY_MS", "VARIETY_READY_MS",
+  "HOME_TV_STATUS_REQUEST_QUEUED", "HOME_TV_STATUS_REQUEST_STARTED", "HOME_TV_STATUS_REQUEST_DONE",
+  "HOME_TV_STATUS_MAX_ACTIVE", "HOME_TV_STATUS_PROMOTED_ON_FOCUS", "TV_CARD_STATUS_WAIT_MS",
+  "BASE_CARD_RENDER_AT", "TV_STATUS_READY_AT", "TV_STATUS_DELAY_MS",
   "CATEGORY_CACHE_HIT_COUNT", "CATEGORY_CACHE_MISS_COUNT", "FOREGROUND_REQUEST_MAX",
   "BACKGROUND_REQUEST_MAX", "ENRICHMENT_REQUEST_MAX", "HOME_WHOLE_RENDER_COUNT",
   "HOME_RAIL_UPDATE_COUNT", "WEEKLY_CACHE_HIT", "WEEKLY_NETWORK_REFRESH_START_MS",
@@ -200,7 +337,13 @@ console.log("HOME_CATEGORY_CACHE_FIRST = PASS");
 console.log("HOME_CATEGORY_BACKGROUND_REVALIDATE = PASS");
 console.log("ANIME_NO_SLOW_SOURCE_FULL_BLOCK = PASS (deferred-source fixture)");
 console.log("DOCUMENTARY_NO_SLOW_SOURCE_FULL_BLOCK = PASS (shared multi-source loader)");
-console.log("HOME_REQUEST_BUDGET_ENFORCED = PASS (global cap 4; foreground 3; prefetch 2; background 1; enrichment 1)");
+console.log("HOME_REQUEST_BUDGET_ENFORCED = PASS (global cap 4; foreground 3; visible-status 2; prefetch 2; background 1; enrichment 1)");
+console.log("VISIBLE_TV_STATUS_PRIORITY = PASS (above prefetch/background/enrichment; below foreground)");
+console.log("VISIBLE_TV_STATUS_FOCUS_PROMOTION = PASS (queued shared detail is promoted by request key)");
+console.log("TV_DETAIL_REQUEST_DEDUPE = PASS (shared Home/Hero/Weekly detail promise)");
+console.log("TV_STATUS_NEAR_VIEWPORT_ONLY = PASS (existing IntersectionObserver/root margin/fallback)");
+console.log("HERO_WEEKLY_PRIORITY_PRESERVED = PASS (details stay enrichment until eligible Home TV card)");
+console.log("TMDB_MOVIE_STATUS_PRESERVED = PASS (ordinary Movie status uses list release date)");
 console.log("ENRICHMENT_LOWER_PRIORITY_THAN_BASE_FEED = PASS");
 console.log("NO_UNBOUNDED_COLD_START_REQUEST_BURST = PASS (active request cap enforced)");
 console.log("NO_HOME_WHOLE_RENDER_STORM = PASS");

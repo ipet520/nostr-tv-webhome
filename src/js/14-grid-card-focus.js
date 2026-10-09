@@ -522,6 +522,15 @@
       }
       button.__mediaItem = item;
       button.__weeklyHome = weeklyHome;
+      if (home && tvEpisodeCard) {
+        const baseCardRenderAt = Date.now();
+        button.dataset.tvStatusBaseCardRenderAt = String(baseCardRenderAt);
+        if (airStatusText) {
+          button.dataset.tvStatusReadyAt = String(baseCardRenderAt);
+          button.dataset.tvStatusDelayMs = "0";
+        }
+        button.addEventListener("focus", () => promoteHomeTvCardStatusOnFocus(button));
+      }
       if (recentWatching) recordRecentNativeKeyFlow("RECENT_NATIVE_KEY_AT_CARD", item);
       button.classList.toggle("blocked", isBlocked(item));
       const rawRating = item && item.voteAverage != null && item.voteAverage !== ""
