@@ -696,6 +696,15 @@
       const homeRoot = $("home");
       const home = state.homeV14;
       if (!homeRoot) return null;
+      const root = document.documentElement;
+      const viewportHeight = Number(window.visualViewport && window.visualViewport.height)
+        || Number(root.clientHeight)
+        || Number(window.innerHeight)
+        || 0;
+      const hostHeight = parseFloat(getComputedStyle(root).getPropertyValue("--fm-web-height")) || 0;
+      const detailSheet = $("detailSheet");
+      const detailActive = !!(detailSheet && detailSheet.classList.contains("active"));
+      const detailRect = detailActive && detailSheet.getBoundingClientRect ? detailSheet.getBoundingClientRect() : null;
       const configs = homeSectionConfig();
       const cards = Array.from(homeRoot.querySelectorAll(".home-rail > .card"));
       const images = Array.from(homeRoot.querySelectorAll("img"));
@@ -732,7 +741,18 @@
         heroSourceStats: home.heroFeed && home.heroFeed.sourceStats || null,
         recommendationCardCount: homeRoot.querySelectorAll("#homeRecommendationRail > .card").length,
         weeklyCardCount: homeRoot.querySelectorAll("#homeWeeklyRail > .card").length,
-        homeRoute: homeUiRoute()
+        homeRoute: homeUiRoute(),
+        fixedViewportAuthority: "100vh",
+        cssViewportHeightPx: Number(window.innerHeight || root.clientHeight || 0),
+        visibleViewportHeightPx: viewportHeight,
+        fmWebHeightPx: hostHeight,
+        fmWebHeightDeltaFromViewportPx: hostHeight - viewportHeight,
+        detailSheetActive: detailActive,
+        detailSheetRectHeightPx: detailRect ? Number(detailRect.height || 0) : 0,
+        detailSheetBottomOverrunPx: detailRect ? Math.max(0, Number(detailRect.bottom || 0) - viewportHeight) : 0,
+        detailSheetClientHeightPx: detailActive ? Number(detailSheet.clientHeight || 0) : 0,
+        detailSheetScrollHeightPx: detailActive ? Number(detailSheet.scrollHeight || 0) : 0,
+        detailSheetScrollRangePx: detailActive ? Math.max(0, Number(detailSheet.scrollHeight || 0) - Number(detailSheet.clientHeight || 0)) : 0
       };
       home.imageSrcCount = diag.imageSrcCount;
       home.imageDeferredCount = diag.imageDeferredCount;
