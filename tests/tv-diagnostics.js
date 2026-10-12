@@ -452,17 +452,17 @@
           && sourceOf(openSidebar).includes("isSidebarRouteActive")
           && sourceOf(syncSidebarVisibility).includes("isSidebarRouteActive"),
         "the existing Sidebar authority is available on both Home and Secondary", "STATIC_HOOK");
-      check("TV_BROWSE_MENU_ENTRY",
-        typeof tvBrowseDirectionalTarget === "function" && sourceOf(initTvBrowse).includes("openSidebar"),
-        "TV uses its right-top menu while retaining the shared Sidebar", "STATIC_HOOK");
-      check("SIDEBAR_TV_CONTINUOUS_NAVIGATION",
+      check("TV_BROWSE_DIRECT_FUNCTIONS",
+        typeof tvBrowseDirectionalTarget === "function" && sourceOf(initTvBrowse).includes("openSettingHome") && !sourceOf(initTvBrowse).includes("openSidebar"),
+        "TV uses direct functions without a Sidebar menu", "STATIC_HOOK");
+      check("BROWSER_SIDEBAR_CONTINUOUS_NAVIGATION",
         sourceOf(requestSidebarNavigation).includes("sameSecondary")
           && sourceOf(openSecondaryCatalog).includes("opts.fromSidebar")
           && sourceOf(handleSidebarDirectionalKey).includes('key === "ArrowRight"'),
-        "TV Sidebar keeps its focus while switching categories and closes on Right", "STATIC_HOOK");
+        "Non-TV Sidebar retains its category navigation", "STATIC_HOOK");
       check("SECONDARY_MOBILE_SIDEBAR_LAUNCHER",
-        !!$("secondaryMenuLauncher")
-          && sourceOf(bindActions).includes("secondaryMenuLauncher")
+        (isTvLikeDevice() || !!$("secondaryMenuLauncher"))
+          && sourceOf(syncBrowseDevicePresentation).includes("secondaryMenuLauncher")
           && sourceOf(syncSidebarMobilePresentation).includes("secondaryMenuLauncher")
           && sourceOf(beginMobileSidebarHistoryEntry).includes("homeSidebar"),
         "Secondary mobile uses its own launcher and the existing history entry", "DOM_ASSERTION");
@@ -476,7 +476,7 @@
           && sourceOf(renderWeeklySecondaryCatalog).includes("if (!isSidebarOpen()) focusWeeklySecondaryInitial")
           && sourceOf(focusSidebarCurrentPageDefault).includes("focusWeeklySecondaryInitial"),
         "Weekly keeps its pending initial focus while Sidebar owns focus", "STATIC_HOOK");
-      check("TV_BROWSE_SIDEBAR_BACK_LAYER",
+      check("NON_TV_SIDEBAR_BACK_LAYER",
         sourceOf(installRemoteKeys).includes("handleSidebarBackKey") && sourceOf(closeSidebar).includes("restoreSidebarFocus"),
         "Sidebar closes through its stable Home return identity", "STATIC_HOOK");
 
@@ -539,8 +539,8 @@
           && searchHotStyleText.includes("#searchRail"),
         "Search results rail keeps its existing horizontal overflow behavior", "STATIC_HOOK");
       check("TV_BROWSE_FOCUS_VISUAL",
-        searchHotStyleText.includes(".tv-browse button:focus")
-          && searchHotStyleText.includes("outline: 3px solid")
+        searchHotStyleText.includes(".tv-glass-button:focus")
+          && searchHotStyleText.includes("--tv-glass-focus")
           && searchHotStyleText.includes("transform: scale(1.04)"),
         "TV browse cards and controls expose one focus visual contract", "STATIC_HOOK");
       const searchHistoryClearTopStyleMatch = searchHotStyleText.match(/\.search-history-clear-top\s*\{[^}]*\}/);

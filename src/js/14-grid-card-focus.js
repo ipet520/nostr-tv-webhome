@@ -276,6 +276,7 @@
       const home = state.homeV14;
       if (!home) return 0;
       if (home.secondaryMediaFocusRestore) cancelSecondaryMediaFocusRestore();
+      if (tvBrowseActive() && state.focusReturnEl && state.focusReturnEl.closest("#tvBrowseFunctions")) state.focusReturnEl = null;
       home.focusUserEpoch = Number(home.focusUserEpoch || 0) + 1;
       return home.focusUserEpoch;
     }

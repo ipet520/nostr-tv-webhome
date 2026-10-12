@@ -3,15 +3,31 @@
     function syncBrowseDevicePresentation() {
       const mount = $("mobileHomeMount"), template = $("mobileHomeTemplate");
       if (!mount || !template) return;
+      const sidebarMount = $("sidebarMount");
+      if (!isTvLikeDevice() && sidebarMount && !sidebarMount.children.length) {
+        sidebarMount.appendChild($("sidebarTemplate").content.cloneNode(true));
+        $("homeSearchLauncher").addEventListener("click", openSearchPage);
+        $("homeMenuLauncher").addEventListener("click", () => isSidebarOpen() ? closeSidebar() : openSidebar());
+        $("homeSidebarBackdrop").addEventListener("click", () => {
+          if (isConnectionPanelOpen()) closeConnectionPanel();
+          else closeSidebar();
+        });
+      }
+      if (isTvLikeDevice() && sidebarMount && sidebarMount.children.length) {
+        const dock = $("connectionDock");
+        if (dock) $("tvBrowseFunctions").appendChild(dock);
+        closeSidebar({ restore: false, fromPopState: true });
+        sidebarMount.replaceChildren();
+      }
       const controlsTemplate = $("recentManageTemplate");
       let controls = $("recentManageControls");
       if (!controls && controlsTemplate) {
         const fragment = controlsTemplate.content.cloneNode(true);
         controls = fragment.querySelector("#recentManageControls");
-        $("tvBrowseFunctions").appendChild(fragment);
+        $("tvBrowseRecentTools").appendChild(fragment);
       }
       if (isTvLikeDevice()) {
-        if (controls) $("tvBrowseFunctions").appendChild(controls);
+        if (controls) $("tvBrowseRecentTools").appendChild(controls);
         clearHomeHeroAutoplayResume();
         stopHomeHeroAutoplay();
         if (mount.children.length) {
@@ -37,11 +53,32 @@
 
     function tvBrowseState() {
       return state.tvBrowse || (state.tvBrowse = {
-        column: "recommendation", positions: {}, filterOpen: false,
+        column: "recent", positions: {}, filterOpen: false,
+        startupEpoch: null,
         confirm: null, enterHeld: false, suppressClickUntil: 0,
         previewKey: "", backdropToken: 0, backdropSlot: 0, backdropUrl: "",
         focusIntent: null, initialized: false
       });
+    }
+
+    function tvBrowseBeginStartup(epoch) {
+      const ui = tvBrowseState();
+      if (!tvBrowseActive() || homeFocusUserEpoch() !== epoch) return;
+      ui.column = "recent"; ui.startupEpoch = epoch;
+      renderTvBrowse(); tvBrowseFocusIntent();
+      loadRecentList({ silent: true }).catch(() => {});
+    }
+
+    function tvBrowseResolveStartup() {
+      const ui = tvBrowseState();
+      if (ui.startupEpoch == null) return;
+      if (homeFocusUserEpoch() !== ui.startupEpoch) { ui.startupEpoch = null; return; }
+      const recent = state.recent;
+      if (!recent.loaded || recent.loading) return;
+      // Failure stays on Recent with its existing retry UI; it is not an empty history result.
+      if (!recent.error && !uniqueRecentWatchingMedia(state.recent.items || []).length) ui.column = "recommendation";
+      ui.startupEpoch = null;
+      ui.focusIntent = { epoch: homeFocusUserEpoch(), focus: null };
     }
 
     function tvBrowseActive() {
@@ -49,7 +86,7 @@
     }
 
     function tvBrowseColumns() {
-      return sidebarNavigationItems().filter((item) => item.action === "secondary");
+      return browseColumnItems();
     }
 
     function tvBrowseColumnButton(id) {
@@ -152,7 +189,7 @@
       const signature = ui.column + secondaryFilterSchemaSignature(groups);
       if (host.dataset.schema !== signature) {
         host.dataset.schema = signature;
-        host.innerHTML = groups.map((group) => `<div class="secondary-filter-row" data-group="${escapeAttr(group.key)}"><span class="secondary-filter-label">${escapeHtml(group.label)}</span><div class="secondary-filter-options">${group.options.map((option) => `<button type="button" class="focusable secondary-filter-option" data-group="${escapeAttr(group.key)}" data-value="${escapeAttr(option.value)}">${escapeHtml(option.label)}</button>`).join("")}</div></div>`).join("");
+        host.innerHTML = groups.map((group) => `<div class="secondary-filter-row" data-group="${escapeAttr(group.key)}"><span class="secondary-filter-label">${escapeHtml(group.label)}</span><div class="secondary-filter-options">${group.options.map((option) => `<button type="button" class="focusable tv-glass-button secondary-filter-option" data-group="${escapeAttr(group.key)}" data-value="${escapeAttr(option.value)}">${escapeHtml(option.label)}</button>`).join("")}</div></div>`).join("");
         host.querySelectorAll("button").forEach((button) => button.addEventListener("click", () => {
           tvBrowseSavePosition();
           const current = secondaryFilterState(ui.column);
@@ -177,6 +214,7 @@
       if (!tvBrowseActive()) { ui.enterHeld = false; ui.confirm = null; ui.filterOpen = false; }
       root.classList.toggle("filter-open", ui.filterOpen);
       $("tvBrowseFunctions").hidden = ui.filterOpen;
+      $("tvBrowseRecentTools").hidden = ui.filterOpen;
       $("tvBrowseInfo").hidden = ui.filterOpen;
       $("tvBrowseFilters").hidden = !ui.filterOpen;
       root.querySelectorAll("#tvBrowseColumns button,#tvBrowseRail button").forEach((button) => button.setAttribute("tabindex", ui.filterOpen ? "-1" : "0"));
@@ -192,7 +230,7 @@
       const columns = $("tvBrowseColumns");
       tvBrowseColumns().forEach((entry) => {
         const button = document.createElement("button");
-        button.type = "button"; button.className = "focusable tv-browse-column";
+        button.type = "button"; button.className = "focusable tv-glass-button tv-browse-column";
         button.id = "tvColumn-" + entry.listId; button.dataset.column = entry.listId; button.textContent = entry.label;
         button.addEventListener("click", (event) => {
           // Native WebViews may emit a click after the handled physical key.
@@ -204,16 +242,28 @@
         columns.appendChild(button);
       });
       const actions = [
-        ["search", "搜索", openSearchPage], ["live", "直播", openLiveHome],
-        ["recent", "历史", () => { tvBrowseSelectColumn("recent"); tvBrowseFocusIntent(); }],
-        ["keep", "收藏", openKeepHome], ["menu", "菜单", openSidebar]
+        ["live", "直播", openLiveHome], ["search", "搜索", openSearchPage], ["settings", "设置", openSettingHome]
       ];
       actions.forEach(([id, label, action]) => {
         const button = document.createElement("button");
-        button.id = "tvFunction-" + id; button.type = "button"; button.className = "focusable"; button.textContent = label;
-        button.addEventListener("click", () => { tvBrowseSavePosition(); action(); });
+        button.id = "tvFunction-" + id; button.type = "button";
+        button.className = "focusable tv-glass-button"; button.tabIndex = 0;
+        button.setAttribute("aria-label", label);
+        if (id === "search") {
+          button.classList.add("tv-browse-search");
+          button.innerHTML = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m16.5 16.5 4 4"></path></svg>';
+        } else button.textContent = label;
+        button.addEventListener("click", () => {
+          markHomeUserNavigation(); tvBrowseSavePosition();
+          if (id === "live") rememberFocusReturn();
+          scheduleUiSnapshotSave(); action();
+        });
         $("tvBrowseFunctions").appendChild(button);
       });
+      const dock = $("connectionDock"), toggle = $("connectionToggle");
+      toggle.classList.remove("home-sidebar-item"); toggle.classList.add("tv-glass-button");
+      toggle.setAttribute("aria-label", "基础设置"); toggle.removeAttribute("data-sidebar-key"); toggle.removeAttribute("data-sidebar-action");
+      $("tvBrowseFunctions").appendChild(dock);
       window.addEventListener("blur", () => { ui.enterHeld = false; ui.confirm = null; });
       $("tvBrowse").addEventListener("click", (event) => {
         if ((ui.enterHeld || Date.now() < ui.suppressClickUntil) && event.detail === 0) {
@@ -234,6 +284,7 @@
       initTvBrowse();
       syncTvBrowseVisibility();
       const ui = tvBrowseState(), rail = $("tvBrowseRail");
+      tvBrowseResolveStartup();
       const query = secondaryGetQuery(ui.column);
       // Finite sources can change independently of the catalog page loader.
       if (ui.column === "recommendation") {
@@ -309,14 +360,16 @@
 
     function tvBrowsePreview(item) {
       const ui = tvBrowseState(), key = mediaDomKey(item);
-      const detail = tvDetailCacheValue(item) || item.tvDetail || item.weeklyDetail || item.heroDetail || null;
+      const detail = (String(item.mediaType || item.media_type || "").toLowerCase() === "movie" ? movieDetailCacheValue(item) : tvDetailCacheValue(item)) || item.tvDetail || item.weeklyDetail || item.heroDetail || null;
       $("tvBrowseTitle").textContent = item.title || item.name || "";
       const year = String(item.releaseDate || item.first_air_date || item.release_date || "").slice(0, 4);
       const genres = homeHeroPresentationGenres(item, detail);
-      const rating = Number(item.voteAverage || item.vote_average || 0);
+      const rating = Number(detail && detail.vote_average || item.voteAverage || item.vote_average || 0);
       $("tvBrowseMeta").textContent = [year, genres.join(" · "), rating > 0 ? rating.toFixed(1) + " 分" : ""].filter(Boolean).join("  /  ");
       $("tvBrowseUpdate").textContent = item.weeklyUpdateText || homeHeroPresentationStatus(item, detail) || "";
-      $("tvBrowseOverview").textContent = homeHeroPresentationOverview(item, detail) || item.desc || "";
+      const desc = String(item.description || item.desc || "").trim();
+      const labelOnly = item.source === "tmdb" && desc === (item.listTitle || "搜索") + " · " + (item.title || "");
+      $("tvBrowseOverview").textContent = homeHeroPresentationOverview(item, detail) || (labelOnly ? "" : desc);
       const logo = $("tvBrowseLogo"), logoUrl = item.logo || item.logoUrl || item.logoPath || item.logo_path || "";
       logo.hidden = !logoUrl;
       if (logoUrl && logo.getAttribute("src") !== logoUrl) { logo.src = displayImage(logoUrl, { size: "w500" }); logo.onerror = () => { logo.hidden = true; }; }
@@ -355,7 +408,7 @@
       }
       const rail = $("tvBrowseRail"), columns = $("tvBrowseColumns"), functions = $("tvBrowseFunctions");
       if (active === $("tvBrowseRetry")) return key === "ArrowUp" ? tvBrowsePosterTarget() : active;
-      let host = active && active.closest("#tvBrowseRail,#tvBrowseColumns,#tvBrowseFunctions");
+      let host = active && active.closest("#tvBrowseRail,#tvBrowseColumns,#tvBrowseFunctions,#tvBrowseRecentTools");
       if (!host) return tvBrowsePosterTarget();
       if (key === "ArrowLeft" || key === "ArrowRight") {
         const buttons = Array.from(host.querySelectorAll("button")).filter(isVisibleFocusable), index = buttons.indexOf(active);
@@ -363,7 +416,7 @@
         return buttons[Math.max(0, Math.min(buttons.length - 1, index + (key === "ArrowRight" ? 1 : -1)))];
       }
       if (host === rail) return key === "ArrowDown" && !$("tvBrowseRetry").hidden ? $("tvBrowseRetry") : tvBrowseColumnButton(ui.column);
-      if (host === columns) return key === "ArrowDown" ? tvBrowsePosterTarget() : Array.from(functions.querySelectorAll("button")).find(isVisibleFocusable);
+      if (host === columns) return key === "ArrowDown" ? tvBrowsePosterTarget() : $("tvFunction-live");
       return tvBrowseColumnButton(ui.column);
     }
 
@@ -398,6 +451,7 @@
     function restoreTvBrowseSnapshot(saved, legacyColumn) {
       const ui = tvBrowseState(), value = saved || {};
       const id = value.column || legacyColumn || "recommendation";
+      ui.startupEpoch = null;
       ui.column = tvBrowseColumns().some((entry) => entry.listId === id) ? id : "recommendation";
       ui.positions = value.positions && typeof value.positions === "object" ? value.positions : {};
       if (value.filters && typeof value.filters === "object") state.homeV14.secondaryFilters = value.filters;

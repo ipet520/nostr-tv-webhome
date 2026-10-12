@@ -371,6 +371,7 @@
         landscape: imageUrl(item.backdrop_path, true),
         image: imageUrl(item.backdrop_path, true) || imageUrl(item.poster_path, false),
         remark: "",
+        overview: String(item.overview || "").trim(),
         desc: item.overview || `${list.title || "搜索"} · ${title}`,
         releaseDate: date,
         genreIds,

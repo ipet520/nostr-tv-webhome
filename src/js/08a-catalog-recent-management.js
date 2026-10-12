@@ -99,6 +99,7 @@
           recent.pendingRefresh = false;
           recent.pendingRefreshSilent = true;
           recent.pendingRefreshReconcileDetail = true;
+          renderCatalogQuery("recent");
         }
       })();
       recent.loadingPromise = task;

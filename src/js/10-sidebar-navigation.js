@@ -3,7 +3,7 @@
     }
 
     function isSidebarRouteActive() {
-      return state.activeList === "all" && (homeUiRoute() === "home" || homeUiRoute() === "secondary");
+      return !isTvLikeDevice() && state.activeList === "all" && (homeUiRoute() === "home" || homeUiRoute() === "secondary");
     }
 
     function isSidebarOpen() {
@@ -112,12 +112,6 @@
       if (action.type === "live") return !!openLiveHome();
       if (action.type === "keep") return !!openKeepHome();
       if (action.type === "settings") return !!openSettingHome();
-      if (action.type === "secondary" && tvBrowseActive()) {
-        closeSidebar({ restore: false });
-        const result = tvBrowseSelectColumn(normalizeLegacyCategoryId(action.listId || ""));
-        tvBrowseFocusIntent();
-        return result;
-      }
       if (action.type === "secondary") {
         const currentListId = normalizeLegacyCategoryId(state.homeV14 && state.homeV14.secondaryListId || "");
         const targetListId = normalizeLegacyCategoryId(action.listId || "");
@@ -137,7 +131,7 @@
 
     function requestSidebarNavigation(action) {
       const home = state.homeV14;
-      if (!action || !home) return false;
+      if (!action || !home || isTvLikeDevice()) return false;
       if (!isMobileSidebarDevice()) {
         const currentListId = normalizeLegacyCategoryId(home.secondaryListId || "");
         const targetListId = normalizeLegacyCategoryId(action.listId || "");
@@ -190,9 +184,8 @@
       return '<svg class="icon home-sidebar-icon" viewBox="0 0 24 24" aria-hidden="true">' + (shapes[key] || shapes.generic) + "</svg>";
     }
 
-    function sidebarNavigationItems() {
+    function browseColumnItems() {
       const items = [
-        { key: "live", label: "直播", action: "live" },
         { key: "recent", label: "最近观看", action: "secondary", listId: "recent" },
         { key: "recommendation", label: "推荐", action: "secondary", listId: "recommendation" },
         { key: "latest", label: "本周更新", action: "secondary", listId: "now-playing" },
@@ -200,8 +193,7 @@
         { key: "tv", label: "电视剧", action: "secondary", listId: "tv" },
         { key: "anime", label: "动画", action: "secondary", listId: "anime" },
         { key: "documentary", label: "纪录片", action: "secondary", listId: "documentary" },
-        { key: "variety", label: "综艺", action: "secondary", listId: "variety" },
-        { key: "keep", label: "收藏", action: "keep" }
+        { key: "variety", label: "综艺", action: "secondary", listId: "variety" }
       ];
       return items.map((item) => {
         if (item.action !== "secondary" || item.listId === "recent" || item.listId === "recommendation") return item;
@@ -210,12 +202,17 @@
       }).filter(Boolean);
     }
 
+    function sidebarNavigationItems() {
+      return [{ key: "live", label: "直播", action: "live" }].concat(browseColumnItems(), [{ key: "keep", label: "收藏", action: "keep" }]);
+    }
+
     function sidebarFocusableItems() {
       const sidebar = $("homeSidebar");
       return sidebar ? Array.from(sidebar.querySelectorAll(".home-sidebar-item")).filter(isVisibleFocusable) : [];
     }
 
     function renderSidebar() {
+      if (isTvLikeDevice()) return false;
       const nav = $("homeSidebarNav");
       const tools = $("homeSidebarTools");
       if (!nav || !tools) return false;
@@ -489,6 +486,7 @@
     }
 
     function handleSidebarMenuKey(event) {
+      if (isTvLikeDevice()) return false;
       if (normalizeRemoteKey(event) !== "Menu") return false;
       if (isSidebarOpen()) {
         if (isConnectionPanelOpen()) {
@@ -509,18 +507,6 @@
       event.stopPropagation();
       if (event.stopImmediatePropagation) event.stopImmediatePropagation();
       return openSidebar();
-    }
-
-    function isHomeLeftBoundary(active) {
-      if (!active || !isHomeRouteActive() || focusScopeRoot() !== document) return false;
-      if (active.closest && active.closest("#homeSidebar")) return false;
-      const rail = active.closest && active.closest(".home-rail");
-      if (rail && active.classList && active.classList.contains("card")) {
-        const cards = Array.from(rail.children || []).filter((item) => item.classList && item.classList.contains("card") && canFastHomeFocus(item));
-        return cards[0] === active;
-      }
-      if (active === $("homeHero") || active === $("homeSearchLauncher")) return true;
-      return !nearestFocusable("ArrowLeft", active);
     }
 
     function syncSidebarVisibility() {

@@ -560,7 +560,7 @@
       if (!opts.force && now - Number(state.resume.lastAt || 0) < 650) return;
       state.resume.lastAt = now;
       const nativeHomeReturnTarget = state.focusReturnEl;
-      const nativeHomeReturn = nativeHomeReturnTarget === $("connectionToggle") || !!(nativeHomeReturnTarget && nativeHomeReturnTarget.closest && nativeHomeReturnTarget.closest("#homeSidebar"));
+      const nativeHomeReturn = nativeHomeReturnTarget === $("connectionToggle") || !!(nativeHomeReturnTarget && nativeHomeReturnTarget.closest && nativeHomeReturnTarget.closest("#homeSidebar,#tvBrowseFunctions"));
       const restoreRecentNativeHome = opts.restoreRecentNativeHome === true && !($("detailSheet") && $("detailSheet").classList.contains("active")) && isRecentNativeHomeReturn();
       const isPanPlaybackReturn = !!(state.pan.playbackReturn && $("detailSheet") && $("detailSheet").classList.contains("active") && $("panSearchBlock") && $("panSearchBlock").classList.contains("active"));
       const isPlayerReturn = opts.playerReturn === true;
@@ -937,6 +937,7 @@
       if (isTvDiagnosticEnabled()) loadTvDiagnostics().catch(() => {});
       const canRestoreUi = shouldRestoreUiSnapshot();
       const restored = canRestoreUi ? await restoreUiSnapshot(await readUiSnapshot()) : false;
+      if (!restored && isTvLikeDevice()) tvBrowseBeginStartup(coldFocusEpoch);
       await ensureIdentity();
       await loadEvents();
       scheduleHistorySettlement();
@@ -947,7 +948,7 @@
       updateBackTopButton();
       if (!restored) {
         if (isHomeRouteActive() && isTvLikeDevice()) {
-          if (homeFocusUserEpoch() === coldFocusEpoch) tvBrowseFocusIntent();
+          if (homeFocusUserEpoch() === coldFocusEpoch) tvBrowseTryFocus();
         }
         setTimeout(ensureRemoteInitialFocus, 80);
         setTimeout(ensureRemoteInitialFocus, 260);

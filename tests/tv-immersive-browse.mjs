@@ -16,7 +16,7 @@ const hook = `window.testBrowse = { state, renderAll, renderTvBrowse, tvBrowseSt
  buildUiSnapshot, restoreUiSnapshot, openSidebar, closeSidebar, openSearchPage, closeSearchPage,
  bindActions, installRemoteKeys, secondaryActiveQuery, syncBrowseDevicePresentation, handleWebHomeResume, boot,
  tvBrowsePreview, publishHomeWeeklySnapshot, enterRecentManageMode, exitRecentManageMode,
- openDetail, closeDetail };
+ openDetail, closeDetail, sdk, loadRecentList, tvBrowseBeginStartup, homeFocusUserEpoch, storeMovieDetailCache, storeTvDetailCache, updateMovieReleaseStatusCards };
  window.testBrowse.setup = () => {
    syncBrowseDevicePresentation(); bindActions(); installRemoteKeys();
  };
@@ -40,7 +40,7 @@ assert.notEqual(html, output);
 const browser = await playwright.chromium.launch({ headless: true, ...(process.env.WEBHOME_BROWSER_EXECUTABLE ? { executablePath: process.env.WEBHOME_BROWSER_EXECUTABLE } : { channel: process.env.WEBHOME_BROWSER_CHANNEL || "chrome" }) });
 const errors = [];
 async function pageAt(tv, viewport = { width: 1280, height: 720 }, setup = true) {
-  const page = await browser.newPage({ viewport });
+  const page = await browser.newPage({ viewport, ...(!tv ? { hasTouch: true, isMobile: true } : {}) });
   page.on("pageerror", (error) => errors.push(error.message));
   await page.route("**/*", async (route) => {
     const url = route.request().url();
@@ -61,7 +61,8 @@ async function pageAt(tv, viewport = { width: 1280, height: 720 }, setup = true)
     if (tv) { api.state.previewMode = true; document.documentElement.classList.add("tv-preview", "tv-mode"); }
     api.state.hot.ready = true;
     api.state.hot.items = Array.from({ length: 45 }, (_, i) => ({ title: "推荐" + i, tmdbId: i + 1, id: i + 1, mediaType: "movie", source: "nostr-hot", people: 4, pic: "/poster.jpg", landscape: "/backdrop-" + i + ".jpg", overview: "推荐影片简介", releaseDate: "2025-01-01" }));
-    if (setup) api.setup();
+    api.state.recent.loaded = true; api.state.recent.items = [];
+    if (setup) { api.setup(); api.tvBrowseBeginStartup(api.homeFocusUserEpoch()); }
   }, { tv, setup });
   return page;
 }
@@ -69,6 +70,28 @@ async function focus(page, selector) { await page.locator(selector).focus(); }
 async function active(page) { return page.evaluate(() => document.activeElement.id || document.activeElement.dataset.mediaKey); }
 async function press(page, key) { await page.keyboard.press(key); await page.waitForTimeout(75); }
 try {
+  for (const mode of ['records', 'empty', 'failure', 'user']) {
+    const initial = await pageAt(true, undefined, false);
+    await initial.evaluate(() => {
+      testBrowse.setup(); testBrowse.state.recent.loaded = false; testBrowse.state.recent.items = [];
+      const historyResult = new Promise((resolve, reject) => { window.resolveHistory = resolve; window.rejectHistory = reject; });
+      window.fm = Object.assign({}, testBrowse.sdk(), { history: () => historyResult });
+      testBrowse.tvBrowseBeginStartup(testBrowse.homeFocusUserEpoch());
+    });
+    await initial.waitForFunction(() => window.resolveHistory);
+    assert.equal(await initial.evaluate(() => testBrowse.tvBrowseState().column), 'recent', 'pending is not empty');
+    if (mode === 'user') { await focus(initial, '#tvColumn-movie'); await press(initial, 'Enter'); }
+    await initial.evaluate(mode => {
+      if (mode === 'failure') rejectHistory(new Error('history fixture failed'));
+      else resolveHistory(mode === 'records' || mode === 'user' ? [{ key: 'fixture@@@1', vodName: '有效最近观看', vodPic: '/poster.jpg', vodId: '1', createTime: Date.now() }] : []);
+    }, mode);
+    await initial.waitForFunction(() => !testBrowse.state.recent.loading);
+    assert.equal(await initial.evaluate(() => testBrowse.tvBrowseState().column), mode === 'records' || mode === 'failure' ? 'recent' : mode === 'user' ? 'movie' : 'recommendation');
+    if (mode === 'records') assert.equal(await initial.evaluate(() => document.activeElement.closest('#tvBrowseRail')?.id), 'tvBrowseRail');
+    if (mode === 'failure') assert.equal(await initial.locator('#tvBrowseRetry').isVisible(), true);
+    if (mode === 'user') assert.equal(await active(initial), 'tvColumn-movie');
+    await initial.close();
+  }
   const cold = await pageAt(true, undefined, false);
   await cold.evaluate(() => { window.bootTask = testBrowse.bootWithIdentityGate(); });
   await cold.waitForFunction(() => document.querySelectorAll('#tvBrowseRail .card').length > 1 && window.releaseIdentity);
@@ -76,7 +99,7 @@ try {
   const coldUserKey = await active(cold);
   await cold.evaluate(async () => { releaseIdentity(); await bootTask; }); await cold.waitForTimeout(300);
   assert.equal(await active(cold), coldUserKey, 'actual boot completion never steals user navigation focus');
-  await cold.locator('#tvFunction-recent').click();
+  await cold.evaluate(() => testBrowse.tvBrowseSelectColumn('recent'));
   await cold.locator('#recentManageBtn').click();
   assert.equal(await cold.locator('#recentManageActions').isVisible(), true, 'boot binds shared history controls before first render');
   await cold.close();
@@ -90,7 +113,16 @@ try {
   assert.equal(await tv.evaluate(() => testBrowse.state.homeV14.heroFeed.loading), false);
   assert.equal(await tv.evaluate(() => Object.keys(testBrowse.state.homeV14.categoryFeeds).length), 0);
   await press(tv, "ArrowUp"); assert.equal(await active(tv), "tvColumn-recommendation");
-  await press(tv, "ArrowUp"); assert.equal(await active(tv), "tvFunction-search");
+  await press(tv, "ArrowUp"); assert.equal(await active(tv), "tvFunction-live");
+  const functions = await tv.locator('#tvBrowseFunctions button').evaluateAll((buttons) => buttons.map(b => ({id:b.id, label:b.getAttribute('aria-label') || b.textContent.trim()})));
+  assert.deepEqual(functions.map(b=>b.label), ['直播','搜索','设置','基础设置']);
+  assert.equal(await tv.locator('#connectionToggle').innerText(), '');
+  for (const id of ['tvFunction-search','tvFunction-settings','connectionToggle']) {
+    await press(tv, 'ArrowRight'); assert.equal(await active(tv), id);
+  }
+  await tv.waitForTimeout(250);
+  const glass = await tv.locator('#connectionToggle').evaluate(el=>({bg:getComputedStyle(el).backgroundColor, outline:getComputedStyle(el).outlineStyle}));
+  assert.equal(glass.bg, 'rgba(255, 255, 255, 0.38)'); assert.equal(glass.outline, 'solid');
   await press(tv, "ArrowDown"); assert.equal(await active(tv), "tvColumn-recommendation");
   await press(tv, "ArrowRight"); assert.equal(await tv.evaluate(() => testBrowse.tvBrowseState().column), "recommendation", "navigation does not activate a column");
   await focus(tv, "#tvColumn-movie"); await press(tv, "Enter");
@@ -101,6 +133,10 @@ try {
   assert.equal(await tv.locator("#tvBrowseFunctions").isVisible(), false);
   assert.equal(await tv.locator("#tvBrowseInfo").isVisible(), false);
   assert.equal(await tv.evaluate(() => document.querySelector('#tvBrowseRail .card')?.getAttribute('tabindex')), "-1");
+  const filterStyle = await tv.locator('#tvBrowseFilters').evaluate(el=>({bg:getComputedStyle(el).backgroundColor, shadow:getComputedStyle(el).boxShadow}));
+  assert.deepEqual(filterStyle, {bg:'rgba(0, 0, 0, 0)', shadow:'none'});
+  const railRect = await tv.locator('#tvBrowseRail').boundingBox();
+  const columnRect = await tv.locator('#tvBrowseColumns').boundingBox();
   const filterBefore = await tv.evaluate(() => document.activeElement.dataset.value);
   await press(tv, "ArrowRight");
   assert.notEqual(await tv.evaluate(() => document.activeElement.dataset.value), filterBefore);
@@ -120,7 +156,10 @@ try {
   await tv.waitForFunction(() => testBrowse.secondaryActiveQuery("movie").loaded);
   assert.equal(await tv.evaluate(() => document.activeElement.dataset.value), "rating", "filter DOM focus survives result commit");
   assert.ok(await tv.locator("#tvBrowseRail .card").count(), JSON.stringify(await tv.evaluate(() => ({ query: testBrowse.secondaryActiveQuery("movie"), status: document.querySelector("#tvBrowseStatus").textContent }))));
-  await press(tv, "Escape"); await press(tv, "ArrowDown");
+  await press(tv, "Escape");
+  assert.deepEqual(await tv.locator('#tvBrowseRail').boundingBox(), railRect);
+  assert.deepEqual(await tv.locator('#tvBrowseColumns').boundingBox(), columnRect);
+  await press(tv, "ArrowDown");
   // Paging uses the actual shared TMDB loader and appends without replacing the prefix.
   await tv.evaluate(() => { window.firstPoster = document.querySelector("#tvBrowseRail .card"); document.querySelector("#tvBrowseRail .card:last-child").focus(); });
   await tv.waitForFunction(() => document.querySelectorAll("#tvBrowseRail .card").length >= 40);
@@ -133,17 +172,31 @@ try {
   const saved = await tv.evaluate(() => testBrowse.buildUiSnapshot());
   await tv.evaluate((saved) => { testBrowse.restoreTvBrowseSnapshot(saved.tvBrowse); testBrowse.renderAll(); testBrowse.tvBrowseFocusIntent(); }, saved);
   assert.equal(await active(tv), returnKey);
-  await tv.evaluate(() => testBrowse.openSidebar());
-  assert.equal(await tv.locator("#homeSidebar").isVisible(), true);
-  await tv.evaluate(() => { window.liveCalls = 0; window.fm = { openLive: () => { window.liveCalls += 1; } }; });
-  await focus(tv, '#homeSidebar [data-sidebar-key="live"]'); await press(tv, "Enter");
-  assert.equal(await tv.evaluate(() => window.liveCalls), 1, "existing Native Live entry invoked once");
-  await tv.evaluate(() => testBrowse.renderAll());
-  assert.equal(await tv.evaluate(() => document.activeElement.dataset.sidebarKey), "live");
+  assert.equal(await tv.locator('#homeSidebar,#homeSidebarBackdrop,#homeMenuLauncher,#tvFunction-menu').count(), 0);
+  assert.equal(await tv.evaluate(() => testBrowse.openSidebar()), false);
+  await tv.evaluate(() => { window.liveCalls = 0; window.settingCalls = 0; window.fm = { openLive: () => { liveCalls++; }, openSetting: () => { settingCalls++; }, history: async () => [] }; });
+  await focus(tv, '#tvFunction-live'); await press(tv, 'Enter');
+  assert.equal(await tv.evaluate(() => liveCalls), 1);
+  await tv.evaluate(() => testBrowse.handleWebHomeResume({ force: true })); await tv.waitForTimeout(100);
+  assert.equal(await active(tv), 'tvFunction-live');
+  await press(tv, 'Enter'); await press(tv, 'ArrowDown');
+  await tv.evaluate(() => testBrowse.handleWebHomeResume({ force: true })); await tv.waitForTimeout(100);
+  assert.equal(await active(tv), 'tvColumn-movie', 'user navigation cancels a stale Native focus return');
+  await focus(tv, '#tvFunction-settings'); await press(tv, 'Enter'); assert.equal(await tv.evaluate(() => settingCalls), 1);
+  assert.equal(await tv.locator('#tvFunction-history,#tvFunction-keep,#tvFunction-menu').count(), 0);
+  assert.equal(await tv.locator('#tvFunction-search').innerText(), '');
+  assert.equal(await tv.locator('#tvFunction-search svg').count(), 1);
   await tv.evaluate(() => { delete window.fm; });
-  await tv.evaluate(() => testBrowse.closeSidebar()); await tv.waitForTimeout(100);
-  assert.equal(await active(tv), returnKey);
-  await tv.evaluate(() => testBrowse.openSearchPage());
+  await focus(tv, '#connectionToggle'); await press(tv, 'Enter');
+  assert.equal(await tv.locator('#connectionBody').evaluate(el=>el.classList.contains('open')), true);
+  await press(tv, 'Escape'); await tv.waitForTimeout(150);
+  assert.equal(await tv.locator('#connectionBody').evaluate(el=>el.classList.contains('open')), false);
+  await focus(tv, '#tvColumn-movie');
+  await tv.evaluate(() => document.activeElement.dispatchEvent(new KeyboardEvent('keydown', {bubbles:true, keyCode:38, which:38})));
+  assert.equal(await active(tv), 'tvFunction-live');
+  await tv.waitForTimeout(75);
+  await press(tv, 'ArrowRight'); assert.equal(await active(tv), 'tvFunction-search');
+  await press(tv, 'Enter');
   assert.equal(await tv.locator("#searchPage").isVisible(), true);
   await tv.evaluate(() => testBrowse.closeSearchPage()); await tv.waitForTimeout(50);
   assert.equal(await active(tv), "tvFunction-search");
@@ -195,6 +248,17 @@ try {
   await press(tv, "ArrowUp"); const userTarget = await active(tv);
   await tv.evaluate(() => { testBrowse.state.hot.ready = true; testBrowse.state.hot.items = [{ id: 9, tmdbId: 9, title: "late", source: "nostr-hot", mediaType: "movie", pic: "/poster.jpg", people: 1 }]; testBrowse.renderAll(); });
   assert.equal(await active(tv), userTarget);
+  // Metadata fields and the existing type-specific detail caches share media identity.
+  await tv.evaluate(() => {
+    testBrowse.storeMovieDetailCache({tmdbId: 7001}, {id: 7001, overview: '电影缓存简介', vote_average: 9});
+    testBrowse.storeTvDetailCache({tmdbId: 7001}, {id: 7001, overview: '同号电视剧简介'});
+    testBrowse.tvBrowsePreview({tmdbId: 7001, mediaType: 'movie', title: '电影'});
+  });
+  assert.equal(await tv.locator('#tvBrowseOverview').innerText(), '电影缓存简介');
+  await tv.evaluate(() => testBrowse.tvBrowsePreview({tmdbId: 7002, mediaType: 'movie', title: '另一部', description: 'description 简介'}));
+  assert.equal(await tv.locator('#tvBrowseOverview').innerText(), 'description 简介');
+  await tv.evaluate(() => testBrowse.tvBrowsePreview({tmdbId: 7003, mediaType: 'movie', title: '无简介'}));
+  assert.equal(await tv.locator('#tvBrowseOverview').innerText(), '');
   const mobile = await pageAt(false, { width: 390, height: 844 });
   await mobile.evaluate(() => testBrowse.renderAll());
   assert.equal(await mobile.locator("#homeHero").count(), 1);
@@ -202,6 +266,11 @@ try {
   await mobile.locator('#homeRecommendationMore').click();
   assert.equal(await mobile.locator('#secondaryCatalog').isVisible(), true);
   await mobile.locator('#secondaryCatalogBack').click(); await mobile.waitForTimeout(100);
+  await mobile.locator('#homeMenuLauncher').click();
+  assert.equal(await mobile.locator('#homeSidebar').isVisible(), true);
+  assert.equal(await mobile.locator('#homeSidebarBackdrop').isVisible(), true);
+  await press(mobile, 'Escape'); await mobile.waitForTimeout(250);
+  assert.equal(await mobile.locator('#homeSidebar').isVisible(), false);
   await mobile.evaluate(() => testBrowse.openSearchPage()); assert.equal(await mobile.locator("#searchPage").isVisible(), true);
   assert.equal(await mobile.evaluate(() => document.documentElement.classList.contains("tv-browse-active")), false);
   for (const viewport of [{ width: 1920, height: 1080 }, { width: 960, height: 540 }]) {
@@ -209,12 +278,18 @@ try {
     await sized.evaluate(() => { testBrowse.renderAll(); testBrowse.tvBrowseFocusIntent(); });
     assert.ok(await sized.evaluate(() => document.documentElement.scrollHeight <= innerHeight + 1));
     assert.equal(await sized.locator('#homeHero,#secondaryCatalog').count(), 0);
+    await sized.evaluate(() => testBrowse.tvBrowsePreview({ mediaType:'movie', tmdbId:8000, title:'这是一部用来验证长标题和多行简介布局的影片名称', releaseDate:'2025-01-01', description:'多行简介应显示在更高的左侧资料区，保留与中部栏目之间的空间。'.repeat(8) }));
+    const geometry = await sized.evaluate(() => ({info:document.querySelector('#tvBrowseInfo').getBoundingClientRect().toJSON(), columns:document.querySelector('#tvBrowseColumns').getBoundingClientRect().toJSON(), height:innerHeight}));
+    assert.ok(geometry.info.top < geometry.height*.13 && geometry.info.bottom < geometry.columns.top, 'raised information remains clear of fixed columns');
+    assert.equal(await sized.locator('#tvFunction-search').innerText(), '');
     await sized.close();
   }
   // Actual Detail DOM/history/close chain, using a poster whose fixture requires no Native playback.
   await tv.evaluate(() => { testBrowse.tvBrowseSelectColumn('movie'); document.querySelector('#tvBrowseRail .card').focus(); testBrowse.openDetail(document.activeElement.__mediaItem, { returnTarget: document.activeElement }); });
   await tv.waitForTimeout(160);
   assert.equal(await tv.locator('#detailSheet').evaluate((el) => el.classList.contains('active')), true);
+  await focus(tv, '#detailSearchBtn'); await tv.waitForTimeout(250);
+  assert.equal(await tv.locator('#detailSearchBtn').evaluate(el=>getComputedStyle(el).backgroundColor), 'rgba(255, 255, 255, 0.38)');
   await tv.evaluate(() => testBrowse.closeDetail(false)); await tv.waitForTimeout(650);
   assert.equal(await tv.evaluate(() => document.activeElement.closest('#tvBrowseRail')?.id), 'tvBrowseRail');
   await tv.evaluate(() => { testBrowse.openSearchPage(); testBrowse.openDetail({ tmdbId: 88, mediaType: 'movie', title: 'search-detail', source: 'tmdb', pic: '/poster.jpg' }, { returnTarget: document.querySelector('#searchPageBack') }); });

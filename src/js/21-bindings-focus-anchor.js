@@ -229,18 +229,6 @@
       if ($("recentManageSelectAll")) $("recentManageSelectAll").addEventListener("click", toggleRecentManageSelectAll);
       if ($("recentManageDelete")) $("recentManageDelete").addEventListener("click", armRecentManageDelete);
       if ($("recentManageCancel")) $("recentManageCancel").addEventListener("click", handleRecentManageCancel);
-      if ($("homeSearchLauncher")) $("homeSearchLauncher").addEventListener("click", openSearchPage);
-      if ($("homeMenuLauncher")) $("homeMenuLauncher").addEventListener("click", () => {
-        if (isSidebarOpen()) closeSidebar();
-        else openSidebar();
-      });
-      if ($("homeSidebarBackdrop")) $("homeSidebarBackdrop").addEventListener("click", () => {
-        if (isMobileSidebarDevice() && isSidebarOpen() && isConnectionPanelOpen()) {
-          closeConnectionPanel();
-          return;
-        }
-        closeSidebar();
-      });
       if ($("connectionOverlayBackdrop")) $("connectionOverlayBackdrop").addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -494,12 +482,6 @@
         if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(key)) return;
         if (handlePanDirectionalKey(key, event)) return;
         if (handleDetailDirectionalKey(key, event)) return;
-        if (key === "ArrowLeft" && isHomeLeftBoundary(el)) {
-          event.preventDefault();
-          if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-          openSidebar();
-          return;
-        }
         const target = fastHomeDirectionalTarget(key, el) || nearestFocusable(key);
         if (target) {
           event.preventDefault();
@@ -1309,7 +1291,7 @@
 
     function normalizeRemoteKey(event) {
       if (["Enter", "Escape", "Backspace", "BrowserBack", "GoBack", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Menu", "ContextMenu"].includes(event.key)) return event.key === "BrowserBack" || event.key === "GoBack" ? "Escape" : event.key === "ContextMenu" ? "Menu" : event.key;
-      const map = { 13: "Enter", 23: "Enter", 66: "Enter", 4: "Escape", 8: "Backspace", 27: "Escape", 82: "Menu", 10009: "Escape", 461: "Escape", 19: "ArrowUp", 20: "ArrowDown", 21: "ArrowLeft", 22: "ArrowRight" };
+      const map = { 37: "ArrowLeft", 38: "ArrowUp", 39: "ArrowRight", 40: "ArrowDown", 13: "Enter", 23: "Enter", 66: "Enter", 4: "Escape", 8: "Backspace", 27: "Escape", 82: "Menu", 10009: "Escape", 461: "Escape", 19: "ArrowUp", 20: "ArrowDown", 21: "ArrowLeft", 22: "ArrowRight" };
       return map[event.keyCode || event.which] || "";
     }
 

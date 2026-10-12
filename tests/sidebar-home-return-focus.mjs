@@ -150,6 +150,7 @@ const navigationState = {
 const request = bind(sidebarSource, "requestSidebarNavigation", {
   state: { activeList: "all", homeV14: navigationState },
   isMobileSidebarDevice: () => false,
+  isTvLikeDevice: () => false,
   normalizeLegacyCategoryId: (id) => id,
   homeUiRoute: () => "home",
   isSidebarRouteActive: () => true,

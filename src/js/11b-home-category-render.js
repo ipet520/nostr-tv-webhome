@@ -790,6 +790,10 @@
     function updateMovieReleaseStatusCards(itemOrId, detail) {
       const id = movieDetailCacheId(itemOrId);
       if (!id || !detail) return;
+      if (tvBrowseActive()) {
+        const target = tvBrowsePosterTarget();
+        if (target && target.__mediaItem && String(target.__mediaItem.mediaType || "").toLowerCase() === "movie" && movieDetailCacheId(target.__mediaItem) === id) tvBrowsePreview(target.__mediaItem);
+      }
       document.querySelectorAll(".card").forEach((card) => {
         const cardItem = card.__mediaItem;
         if (!cardItem || cardItem.source !== "nostr-hot") return;
@@ -1122,7 +1126,7 @@
     }
 
     function renderHome() {
-      if (isTvLikeDevice()) { renderSidebar(); renderTvBrowse(); return; }
+      if (isTvLikeDevice()) { renderTvBrowse(); return; }
       const homeRoot = $("home");
       if (!homeRoot || !isHomeRouteActive()) return;
       const home = state.homeV14;
