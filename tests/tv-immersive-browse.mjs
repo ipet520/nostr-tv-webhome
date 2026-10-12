@@ -16,7 +16,7 @@ const hook = `window.testBrowse = { state, renderAll, renderTvBrowse, tvBrowseSt
  buildUiSnapshot, restoreUiSnapshot, openSidebar, closeSidebar, openSearchPage, closeSearchPage,
  bindActions, installRemoteKeys, secondaryActiveQuery, syncBrowseDevicePresentation, handleWebHomeResume, boot,
  tvBrowsePreview, publishHomeWeeklySnapshot, enterRecentManageMode, exitRecentManageMode,
- openDetail, closeDetail, sdk, loadRecentList, tvBrowseBeginStartup, homeFocusUserEpoch, storeMovieDetailCache, storeTvDetailCache, updateMovieReleaseStatusCards };
+ openDetail, closeDetail, sdk, loadRecentList, tvBrowseBeginStartup, homeFocusUserEpoch, storeMovieDetailCache, storeTvDetailCache, updateMovieReleaseStatusCards, requestMovieDetailShared, homeEnrichmentRequest, bestDetailLogo, tvBrowseClearPreview };
  window.testBrowse.setup = () => {
    syncBrowseDevicePresentation(); bindActions(); installRemoteKeys();
  };
@@ -113,16 +113,16 @@ try {
   assert.equal(await tv.evaluate(() => testBrowse.state.homeV14.heroFeed.loading), false);
   assert.equal(await tv.evaluate(() => Object.keys(testBrowse.state.homeV14.categoryFeeds).length), 0);
   await press(tv, "ArrowUp"); assert.equal(await active(tv), "tvColumn-recommendation");
-  await press(tv, "ArrowUp"); assert.equal(await active(tv), "tvFunction-live");
+  await press(tv, "ArrowUp"); assert.equal(await active(tv), "tvFunction-search");
   const functions = await tv.locator('#tvBrowseFunctions button').evaluateAll((buttons) => buttons.map(b => ({id:b.id, label:b.getAttribute('aria-label') || b.textContent.trim()})));
-  assert.deepEqual(functions.map(b=>b.label), ['直播','搜索','设置','基础设置']);
+  assert.deepEqual(functions.map(b=>b.label), ['搜索','直播','设置','基础设置']);
   assert.equal(await tv.locator('#connectionToggle').innerText(), '');
-  for (const id of ['tvFunction-search','tvFunction-settings','connectionToggle']) {
+  for (const id of ['tvFunction-live','tvFunction-settings','connectionToggle']) {
     await press(tv, 'ArrowRight'); assert.equal(await active(tv), id);
   }
   await tv.waitForTimeout(250);
   const glass = await tv.locator('#connectionToggle').evaluate(el=>({bg:getComputedStyle(el).backgroundColor, outline:getComputedStyle(el).outlineStyle}));
-  assert.equal(glass.bg, 'rgba(255, 255, 255, 0.38)'); assert.equal(glass.outline, 'solid');
+  assert.equal(glass.bg, 'rgba(255, 255, 255, 0.2)'); assert.equal(glass.outline, 'solid');
   await press(tv, "ArrowDown"); assert.equal(await active(tv), "tvColumn-recommendation");
   await press(tv, "ArrowRight"); assert.equal(await tv.evaluate(() => testBrowse.tvBrowseState().column), "recommendation", "navigation does not activate a column");
   await focus(tv, "#tvColumn-movie"); await press(tv, "Enter");
@@ -135,6 +135,8 @@ try {
   assert.equal(await tv.evaluate(() => document.querySelector('#tvBrowseRail .card')?.getAttribute('tabindex')), "-1");
   const filterStyle = await tv.locator('#tvBrowseFilters').evaluate(el=>({bg:getComputedStyle(el).backgroundColor, shadow:getComputedStyle(el).boxShadow}));
   assert.deepEqual(filterStyle, {bg:'rgba(0, 0, 0, 0)', shadow:'none'});
+  const filterOption=await tv.locator('#tvBrowseFilters button').last().evaluate(el=>({bg:getComputedStyle(el).backgroundColor,border:getComputedStyle(el).borderTopColor,blur:getComputedStyle(el).backdropFilter}));
+  assert.deepEqual(filterOption,{bg:'rgba(0, 0, 0, 0)',border:'rgba(0, 0, 0, 0)',blur:'none'});
   const railRect = await tv.locator('#tvBrowseRail').boundingBox();
   const columnRect = await tv.locator('#tvBrowseColumns').boundingBox();
   const filterBefore = await tv.evaluate(() => document.activeElement.dataset.value);
@@ -184,7 +186,7 @@ try {
   assert.equal(await active(tv), 'tvColumn-movie', 'user navigation cancels a stale Native focus return');
   await focus(tv, '#tvFunction-settings'); await press(tv, 'Enter'); assert.equal(await tv.evaluate(() => settingCalls), 1);
   assert.equal(await tv.locator('#tvFunction-history,#tvFunction-keep,#tvFunction-menu').count(), 0);
-  assert.equal(await tv.locator('#tvFunction-search').innerText(), '');
+  assert.equal(await tv.locator('#tvFunction-search').innerText(), '搜索');
   assert.equal(await tv.locator('#tvFunction-search svg').count(), 1);
   await tv.evaluate(() => { delete window.fm; });
   await focus(tv, '#connectionToggle'); await press(tv, 'Enter');
@@ -193,9 +195,8 @@ try {
   assert.equal(await tv.locator('#connectionBody').evaluate(el=>el.classList.contains('open')), false);
   await focus(tv, '#tvColumn-movie');
   await tv.evaluate(() => document.activeElement.dispatchEvent(new KeyboardEvent('keydown', {bubbles:true, keyCode:38, which:38})));
-  assert.equal(await active(tv), 'tvFunction-live');
+  assert.equal(await active(tv), 'tvFunction-search');
   await tv.waitForTimeout(75);
-  await press(tv, 'ArrowRight'); assert.equal(await active(tv), 'tvFunction-search');
   await press(tv, 'Enter');
   assert.equal(await tv.locator("#searchPage").isVisible(), true);
   await tv.evaluate(() => testBrowse.closeSearchPage()); await tv.waitForTimeout(50);
@@ -259,6 +260,91 @@ try {
   assert.equal(await tv.locator('#tvBrowseOverview').innerText(), 'description 简介');
   await tv.evaluate(() => testBrowse.tvBrowsePreview({tmdbId: 7003, mediaType: 'movie', title: '无简介'}));
   assert.equal(await tv.locator('#tvBrowseOverview').innerText(), '');
+
+  // Title artwork reuses typed caches, the language chooser and the existing request budget.
+  const artwork = await pageAt(true);
+  await artwork.waitForTimeout(300);
+  let logoRequests = 0;
+  await artwork.route('**/tmdb/movie/9100?*', async route => {
+    logoRequests++; await new Promise(resolve=>setTimeout(resolve,100));
+    await route.fulfill({contentType:'application/json',body:JSON.stringify({id:9100, overview:'缓存艺术标题', images:{logos:[{file_path:'/art-en.png',iso_639_1:'en',vote_average:10},{file_path:'/art-zh.png',iso_639_1:'zh',vote_average:1}]}})});
+  });
+  await artwork.route('**/art-*.png', async route => {
+    if (route.request().url().includes('fail')) return route.abort();
+    await route.fulfill({contentType:'image/svg+xml',body:route.request().url().includes('tall') ? '<svg xmlns="http://www.w3.org/2000/svg" width="90" height="480"><path fill="white" d="M10 10h60v400H10z"/></svg>' : '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="90"><text x="5" y="60" fill="white" font-size="56">作品艺术标题</text></svg>'});
+  });
+  await artwork.evaluate(() => {
+    const item={id:9100,tmdbId:9100,mediaType:'movie',title:'即时文字标题'};
+    testBrowse.tvBrowsePreview(item); testBrowse.tvBrowsePreview(item);
+    window.joinLogo = testBrowse.requestMovieDetailShared(item,testBrowse.homeEnrichmentRequest);
+  });
+  assert.equal(await artwork.locator('#tvBrowseTitle').isVisible(),true);
+  await artwork.waitForFunction(()=>!document.querySelector('#tvBrowseLogo').hidden);
+  assert.equal(await artwork.locator('#tvBrowseTitle').isVisible(),false);
+  assert.ok(await artwork.locator('#tvBrowseLogo').getAttribute('src').then(src=>src.endsWith('/art-zh.png')));
+  await artwork.evaluate(()=>testBrowse.tvBrowsePreview({tmdbId:9100,mediaType:'movie',title:'即时文字标题'}));
+  await artwork.waitForTimeout(250); assert.equal(logoRequests,1,'shared cache and pending request prevent duplicate queries');
+  await artwork.evaluate(() => {
+    testBrowse.storeTvDetailCache({tmdbId:9100},{id:9100,images:{logos:[{file_path:'/art-tv.png',iso_639_1:'zh'}]}});
+    testBrowse.tvBrowsePreview({id:9100,tmdbId:9100,mediaType:'tv',title:'电视剧艺术标题'});
+  });
+  await artwork.waitForFunction(()=>!document.querySelector('#tvBrowseLogo').hidden && document.querySelector('#tvBrowseLogo').src.endsWith('/art-tv.png'));
+  assert.equal(await artwork.locator('#tvBrowseTitle').isVisible(),false,'same ID across movie and TV never shares artwork');
+  await artwork.evaluate(() => {
+    testBrowse.storeMovieDetailCache({tmdbId:9101},{id:9101,images:{logos:[]}});
+    testBrowse.tvBrowsePreview({tmdbId:9101,mediaType:'movie',title:'没有艺术标题'});
+  });
+  assert.equal(await artwork.locator('#tvBrowseTitle').isVisible(),true);
+  assert.equal(await artwork.locator('#tvBrowseLogo').isVisible(),false);
+  await artwork.evaluate(() => testBrowse.tvBrowsePreview({tmdbId:9101,mediaType:'movie',title:'加载失败',logo:'/art-fail.png'}));
+  await artwork.waitForTimeout(150);
+  assert.equal(await artwork.locator('#tvBrowseTitle').isVisible(),true);
+  assert.equal(await artwork.locator('#tvBrowseLogo').isVisible(),false);
+  const staleArtwork = await artwork.evaluate(() => {
+    const OriginalImage=window.Image; window.Image=class{};
+    testBrowse.tvBrowsePreview({id:9101,tmdbId:9101,mediaType:'movie',title:'旧片',logo:'/art-old.png'});
+    const stale=testBrowse.tvBrowseState().logoImage.onload;
+    testBrowse.tvBrowsePreview({id:9101,tmdbId:9101,mediaType:'tv',title:'新片',logo:'/art-new.png'});
+    testBrowse.tvBrowseState().logoImage.onload(); stale(); window.Image=OriginalImage;
+    return {src:document.querySelector('#tvBrowseLogo').src,title:document.querySelector('#tvBrowseTitle').textContent};
+  });
+  assert.ok(staleArtwork.src.endsWith('/art-new.png')); assert.equal(staleArtwork.title,'新片');
+  assert.equal(await artwork.evaluate(()=>testBrowse.bestDetailLogo({images:{logos:[{file_path:'/en.png',iso_639_1:'en'},{file_path:'/tw.png',iso_639_1:'zh-TW'},{file_path:'/cn.png',iso_639_1:'zh-CN'}]}}).file_path),'/cn.png');
+  let lateRequests=0;
+  await artwork.route('**/tmdb/movie/9104?*',async route=>{
+    lateRequests++; await new Promise(resolve=>setTimeout(resolve,350));
+    await route.fulfill({contentType:'application/json',body:JSON.stringify({id:9104,images:{logos:[{file_path:'/art-late.png',iso_639_1:'zh'}]}})});
+  });
+  await artwork.evaluate(()=>testBrowse.tvBrowsePreview({id:9104,tmdbId:9104,mediaType:'movie',title:'迟到旧片'}));
+  await artwork.waitForFunction(()=>testBrowse.tvBrowseState().logoRequestKey==='movie:9104');
+  await artwork.evaluate(()=>testBrowse.tvBrowsePreview({id:9105,tmdbId:9105,mediaType:'tv',title:'当前新片',logo:'/art-current.png'}));
+  await artwork.waitForFunction(()=>!document.querySelector('#tvBrowseLogo').hidden);
+  await artwork.waitForTimeout(500);
+  assert.equal(lateRequests,1); assert.equal(await artwork.locator('#tvBrowseTitle').innerText(),'当前新片');
+  assert.ok((await artwork.locator('#tvBrowseLogo').getAttribute('src')).endsWith('/art-current.png'),'late detail response cannot repaint a different selected title');
+  await artwork.evaluate(()=>testBrowse.tvBrowsePreview({tmdbId:9103,mediaType:'tv',title:'窄长标题',logo:'/art-tall.png'}));
+  await artwork.waitForFunction(()=>!document.querySelector('#tvBrowseLogo').hidden);
+  const tall=await artwork.locator('#tvBrowseLogo').boundingBox(); assert.ok(tall.height<=72.1 && tall.width<tall.height);
+  await artwork.evaluate(()=>{testBrowse.tvBrowseClearPreview();testBrowse.tvBrowsePreview({tmdbId:9103,mediaType:'tv',title:'窄长标题',logo:'/art-tall.png'});});
+  await artwork.waitForFunction(()=>!document.querySelector('#tvBrowseLogo').hidden);
+  await artwork.evaluate(()=>testBrowse.tvBrowsePreview({tmdbId:9100,mediaType:'movie',title:'即时文字标题',overview:'明亮和深色背景下的作品信息可读性验证。',releaseDate:'2025-01-01'}));
+  await artwork.waitForFunction(()=>!document.querySelector('#tvBrowseLogo').hidden);
+  if (process.env.WEBHOME_TEST_SCREENSHOT) {
+    for (const [name,color] of [['bright','#dbd7bb'],['dark','#152433']]) {
+      await artwork.evaluate(color=>{
+        const svg='<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><rect fill="'+color+'" width="1280" height="720"/></svg>';
+        document.querySelector('#tvBrowseBackdrop').style.backgroundImage='url("data:image/svg+xml,'+encodeURIComponent(svg)+'")';
+        document.querySelector('#tvBrowseBackdrop').classList.add('visible'); document.querySelector('#tvBrowseBackdropNext').classList.remove('visible');
+      },color);
+      await artwork.waitForTimeout(300);
+      await artwork.screenshot({path:process.env.WEBHOME_TEST_SCREENSHOT.replace('.png','-'+name+'.png')});
+    }
+  }
+  await artwork.evaluate(()=>{testBrowse.tvBrowseSelectColumn('movie');});
+  await focus(artwork,'#tvColumn-movie'); await press(artwork,'Enter'); await press(artwork,'Enter');
+  if (process.env.WEBHOME_TEST_SCREENSHOT) await artwork.screenshot({path:process.env.WEBHOME_TEST_SCREENSHOT.replace('.png','-filters.png')});
+  await artwork.close();
+
   const mobile = await pageAt(false, { width: 390, height: 844 });
   await mobile.evaluate(() => testBrowse.renderAll());
   assert.equal(await mobile.locator("#homeHero").count(), 1);
@@ -273,7 +359,7 @@ try {
   assert.equal(await mobile.locator('#homeSidebar').isVisible(), false);
   await mobile.evaluate(() => testBrowse.openSearchPage()); assert.equal(await mobile.locator("#searchPage").isVisible(), true);
   assert.equal(await mobile.evaluate(() => document.documentElement.classList.contains("tv-browse-active")), false);
-  for (const viewport of [{ width: 1920, height: 1080 }, { width: 960, height: 540 }]) {
+  for (const viewport of [{ width:1280,height:720 }, { width: 1920, height: 1080 }, { width: 960, height: 540 }]) {
     const sized = await pageAt(true, viewport);
     await sized.evaluate(() => { testBrowse.renderAll(); testBrowse.tvBrowseFocusIntent(); });
     assert.ok(await sized.evaluate(() => document.documentElement.scrollHeight <= innerHeight + 1));
@@ -281,7 +367,13 @@ try {
     await sized.evaluate(() => testBrowse.tvBrowsePreview({ mediaType:'movie', tmdbId:8000, title:'这是一部用来验证长标题和多行简介布局的影片名称', releaseDate:'2025-01-01', description:'多行简介应显示在更高的左侧资料区，保留与中部栏目之间的空间。'.repeat(8) }));
     const geometry = await sized.evaluate(() => ({info:document.querySelector('#tvBrowseInfo').getBoundingClientRect().toJSON(), columns:document.querySelector('#tvBrowseColumns').getBoundingClientRect().toJSON(), height:innerHeight}));
     assert.ok(geometry.info.top < geometry.height*.13 && geometry.info.bottom < geometry.columns.top, 'raised information remains clear of fixed columns');
-    assert.equal(await sized.locator('#tvFunction-search').innerText(), '');
+    assert.equal(await sized.locator('#tvFunction-search').innerText(), '搜索');
+    const controls=await sized.locator('#tvBrowseFunctions button').evaluateAll(bs=>bs.map(b=>({id:b.id,r:b.getBoundingClientRect().toJSON()})));
+    assert.ok(controls.every(b=>Math.abs(b.r.height-controls[0].r.height)<.1),'one external height for all controls');
+    assert.ok(controls[0].r.width/controls[0].r.height>3 && controls[0].r.width/controls[0].r.height<5,'short horizontal search box');
+    const icon=await sized.locator('#tvFunction-search svg').boundingBox();
+    assert.ok(icon.x>controls[0].r.x+controls[0].r.width/2);
+    console.log('CONTROL_DIMENSIONS '+viewport.width+'x'+viewport.height+' = '+JSON.stringify(controls));
     await sized.close();
   }
   // Actual Detail DOM/history/close chain, using a poster whose fixture requires no Native playback.
@@ -289,7 +381,11 @@ try {
   await tv.waitForTimeout(160);
   assert.equal(await tv.locator('#detailSheet').evaluate((el) => el.classList.contains('active')), true);
   await focus(tv, '#detailSearchBtn'); await tv.waitForTimeout(250);
-  assert.equal(await tv.locator('#detailSearchBtn').evaluate(el=>getComputedStyle(el).backgroundColor), 'rgba(255, 255, 255, 0.38)');
+  for (const action of ['detailContinueBtn','detailSearchBtn','panSearchBtn']) {
+    await focus(tv,'#'+action); await tv.waitForTimeout(250);
+    const style=await tv.locator('#'+action).evaluate(el=>({bg:getComputedStyle(el).backgroundColor,color:getComputedStyle(el).color,shadow:getComputedStyle(el).boxShadow}));
+    assert.deepEqual(style,{bg:'rgb(247, 247, 247)',color:'rgb(23, 23, 23)',shadow:'none'});
+  }
   await tv.evaluate(() => testBrowse.closeDetail(false)); await tv.waitForTimeout(650);
   assert.equal(await tv.evaluate(() => document.activeElement.closest('#tvBrowseRail')?.id), 'tvBrowseRail');
   await tv.evaluate(() => { testBrowse.openSearchPage(); testBrowse.openDetail({ tmdbId: 88, mediaType: 'movie', title: 'search-detail', source: 'tmdb', pic: '/poster.jpg' }, { returnTarget: document.querySelector('#searchPageBack') }); });

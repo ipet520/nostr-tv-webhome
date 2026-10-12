@@ -6534,10 +6534,10 @@
 
     /* V1.4.6.11.1: TV focus is a state fill for controls.  Image cards keep
        one inner frame; business states such as Recent delete remain distinct. */
-    html.tv-mode .focusable:focus:not(.card):not(.person-card),
-    html.tv-mode button:focus:not(.card):not(.person-card),
-    html.tv-preview .focusable:focus:not(.card):not(.person-card),
-    html.tv-preview button:focus:not(.card):not(.person-card) {
+    html.tv-mode .focusable:focus:not(.card):not(.person-card):not(.tv-browse-control),
+    html.tv-mode button:focus:not(.card):not(.person-card):not(.tv-browse-control),
+    html.tv-preview .focusable:focus:not(.card):not(.person-card):not(.tv-browse-control),
+    html.tv-preview button:focus:not(.card):not(.person-card):not(.tv-browse-control) {
       outline: none !important;
       outline-offset: 0 !important;
       box-shadow: none !important;
@@ -6978,18 +6978,37 @@
     html.tv-browse-active #home.home-root { margin: 0; padding: 0; width: 100%; max-width: none; height: var(--fm-web-height, 100vh); min-height: 0; overflow: hidden; }
     html.tv-browse-active #infiniteSentinel { display: none; }
     .tv-browse[hidden], .tv-browse [hidden] { display: none !important; }
-    html.tv-browse-active .tv-browse { position: relative; width: 100%; height: 100%; overflow: hidden; background: #101419; color: #fff; --tv-gutter: 4vw; }
+    html.tv-browse-active .tv-browse { position: relative; width: 100%; height: 100%; overflow: hidden; background: #101419; color: #fff; --tv-gutter: 4vw; --tv-control-height: clamp(36px,4.5vh,50px); --tv-control-icon: clamp(21px,2.5vh,28px); }
     html.tv-browse-active .tv-browse-backdrop { position: absolute; inset: 0; background-size: cover; background-position: center; opacity: 0; transition: opacity 240ms ease; pointer-events: none; }
     html.tv-browse-active .tv-browse-backdrop.visible { opacity: 1; }
-    html.tv-browse-active .tv-browse-shade { position: absolute; inset: 0; background: linear-gradient(90deg,rgba(8,12,18,.92),rgba(8,12,18,.48) 47%,rgba(8,12,18,.08) 80%),linear-gradient(0deg,rgba(8,12,18,.98),rgba(8,12,18,.62) 32%,transparent 70%); pointer-events: none; }
-    html.tv-browse-active .tv-browse-functions { position: absolute; right: var(--tv-gutter); top: 3vh; display: flex; gap: 12px; z-index: 3; }
-    html.tv-browse-active .tv-browse-functions button { padding: 8px 16px; border-radius: 12px; font-size: clamp(14px,1.25vw,24px); }
-    html.tv-browse-active .tv-browse-functions .tv-browse-search { width: clamp(64px,5vw,96px); border-radius: 8px; display: flex; align-items: center; justify-content: center; }
-    html.tv-browse-active .tv-browse-search .icon { width: 22px; height: 22px; }
-    html.tv-browse-active .tv-browse-info { position: absolute; top: 7vh; left: var(--tv-gutter); width: 47vw; z-index: 2; }
-    html.tv-browse-active .tv-browse-info h1 { margin: 0 0 1vh; font-size: clamp(24px,2.8vw,54px); line-height: 1.1; }
-    html.tv-browse-active .tv-browse-logo { max-width: 25vw; max-height: 9vh; object-fit: contain; object-position: left center; margin-bottom: 1vh; }
-    html.tv-browse-active .tv-browse-logo:not([hidden]) + h1 { font-size: 1.4vw; }
+    html.tv-browse-active .tv-browse-shade { position: absolute; inset: 0; background: linear-gradient(90deg,rgba(8,12,18,.58),rgba(8,12,18,.22) 34%,transparent 65%),linear-gradient(0deg,rgba(8,12,18,.58),rgba(8,12,18,.16) 25%,transparent 42%); pointer-events: none; }
+    /* Only TV browsing controls share these light states. Detail actions keep their historical contract. */
+    html.tv-browse-active .tv-browse-control,
+    html.tv-browse-active #tvBrowseFunctions #connectionToggle {
+      background: transparent; border: 1px solid transparent; color: rgba(255,255,255,.86);
+      position: relative; box-shadow: none; outline: none; text-shadow: 0 1px 4px rgba(0,0,0,.8);
+      -webkit-backdrop-filter: none; backdrop-filter: none; transition: background-color 150ms ease;
+    }
+    html.tv-browse-active #tvBrowseFunctions #connectionToggle { background: transparent !important; }
+    html.tv-browse-active .tv-browse-control[aria-pressed="true"] {
+      color: #fff; font-weight: 700;
+    }
+    html.tv-browse-active .tv-browse-control[aria-pressed="true"]::after { content: ""; position: absolute; left: 12px; right: 12px; bottom: 2px; height: 2px; background: rgba(255,255,255,.8); pointer-events: none; }
+    html.tv-browse-active .tv-browse .tv-browse-control:focus,
+    html.tv-browse-active #tvBrowseFunctions #connectionToggle:focus {
+      background: rgba(255,255,255,.2); color: #fff;
+      outline: 1px solid rgba(255,255,255,.65); outline-offset: 0;
+    }
+    html.tv-browse-active #tvBrowseFunctions #connectionToggle:focus { background: rgba(255,255,255,.2) !important; }
+    html.tv-browse-active .tv-browse-functions { position: absolute; right: var(--tv-gutter); top: 3vh; display: flex; align-items: center; gap: clamp(8px,.8vw,16px); z-index: 3; }
+    html.tv-browse-active .tv-browse-functions button { height: var(--tv-control-height); min-height: 0; box-sizing: border-box; display: flex; align-items: center; justify-content: center; padding: 0 clamp(12px,1vw,20px); border-radius: 8px; font-size: clamp(14px,1.05vw,20px); font-weight: 600; }
+    html.tv-browse-active .tv-browse-functions .tv-browse-search { width: clamp(140px,9.6vw,190px); border-radius: calc(var(--tv-control-height) / 2); justify-content: space-between; background: rgba(0,0,0,.12); border-color: rgba(255,255,255,.25); }
+    html.tv-browse-active .tv-browse-search .icon { width: var(--tv-control-icon); height: var(--tv-control-icon); }
+    html.tv-browse-active .tv-browse-info { position: absolute; top: 7vh; left: var(--tv-gutter); width: 47vw; z-index: 2; text-shadow: 0 2px 6px rgba(0,0,0,.7); }
+    html.tv-browse-active .tv-browse-title { min-height: 11vh; position: relative; display: flex; align-items: center; margin-bottom: 1vh; }
+    html.tv-browse-active .tv-browse-info h1 { margin: 0; font-size: clamp(24px,2.8vw,54px); line-height: 1.1; }
+    html.tv-browse-active .tv-browse-logo { width: auto; height: auto; max-width: 32vw; max-height: 10vh; object-fit: contain; object-position: left center; animation: tv-title-reveal 180ms ease; }
+    @keyframes tv-title-reveal { from { opacity: 0; } to { opacity: 1; } }
     html.tv-browse-active #tvBrowseMeta, html.tv-browse-active #tvBrowseUpdate { font-size: clamp(13px,1.15vw,22px); margin: .8vh 0; color: #d8dee8; }
     html.tv-browse-active #tvBrowseUpdate { color: #b8dfcc; }
     html.tv-browse-active #tvBrowseOverview { margin: 1.2vh 0 0; font-size: clamp(14px,1.25vw,24px); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
@@ -6998,7 +7017,7 @@
     html.tv-browse-active .tv-browse-column { flex: 0 0 auto; padding: 8px 18px; font-size: clamp(16px,1.5vw,29px); border-radius: 12px; }
     html.tv-browse-active .tv-browse-posters { position: absolute; left: 0; right: 0; bottom: 4vh; height: 34vh; z-index: 3; }
     html.tv-browse-active .tv-browse-rail { display: flex; align-items: flex-start; gap: 1.4vw; overflow-x: auto; overflow-y: hidden; height: 100%; padding: 1.5vh var(--tv-gutter) 1vh; box-sizing: border-box; scrollbar-width: none; }
-    html.tv-browse-active .tv-browse-rail .card { flex: 0 0 10.6vw; width: 10.6vw; min-width: 0; max-width: none; transform-origin: center center; }
+    html.tv-browse-active .tv-browse-rail .card { flex: 0 0 10.6vw; width: 10.6vw; min-width: 0; max-width: none; border: 0 !important; transform-origin: center center; }
     html.tv-browse-active .tv-browse-rail .poster-wrap { aspect-ratio: 2 / 3; height: 25.8vh; }
     html.tv-browse-active .tv-browse-rail .card img { width: 100%; height: 100%; object-fit: cover; }
     html.tv-browse-active .tv-browse-rail .card:focus { transform: scale(1.04); }
@@ -7011,11 +7030,11 @@
     html.tv-browse-active .tv-browse.filter-open .tv-browse-columns,
     html.tv-browse-active .tv-browse.filter-open .tv-browse-posters { pointer-events: none; }
     html.tv-browse-active #tvBrowseFunctions #connectionDock { position: relative; flex: 0 0 auto; width: auto; min-width: 0; margin: 0; height: auto; align-self: auto; }
-    html.tv-browse-active #tvBrowseFunctions #connectionToggle { display: flex; align-items: center; justify-content: center; width: auto; min-width: 42px; min-height: 0; height: auto; gap: 0; padding: 8px 12px; }
+    html.tv-browse-active #tvBrowseFunctions #connectionToggle { display: flex; align-items: center; justify-content: center; width: var(--tv-control-height); min-width: 0; min-height: 0; height: var(--tv-control-height); gap: 0; padding: 0; border-radius: 8px; }
     html.tv-browse-active #tvBrowseFunctions .connection-title, html.tv-browse-active #tvBrowseFunctions .connection-arrow { display: none; }
-    html.tv-browse-active #tvBrowseFunctions .dot { width: 22px; height: 22px; flex: 0 0 22px; margin: 0; }
+    html.tv-browse-active #tvBrowseFunctions .dot { width: var(--tv-control-icon); height: var(--tv-control-icon); flex: 0 0 var(--tv-control-icon); margin: 0; }
     html.tv-browse-active .tv-browse-recent-tools { position: absolute; right: var(--tv-gutter); top: 10vh; z-index: 3; }
-    html.tv-browse-active .tv-browse-filters .secondary-filter-label { text-shadow: 0 1px 4px #000; }
+    html.tv-browse-active .tv-browse-filters .secondary-filter-label { color: rgba(255,255,255,.65); font-weight: 400; text-shadow: 0 1px 4px #000; }
 </style>
   <style id="tv-diagnostic-v1">
     html.tv-mode .tv-diagnostic {
@@ -7250,52 +7269,32 @@
       bottom: 18px;
     }
   </style>
-  <style id="detail-action-colors-v1">    /* Shared TV glass states for navigation and ordinary detail actions.
-       Resource / preparation states retain their own icon and status rules. */
-    html.tv-mode, html.tv-preview {
-      --tv-glass-base: rgba(0, 0, 0, .18);
-      --tv-glass-focus: rgba(255, 255, 255, .38);
-      --tv-glass-line: rgba(255, 255, 255, .18);
-      --tv-glass-selected-line: rgba(255, 255, 255, .72);
-    }
-    html.tv-mode #connectionToggle.tv-glass-button,
-    html.tv-preview #connectionToggle.tv-glass-button,
-    html.tv-mode .tv-glass-button,
-    html.tv-preview .tv-glass-button,
-    html.tv-mode #detailSheet.detail-large > .actions > .btn,
-    html.tv-preview #detailSheet.detail-large > .actions > .btn {
-      background: var(--tv-glass-base) !important;
-      border: 1px solid var(--tv-glass-line) !important;
+  <style id="detail-action-colors-v1">
+    /* 详情页三个操作按钮只收口颜色，不改变尺寸、间距或焦点几何。 */
+    html.tv-mode #detailSheet.detail-large > .actions > #detailContinueBtn,
+    html.tv-mode #detailSheet.detail-large > .actions > #detailSearchBtn,
+    html.tv-mode #detailSheet.detail-large > .actions > #panSearchBtn,
+    html.tv-preview #detailSheet.detail-large > .actions > #detailContinueBtn,
+    html.tv-preview #detailSheet.detail-large > .actions > #detailSearchBtn,
+    html.tv-preview #detailSheet.detail-large > .actions > #panSearchBtn {
+      background: rgba(52, 52, 54, .34) !important;
+      border-color: rgba(255, 255, 255, .20) !important;
       color: rgba(255, 255, 255, .94) !important;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, .26) !important;
+      -webkit-backdrop-filter: blur(14px) saturate(1.4) !important;
+      backdrop-filter: blur(14px) saturate(1.4) !important;
+    }
+
+    html.tv-mode #detailSheet.detail-large > .actions > #detailContinueBtn:focus,
+    html.tv-mode #detailSheet.detail-large > .actions > #detailSearchBtn:focus,
+    html.tv-mode #detailSheet.detail-large > .actions > #panSearchBtn:focus,
+    html.tv-preview #detailSheet.detail-large > .actions > #detailContinueBtn:focus,
+    html.tv-preview #detailSheet.detail-large > .actions > #detailSearchBtn:focus,
+    html.tv-preview #detailSheet.detail-large > .actions > #panSearchBtn:focus {
+      background: #F7F7F7 !important;
+      border-color: rgba(255, 255, 255, .95) !important;
+      color: #171717 !important;
       box-shadow: none !important;
-      -webkit-backdrop-filter: blur(12px) saturate(1.2);
-      backdrop-filter: blur(12px) saturate(1.2);
-    }
-    html.tv-mode #connectionToggle.tv-glass-button[aria-pressed="true"],
-    html.tv-preview #connectionToggle.tv-glass-button[aria-pressed="true"],
-    html.tv-mode .tv-glass-button[aria-pressed="true"],
-    html.tv-preview .tv-glass-button[aria-pressed="true"] {
-      border-bottom-color: var(--tv-glass-selected-line) !important;
-      box-shadow: inset 0 -2px 0 var(--tv-glass-selected-line) !important;
-      font-weight: 700;
-    }
-    html.tv-mode #connectionToggle.tv-glass-button:focus,
-    html.tv-preview #connectionToggle.tv-glass-button:focus,
-    html.tv-mode .tv-glass-button:focus,
-    html.tv-preview .tv-glass-button:focus,
-    html.tv-mode #detailSheet.detail-large > .actions > .btn:focus,
-    html.tv-preview #detailSheet.detail-large > .actions > .btn:focus {
-      background: var(--tv-glass-focus) !important;
-      border-color: rgba(255, 255, 255, .8) !important;
-      outline: 2px solid rgba(255, 255, 255, .75) !important;
-      outline-offset: 1px !important;
-      color: #fff !important;
-    }
-    html.tv-mode #connectionToggle.tv-glass-button[aria-pressed="true"]:focus,
-    html.tv-preview #connectionToggle.tv-glass-button[aria-pressed="true"]:focus,
-    html.tv-mode .tv-glass-button[aria-pressed="true"]:focus,
-    html.tv-preview .tv-glass-button[aria-pressed="true"]:focus {
-      box-shadow: inset 0 -2px 0 #fff !important;
     }
 
     #detailContinueBtn > .icon,
@@ -7587,8 +7586,8 @@
       <nav id="tvBrowseFunctions" class="tv-browse-functions" aria-label="全局功能"></nav>
       <div id="tvBrowseRecentTools" class="tv-browse-recent-tools"></div>
       <div id="tvBrowseInfo" class="tv-browse-info">
-        <img id="tvBrowseLogo" class="tv-browse-logo" alt="" hidden>
-        <h1 id="tvBrowseTitle"></h1><div id="tvBrowseMeta"></div>
+        <div class="tv-browse-title"><img id="tvBrowseLogo" class="tv-browse-logo" alt="" hidden>
+        <h1 id="tvBrowseTitle"></h1></div><div id="tvBrowseMeta"></div>
         <div id="tvBrowseUpdate"></div><p id="tvBrowseOverview"></p>
       </div>
       <nav id="tvBrowseColumns" class="tv-browse-columns" aria-label="栏目"></nav>
@@ -20883,6 +20882,16 @@ utils.encode = function encode(arr, enc) {
       return promise;
     }
 
+    // Shared TMDB image selection; presentation and title fallback belong to each view.
+    function bestDetailLogo(detail) {
+      const logos = detail && detail.images && detail.images.logos || [];
+      const languageRank = (language) => ({ "zh-CN": 5, "zh-Hans": 5, "zh-TW": 4, "zh-Hant": 4, zh: 3, en: 2 })[language] || 1;
+      return logos.filter((logo) => logo && /^\/[^\s]+$/.test(logo.file_path || ""))
+        .slice().sort((a, b) => languageRank(b.iso_639_1) - languageRank(a.iso_639_1)
+          || Number(b.vote_average || 0) - Number(a.vote_average || 0)
+          || Number(b.vote_count || 0) - Number(a.vote_count || 0))[0] || null;
+    }
+
     function tmdbRecommendationsUrl(item) {
       const url = new URL(`${window.WEBHOME_CONFIG.tmdb.apiBase}/${item.mediaType}/${item.tmdbId}/recommendations`);
       url.searchParams.set("api_key", tmdbApiKey());
@@ -28354,7 +28363,7 @@ utils.encode = function encode(arr, enc) {
       const signature = ui.column + secondaryFilterSchemaSignature(groups);
       if (host.dataset.schema !== signature) {
         host.dataset.schema = signature;
-        host.innerHTML = groups.map((group) => `<div class="secondary-filter-row" data-group="${escapeAttr(group.key)}"><span class="secondary-filter-label">${escapeHtml(group.label)}</span><div class="secondary-filter-options">${group.options.map((option) => `<button type="button" class="focusable tv-glass-button secondary-filter-option" data-group="${escapeAttr(group.key)}" data-value="${escapeAttr(option.value)}">${escapeHtml(option.label)}</button>`).join("")}</div></div>`).join("");
+        host.innerHTML = groups.map((group) => `<div class="secondary-filter-row" data-group="${escapeAttr(group.key)}"><span class="secondary-filter-label">${escapeHtml(group.label)}</span><div class="secondary-filter-options">${group.options.map((option) => `<button type="button" class="focusable tv-browse-control secondary-filter-option" data-group="${escapeAttr(group.key)}" data-value="${escapeAttr(option.value)}">${escapeHtml(option.label)}</button>`).join("")}</div></div>`).join("");
         host.querySelectorAll("button").forEach((button) => button.addEventListener("click", () => {
           tvBrowseSavePosition();
           const current = secondaryFilterState(ui.column);
@@ -28376,7 +28385,7 @@ utils.encode = function encode(arr, enc) {
       const root = $("tvBrowse"), ui = tvBrowseState();
       if (!root) return;
       root.hidden = !tvBrowseActive();
-      if (!tvBrowseActive()) { ui.enterHeld = false; ui.confirm = null; ui.filterOpen = false; }
+      if (!tvBrowseActive()) { tvBrowseCancelLogo(); ui.enterHeld = false; ui.confirm = null; ui.filterOpen = false; }
       root.classList.toggle("filter-open", ui.filterOpen);
       $("tvBrowseFunctions").hidden = ui.filterOpen;
       $("tvBrowseRecentTools").hidden = ui.filterOpen;
@@ -28395,7 +28404,7 @@ utils.encode = function encode(arr, enc) {
       const columns = $("tvBrowseColumns");
       tvBrowseColumns().forEach((entry) => {
         const button = document.createElement("button");
-        button.type = "button"; button.className = "focusable tv-glass-button tv-browse-column";
+        button.type = "button"; button.className = "focusable tv-browse-control tv-browse-column";
         button.id = "tvColumn-" + entry.listId; button.dataset.column = entry.listId; button.textContent = entry.label;
         button.addEventListener("click", (event) => {
           // Native WebViews may emit a click after the handled physical key.
@@ -28407,16 +28416,16 @@ utils.encode = function encode(arr, enc) {
         columns.appendChild(button);
       });
       const actions = [
-        ["live", "直播", openLiveHome], ["search", "搜索", openSearchPage], ["settings", "设置", openSettingHome]
+        ["search", "搜索", openSearchPage], ["live", "直播", openLiveHome], ["settings", "设置", openSettingHome]
       ];
       actions.forEach(([id, label, action]) => {
         const button = document.createElement("button");
         button.id = "tvFunction-" + id; button.type = "button";
-        button.className = "focusable tv-glass-button"; button.tabIndex = 0;
+        button.className = "focusable tv-browse-control"; button.tabIndex = 0;
         button.setAttribute("aria-label", label);
         if (id === "search") {
           button.classList.add("tv-browse-search");
-          button.innerHTML = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m16.5 16.5 4 4"></path></svg>';
+          button.innerHTML = '<span>搜索</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m16.5 16.5 4 4"></path></svg>';
         } else button.textContent = label;
         button.addEventListener("click", () => {
           markHomeUserNavigation(); tvBrowseSavePosition();
@@ -28426,7 +28435,7 @@ utils.encode = function encode(arr, enc) {
         $("tvBrowseFunctions").appendChild(button);
       });
       const dock = $("connectionDock"), toggle = $("connectionToggle");
-      toggle.classList.remove("home-sidebar-item"); toggle.classList.add("tv-glass-button");
+      toggle.classList.remove("home-sidebar-item"); toggle.classList.add("tv-browse-control");
       toggle.setAttribute("aria-label", "基础设置"); toggle.removeAttribute("data-sidebar-key"); toggle.removeAttribute("data-sidebar-action");
       $("tvBrowseFunctions").appendChild(dock);
       window.addEventListener("blur", () => { ui.enterHeld = false; ui.confirm = null; });
@@ -28515,17 +28524,70 @@ utils.encode = function encode(arr, enc) {
 
     function tvBrowseClearPreview() {
       const ui = tvBrowseState();
-      ui.previewKey = ""; ui.backdropToken += 1;
+      ui.previewKey = ""; ui.backdropToken += 1; tvBrowseCancelLogo(); ui.logoKey = "";
       if (ui.pendingImage) { ui.pendingImage.onload = ui.pendingImage.onerror = null; ui.pendingImage.src = ""; ui.pendingImage = null; }
       $("tvBrowseTitle").textContent = ""; $("tvBrowseMeta").textContent = "";
       $("tvBrowseOverview").textContent = ""; $("tvBrowseUpdate").textContent = "";
-      $("tvBrowseLogo").hidden = true;
+      $("tvBrowseLogo").hidden = true; $("tvBrowseTitle").hidden = false;
       // Keep the last decoded backdrop until a valid replacement is ready.
+    }
+
+    function tvBrowseCancelLogo() {
+      const ui = tvBrowseState();
+      clearTimeout(ui.logoTimer); ui.logoTimer = 0; ui.logoUrl = ""; $("tvBrowseLogo").onerror = null;
+      ui.logoToken = Number(ui.logoToken || 0) + 1;
+      if (ui.logoImage) { ui.logoImage.onload = ui.logoImage.onerror = null; ui.logoImage.src = ""; ui.logoImage = null; }
+    }
+
+    function tvBrowseRenderLogo(item, detail) {
+      const ui = tvBrowseState(), logo = $("tvBrowseLogo"), title = $("tvBrowseTitle");
+      const type = String(item.mediaType || item.media_type || "").toLowerCase();
+      const id = String(item.tmdbId || item.id || "");
+      const key = (type === "movie" ? movieDetailCacheKey(item) : type === "tv" ? tvDetailCacheKey(item) : "") || String(mediaDomKey(item));
+      if (ui.logoKey !== key) {
+        tvBrowseCancelLogo(); ui.logoKey = key; ui.logoUrl = "";
+        logo.hidden = true; logo.removeAttribute("src"); title.hidden = false;
+      }
+      // Cache partitions determine type; embedded detail must also match the current ID.
+      const matched = detail && String(detail.id || detail.tmdbId || "") === id ? detail : null;
+      const resource = bestDetailLogo(matched);
+      const source = item.logo || item.logoUrl || item.logoPath || item.logo_path || resource && resource.file_path || "";
+      const url = source ? displayImage(source, { size: "w500" }) : "";
+      if (url && ui.logoUrl !== url) {
+        tvBrowseCancelLogo(); ui.logoUrl = url;
+        logo.hidden = true; title.hidden = false;
+        const token = ui.logoToken, image = new Image(); ui.logoImage = image;
+        image.onload = () => {
+          if (ui.logoToken !== token || ui.logoKey !== key) return;
+          ui.logoImage = null; logo.src = url; logo.alt = item.title || item.name || "";
+          logo.hidden = false; title.hidden = true;
+        };
+        image.onerror = () => {
+          if (ui.logoToken !== token || ui.logoKey !== key) return;
+          ui.logoImage = null; logo.hidden = true; title.hidden = false;
+        };
+        logo.onerror = image.onerror;
+        image.src = url;
+      }
+      if (url || matched || !/^(movie|tv)$/.test(type) || !/^\d+$/.test(id) || Number(id) <= 0 || ui.logoRequestKey === key) return;
+      clearTimeout(ui.logoTimer);
+      // Coalesce rapid poster movement; only the settled preview joins the existing detail cache/budget.
+      ui.logoTimer = setTimeout(() => {
+        ui.logoTimer = 0;
+        if (!tvBrowseActive() || ui.logoKey !== key || ui.filterOpen) return;
+        ui.logoRequestKey = key;
+        const request = (url, timeout) => homeEnrichmentRequest(url, timeout, type + ":" + id);
+        const shared = type === "movie" ? requestMovieDetailShared : requestTvDetailShared;
+        shared(item, request).then((loaded) => {
+          if (tvBrowseActive() && ui.logoKey === key && String(loaded && loaded.id || "") === id) tvBrowsePreview(item);
+        }).catch(() => {});
+      }, 180);
     }
 
     function tvBrowsePreview(item) {
       const ui = tvBrowseState(), key = mediaDomKey(item);
-      const detail = (String(item.mediaType || item.media_type || "").toLowerCase() === "movie" ? movieDetailCacheValue(item) : tvDetailCacheValue(item)) || item.tvDetail || item.weeklyDetail || item.heroDetail || null;
+      const type = String(item.mediaType || item.media_type || "").toLowerCase();
+      const detail = (type === "movie" ? movieDetailCacheValue(item) || item.movieDetail : type === "tv" ? tvDetailCacheValue(item) || item.tvDetail : null) || item.weeklyDetail || item.heroDetail || null;
       $("tvBrowseTitle").textContent = item.title || item.name || "";
       const year = String(item.releaseDate || item.first_air_date || item.release_date || "").slice(0, 4);
       const genres = homeHeroPresentationGenres(item, detail);
@@ -28535,9 +28597,7 @@ utils.encode = function encode(arr, enc) {
       const desc = String(item.description || item.desc || "").trim();
       const labelOnly = item.source === "tmdb" && desc === (item.listTitle || "搜索") + " · " + (item.title || "");
       $("tvBrowseOverview").textContent = homeHeroPresentationOverview(item, detail) || (labelOnly ? "" : desc);
-      const logo = $("tvBrowseLogo"), logoUrl = item.logo || item.logoUrl || item.logoPath || item.logo_path || "";
-      logo.hidden = !logoUrl;
-      if (logoUrl && logo.getAttribute("src") !== logoUrl) { logo.src = displayImage(logoUrl, { size: "w500" }); logo.onerror = () => { logo.hidden = true; }; }
+      tvBrowseRenderLogo(item, detail);
       const source = item.landscape || item.backdrop || item.backdrop_path || detail && detail.backdrop_path || item.image || item.pic;
       const url = displayImage(source, { size: item.landscape || item.backdrop || item.backdrop_path ? "w1280" : "w780" });
       if (ui.previewKey === key && (url === ui.backdropUrl || ui.pendingImage && ui.pendingImage.src === url)) return;
@@ -28581,7 +28641,7 @@ utils.encode = function encode(arr, enc) {
         return buttons[Math.max(0, Math.min(buttons.length - 1, index + (key === "ArrowRight" ? 1 : -1)))];
       }
       if (host === rail) return key === "ArrowDown" && !$("tvBrowseRetry").hidden ? $("tvBrowseRetry") : tvBrowseColumnButton(ui.column);
-      if (host === columns) return key === "ArrowDown" ? tvBrowsePosterTarget() : $("tvFunction-live");
+      if (host === columns) return key === "ArrowDown" ? tvBrowsePosterTarget() : $("tvFunction-search");
       return tvBrowseColumnButton(ui.column);
     }
 
@@ -33381,18 +33441,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       normalizeRails();
       updateDetailContinueButton();
       updatePostPanFocusState();
-    }
-
-    function bestDetailLogo(detail) {
-      const logos = (detail && detail.images && detail.images.logos) || [];
-      // 优先中文，其次英文，再其次 null（语言无标注）
-      const ranked = logos.slice().sort((a, b) => {
-        const langScore = (l) => l === "zh" ? 2 : l === "en" ? 1 : 0;
-        const aScore = langScore(a.iso_639_1) * 1000 + (Number(a.vote_average) || 0) * 10 + Math.min(Number(a.vote_count) || 0, 100);
-        const bScore = langScore(b.iso_639_1) * 1000 + (Number(b.vote_average) || 0) * 10 + Math.min(Number(b.vote_count) || 0, 100);
-        return bScore - aScore;
-      });
-      return ranked[0] || null;
     }
 
     function renderDetailTitleLogo(item, detail, canonicalTitle) {

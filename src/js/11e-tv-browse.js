@@ -189,7 +189,7 @@
       const signature = ui.column + secondaryFilterSchemaSignature(groups);
       if (host.dataset.schema !== signature) {
         host.dataset.schema = signature;
-        host.innerHTML = groups.map((group) => `<div class="secondary-filter-row" data-group="${escapeAttr(group.key)}"><span class="secondary-filter-label">${escapeHtml(group.label)}</span><div class="secondary-filter-options">${group.options.map((option) => `<button type="button" class="focusable tv-glass-button secondary-filter-option" data-group="${escapeAttr(group.key)}" data-value="${escapeAttr(option.value)}">${escapeHtml(option.label)}</button>`).join("")}</div></div>`).join("");
+        host.innerHTML = groups.map((group) => `<div class="secondary-filter-row" data-group="${escapeAttr(group.key)}"><span class="secondary-filter-label">${escapeHtml(group.label)}</span><div class="secondary-filter-options">${group.options.map((option) => `<button type="button" class="focusable tv-browse-control secondary-filter-option" data-group="${escapeAttr(group.key)}" data-value="${escapeAttr(option.value)}">${escapeHtml(option.label)}</button>`).join("")}</div></div>`).join("");
         host.querySelectorAll("button").forEach((button) => button.addEventListener("click", () => {
           tvBrowseSavePosition();
           const current = secondaryFilterState(ui.column);
@@ -211,7 +211,7 @@
       const root = $("tvBrowse"), ui = tvBrowseState();
       if (!root) return;
       root.hidden = !tvBrowseActive();
-      if (!tvBrowseActive()) { ui.enterHeld = false; ui.confirm = null; ui.filterOpen = false; }
+      if (!tvBrowseActive()) { tvBrowseCancelLogo(); ui.enterHeld = false; ui.confirm = null; ui.filterOpen = false; }
       root.classList.toggle("filter-open", ui.filterOpen);
       $("tvBrowseFunctions").hidden = ui.filterOpen;
       $("tvBrowseRecentTools").hidden = ui.filterOpen;
@@ -230,7 +230,7 @@
       const columns = $("tvBrowseColumns");
       tvBrowseColumns().forEach((entry) => {
         const button = document.createElement("button");
-        button.type = "button"; button.className = "focusable tv-glass-button tv-browse-column";
+        button.type = "button"; button.className = "focusable tv-browse-control tv-browse-column";
         button.id = "tvColumn-" + entry.listId; button.dataset.column = entry.listId; button.textContent = entry.label;
         button.addEventListener("click", (event) => {
           // Native WebViews may emit a click after the handled physical key.
@@ -242,16 +242,16 @@
         columns.appendChild(button);
       });
       const actions = [
-        ["live", "直播", openLiveHome], ["search", "搜索", openSearchPage], ["settings", "设置", openSettingHome]
+        ["search", "搜索", openSearchPage], ["live", "直播", openLiveHome], ["settings", "设置", openSettingHome]
       ];
       actions.forEach(([id, label, action]) => {
         const button = document.createElement("button");
         button.id = "tvFunction-" + id; button.type = "button";
-        button.className = "focusable tv-glass-button"; button.tabIndex = 0;
+        button.className = "focusable tv-browse-control"; button.tabIndex = 0;
         button.setAttribute("aria-label", label);
         if (id === "search") {
           button.classList.add("tv-browse-search");
-          button.innerHTML = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m16.5 16.5 4 4"></path></svg>';
+          button.innerHTML = '<span>搜索</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m16.5 16.5 4 4"></path></svg>';
         } else button.textContent = label;
         button.addEventListener("click", () => {
           markHomeUserNavigation(); tvBrowseSavePosition();
@@ -261,7 +261,7 @@
         $("tvBrowseFunctions").appendChild(button);
       });
       const dock = $("connectionDock"), toggle = $("connectionToggle");
-      toggle.classList.remove("home-sidebar-item"); toggle.classList.add("tv-glass-button");
+      toggle.classList.remove("home-sidebar-item"); toggle.classList.add("tv-browse-control");
       toggle.setAttribute("aria-label", "基础设置"); toggle.removeAttribute("data-sidebar-key"); toggle.removeAttribute("data-sidebar-action");
       $("tvBrowseFunctions").appendChild(dock);
       window.addEventListener("blur", () => { ui.enterHeld = false; ui.confirm = null; });
@@ -350,17 +350,70 @@
 
     function tvBrowseClearPreview() {
       const ui = tvBrowseState();
-      ui.previewKey = ""; ui.backdropToken += 1;
+      ui.previewKey = ""; ui.backdropToken += 1; tvBrowseCancelLogo(); ui.logoKey = "";
       if (ui.pendingImage) { ui.pendingImage.onload = ui.pendingImage.onerror = null; ui.pendingImage.src = ""; ui.pendingImage = null; }
       $("tvBrowseTitle").textContent = ""; $("tvBrowseMeta").textContent = "";
       $("tvBrowseOverview").textContent = ""; $("tvBrowseUpdate").textContent = "";
-      $("tvBrowseLogo").hidden = true;
+      $("tvBrowseLogo").hidden = true; $("tvBrowseTitle").hidden = false;
       // Keep the last decoded backdrop until a valid replacement is ready.
+    }
+
+    function tvBrowseCancelLogo() {
+      const ui = tvBrowseState();
+      clearTimeout(ui.logoTimer); ui.logoTimer = 0; ui.logoUrl = ""; $("tvBrowseLogo").onerror = null;
+      ui.logoToken = Number(ui.logoToken || 0) + 1;
+      if (ui.logoImage) { ui.logoImage.onload = ui.logoImage.onerror = null; ui.logoImage.src = ""; ui.logoImage = null; }
+    }
+
+    function tvBrowseRenderLogo(item, detail) {
+      const ui = tvBrowseState(), logo = $("tvBrowseLogo"), title = $("tvBrowseTitle");
+      const type = String(item.mediaType || item.media_type || "").toLowerCase();
+      const id = String(item.tmdbId || item.id || "");
+      const key = (type === "movie" ? movieDetailCacheKey(item) : type === "tv" ? tvDetailCacheKey(item) : "") || String(mediaDomKey(item));
+      if (ui.logoKey !== key) {
+        tvBrowseCancelLogo(); ui.logoKey = key; ui.logoUrl = "";
+        logo.hidden = true; logo.removeAttribute("src"); title.hidden = false;
+      }
+      // Cache partitions determine type; embedded detail must also match the current ID.
+      const matched = detail && String(detail.id || detail.tmdbId || "") === id ? detail : null;
+      const resource = bestDetailLogo(matched);
+      const source = item.logo || item.logoUrl || item.logoPath || item.logo_path || resource && resource.file_path || "";
+      const url = source ? displayImage(source, { size: "w500" }) : "";
+      if (url && ui.logoUrl !== url) {
+        tvBrowseCancelLogo(); ui.logoUrl = url;
+        logo.hidden = true; title.hidden = false;
+        const token = ui.logoToken, image = new Image(); ui.logoImage = image;
+        image.onload = () => {
+          if (ui.logoToken !== token || ui.logoKey !== key) return;
+          ui.logoImage = null; logo.src = url; logo.alt = item.title || item.name || "";
+          logo.hidden = false; title.hidden = true;
+        };
+        image.onerror = () => {
+          if (ui.logoToken !== token || ui.logoKey !== key) return;
+          ui.logoImage = null; logo.hidden = true; title.hidden = false;
+        };
+        logo.onerror = image.onerror;
+        image.src = url;
+      }
+      if (url || matched || !/^(movie|tv)$/.test(type) || !/^\d+$/.test(id) || Number(id) <= 0 || ui.logoRequestKey === key) return;
+      clearTimeout(ui.logoTimer);
+      // Coalesce rapid poster movement; only the settled preview joins the existing detail cache/budget.
+      ui.logoTimer = setTimeout(() => {
+        ui.logoTimer = 0;
+        if (!tvBrowseActive() || ui.logoKey !== key || ui.filterOpen) return;
+        ui.logoRequestKey = key;
+        const request = (url, timeout) => homeEnrichmentRequest(url, timeout, type + ":" + id);
+        const shared = type === "movie" ? requestMovieDetailShared : requestTvDetailShared;
+        shared(item, request).then((loaded) => {
+          if (tvBrowseActive() && ui.logoKey === key && String(loaded && loaded.id || "") === id) tvBrowsePreview(item);
+        }).catch(() => {});
+      }, 180);
     }
 
     function tvBrowsePreview(item) {
       const ui = tvBrowseState(), key = mediaDomKey(item);
-      const detail = (String(item.mediaType || item.media_type || "").toLowerCase() === "movie" ? movieDetailCacheValue(item) : tvDetailCacheValue(item)) || item.tvDetail || item.weeklyDetail || item.heroDetail || null;
+      const type = String(item.mediaType || item.media_type || "").toLowerCase();
+      const detail = (type === "movie" ? movieDetailCacheValue(item) || item.movieDetail : type === "tv" ? tvDetailCacheValue(item) || item.tvDetail : null) || item.weeklyDetail || item.heroDetail || null;
       $("tvBrowseTitle").textContent = item.title || item.name || "";
       const year = String(item.releaseDate || item.first_air_date || item.release_date || "").slice(0, 4);
       const genres = homeHeroPresentationGenres(item, detail);
@@ -370,9 +423,7 @@
       const desc = String(item.description || item.desc || "").trim();
       const labelOnly = item.source === "tmdb" && desc === (item.listTitle || "搜索") + " · " + (item.title || "");
       $("tvBrowseOverview").textContent = homeHeroPresentationOverview(item, detail) || (labelOnly ? "" : desc);
-      const logo = $("tvBrowseLogo"), logoUrl = item.logo || item.logoUrl || item.logoPath || item.logo_path || "";
-      logo.hidden = !logoUrl;
-      if (logoUrl && logo.getAttribute("src") !== logoUrl) { logo.src = displayImage(logoUrl, { size: "w500" }); logo.onerror = () => { logo.hidden = true; }; }
+      tvBrowseRenderLogo(item, detail);
       const source = item.landscape || item.backdrop || item.backdrop_path || detail && detail.backdrop_path || item.image || item.pic;
       const url = displayImage(source, { size: item.landscape || item.backdrop || item.backdrop_path ? "w1280" : "w780" });
       if (ui.previewKey === key && (url === ui.backdropUrl || ui.pendingImage && ui.pendingImage.src === url)) return;
@@ -416,7 +467,7 @@
         return buttons[Math.max(0, Math.min(buttons.length - 1, index + (key === "ArrowRight" ? 1 : -1)))];
       }
       if (host === rail) return key === "ArrowDown" && !$("tvBrowseRetry").hidden ? $("tvBrowseRetry") : tvBrowseColumnButton(ui.column);
-      if (host === columns) return key === "ArrowDown" ? tvBrowsePosterTarget() : $("tvFunction-live");
+      if (host === columns) return key === "ArrowDown" ? tvBrowsePosterTarget() : $("tvFunction-search");
       return tvBrowseColumnButton(ui.column);
     }
 

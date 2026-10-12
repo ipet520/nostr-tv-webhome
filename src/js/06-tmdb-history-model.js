@@ -207,6 +207,16 @@
       return promise;
     }
 
+    // Shared TMDB image selection; presentation and title fallback belong to each view.
+    function bestDetailLogo(detail) {
+      const logos = detail && detail.images && detail.images.logos || [];
+      const languageRank = (language) => ({ "zh-CN": 5, "zh-Hans": 5, "zh-TW": 4, "zh-Hant": 4, zh: 3, en: 2 })[language] || 1;
+      return logos.filter((logo) => logo && /^\/[^\s]+$/.test(logo.file_path || ""))
+        .slice().sort((a, b) => languageRank(b.iso_639_1) - languageRank(a.iso_639_1)
+          || Number(b.vote_average || 0) - Number(a.vote_average || 0)
+          || Number(b.vote_count || 0) - Number(a.vote_count || 0))[0] || null;
+    }
+
     function tmdbRecommendationsUrl(item) {
       const url = new URL(`${window.WEBHOME_CONFIG.tmdb.apiBase}/${item.mediaType}/${item.tmdbId}/recommendations`);
       url.searchParams.set("api_key", tmdbApiKey());

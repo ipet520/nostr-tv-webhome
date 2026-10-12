@@ -566,18 +566,6 @@
       updatePostPanFocusState();
     }
 
-    function bestDetailLogo(detail) {
-      const logos = (detail && detail.images && detail.images.logos) || [];
-      // 优先中文，其次英文，再其次 null（语言无标注）
-      const ranked = logos.slice().sort((a, b) => {
-        const langScore = (l) => l === "zh" ? 2 : l === "en" ? 1 : 0;
-        const aScore = langScore(a.iso_639_1) * 1000 + (Number(a.vote_average) || 0) * 10 + Math.min(Number(a.vote_count) || 0, 100);
-        const bScore = langScore(b.iso_639_1) * 1000 + (Number(b.vote_average) || 0) * 10 + Math.min(Number(b.vote_count) || 0, 100);
-        return bScore - aScore;
-      });
-      return ranked[0] || null;
-    }
-
     function renderDetailTitleLogo(item, detail, canonicalTitle) {
       // emby 风格：使用 detailLogoWrap / detailLogoImg
       const wrap = $("detailLogoWrap");

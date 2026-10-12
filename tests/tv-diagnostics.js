@@ -539,8 +539,8 @@
           && searchHotStyleText.includes("#searchRail"),
         "Search results rail keeps its existing horizontal overflow behavior", "STATIC_HOOK");
       check("TV_BROWSE_FOCUS_VISUAL",
-        searchHotStyleText.includes(".tv-glass-button:focus")
-          && searchHotStyleText.includes("--tv-glass-focus")
+        searchHotStyleText.includes(".tv-browse-control:focus")
+          && searchHotStyleText.includes("rgba(255,255,255,.2)")
           && searchHotStyleText.includes("transform: scale(1.04)"),
         "TV browse cards and controls expose one focus visual contract", "STATIC_HOOK");
       const searchHistoryClearTopStyleMatch = searchHotStyleText.match(/\.search-history-clear-top\s*\{[^}]*\}/);

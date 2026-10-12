@@ -1,49 +1,29 @@
-    /* Shared TV glass states for navigation and ordinary detail actions.
-       Resource / preparation states retain their own icon and status rules. */
-    html.tv-mode, html.tv-preview {
-      --tv-glass-base: rgba(0, 0, 0, .18);
-      --tv-glass-focus: rgba(255, 255, 255, .38);
-      --tv-glass-line: rgba(255, 255, 255, .18);
-      --tv-glass-selected-line: rgba(255, 255, 255, .72);
-    }
-    html.tv-mode #connectionToggle.tv-glass-button,
-    html.tv-preview #connectionToggle.tv-glass-button,
-    html.tv-mode .tv-glass-button,
-    html.tv-preview .tv-glass-button,
-    html.tv-mode #detailSheet.detail-large > .actions > .btn,
-    html.tv-preview #detailSheet.detail-large > .actions > .btn {
-      background: var(--tv-glass-base) !important;
-      border: 1px solid var(--tv-glass-line) !important;
+
+    /* 详情页三个操作按钮只收口颜色，不改变尺寸、间距或焦点几何。 */
+    html.tv-mode #detailSheet.detail-large > .actions > #detailContinueBtn,
+    html.tv-mode #detailSheet.detail-large > .actions > #detailSearchBtn,
+    html.tv-mode #detailSheet.detail-large > .actions > #panSearchBtn,
+    html.tv-preview #detailSheet.detail-large > .actions > #detailContinueBtn,
+    html.tv-preview #detailSheet.detail-large > .actions > #detailSearchBtn,
+    html.tv-preview #detailSheet.detail-large > .actions > #panSearchBtn {
+      background: rgba(52, 52, 54, .34) !important;
+      border-color: rgba(255, 255, 255, .20) !important;
       color: rgba(255, 255, 255, .94) !important;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, .26) !important;
+      -webkit-backdrop-filter: blur(14px) saturate(1.4) !important;
+      backdrop-filter: blur(14px) saturate(1.4) !important;
+    }
+
+    html.tv-mode #detailSheet.detail-large > .actions > #detailContinueBtn:focus,
+    html.tv-mode #detailSheet.detail-large > .actions > #detailSearchBtn:focus,
+    html.tv-mode #detailSheet.detail-large > .actions > #panSearchBtn:focus,
+    html.tv-preview #detailSheet.detail-large > .actions > #detailContinueBtn:focus,
+    html.tv-preview #detailSheet.detail-large > .actions > #detailSearchBtn:focus,
+    html.tv-preview #detailSheet.detail-large > .actions > #panSearchBtn:focus {
+      background: #F7F7F7 !important;
+      border-color: rgba(255, 255, 255, .95) !important;
+      color: #171717 !important;
       box-shadow: none !important;
-      -webkit-backdrop-filter: blur(12px) saturate(1.2);
-      backdrop-filter: blur(12px) saturate(1.2);
-    }
-    html.tv-mode #connectionToggle.tv-glass-button[aria-pressed="true"],
-    html.tv-preview #connectionToggle.tv-glass-button[aria-pressed="true"],
-    html.tv-mode .tv-glass-button[aria-pressed="true"],
-    html.tv-preview .tv-glass-button[aria-pressed="true"] {
-      border-bottom-color: var(--tv-glass-selected-line) !important;
-      box-shadow: inset 0 -2px 0 var(--tv-glass-selected-line) !important;
-      font-weight: 700;
-    }
-    html.tv-mode #connectionToggle.tv-glass-button:focus,
-    html.tv-preview #connectionToggle.tv-glass-button:focus,
-    html.tv-mode .tv-glass-button:focus,
-    html.tv-preview .tv-glass-button:focus,
-    html.tv-mode #detailSheet.detail-large > .actions > .btn:focus,
-    html.tv-preview #detailSheet.detail-large > .actions > .btn:focus {
-      background: var(--tv-glass-focus) !important;
-      border-color: rgba(255, 255, 255, .8) !important;
-      outline: 2px solid rgba(255, 255, 255, .75) !important;
-      outline-offset: 1px !important;
-      color: #fff !important;
-    }
-    html.tv-mode #connectionToggle.tv-glass-button[aria-pressed="true"]:focus,
-    html.tv-preview #connectionToggle.tv-glass-button[aria-pressed="true"]:focus,
-    html.tv-mode .tv-glass-button[aria-pressed="true"]:focus,
-    html.tv-preview .tv-glass-button[aria-pressed="true"]:focus {
-      box-shadow: inset 0 -2px 0 #fff !important;
     }
 
     #detailContinueBtn > .icon,
