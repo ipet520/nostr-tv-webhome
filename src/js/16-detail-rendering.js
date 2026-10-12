@@ -96,15 +96,60 @@
       sheet.style.zIndex = "60";
     }
 
+    function cancelArtTitle(img) {
+      if (!img) return;
+      const run = img.__artTitle;
+      if (run) clearTimeout(run.timer);
+      img.__artTitle = null; img.onerror = null;
+    }
+
+    function renderArtTitle(item, detail, img, title, wrap, valid) {
+      if (!img || !title) return;
+      const asset = artLogoResource(item, detail);
+      const key = String(item.mediaType || item.media_type || "") + ":" + movieDetailCacheId(item);
+      if (img.__artTitle && img.__artTitle.key === key && img.__artTitle.asset === asset && img.__artTitle.valid()) { img.alt = title.textContent || item.title || ""; return; }
+      const previous = img.__artTitle && img.__artTitle.key === key ? img.__artTitle : null;
+      cancelArtTitle(img);
+      const run = { key, asset, timer: 0, valid, deadline: previous ? previous.deadline : Date.now() + 150, fallbackShown: !!(previous && previous.fallbackShown) }; img.__artTitle = run;
+      const current = () => img.__artTitle === run && valid();
+      const fallback = () => {
+        if (!current()) return;
+        clearTimeout(run.timer); run.fallbackShown = true; img.hidden = true; title.hidden = false; title.style.visibility = "";
+        if (wrap) { wrap.style.display = "none"; wrap.classList.remove("logo-ready"); }
+      };
+      const show = () => {
+        if (!current()) return;
+        clearTimeout(run.timer); img.src = asset.url; img.alt = title.textContent || item.title || "";
+        img.hidden = false; img.classList.add("loaded"); title.hidden = false; title.style.visibility = "hidden";
+        if (wrap) { wrap.style.display = "flex"; wrap.classList.add("logo-ready"); }
+        img.onerror = () => { asset.ready = false; asset.failed = true; fallback(); };
+      };
+      img.hidden = true; img.classList.remove("loaded"); img.removeAttribute("src");
+      title.hidden = false;
+      if (wrap) { wrap.style.display = "none"; wrap.classList.remove("logo-ready"); }
+      if (asset && asset.ready) { show(); return; }
+      const type = String(item.mediaType || item.media_type || "").toLowerCase();
+      const known = detail || (type === "movie" ? movieDetailCacheValue(item) : type === "tv" ? tvDetailCacheValue(item) : null);
+      if (asset && asset.failed || !asset && (known || !movieDetailCacheId(item) || !/^(movie|tv)$/.test(type))) { fallback(); return; }
+      title.style.visibility = run.fallbackShown ? "" : "hidden";
+      const remaining = run.deadline - Date.now();
+      if (run.fallbackShown || remaining <= 0) fallback();
+      else run.timer = setTimeout(fallback, remaining);
+      if (asset) prepareArtLogo(asset).then((ready) => ready ? show() : fallback());
+    }
+
     function renderDetailBase(item) {
       resetDetailTextClamp();
-      // 清除上一个影视的 logo，显示文字标题（emby 风格 wrap）
+      cancelArtTitle($("detailLogoImg"));
+      // Reset the shared title view without rebuilding detail actions.
       const logoWrap = $("detailLogoWrap");
       const logoImgEl = $("detailLogoImg");
       if (logoWrap) { logoWrap.style.display = "none"; logoWrap.classList.remove("logo-ready"); }
-      if (logoImgEl) { logoImgEl.removeAttribute("src"); logoImgEl.classList.remove("loaded"); }
+      if (logoImgEl) { logoImgEl.hidden = false; logoImgEl.removeAttribute("src"); logoImgEl.classList.remove("loaded"); }
       if ($("detailTitle")) $("detailTitle").style.display = "";
       $("detailTitle").textContent = item.title;
+      $("detailTitle").style.visibility = "";
+      if (isTvLikeDevice()) renderDetailTitleLogo(item, null, item.title);
       const fallbackText = item.desc || item.remark || "";
       setDetailTextContent(fallbackText || "");
       renderDetailMeta(item, state.detail);
@@ -567,6 +612,14 @@
     }
 
     function renderDetailTitleLogo(item, detail, canonicalTitle) {
+      if (!isTvLikeDevice()) return renderMobileDetailTitleLogo(item, detail, canonicalTitle);
+      const title = $("detailTitle");
+      title.textContent = canonicalTitle || detailCanonicalTitle(item, detail);
+      title.style.display = "";
+      renderArtTitle(item, detail, $("detailLogoImg"), title, $("detailLogoWrap"), () => state.selected === item && $("detailSheet").classList.contains("active"));
+    }
+
+    function renderMobileDetailTitleLogo(item, detail, canonicalTitle) {
       // emby 风格：使用 detailLogoWrap / detailLogoImg
       const wrap = $("detailLogoWrap");
       const img = $("detailLogoImg");

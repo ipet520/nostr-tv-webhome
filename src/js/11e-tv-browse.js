@@ -53,7 +53,7 @@
 
     function tvBrowseState() {
       return state.tvBrowse || (state.tvBrowse = {
-        column: "recent", positions: {}, filterOpen: false,
+        column: "recent", positions: {}, filterOpen: false, filterFocusGroup: "",
         startupEpoch: null,
         confirm: null, enterHeld: false, suppressClickUntil: 0,
         previewKey: "", backdropToken: 0, backdropSlot: 0, backdropUrl: "",
@@ -168,21 +168,27 @@
       renderTvBrowseFilters();
       syncTvBrowseVisibility();
       const host = $("tvBrowseFilters");
-      focusRemoteTarget(host.querySelector(".selected") || host.querySelector("button"));
+      focusRemoteTarget(tvBrowseFilterTarget() || host.querySelector("button"));
       return true;
     }
 
-    function tvBrowseCloseFilters(options) {
+    function tvBrowseFilterTarget() {
+      const ui = tvBrowseState(), host = $("tvBrowseFilters"), filters = secondaryFilterState(ui.column);
+      const buttons = Array.from(host.querySelectorAll("button"));
+      return buttons.find((button) => button.dataset.group === ui.filterFocusGroup && button.dataset.value === filters.lastFocused[ui.filterFocusGroup])
+        || host.querySelector(".selected") || buttons[0] || null;
+    }
+
+    function tvBrowseCloseFilters() {
       const ui = tvBrowseState();
       if (!ui.filterOpen) return false;
-      const opts = options || {};
       ui.filterOpen = false;
       ui.confirm = null; ui.focusIntent = null;
       syncTvBrowseVisibility();
       if (tvBrowseActive()) {
         const poster = tvBrowsePosterTarget();
         if (poster && poster.__mediaItem) tvBrowsePreview(poster.__mediaItem);
-        if (opts.focus !== false) focusRemoteTarget(opts.target || tvBrowseColumnButton(ui.column));
+        focusRemoteTarget(tvBrowseColumnButton(ui.column));
       }
       return true;
     }
@@ -198,14 +204,21 @@
         host.querySelectorAll("button").forEach((button) => button.addEventListener("click", () => {
           tvBrowseSavePosition();
           const current = secondaryFilterState(ui.column);
-          current[button.dataset.group] = button.dataset.value;
-          current.lastFocused[button.dataset.group] = button.dataset.value;
+          const group = button.dataset.group, value = button.dataset.value;
+          const next = current[group] === value ? secondaryFilterDefaultValue(group) : value;
+          if (next === current[group]) return;
+          current[group] = next;
+          current.lastFocused[group] = value;
           ui.previewKey = "";
           renderTvBrowse();
           scheduleUiSnapshotSave();
         }));
       }
       host.querySelectorAll("button").forEach((button) => {
+        button.onfocus = () => {
+          ui.filterFocusGroup = button.dataset.group;
+          secondaryFilterState(ui.column).lastFocused[button.dataset.group] = button.dataset.value;
+        };
         const selected = filters[button.dataset.group] === button.dataset.value;
         button.classList.toggle("selected", selected);
         button.setAttribute("aria-pressed", String(selected));
@@ -216,13 +229,13 @@
       const root = $("tvBrowse"), ui = tvBrowseState();
       if (!root) return;
       root.hidden = !tvBrowseActive();
-      if (!tvBrowseActive()) { tvBrowseCancelLogo(); ui.enterHeld = false; ui.confirm = null; ui.filterOpen = false; }
+      if (!tvBrowseActive()) { tvBrowseCancelLogo(); ui.enterHeld = false; ui.confirm = null; }
       root.classList.toggle("filter-open", ui.filterOpen);
       $("tvBrowseFunctions").hidden = ui.filterOpen;
       $("tvBrowseRecentTools").hidden = ui.filterOpen;
       $("tvBrowseInfo").hidden = ui.filterOpen;
       $("tvBrowseFilters").hidden = !ui.filterOpen;
-      root.querySelectorAll("#tvBrowseColumns button,#tvBrowseRail button").forEach((button) => button.setAttribute("tabindex", ui.filterOpen ? "-1" : "0"));
+      root.querySelectorAll("#tvBrowseColumns button").forEach((button) => button.setAttribute("tabindex", ui.filterOpen ? "-1" : "0"));
       document.documentElement.classList.toggle("tv-browse-active", tvBrowseActive());
     }
 
@@ -339,7 +352,7 @@
       else tvBrowseClearPreview();
       observeHomeImages(rail); observeTvCardEnrichment(rail); observeMovieCardEnrichment(rail);
       if (focused && !prefix && focusScopeRoot() === document && !isSidebarOpen()) {
-        const target = Array.from(rail.children).find((card) => card.dataset.mediaKey === focused) || tvBrowsePosterTarget();
+        const target = Array.from(rail.children).find((card) => card.dataset.mediaKey === focused) || (ui.filterOpen ? Array.from(rail.children).find(isVisibleFocusable) || tvBrowseFilterTarget() : tvBrowsePosterTarget());
         if (target) focusRemoteTarget(target);
       }
       tvBrowseTryFocus();
@@ -365,41 +378,16 @@
 
     function tvBrowseCancelLogo() {
       const ui = tvBrowseState();
-      clearTimeout(ui.previewDetailTimer); ui.previewDetailTimer = 0; ui.logoUrl = ""; $("tvBrowseLogo").onerror = null;
-      ui.logoToken = Number(ui.logoToken || 0) + 1;
-      if (ui.logoImage) { ui.logoImage.onload = ui.logoImage.onerror = null; ui.logoImage.src = ""; ui.logoImage = null; }
+      cancelArtTitle($("tvBrowseLogo"));
+      clearTimeout(ui.previewDetailTimer); ui.previewDetailTimer = 0;
     }
 
     function tvBrowseRenderLogo(item, detail) {
-      const ui = tvBrowseState(), logo = $("tvBrowseLogo"), title = $("tvBrowseTitle");
+      const ui = tvBrowseState();
       const type = String(item.mediaType || item.media_type || "").toLowerCase();
-      const id = String(item.tmdbId || item.id || "");
       const key = (type === "movie" ? movieDetailCacheKey(item) : type === "tv" ? tvDetailCacheKey(item) : "") || String(mediaDomKey(item));
-      if (ui.logoKey !== key) {
-        tvBrowseCancelLogo(); ui.logoKey = key; ui.logoUrl = "";
-        logo.hidden = true; logo.removeAttribute("src"); title.hidden = false;
-      }
-      // Cache partitions determine type; embedded detail must also match the current ID.
-      const matched = detail && String(detail.id || detail.tmdbId || "") === id ? detail : null;
-      const resource = bestDetailLogo(matched);
-      const source = item.logo || item.logoUrl || item.logoPath || item.logo_path || resource && resource.file_path || "";
-      const url = source ? displayImage(source, { size: "w500" }) : "";
-      if (url && ui.logoUrl !== url) {
-        tvBrowseCancelLogo(); ui.logoUrl = url;
-        logo.hidden = true; title.hidden = false;
-        const token = ui.logoToken, image = new Image(); ui.logoImage = image;
-        image.onload = () => {
-          if (ui.logoToken !== token || ui.logoKey !== key) return;
-          ui.logoImage = null; logo.src = url; logo.alt = item.title || item.name || "";
-          logo.hidden = false; title.hidden = true;
-        };
-        image.onerror = () => {
-          if (ui.logoToken !== token || ui.logoKey !== key) return;
-          ui.logoImage = null; logo.hidden = true; title.hidden = false;
-        };
-        logo.onerror = image.onerror;
-        image.src = url;
-      }
+      if (ui.logoKey !== key) { tvBrowseCancelLogo(); ui.logoKey = key; }
+      renderArtTitle(item, detail, $("tvBrowseLogo"), $("tvBrowseTitle"), null, () => tvBrowseActive() && ui.logoKey === key);
     }
 
     function tvBrowseEnsurePreviewDetail(item, detail) {
@@ -413,7 +401,7 @@
       // Coalesce rapid poster movement; only the settled preview joins the existing detail cache/budget.
       ui.previewDetailTimer = setTimeout(() => {
         ui.previewDetailTimer = 0;
-        if (!tvBrowseActive() || ui.logoKey !== key || ui.filterOpen) return;
+        if (!tvBrowseActive() || ui.logoKey !== key) return;
         ui.previewDetailRequestKey = key;
         const request = (url, timeout) => homeEnrichmentRequest(url, timeout, type + ":" + id);
         const shared = type === "movie" ? requestMovieDetailShared : requestTvDetailShared;
@@ -439,6 +427,7 @@
       $("tvBrowseOverview").textContent = homeHeroPresentationOverview(item, detail) || (labelOnly ? "" : desc);
       tvBrowseRenderLogo(item, detail);
       tvBrowseEnsurePreviewDetail(item, detail);
+      tvBrowsePrepareAdjacentLogos(item);
       const source = item.landscape || item.backdrop || item.backdrop_path || detail && detail.backdrop_path || item.image || item.pic;
       const url = displayImage(source, { size: item.landscape || item.backdrop || item.backdrop_path ? "w1280" : "w780" });
       if (ui.previewKey === key && (url === ui.backdropUrl || ui.pendingImage && ui.pendingImage.src === url)) return;
@@ -461,19 +450,28 @@
       image.src = url;
     }
 
+    function tvBrowsePrepareAdjacentLogos(item) {
+      const cards = Array.from($("tvBrowseRail").children), index = cards.findIndex((card) => mediaDomKey(card.__mediaItem) === mediaDomKey(item));
+      // Only known artwork for two neighbours; no speculative detail requests.
+      [index - 1, index + 1].forEach((at) => {
+        const adjacent = cards[at] && cards[at].__mediaItem;
+        if (adjacent) prepareArtLogo(artLogoResource(adjacent, null));
+      });
+    }
+
     function tvBrowseDirectionalTarget(key, active) {
       const ui = tvBrowseState();
-      if (ui.filterOpen) {
+      if (ui.filterOpen && !(active && active.closest("#tvBrowseRail"))) {
         const rows = Array.from($("tvBrowseFilters").querySelectorAll(".secondary-filter-row"));
         const row = active && active.closest(".secondary-filter-row");
-        if (!row) return $("tvBrowseFilters").querySelector("button");
+        if (!row) return tvBrowseFilterTarget();
         const buttons = Array.from(row.querySelectorAll("button")), index = buttons.indexOf(active);
         if (key === "ArrowLeft" || key === "ArrowRight") return buttons[Math.max(0, Math.min(buttons.length - 1, index + (key === "ArrowRight" ? 1 : -1)))];
         const rowIndex = rows.indexOf(row);
-        if (key === "ArrowUp" && rowIndex === 0 || key === "ArrowDown" && rowIndex === rows.length - 1) {
-          const target = key === "ArrowUp" ? $("tvFunction-search") : tvBrowseColumnButton(ui.column);
-          tvBrowseCloseFilters({ focus: false });
-          return target;
+        if (key === "ArrowUp" && rowIndex === 0) return active;
+        if (key === "ArrowDown" && rowIndex === rows.length - 1) {
+          const poster = tvBrowsePosterTarget();
+          return poster && poster.closest("#tvBrowseRail") && isVisibleFocusable(poster) ? poster : active;
         }
         const next = rows[rowIndex + (key === "ArrowDown" ? 1 : -1)];
         return next.querySelector(".selected") || next.querySelector("button");
@@ -487,6 +485,7 @@
         if (host === rail) tvBrowseMaybeLoadMore(index);
         return buttons[Math.max(0, Math.min(buttons.length - 1, index + (key === "ArrowRight" ? 1 : -1)))];
       }
+      if (host === rail && ui.filterOpen) return key === "ArrowUp" ? tvBrowseFilterTarget() : active;
       if (host === rail) return key === "ArrowDown" && !$("tvBrowseRetry").hidden ? $("tvBrowseRetry") : tvBrowseColumnButton(ui.column);
       if (host === columns) return key === "ArrowDown" ? tvBrowsePosterTarget() : $("tvFunction-search");
       return tvBrowseColumnButton(ui.column);
@@ -494,7 +493,7 @@
 
     function handleTvBrowseKey(event, key, active) {
       const scope = focusScopeRoot();
-      if (!tvBrowseActive() || isSidebarOpen() || scope !== document && scope !== $("tvBrowseFilters") || isConnectionPanelOpen()) return false;
+      if (!tvBrowseActive() || isSidebarOpen() || scope !== document || isConnectionPanelOpen()) return false;
       const column = active && active.closest("#tvBrowseColumns button");
       if (key === "Enter" && !event.repeat) {
         markHomeUserNavigation();
@@ -517,7 +516,7 @@
     function tvBrowseSnapshot() {
       tvBrowseSavePosition();
       const ui = tvBrowseState();
-      return { column: ui.column, positions: JSON.parse(JSON.stringify(ui.positions)), filters: JSON.parse(JSON.stringify(state.homeV14.secondaryFilters || {})) };
+      return { column: ui.column, positions: JSON.parse(JSON.stringify(ui.positions)), filterOpen: ui.filterOpen, filterFocusGroup: ui.filterFocusGroup || "", filters: JSON.parse(JSON.stringify(state.homeV14.secondaryFilters || {})) };
     }
 
     function restoreTvBrowseSnapshot(saved, legacyColumn) {
@@ -527,7 +526,7 @@
       ui.column = tvBrowseColumns().some((entry) => entry.listId === id) ? id : "recommendation";
       ui.positions = value.positions && typeof value.positions === "object" ? value.positions : {};
       if (value.filters && typeof value.filters === "object") state.homeV14.secondaryFilters = value.filters;
-      ui.filterOpen = false; ui.confirm = null; ui.previewKey = "";
+      ui.filterOpen = !!value.filterOpen && secondaryFilterGroups(ui.column, secondaryCatalogBaseItems(ui.column)).length > 0; ui.filterFocusGroup = value.filterFocusGroup || ""; ui.confirm = null; ui.previewKey = "";
     }
 
     function renderCatalogQuery(id) {

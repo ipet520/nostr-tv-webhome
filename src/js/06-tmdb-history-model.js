@@ -217,6 +217,46 @@
           || Number(b.vote_count || 0) - Number(a.vote_count || 0))[0] || null;
     }
 
+    // Artwork readiness belongs to the existing typed detail entry, not a second cache.
+    function artLogoResource(item, detail) {
+      const type = String(item && (item.mediaType || item.media_type) || "").toLowerCase();
+      const id = movieDetailCacheId(item);
+      const runtime = type === "movie" ? state.movieDetail : type === "tv" ? state.tvDetail : null;
+      if (!runtime || !id) return null;
+      const cached = type === "movie" ? movieDetailCacheValue(item) : tvDetailCacheValue(item);
+      const candidate = cached || detail;
+      const matched = candidate && String(candidate.id || candidate.tmdbId || "") === id && (!candidate.media_type || candidate.media_type === type) ? candidate : null;
+      const logo = bestDetailLogo(matched);
+      const source = item.logo || item.logoUrl || item.logoPath || item.logo_path || logo && logo.file_path || "";
+      if (!source) return null;
+      const url = displayImage(source, { size: "w500" });
+      const key = type + ":" + id;
+      const entry = runtime.cache[key] || (runtime.cache[key] = { detail: null, fetchedAt: 0, promise: null });
+      if (!entry.logoAsset || entry.logoAsset.url !== url) entry.logoAsset = { url, ready: false, failed: false, promise: null };
+      return entry.logoAsset;
+    }
+
+    function prepareArtLogo(asset) {
+      if (!asset) return Promise.resolve(false);
+      if (asset.ready || asset.failed) return Promise.resolve(asset.ready);
+      if (asset.promise) return asset.promise;
+      asset.promise = new Promise((resolve) => {
+        const image = new Image();
+        const finish = (ready) => {
+          image.onload = image.onerror = null;
+          asset.ready = ready; asset.failed = !ready; asset.promise = null;
+          resolve(ready);
+        };
+        image.onload = () => {
+          if (typeof image.decode === "function") image.decode().then(() => finish(true), () => finish(false));
+          else finish(image.naturalWidth > 0);
+        };
+        image.onerror = () => finish(false);
+        image.src = asset.url;
+      });
+      return asset.promise;
+    }
+
     function tmdbRecommendationsUrl(item) {
       const url = new URL(`${window.WEBHOME_CONFIG.tmdb.apiBase}/${item.mediaType}/${item.tmdbId}/recommendations`);
       url.searchParams.set("api_key", tmdbApiKey());

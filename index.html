@@ -2105,19 +2105,24 @@
     html.tv-mode #detailSheet.detail-large .detail-spacer {
       display: none !important;
     }
-    /* 2) logo 回到正常文档流顶部：避免移除占位后 -82px 上移把 logo 顶出屏幕外 */
+    /* TV artwork occupies the reserved title slot; metadata and actions never shift. */
     html.tv-mode #detailSheet.detail-large .detail-logo-wrap,
     html.tv-mode #detailSheet.detail-large .detail-logo-wrap.logo-ready {
-      position: static;
-      top: auto;
-      left: auto;
-      margin: 0 0 14px;
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 96px;
+      max-width: min(50vw, 75%);
+      margin: 0;
+      align-items: center;
       transition: none;
     }
     /* 3) 取消为绝对定位 logo 预留的 82px 顶部空间，信息块紧贴顶部内边距起排 */
     html.tv-mode #detailSheet.detail-large .detail-title-row {
-      margin-top: 0;
+      margin-top: 0; min-height: 96px; align-items: center;
     }
+    html.tv-mode #detailSheet.detail-large .detail-title-row h2 { margin: 0; min-height: 96px; display: flex; align-items: center; }
+    html.tv-mode #detailSheet.detail-large .detail-logo-img { max-height: 96px; transition: opacity 180ms ease; }
     /* 4) 信息标签（年份/类型/时长/状态）改为胶囊型（仅 TV，圆角矩形 → 全圆角） */
     html.tv-mode #detailSheet.detail-large .meta-pill {
       border-radius: 999px;
@@ -6994,7 +6999,7 @@
     html.tv-browse-active .tv-browse-pill { border-radius: 999px; }
     html.tv-browse-active .tv-browse-pill[aria-pressed="true"] { color: #fff; font-weight: 700; }
     html.tv-browse-active .tv-browse-pill[aria-pressed="true"]::after,
-    html.tv-browse-active .tv-browse-functions button:focus::after {
+    html.tv-browse-active .tv-browse-functions button:not(.tv-browse-search):focus::after {
       content: ""; position: absolute; left: 50%; bottom: 2px; width: var(--tv-state-line); height: 2px;
       transform: translateX(-50%); border-radius: 2px; background: #fff;
       box-shadow: 0 1px 3px rgba(0,0,0,.85); pointer-events: none;
@@ -7014,7 +7019,8 @@
     html.tv-browse-active .tv-browse-functions .tv-browse-search { width: clamp(140px,9.6vw,190px); border-radius: calc(var(--tv-control-height) / 2); justify-content: space-between; background: rgba(0,0,0,.12); border-color: rgba(255,255,255,.25); }
     html.tv-browse-active .tv-browse-search .icon { width: var(--tv-control-icon); height: var(--tv-control-icon); }
     html.tv-browse-active .tv-browse-info { position: absolute; top: 7vh; left: var(--tv-gutter); width: 47vw; z-index: 2; text-shadow: var(--tv-text-protection); }
-    html.tv-browse-active .tv-browse-title { min-height: 11vh; position: relative; display: flex; align-items: center; margin-bottom: 1vh; }
+    html.tv-browse-active .tv-browse-title { min-height: 11vh; position: relative; display: grid; align-items: center; justify-items: start; margin-bottom: 1vh; }
+    html.tv-browse-active .tv-browse-title > h1, html.tv-browse-active .tv-browse-title > img { grid-area: 1 / 1; }
     html.tv-browse-active .tv-browse-info h1 { margin: 0; font-size: clamp(24px,2.8vw,54px); line-height: 1.1; }
     html.tv-browse-active .tv-browse-logo { width: auto; height: auto; max-width: 32vw; max-height: 10vh; object-fit: contain; object-position: left center; animation: tv-title-reveal 180ms ease; }
     @keyframes tv-title-reveal { from { opacity: 0; } to { opacity: 1; } }
@@ -7056,8 +7062,7 @@
       flex: 0 0 auto; box-sizing: border-box; height: var(--tv-filter-height); min-height: 0;
       padding: 0 12px; font-size: var(--tv-filter-font); line-height: 1.2;
     }
-    html.tv-browse-active .tv-browse.filter-open .tv-browse-columns,
-    html.tv-browse-active .tv-browse.filter-open .tv-browse-posters { pointer-events: none; }
+    html.tv-browse-active .tv-browse.filter-open .tv-browse-columns { pointer-events: none; }
     html.tv-browse-active #tvBrowseFunctions #connectionDock { position: relative; flex: 0 0 auto; width: auto; min-width: 0; margin: 0; height: auto; align-self: auto; }
     html.tv-browse-active #tvBrowseFunctions #connectionToggle { display: flex; align-items: center; justify-content: center; width: var(--tv-control-height); min-width: 0; min-height: 0; height: var(--tv-control-height); gap: 0; padding: 0; border-radius: 8px; }
     html.tv-browse-active #tvBrowseFunctions .connection-title, html.tv-browse-active #tvBrowseFunctions .connection-arrow { display: none; }
@@ -20920,6 +20925,46 @@ utils.encode = function encode(arr, enc) {
           || Number(b.vote_count || 0) - Number(a.vote_count || 0))[0] || null;
     }
 
+    // Artwork readiness belongs to the existing typed detail entry, not a second cache.
+    function artLogoResource(item, detail) {
+      const type = String(item && (item.mediaType || item.media_type) || "").toLowerCase();
+      const id = movieDetailCacheId(item);
+      const runtime = type === "movie" ? state.movieDetail : type === "tv" ? state.tvDetail : null;
+      if (!runtime || !id) return null;
+      const cached = type === "movie" ? movieDetailCacheValue(item) : tvDetailCacheValue(item);
+      const candidate = cached || detail;
+      const matched = candidate && String(candidate.id || candidate.tmdbId || "") === id && (!candidate.media_type || candidate.media_type === type) ? candidate : null;
+      const logo = bestDetailLogo(matched);
+      const source = item.logo || item.logoUrl || item.logoPath || item.logo_path || logo && logo.file_path || "";
+      if (!source) return null;
+      const url = displayImage(source, { size: "w500" });
+      const key = type + ":" + id;
+      const entry = runtime.cache[key] || (runtime.cache[key] = { detail: null, fetchedAt: 0, promise: null });
+      if (!entry.logoAsset || entry.logoAsset.url !== url) entry.logoAsset = { url, ready: false, failed: false, promise: null };
+      return entry.logoAsset;
+    }
+
+    function prepareArtLogo(asset) {
+      if (!asset) return Promise.resolve(false);
+      if (asset.ready || asset.failed) return Promise.resolve(asset.ready);
+      if (asset.promise) return asset.promise;
+      asset.promise = new Promise((resolve) => {
+        const image = new Image();
+        const finish = (ready) => {
+          image.onload = image.onerror = null;
+          asset.ready = ready; asset.failed = !ready; asset.promise = null;
+          resolve(ready);
+        };
+        image.onload = () => {
+          if (typeof image.decode === "function") image.decode().then(() => finish(true), () => finish(false));
+          else finish(image.naturalWidth > 0);
+        };
+        image.onerror = () => finish(false);
+        image.src = asset.url;
+      });
+      return asset.promise;
+    }
+
     function tmdbRecommendationsUrl(item) {
       const url = new URL(`${window.WEBHOME_CONFIG.tmdb.apiBase}/${item.mediaType}/${item.tmdbId}/recommendations`);
       url.searchParams.set("api_key", tmdbApiKey());
@@ -28255,7 +28300,7 @@ utils.encode = function encode(arr, enc) {
 
     function tvBrowseState() {
       return state.tvBrowse || (state.tvBrowse = {
-        column: "recent", positions: {}, filterOpen: false,
+        column: "recent", positions: {}, filterOpen: false, filterFocusGroup: "",
         startupEpoch: null,
         confirm: null, enterHeld: false, suppressClickUntil: 0,
         previewKey: "", backdropToken: 0, backdropSlot: 0, backdropUrl: "",
@@ -28370,21 +28415,27 @@ utils.encode = function encode(arr, enc) {
       renderTvBrowseFilters();
       syncTvBrowseVisibility();
       const host = $("tvBrowseFilters");
-      focusRemoteTarget(host.querySelector(".selected") || host.querySelector("button"));
+      focusRemoteTarget(tvBrowseFilterTarget() || host.querySelector("button"));
       return true;
     }
 
-    function tvBrowseCloseFilters(options) {
+    function tvBrowseFilterTarget() {
+      const ui = tvBrowseState(), host = $("tvBrowseFilters"), filters = secondaryFilterState(ui.column);
+      const buttons = Array.from(host.querySelectorAll("button"));
+      return buttons.find((button) => button.dataset.group === ui.filterFocusGroup && button.dataset.value === filters.lastFocused[ui.filterFocusGroup])
+        || host.querySelector(".selected") || buttons[0] || null;
+    }
+
+    function tvBrowseCloseFilters() {
       const ui = tvBrowseState();
       if (!ui.filterOpen) return false;
-      const opts = options || {};
       ui.filterOpen = false;
       ui.confirm = null; ui.focusIntent = null;
       syncTvBrowseVisibility();
       if (tvBrowseActive()) {
         const poster = tvBrowsePosterTarget();
         if (poster && poster.__mediaItem) tvBrowsePreview(poster.__mediaItem);
-        if (opts.focus !== false) focusRemoteTarget(opts.target || tvBrowseColumnButton(ui.column));
+        focusRemoteTarget(tvBrowseColumnButton(ui.column));
       }
       return true;
     }
@@ -28400,14 +28451,21 @@ utils.encode = function encode(arr, enc) {
         host.querySelectorAll("button").forEach((button) => button.addEventListener("click", () => {
           tvBrowseSavePosition();
           const current = secondaryFilterState(ui.column);
-          current[button.dataset.group] = button.dataset.value;
-          current.lastFocused[button.dataset.group] = button.dataset.value;
+          const group = button.dataset.group, value = button.dataset.value;
+          const next = current[group] === value ? secondaryFilterDefaultValue(group) : value;
+          if (next === current[group]) return;
+          current[group] = next;
+          current.lastFocused[group] = value;
           ui.previewKey = "";
           renderTvBrowse();
           scheduleUiSnapshotSave();
         }));
       }
       host.querySelectorAll("button").forEach((button) => {
+        button.onfocus = () => {
+          ui.filterFocusGroup = button.dataset.group;
+          secondaryFilterState(ui.column).lastFocused[button.dataset.group] = button.dataset.value;
+        };
         const selected = filters[button.dataset.group] === button.dataset.value;
         button.classList.toggle("selected", selected);
         button.setAttribute("aria-pressed", String(selected));
@@ -28418,13 +28476,13 @@ utils.encode = function encode(arr, enc) {
       const root = $("tvBrowse"), ui = tvBrowseState();
       if (!root) return;
       root.hidden = !tvBrowseActive();
-      if (!tvBrowseActive()) { tvBrowseCancelLogo(); ui.enterHeld = false; ui.confirm = null; ui.filterOpen = false; }
+      if (!tvBrowseActive()) { tvBrowseCancelLogo(); ui.enterHeld = false; ui.confirm = null; }
       root.classList.toggle("filter-open", ui.filterOpen);
       $("tvBrowseFunctions").hidden = ui.filterOpen;
       $("tvBrowseRecentTools").hidden = ui.filterOpen;
       $("tvBrowseInfo").hidden = ui.filterOpen;
       $("tvBrowseFilters").hidden = !ui.filterOpen;
-      root.querySelectorAll("#tvBrowseColumns button,#tvBrowseRail button").forEach((button) => button.setAttribute("tabindex", ui.filterOpen ? "-1" : "0"));
+      root.querySelectorAll("#tvBrowseColumns button").forEach((button) => button.setAttribute("tabindex", ui.filterOpen ? "-1" : "0"));
       document.documentElement.classList.toggle("tv-browse-active", tvBrowseActive());
     }
 
@@ -28541,7 +28599,7 @@ utils.encode = function encode(arr, enc) {
       else tvBrowseClearPreview();
       observeHomeImages(rail); observeTvCardEnrichment(rail); observeMovieCardEnrichment(rail);
       if (focused && !prefix && focusScopeRoot() === document && !isSidebarOpen()) {
-        const target = Array.from(rail.children).find((card) => card.dataset.mediaKey === focused) || tvBrowsePosterTarget();
+        const target = Array.from(rail.children).find((card) => card.dataset.mediaKey === focused) || (ui.filterOpen ? Array.from(rail.children).find(isVisibleFocusable) || tvBrowseFilterTarget() : tvBrowsePosterTarget());
         if (target) focusRemoteTarget(target);
       }
       tvBrowseTryFocus();
@@ -28567,41 +28625,16 @@ utils.encode = function encode(arr, enc) {
 
     function tvBrowseCancelLogo() {
       const ui = tvBrowseState();
-      clearTimeout(ui.previewDetailTimer); ui.previewDetailTimer = 0; ui.logoUrl = ""; $("tvBrowseLogo").onerror = null;
-      ui.logoToken = Number(ui.logoToken || 0) + 1;
-      if (ui.logoImage) { ui.logoImage.onload = ui.logoImage.onerror = null; ui.logoImage.src = ""; ui.logoImage = null; }
+      cancelArtTitle($("tvBrowseLogo"));
+      clearTimeout(ui.previewDetailTimer); ui.previewDetailTimer = 0;
     }
 
     function tvBrowseRenderLogo(item, detail) {
-      const ui = tvBrowseState(), logo = $("tvBrowseLogo"), title = $("tvBrowseTitle");
+      const ui = tvBrowseState();
       const type = String(item.mediaType || item.media_type || "").toLowerCase();
-      const id = String(item.tmdbId || item.id || "");
       const key = (type === "movie" ? movieDetailCacheKey(item) : type === "tv" ? tvDetailCacheKey(item) : "") || String(mediaDomKey(item));
-      if (ui.logoKey !== key) {
-        tvBrowseCancelLogo(); ui.logoKey = key; ui.logoUrl = "";
-        logo.hidden = true; logo.removeAttribute("src"); title.hidden = false;
-      }
-      // Cache partitions determine type; embedded detail must also match the current ID.
-      const matched = detail && String(detail.id || detail.tmdbId || "") === id ? detail : null;
-      const resource = bestDetailLogo(matched);
-      const source = item.logo || item.logoUrl || item.logoPath || item.logo_path || resource && resource.file_path || "";
-      const url = source ? displayImage(source, { size: "w500" }) : "";
-      if (url && ui.logoUrl !== url) {
-        tvBrowseCancelLogo(); ui.logoUrl = url;
-        logo.hidden = true; title.hidden = false;
-        const token = ui.logoToken, image = new Image(); ui.logoImage = image;
-        image.onload = () => {
-          if (ui.logoToken !== token || ui.logoKey !== key) return;
-          ui.logoImage = null; logo.src = url; logo.alt = item.title || item.name || "";
-          logo.hidden = false; title.hidden = true;
-        };
-        image.onerror = () => {
-          if (ui.logoToken !== token || ui.logoKey !== key) return;
-          ui.logoImage = null; logo.hidden = true; title.hidden = false;
-        };
-        logo.onerror = image.onerror;
-        image.src = url;
-      }
+      if (ui.logoKey !== key) { tvBrowseCancelLogo(); ui.logoKey = key; }
+      renderArtTitle(item, detail, $("tvBrowseLogo"), $("tvBrowseTitle"), null, () => tvBrowseActive() && ui.logoKey === key);
     }
 
     function tvBrowseEnsurePreviewDetail(item, detail) {
@@ -28615,7 +28648,7 @@ utils.encode = function encode(arr, enc) {
       // Coalesce rapid poster movement; only the settled preview joins the existing detail cache/budget.
       ui.previewDetailTimer = setTimeout(() => {
         ui.previewDetailTimer = 0;
-        if (!tvBrowseActive() || ui.logoKey !== key || ui.filterOpen) return;
+        if (!tvBrowseActive() || ui.logoKey !== key) return;
         ui.previewDetailRequestKey = key;
         const request = (url, timeout) => homeEnrichmentRequest(url, timeout, type + ":" + id);
         const shared = type === "movie" ? requestMovieDetailShared : requestTvDetailShared;
@@ -28641,6 +28674,7 @@ utils.encode = function encode(arr, enc) {
       $("tvBrowseOverview").textContent = homeHeroPresentationOverview(item, detail) || (labelOnly ? "" : desc);
       tvBrowseRenderLogo(item, detail);
       tvBrowseEnsurePreviewDetail(item, detail);
+      tvBrowsePrepareAdjacentLogos(item);
       const source = item.landscape || item.backdrop || item.backdrop_path || detail && detail.backdrop_path || item.image || item.pic;
       const url = displayImage(source, { size: item.landscape || item.backdrop || item.backdrop_path ? "w1280" : "w780" });
       if (ui.previewKey === key && (url === ui.backdropUrl || ui.pendingImage && ui.pendingImage.src === url)) return;
@@ -28663,19 +28697,28 @@ utils.encode = function encode(arr, enc) {
       image.src = url;
     }
 
+    function tvBrowsePrepareAdjacentLogos(item) {
+      const cards = Array.from($("tvBrowseRail").children), index = cards.findIndex((card) => mediaDomKey(card.__mediaItem) === mediaDomKey(item));
+      // Only known artwork for two neighbours; no speculative detail requests.
+      [index - 1, index + 1].forEach((at) => {
+        const adjacent = cards[at] && cards[at].__mediaItem;
+        if (adjacent) prepareArtLogo(artLogoResource(adjacent, null));
+      });
+    }
+
     function tvBrowseDirectionalTarget(key, active) {
       const ui = tvBrowseState();
-      if (ui.filterOpen) {
+      if (ui.filterOpen && !(active && active.closest("#tvBrowseRail"))) {
         const rows = Array.from($("tvBrowseFilters").querySelectorAll(".secondary-filter-row"));
         const row = active && active.closest(".secondary-filter-row");
-        if (!row) return $("tvBrowseFilters").querySelector("button");
+        if (!row) return tvBrowseFilterTarget();
         const buttons = Array.from(row.querySelectorAll("button")), index = buttons.indexOf(active);
         if (key === "ArrowLeft" || key === "ArrowRight") return buttons[Math.max(0, Math.min(buttons.length - 1, index + (key === "ArrowRight" ? 1 : -1)))];
         const rowIndex = rows.indexOf(row);
-        if (key === "ArrowUp" && rowIndex === 0 || key === "ArrowDown" && rowIndex === rows.length - 1) {
-          const target = key === "ArrowUp" ? $("tvFunction-search") : tvBrowseColumnButton(ui.column);
-          tvBrowseCloseFilters({ focus: false });
-          return target;
+        if (key === "ArrowUp" && rowIndex === 0) return active;
+        if (key === "ArrowDown" && rowIndex === rows.length - 1) {
+          const poster = tvBrowsePosterTarget();
+          return poster && poster.closest("#tvBrowseRail") && isVisibleFocusable(poster) ? poster : active;
         }
         const next = rows[rowIndex + (key === "ArrowDown" ? 1 : -1)];
         return next.querySelector(".selected") || next.querySelector("button");
@@ -28689,6 +28732,7 @@ utils.encode = function encode(arr, enc) {
         if (host === rail) tvBrowseMaybeLoadMore(index);
         return buttons[Math.max(0, Math.min(buttons.length - 1, index + (key === "ArrowRight" ? 1 : -1)))];
       }
+      if (host === rail && ui.filterOpen) return key === "ArrowUp" ? tvBrowseFilterTarget() : active;
       if (host === rail) return key === "ArrowDown" && !$("tvBrowseRetry").hidden ? $("tvBrowseRetry") : tvBrowseColumnButton(ui.column);
       if (host === columns) return key === "ArrowDown" ? tvBrowsePosterTarget() : $("tvFunction-search");
       return tvBrowseColumnButton(ui.column);
@@ -28696,7 +28740,7 @@ utils.encode = function encode(arr, enc) {
 
     function handleTvBrowseKey(event, key, active) {
       const scope = focusScopeRoot();
-      if (!tvBrowseActive() || isSidebarOpen() || scope !== document && scope !== $("tvBrowseFilters") || isConnectionPanelOpen()) return false;
+      if (!tvBrowseActive() || isSidebarOpen() || scope !== document || isConnectionPanelOpen()) return false;
       const column = active && active.closest("#tvBrowseColumns button");
       if (key === "Enter" && !event.repeat) {
         markHomeUserNavigation();
@@ -28719,7 +28763,7 @@ utils.encode = function encode(arr, enc) {
     function tvBrowseSnapshot() {
       tvBrowseSavePosition();
       const ui = tvBrowseState();
-      return { column: ui.column, positions: JSON.parse(JSON.stringify(ui.positions)), filters: JSON.parse(JSON.stringify(state.homeV14.secondaryFilters || {})) };
+      return { column: ui.column, positions: JSON.parse(JSON.stringify(ui.positions)), filterOpen: ui.filterOpen, filterFocusGroup: ui.filterFocusGroup || "", filters: JSON.parse(JSON.stringify(state.homeV14.secondaryFilters || {})) };
     }
 
     function restoreTvBrowseSnapshot(saved, legacyColumn) {
@@ -28729,7 +28773,7 @@ utils.encode = function encode(arr, enc) {
       ui.column = tvBrowseColumns().some((entry) => entry.listId === id) ? id : "recommendation";
       ui.positions = value.positions && typeof value.positions === "object" ? value.positions : {};
       if (value.filters && typeof value.filters === "object") state.homeV14.secondaryFilters = value.filters;
-      ui.filterOpen = false; ui.confirm = null; ui.previewKey = "";
+      ui.filterOpen = !!value.filterOpen && secondaryFilterGroups(ui.column, secondaryCatalogBaseItems(ui.column)).length > 0; ui.filterFocusGroup = value.filterFocusGroup || ""; ui.confirm = null; ui.previewKey = "";
     }
 
     function renderCatalogQuery(id) {
@@ -33022,15 +33066,60 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       sheet.style.zIndex = "60";
     }
 
+    function cancelArtTitle(img) {
+      if (!img) return;
+      const run = img.__artTitle;
+      if (run) clearTimeout(run.timer);
+      img.__artTitle = null; img.onerror = null;
+    }
+
+    function renderArtTitle(item, detail, img, title, wrap, valid) {
+      if (!img || !title) return;
+      const asset = artLogoResource(item, detail);
+      const key = String(item.mediaType || item.media_type || "") + ":" + movieDetailCacheId(item);
+      if (img.__artTitle && img.__artTitle.key === key && img.__artTitle.asset === asset && img.__artTitle.valid()) { img.alt = title.textContent || item.title || ""; return; }
+      const previous = img.__artTitle && img.__artTitle.key === key ? img.__artTitle : null;
+      cancelArtTitle(img);
+      const run = { key, asset, timer: 0, valid, deadline: previous ? previous.deadline : Date.now() + 150, fallbackShown: !!(previous && previous.fallbackShown) }; img.__artTitle = run;
+      const current = () => img.__artTitle === run && valid();
+      const fallback = () => {
+        if (!current()) return;
+        clearTimeout(run.timer); run.fallbackShown = true; img.hidden = true; title.hidden = false; title.style.visibility = "";
+        if (wrap) { wrap.style.display = "none"; wrap.classList.remove("logo-ready"); }
+      };
+      const show = () => {
+        if (!current()) return;
+        clearTimeout(run.timer); img.src = asset.url; img.alt = title.textContent || item.title || "";
+        img.hidden = false; img.classList.add("loaded"); title.hidden = false; title.style.visibility = "hidden";
+        if (wrap) { wrap.style.display = "flex"; wrap.classList.add("logo-ready"); }
+        img.onerror = () => { asset.ready = false; asset.failed = true; fallback(); };
+      };
+      img.hidden = true; img.classList.remove("loaded"); img.removeAttribute("src");
+      title.hidden = false;
+      if (wrap) { wrap.style.display = "none"; wrap.classList.remove("logo-ready"); }
+      if (asset && asset.ready) { show(); return; }
+      const type = String(item.mediaType || item.media_type || "").toLowerCase();
+      const known = detail || (type === "movie" ? movieDetailCacheValue(item) : type === "tv" ? tvDetailCacheValue(item) : null);
+      if (asset && asset.failed || !asset && (known || !movieDetailCacheId(item) || !/^(movie|tv)$/.test(type))) { fallback(); return; }
+      title.style.visibility = run.fallbackShown ? "" : "hidden";
+      const remaining = run.deadline - Date.now();
+      if (run.fallbackShown || remaining <= 0) fallback();
+      else run.timer = setTimeout(fallback, remaining);
+      if (asset) prepareArtLogo(asset).then((ready) => ready ? show() : fallback());
+    }
+
     function renderDetailBase(item) {
       resetDetailTextClamp();
-      // 清除上一个影视的 logo，显示文字标题（emby 风格 wrap）
+      cancelArtTitle($("detailLogoImg"));
+      // Reset the shared title view without rebuilding detail actions.
       const logoWrap = $("detailLogoWrap");
       const logoImgEl = $("detailLogoImg");
       if (logoWrap) { logoWrap.style.display = "none"; logoWrap.classList.remove("logo-ready"); }
-      if (logoImgEl) { logoImgEl.removeAttribute("src"); logoImgEl.classList.remove("loaded"); }
+      if (logoImgEl) { logoImgEl.hidden = false; logoImgEl.removeAttribute("src"); logoImgEl.classList.remove("loaded"); }
       if ($("detailTitle")) $("detailTitle").style.display = "";
       $("detailTitle").textContent = item.title;
+      $("detailTitle").style.visibility = "";
+      if (isTvLikeDevice()) renderDetailTitleLogo(item, null, item.title);
       const fallbackText = item.desc || item.remark || "";
       setDetailTextContent(fallbackText || "");
       renderDetailMeta(item, state.detail);
@@ -33493,6 +33582,14 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     }
 
     function renderDetailTitleLogo(item, detail, canonicalTitle) {
+      if (!isTvLikeDevice()) return renderMobileDetailTitleLogo(item, detail, canonicalTitle);
+      const title = $("detailTitle");
+      title.textContent = canonicalTitle || detailCanonicalTitle(item, detail);
+      title.style.display = "";
+      renderArtTitle(item, detail, $("detailLogoImg"), title, $("detailLogoWrap"), () => state.selected === item && $("detailSheet").classList.contains("active"));
+    }
+
+    function renderMobileDetailTitleLogo(item, detail, canonicalTitle) {
       // emby 风格：使用 detailLogoWrap / detailLogoImg
       const wrap = $("detailLogoWrap");
       const img = $("detailLogoImg");
@@ -42766,7 +42863,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if ($("detailSheet") && $("detailSheet").classList.contains("active")) return $("detailSheet");
       if (isConnectionPanelOpen() && $("connectionBody")) return $("connectionBody");
       if (isSidebarOpen()) return $("homeSidebar");
-      if (tvBrowseActive() && tvBrowseState().filterOpen) return $("tvBrowseFilters");
       return document;
     }
 
@@ -43391,9 +43487,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
     window.addEventListener("popstate", (event) => {
       const detailSheet = $("detailSheet");
-      if (tvBrowseActive() && tvBrowseState().filterOpen && focusScopeRoot() === $("tvBrowseFilters")) {
-        tvBrowseCloseFilters(); ensureHomeHistoryEntry(); return;
-      }
       if (state.homeV14 && state.homeV14.sidebarHistoryBackPending) {
         const deferredAction = state.homeV14.sidebarDeferredAction;
         state.homeV14.sidebarDeferredAction = null;

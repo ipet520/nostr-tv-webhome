@@ -55,7 +55,6 @@
       if ($("detailSheet") && $("detailSheet").classList.contains("active")) return $("detailSheet");
       if (isConnectionPanelOpen() && $("connectionBody")) return $("connectionBody");
       if (isSidebarOpen()) return $("homeSidebar");
-      if (tvBrowseActive() && tvBrowseState().filterOpen) return $("tvBrowseFilters");
       return document;
     }
 
@@ -680,9 +679,6 @@
 
     window.addEventListener("popstate", (event) => {
       const detailSheet = $("detailSheet");
-      if (tvBrowseActive() && tvBrowseState().filterOpen && focusScopeRoot() === $("tvBrowseFilters")) {
-        tvBrowseCloseFilters(); ensureHomeHistoryEntry(); return;
-      }
       if (state.homeV14 && state.homeV14.sidebarHistoryBackPending) {
         const deferredAction = state.homeV14.sidebarDeferredAction;
         state.homeV14.sidebarDeferredAction = null;

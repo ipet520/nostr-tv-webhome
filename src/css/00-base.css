@@ -1876,19 +1876,24 @@
     html.tv-mode #detailSheet.detail-large .detail-spacer {
       display: none !important;
     }
-    /* 2) logo 回到正常文档流顶部：避免移除占位后 -82px 上移把 logo 顶出屏幕外 */
+    /* TV artwork occupies the reserved title slot; metadata and actions never shift. */
     html.tv-mode #detailSheet.detail-large .detail-logo-wrap,
     html.tv-mode #detailSheet.detail-large .detail-logo-wrap.logo-ready {
-      position: static;
-      top: auto;
-      left: auto;
-      margin: 0 0 14px;
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 96px;
+      max-width: min(50vw, 75%);
+      margin: 0;
+      align-items: center;
       transition: none;
     }
     /* 3) 取消为绝对定位 logo 预留的 82px 顶部空间，信息块紧贴顶部内边距起排 */
     html.tv-mode #detailSheet.detail-large .detail-title-row {
-      margin-top: 0;
+      margin-top: 0; min-height: 96px; align-items: center;
     }
+    html.tv-mode #detailSheet.detail-large .detail-title-row h2 { margin: 0; min-height: 96px; display: flex; align-items: center; }
+    html.tv-mode #detailSheet.detail-large .detail-logo-img { max-height: 96px; transition: opacity 180ms ease; }
     /* 4) 信息标签（年份/类型/时长/状态）改为胶囊型（仅 TV，圆角矩形 → 全圆角） */
     html.tv-mode #detailSheet.detail-large .meta-pill {
       border-radius: 999px;

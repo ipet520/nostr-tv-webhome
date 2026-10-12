@@ -1752,7 +1752,7 @@
 
       check("TV_BROWSE_LOCAL_FOCUS_GRAPH",
         hasAll(sourceOf(tvBrowseDirectionalTarget), ["tvBrowseRail", "tvBrowseColumns", "tvBrowseFunctions", "filterOpen"]),
-        "one local graph covers columns, posters, functions and modal filters", "STATIC_HOOK");
+        "one local graph covers columns, posters, functions and persistent filters", "STATIC_HOOK");
       check("TV_BROWSE_PAGING_STALE_GUARD",
         hasAll(sourceOf(tvBrowseMaybeLoadMore), ["query.loading", "query.error", "loadSecondaryPage"])
           && sourceOf(loadSecondaryPage).includes("query.requestSeq !== requestSeq"),
