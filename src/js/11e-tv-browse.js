@@ -172,13 +172,18 @@
       return true;
     }
 
-    function tvBrowseCloseFilters() {
+    function tvBrowseCloseFilters(options) {
       const ui = tvBrowseState();
       if (!ui.filterOpen) return false;
+      const opts = options || {};
       ui.filterOpen = false;
-      ui.confirm = null;
+      ui.confirm = null; ui.focusIntent = null;
       syncTvBrowseVisibility();
-      if (tvBrowseActive()) focusRemoteTarget(tvBrowseColumnButton(ui.column));
+      if (tvBrowseActive()) {
+        const poster = tvBrowsePosterTarget();
+        if (poster && poster.__mediaItem) tvBrowsePreview(poster.__mediaItem);
+        if (opts.focus !== false) focusRemoteTarget(opts.target || tvBrowseColumnButton(ui.column));
+      }
       return true;
     }
 
@@ -189,7 +194,7 @@
       const signature = ui.column + secondaryFilterSchemaSignature(groups);
       if (host.dataset.schema !== signature) {
         host.dataset.schema = signature;
-        host.innerHTML = groups.map((group) => `<div class="secondary-filter-row" data-group="${escapeAttr(group.key)}"><span class="secondary-filter-label">${escapeHtml(group.label)}</span><div class="secondary-filter-options">${group.options.map((option) => `<button type="button" class="focusable tv-browse-control secondary-filter-option" data-group="${escapeAttr(group.key)}" data-value="${escapeAttr(option.value)}">${escapeHtml(option.label)}</button>`).join("")}</div></div>`).join("");
+        host.innerHTML = groups.map((group) => `<div class="secondary-filter-row" data-group="${escapeAttr(group.key)}"><span class="secondary-filter-label">${escapeHtml(group.label)}</span><div class="secondary-filter-options">${group.options.map((option) => `<button type="button" class="focusable tv-browse-control tv-browse-pill secondary-filter-option" data-group="${escapeAttr(group.key)}" data-value="${escapeAttr(option.value)}">${escapeHtml(option.label)}</button>`).join("")}</div></div>`).join("");
         host.querySelectorAll("button").forEach((button) => button.addEventListener("click", () => {
           tvBrowseSavePosition();
           const current = secondaryFilterState(ui.column);
@@ -230,7 +235,7 @@
       const columns = $("tvBrowseColumns");
       tvBrowseColumns().forEach((entry) => {
         const button = document.createElement("button");
-        button.type = "button"; button.className = "focusable tv-browse-control tv-browse-column";
+        button.type = "button"; button.className = "focusable tv-browse-control tv-browse-pill tv-browse-column";
         button.id = "tvColumn-" + entry.listId; button.dataset.column = entry.listId; button.textContent = entry.label;
         button.addEventListener("click", (event) => {
           // Native WebViews may emit a click after the handled physical key.
@@ -252,7 +257,7 @@
         if (id === "search") {
           button.classList.add("tv-browse-search");
           button.innerHTML = '<span>搜索</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m16.5 16.5 4 4"></path></svg>';
-        } else button.textContent = label;
+        } else button.innerHTML = `<span>${escapeHtml(label)}</span>`;
         button.addEventListener("click", () => {
           markHomeUserNavigation(); tvBrowseSavePosition();
           if (id === "live") rememberFocusReturn();
@@ -360,7 +365,7 @@
 
     function tvBrowseCancelLogo() {
       const ui = tvBrowseState();
-      clearTimeout(ui.logoTimer); ui.logoTimer = 0; ui.logoUrl = ""; $("tvBrowseLogo").onerror = null;
+      clearTimeout(ui.previewDetailTimer); ui.previewDetailTimer = 0; ui.logoUrl = ""; $("tvBrowseLogo").onerror = null;
       ui.logoToken = Number(ui.logoToken || 0) + 1;
       if (ui.logoImage) { ui.logoImage.onload = ui.logoImage.onerror = null; ui.logoImage.src = ""; ui.logoImage = null; }
     }
@@ -395,13 +400,21 @@
         logo.onerror = image.onerror;
         image.src = url;
       }
-      if (url || matched || !/^(movie|tv)$/.test(type) || !/^\d+$/.test(id) || Number(id) <= 0 || ui.logoRequestKey === key) return;
-      clearTimeout(ui.logoTimer);
+    }
+
+    function tvBrowseEnsurePreviewDetail(item, detail) {
+      const ui = tvBrowseState();
+      const type = String(item.mediaType || item.media_type || "").toLowerCase();
+      const id = String(item.tmdbId || item.id || "");
+      const key = type === "movie" ? movieDetailCacheKey(item) : type === "tv" ? tvDetailCacheKey(item) : "";
+      const matched = detail && String(detail.id || detail.tmdbId || "") === id;
+      if (matched || !/^(movie|tv)$/.test(type) || !/^\d+$/.test(id) || Number(id) <= 0 || ui.previewDetailRequestKey === key) return;
+      clearTimeout(ui.previewDetailTimer);
       // Coalesce rapid poster movement; only the settled preview joins the existing detail cache/budget.
-      ui.logoTimer = setTimeout(() => {
-        ui.logoTimer = 0;
+      ui.previewDetailTimer = setTimeout(() => {
+        ui.previewDetailTimer = 0;
         if (!tvBrowseActive() || ui.logoKey !== key || ui.filterOpen) return;
-        ui.logoRequestKey = key;
+        ui.previewDetailRequestKey = key;
         const request = (url, timeout) => homeEnrichmentRequest(url, timeout, type + ":" + id);
         const shared = type === "movie" ? requestMovieDetailShared : requestTvDetailShared;
         shared(item, request).then((loaded) => {
@@ -413,9 +426,10 @@
     function tvBrowsePreview(item) {
       const ui = tvBrowseState(), key = mediaDomKey(item);
       const type = String(item.mediaType || item.media_type || "").toLowerCase();
-      const detail = (type === "movie" ? movieDetailCacheValue(item) || item.movieDetail : type === "tv" ? tvDetailCacheValue(item) || item.tvDetail : null) || item.weeklyDetail || item.heroDetail || null;
+      const cachedDetail = (type === "movie" ? movieDetailCacheValue(item) || item.movieDetail : type === "tv" ? tvDetailCacheValue(item) || item.tvDetail : null) || item.weeklyDetail || item.heroDetail || null;
+      const detail = cachedDetail && String(cachedDetail.id || cachedDetail.tmdbId || "") === String(item.tmdbId || item.id || "") && (!cachedDetail.media_type || cachedDetail.media_type === type) ? cachedDetail : null;
       $("tvBrowseTitle").textContent = item.title || item.name || "";
-      const year = String(item.releaseDate || item.first_air_date || item.release_date || "").slice(0, 4);
+      const year = String(detail && (detail.release_date || detail.first_air_date) || item.releaseDate || item.first_air_date || item.release_date || "").slice(0, 4);
       const genres = homeHeroPresentationGenres(item, detail);
       const rating = Number(detail && detail.vote_average || item.voteAverage || item.vote_average || 0);
       $("tvBrowseMeta").textContent = [year, genres.join(" · "), rating > 0 ? rating.toFixed(1) + " 分" : ""].filter(Boolean).join("  /  ");
@@ -424,6 +438,7 @@
       const labelOnly = item.source === "tmdb" && desc === (item.listTitle || "搜索") + " · " + (item.title || "");
       $("tvBrowseOverview").textContent = homeHeroPresentationOverview(item, detail) || (labelOnly ? "" : desc);
       tvBrowseRenderLogo(item, detail);
+      tvBrowseEnsurePreviewDetail(item, detail);
       const source = item.landscape || item.backdrop || item.backdrop_path || detail && detail.backdrop_path || item.image || item.pic;
       const url = displayImage(source, { size: item.landscape || item.backdrop || item.backdrop_path ? "w1280" : "w780" });
       if (ui.previewKey === key && (url === ui.backdropUrl || ui.pendingImage && ui.pendingImage.src === url)) return;
@@ -454,7 +469,13 @@
         if (!row) return $("tvBrowseFilters").querySelector("button");
         const buttons = Array.from(row.querySelectorAll("button")), index = buttons.indexOf(active);
         if (key === "ArrowLeft" || key === "ArrowRight") return buttons[Math.max(0, Math.min(buttons.length - 1, index + (key === "ArrowRight" ? 1 : -1)))];
-        const next = rows[Math.max(0, Math.min(rows.length - 1, rows.indexOf(row) + (key === "ArrowDown" ? 1 : -1)))];
+        const rowIndex = rows.indexOf(row);
+        if (key === "ArrowUp" && rowIndex === 0 || key === "ArrowDown" && rowIndex === rows.length - 1) {
+          const target = key === "ArrowUp" ? $("tvFunction-search") : tvBrowseColumnButton(ui.column);
+          tvBrowseCloseFilters({ focus: false });
+          return target;
+        }
+        const next = rows[rowIndex + (key === "ArrowDown" ? 1 : -1)];
         return next.querySelector(".selected") || next.querySelector("button");
       }
       const rail = $("tvBrowseRail"), columns = $("tvBrowseColumns"), functions = $("tvBrowseFunctions");

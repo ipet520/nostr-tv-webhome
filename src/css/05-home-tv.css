@@ -1143,29 +1143,38 @@
     html.tv-browse-active .tv-browse-backdrop { position: absolute; inset: 0; background-size: cover; background-position: center; opacity: 0; transition: opacity 240ms ease; pointer-events: none; }
     html.tv-browse-active .tv-browse-backdrop.visible { opacity: 1; }
     html.tv-browse-active .tv-browse-shade { position: absolute; inset: 0; background: linear-gradient(90deg,rgba(8,12,18,.58),rgba(8,12,18,.22) 34%,transparent 65%),linear-gradient(0deg,rgba(8,12,18,.58),rgba(8,12,18,.16) 25%,transparent 42%); pointer-events: none; }
-    /* Only TV browsing controls share these light states. Detail actions keep their historical contract. */
+    /* Browse selection and remote focus have separate roles. Detail actions are independent. */
+    html.tv-browse-active .tv-browse { --tv-state-line: 18px; --tv-text-protection: 0 1px 2px rgba(0,0,0,.95), 0 0 5px rgba(0,0,0,.6); }
     html.tv-browse-active .tv-browse-control,
     html.tv-browse-active #tvBrowseFunctions #connectionToggle {
-      background: transparent; border: 1px solid transparent; color: rgba(255,255,255,.86);
-      position: relative; box-shadow: none; outline: none; text-shadow: 0 1px 4px rgba(0,0,0,.8);
-      -webkit-backdrop-filter: none; backdrop-filter: none; transition: background-color 150ms ease;
+      background: transparent; border: 1px solid transparent; color: rgba(255,255,255,.94);
+      position: relative; box-shadow: none; outline: none; text-shadow: var(--tv-text-protection);
+      -webkit-backdrop-filter: none; backdrop-filter: none;
     }
     html.tv-browse-active #tvBrowseFunctions #connectionToggle { background: transparent !important; }
-    html.tv-browse-active .tv-browse-control[aria-pressed="true"] {
-      color: #fff; font-weight: 700;
+    html.tv-browse-active .tv-browse-pill { border-radius: 999px; }
+    html.tv-browse-active .tv-browse-pill[aria-pressed="true"] { color: #fff; font-weight: 700; }
+    html.tv-browse-active .tv-browse-pill[aria-pressed="true"]::after,
+    html.tv-browse-active .tv-browse-functions button:focus::after {
+      content: ""; position: absolute; left: 50%; bottom: 2px; width: var(--tv-state-line); height: 2px;
+      transform: translateX(-50%); border-radius: 2px; background: #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,.85); pointer-events: none;
     }
-    html.tv-browse-active .tv-browse-control[aria-pressed="true"]::after { content: ""; position: absolute; left: 12px; right: 12px; bottom: 2px; height: 2px; background: rgba(255,255,255,.8); pointer-events: none; }
-    html.tv-browse-active .tv-browse .tv-browse-control:focus,
-    html.tv-browse-active #tvBrowseFunctions #connectionToggle:focus {
-      background: rgba(255,255,255,.2); color: #fff;
-      outline: 1px solid rgba(255,255,255,.65); outline-offset: 0;
+    html.tv-browse-active .tv-browse .tv-browse-pill:focus {
+      background: rgba(255,255,255,.55); color: #17212b; text-shadow: none;
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,.25); outline: none;
     }
-    html.tv-browse-active #tvBrowseFunctions #connectionToggle:focus { background: rgba(255,255,255,.2) !important; }
+    html.tv-browse-active .tv-browse-functions button > span,
+    html.tv-browse-active .tv-browse-functions button > svg { transform-origin: center; }
+    html.tv-browse-active .tv-browse-functions button:focus { color: #fff; outline: none; text-shadow: var(--tv-text-protection); }
+    html.tv-browse-active .tv-browse-functions button:focus > span,
+    html.tv-browse-active .tv-browse-functions button:focus > svg { transform: scale(1.06); filter: brightness(1.18); }
+    html.tv-browse-active .tv-browse-functions button:focus::after { bottom: -5px; }
     html.tv-browse-active .tv-browse-functions { position: absolute; right: var(--tv-gutter); top: 3vh; display: flex; align-items: center; gap: clamp(8px,.8vw,16px); z-index: 3; }
     html.tv-browse-active .tv-browse-functions button { height: var(--tv-control-height); min-height: 0; box-sizing: border-box; display: flex; align-items: center; justify-content: center; padding: 0 clamp(12px,1vw,20px); border-radius: 8px; font-size: clamp(14px,1.05vw,20px); font-weight: 600; }
     html.tv-browse-active .tv-browse-functions .tv-browse-search { width: clamp(140px,9.6vw,190px); border-radius: calc(var(--tv-control-height) / 2); justify-content: space-between; background: rgba(0,0,0,.12); border-color: rgba(255,255,255,.25); }
     html.tv-browse-active .tv-browse-search .icon { width: var(--tv-control-icon); height: var(--tv-control-icon); }
-    html.tv-browse-active .tv-browse-info { position: absolute; top: 7vh; left: var(--tv-gutter); width: 47vw; z-index: 2; text-shadow: 0 2px 6px rgba(0,0,0,.7); }
+    html.tv-browse-active .tv-browse-info { position: absolute; top: 7vh; left: var(--tv-gutter); width: 47vw; z-index: 2; text-shadow: var(--tv-text-protection); }
     html.tv-browse-active .tv-browse-title { min-height: 11vh; position: relative; display: flex; align-items: center; margin-bottom: 1vh; }
     html.tv-browse-active .tv-browse-info h1 { margin: 0; font-size: clamp(24px,2.8vw,54px); line-height: 1.1; }
     html.tv-browse-active .tv-browse-logo { width: auto; height: auto; max-width: 32vw; max-height: 10vh; object-fit: contain; object-position: left center; animation: tv-title-reveal 180ms ease; }
@@ -1175,7 +1184,7 @@
     html.tv-browse-active #tvBrowseOverview { margin: 1.2vh 0 0; font-size: clamp(14px,1.25vw,24px); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
     html.tv-browse-active .tv-browse-columns { position: absolute; top: 48%; left: var(--tv-gutter); right: var(--tv-gutter); display: flex; gap: 18px; overflow-x: auto; white-space: nowrap; padding: 12px 5px; scrollbar-width: none; z-index: 3; }
     html.tv-browse-active .tv-browse-columns::-webkit-scrollbar, html.tv-browse-active .tv-browse-rail::-webkit-scrollbar { display: none; }
-    html.tv-browse-active .tv-browse-column { flex: 0 0 auto; padding: 8px 18px; font-size: clamp(16px,1.5vw,29px); border-radius: 12px; }
+    html.tv-browse-active .tv-browse-column { flex: 0 0 auto; padding: 8px 18px; font-size: clamp(16px,1.5vw,29px); }
     html.tv-browse-active .tv-browse-posters { position: absolute; left: 0; right: 0; bottom: 4vh; height: 34vh; z-index: 3; }
     html.tv-browse-active .tv-browse-rail { display: flex; align-items: flex-start; gap: 1.4vw; overflow-x: auto; overflow-y: hidden; height: 100%; padding: 1.5vh var(--tv-gutter) 1vh; box-sizing: border-box; scrollbar-width: none; }
     html.tv-browse-active .tv-browse-rail .card { flex: 0 0 10.6vw; width: 10.6vw; min-width: 0; max-width: none; border: 0 !important; transform-origin: center center; }
@@ -1184,10 +1193,30 @@
     html.tv-browse-active .tv-browse-rail .card:focus { transform: scale(1.04); }
     html.tv-browse-active .tv-browse-rail .card-title { font-size: clamp(13px,1.1vw,21px); }
     html.tv-browse-active .tv-browse-feedback { position: absolute; bottom: .5vh; left: var(--tv-gutter); right: var(--tv-gutter); display: flex; align-items: center; gap: 20px; z-index: 4; font-size: 14px; }
-    html.tv-browse-active .tv-browse-filters { position: absolute; top: 10vh; left: var(--tv-gutter); right: var(--tv-gutter); max-height: 35vh; overflow: auto; padding: 1vh 2vw; border: 0; box-shadow: none; background: transparent; z-index: 4; }
-    html.tv-browse-active .tv-browse-filters .secondary-filter-row { display: flex; align-items: flex-start; gap: 14px; margin: .8vh 0; }
-    html.tv-browse-active .tv-browse-filters .secondary-filter-options { display: flex; flex-wrap: wrap; gap: 8px; }
-    html.tv-browse-active .tv-browse-filters button { padding: 4px 10px; font-size: clamp(13px,1.1vw,22px); }
+    html.tv-browse-active .tv-browse-filters {
+      position: absolute; top: 10vh; left: var(--tv-gutter); right: var(--tv-gutter); max-height: 35vh; overflow: auto;
+      padding: 1vh 2vw; border: 0; box-shadow: none; background: transparent; z-index: 4;
+      --tv-filter-font: clamp(14px,1.1vw,22px); --tv-filter-height: clamp(32px,4vh,44px);
+    }
+    html.tv-browse-active .tv-browse-filters .secondary-filter-row {
+      display: flex; align-items: center; gap: 14px; margin: 0 0 clamp(6px,.8vh,9px); padding: 0;
+      min-height: 0; overflow: visible;
+    }
+    html.tv-browse-active .tv-browse-filters .secondary-filter-row:last-child { margin-bottom: 0; }
+    html.tv-browse-active .tv-browse-filters .secondary-filter-label {
+      flex: 0 0 clamp(58px,4.5vw,86px); height: var(--tv-filter-height); display: flex; align-items: center;
+      font-size: var(--tv-filter-font); font-weight: 500; line-height: 1.2; color: rgba(255,255,255,.85); text-shadow: var(--tv-text-protection);
+    }
+    html.tv-browse-active .tv-browse-filters .secondary-filter-options {
+      display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0;
+      overflow-x: auto; overflow-y: hidden; padding: 3px; scrollbar-width: none;
+    }
+    html.tv-browse-active .tv-browse-filters .secondary-filter-options::-webkit-scrollbar { display: none; }
+    html.tv-browse-active .tv-browse-filters .secondary-filter-options::after { content: none; }
+    html.tv-browse-active .tv-browse-filters button {
+      flex: 0 0 auto; box-sizing: border-box; height: var(--tv-filter-height); min-height: 0;
+      padding: 0 12px; font-size: var(--tv-filter-font); line-height: 1.2;
+    }
     html.tv-browse-active .tv-browse.filter-open .tv-browse-columns,
     html.tv-browse-active .tv-browse.filter-open .tv-browse-posters { pointer-events: none; }
     html.tv-browse-active #tvBrowseFunctions #connectionDock { position: relative; flex: 0 0 auto; width: auto; min-width: 0; margin: 0; height: auto; align-self: auto; }
@@ -1195,4 +1224,3 @@
     html.tv-browse-active #tvBrowseFunctions .connection-title, html.tv-browse-active #tvBrowseFunctions .connection-arrow { display: none; }
     html.tv-browse-active #tvBrowseFunctions .dot { width: var(--tv-control-icon); height: var(--tv-control-icon); flex: 0 0 var(--tv-control-icon); margin: 0; }
     html.tv-browse-active .tv-browse-recent-tools { position: absolute; right: var(--tv-gutter); top: 10vh; z-index: 3; }
-    html.tv-browse-active .tv-browse-filters .secondary-filter-label { color: rgba(255,255,255,.65); font-weight: 400; text-shadow: 0 1px 4px #000; }
