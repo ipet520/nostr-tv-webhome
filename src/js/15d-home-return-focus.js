@@ -45,6 +45,7 @@
       const secondaryGrid = homeUiRoute() === "secondary" ? $("secondaryCatalogGrid") : null;
       if (state.homeV14) state.homeV14.secondaryMediaFocusRestore = null;
       state.homeReturn = {
+        tvBrowse: isTvLikeDevice() ? tvBrowseSnapshot() : null,
         scrollY: homeScrollTop(),
         activeList: state.activeList || "all",
         route: homeUiRoute(),
@@ -214,7 +215,14 @@
     function restoreHomeReturn() {
       const saved = normalizeLegacySavedState(state.homeReturn);
       if (!saved) return false;
-      if (state.homeV14 && saved.route === "home") state.homeV14.lastHomeFocusedRail = "";
+      if (isTvLikeDevice() && (saved.route === "secondary" || saved.route === "home")) {
+        state.homeReturn = null;
+        restoreTvBrowseSnapshot(saved.tvBrowse, saved.secondaryListId);
+        state.homeV14.route = "home"; state.activeList = "all";
+        renderAll();
+        tvBrowseFocusIntent(saved.focus && saved.focus.type === "id" && saved.focus.key.indexOf("tv") === 0 ? saved.focus : null);
+        return true;
+      }
       const focusEpoch = homeFocusUserEpoch();
       const restoreSecondary = saved.route === "secondary" && saved.secondaryListId;
       const mediaReturn = !!(saved.focus && saved.focus.type === "media");

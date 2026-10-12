@@ -13,47 +13,12 @@
       transform-origin: center center;
     }
 
-    html.tv-mode #home.home-root #homeHero:focus,
-    html.tv-preview #home.home-root #homeHero:focus,
-    html.tv-mode #home.home-root .home-hero-content:focus,
-    html.tv-mode #home.home-root .home-hero-content:focus-within,
-    html.tv-preview #home.home-root .home-hero-content:focus,
-    html.tv-preview #home.home-root .home-hero-content:focus-within {
-      outline: 0 !important;
-      border: 0 !important;
-      box-shadow: none !important;
-      background: transparent !important;
-    }
-
-    /* TV landscape sections share the full-width Hero outer frame. */
+    /* Shared TV Search rail gutters. */
     @media (orientation: landscape) and (min-width: 901px) {
       html.tv-mode #home.home-root,
       html.tv-preview #home.home-root { --home-section-gut: 16px; }
 
-      html.tv-mode #home.home-root .home-hero-content,
-      html.tv-preview #home.home-root .home-hero-content {
-        transform: translateY(-25px);
-      }
-
-      html.tv-mode #home.home-root .home-hero-dots,
-      html.tv-preview #home.home-root .home-hero-dots {
-        bottom: calc(clamp(54px, 5.2vw, 78px) + 25px);
-      }
-
-      html.tv-mode #home.home-root .home-search-launcher-wrap,
-      html.tv-preview #home.home-root .home-search-launcher-wrap {
-        width: min(620px, calc(100% - (2 * var(--home-v14-gut))));
-      }
-
-      html.tv-mode #home.home-root .home-search-launcher,
-      html.tv-preview #home.home-root .home-search-launcher {
-        min-height: 56px;
-        padding: 0 22px;
-      }
-
-      /* The rail viewport is the same outer frame as the TV Hero.  Its
-         content gutter is intentional presentation spacing, not a centered
-         wrapper or a leading track spacer. */
+      /* Search history and hot results retain their shared rail gutter. */
       html.tv-mode #home.home-root .home-rail,
       html.tv-preview #home.home-root .home-rail {
         width: 100%;
@@ -74,11 +39,6 @@
       padding: clamp(22px, 3vw, 52px) var(--home-v14-gut) var(--home-v14-safe-bottom);
       background: var(--home-v14-bg);
       color: var(--home-v14-text);
-    }
-
-    html.tv-mode .secondary-page,
-    html.tv-preview .secondary-page {
-      padding-inline: 16px;
     }
 
     /* Ordinary Home/Search/Secondary pages share #home's atmosphere.  The
@@ -770,34 +730,6 @@
       background: rgba(191, 233, 255, .16) !important;
     }
 
-    html.tv-mode .secondary-page button:focus:not(.card):not(.person-card),
-    html.tv-preview .secondary-page button:focus:not(.card):not(.person-card) {
-      background: rgba(255, 255, 255, .18);
-      color: #fff;
-      outline: 2px solid rgba(120, 210, 255, .95) !important;
-      outline-offset: 1px !important;
-      box-shadow: 0 0 0 1px rgba(120, 210, 255, .18), 0 0 12px rgba(80, 180, 255, .3) !important;
-      transform: scale(1.06);
-      z-index: 5;
-      transform-origin: center center;
-    }
-
-    html.tv-mode .secondary-page button.secondary-filter-option:focus:not(.card):not(.person-card),
-    html.tv-preview .secondary-page button.secondary-filter-option:focus:not(.card):not(.person-card) {
-      transform: none !important;
-      outline: 2px solid rgba(120, 210, 255, .95) !important;
-      outline-offset: -2px !important;
-      box-shadow: none !important;
-    }
-
-    html.tv-mode .secondary-page #searchHistoryRail button.search-history-item:focus:not(.card):not(.person-card),
-    html.tv-preview .secondary-page #searchHistoryRail button.search-history-item:focus:not(.card):not(.person-card) {
-      transform: none !important;
-      outline: 2px solid rgba(120, 210, 255, .95) !important;
-      outline-offset: -2px !important;
-      box-shadow: none !important;
-    }
-
     html.tv-mode .card:focus,
     html.tv-mode .person-card:focus,
     html.tv-preview .card:focus,
@@ -1204,15 +1136,42 @@
       gap: 4px;
       line-height: 1.2;
     }
-
-    /* The Hero detail copy is a non-focusable, lightweight hint. */
-    html.tv-mode #home.home-root .home-hero-action:focus,
-    html.tv-preview #home.home-root .home-hero-action:focus {
-      outline: 0 !important;
-      outline-offset: 0 !important;
-      border: 0 !important;
-      box-shadow: none !important;
-      background: transparent !important;
-      color: rgba(255, 255, 255, .9) !important;
-      transform: none !important;
-    }
+    /* Single-screen TV browser. Mobile catalog styles remain independent. */
+    html.tv-browse-active, html.tv-browse-active body { height: 100%; overflow: hidden; }
+    html.tv-browse-active #home.home-root { margin: 0; padding: 0; width: 100%; max-width: none; height: var(--fm-web-height, 100vh); min-height: 0; overflow: hidden; }
+    html.tv-browse-active #infiniteSentinel { display: none; }
+    .tv-browse[hidden], .tv-browse [hidden] { display: none !important; }
+    html.tv-browse-active .tv-browse { position: relative; width: 100%; height: 100%; overflow: hidden; background: #101419; color: #fff; --tv-gutter: 4vw; }
+    html.tv-browse-active .tv-browse-backdrop { position: absolute; inset: 0; background-size: cover; background-position: center; opacity: 0; transition: opacity 240ms ease; pointer-events: none; }
+    html.tv-browse-active .tv-browse-backdrop.visible { opacity: 1; }
+    html.tv-browse-active .tv-browse-shade { position: absolute; inset: 0; background: linear-gradient(90deg,rgba(8,12,18,.92),rgba(8,12,18,.48) 47%,rgba(8,12,18,.08) 80%),linear-gradient(0deg,rgba(8,12,18,.98),rgba(8,12,18,.62) 32%,transparent 70%); pointer-events: none; }
+    html.tv-browse-active .tv-browse-functions { position: absolute; right: var(--tv-gutter); top: 3vh; display: flex; gap: 12px; z-index: 3; }
+    html.tv-browse-active .tv-browse-functions button { padding: 8px 16px; border-radius: 24px; font-size: clamp(14px,1.25vw,24px); background: rgba(15,20,28,.5); }
+    html.tv-browse-active .tv-browse-info { position: absolute; top: 13vh; left: var(--tv-gutter); width: 47vw; max-height: 32vh; overflow: hidden; z-index: 2; }
+    html.tv-browse-active .tv-browse-info h1 { margin: 0 0 1vh; font-size: clamp(24px,3.1vw,58px); line-height: 1.1; }
+    html.tv-browse-active .tv-browse-logo { max-width: 25vw; max-height: 9vh; object-fit: contain; object-position: left center; margin-bottom: 1vh; }
+    html.tv-browse-active .tv-browse-logo:not([hidden]) + h1 { font-size: 1.4vw; }
+    html.tv-browse-active #tvBrowseMeta, html.tv-browse-active #tvBrowseUpdate { font-size: clamp(13px,1.15vw,22px); margin: .8vh 0; color: #d8dee8; }
+    html.tv-browse-active #tvBrowseUpdate { color: #b8dfcc; }
+    html.tv-browse-active #tvBrowseOverview { margin: 1.2vh 0 0; font-size: clamp(14px,1.25vw,24px); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+    html.tv-browse-active .tv-browse-columns { position: absolute; top: 48%; left: var(--tv-gutter); right: var(--tv-gutter); display: flex; gap: 18px; overflow-x: auto; white-space: nowrap; padding: 12px 5px; scrollbar-width: none; z-index: 3; }
+    html.tv-browse-active .tv-browse-columns::-webkit-scrollbar, html.tv-browse-active .tv-browse-rail::-webkit-scrollbar { display: none; }
+    html.tv-browse-active .tv-browse-column { flex: 0 0 auto; padding: 8px 18px; font-size: clamp(16px,1.5vw,29px); border-radius: 24px; background: rgba(18,25,34,.3); border: 1px solid transparent; }
+    html.tv-browse-active .tv-browse-column.selected { color: #bde6d4; border-bottom-color: #8ac9ac; background: rgba(75,118,101,.3); }
+    html.tv-browse-active .tv-browse button:focus { outline: 3px solid var(--focus-color, #d2fae6); outline-offset: 3px; box-shadow: 0 0 18px rgba(164,231,197,.45); }
+    html.tv-browse-active .tv-browse-posters { position: absolute; left: 0; right: 0; bottom: 4vh; height: 34vh; z-index: 3; }
+    html.tv-browse-active .tv-browse-rail { display: flex; align-items: flex-start; gap: 1.4vw; overflow-x: auto; overflow-y: hidden; height: 100%; padding: 1.5vh var(--tv-gutter) 1vh; box-sizing: border-box; scrollbar-width: none; }
+    html.tv-browse-active .tv-browse-rail .card { flex: 0 0 10.6vw; width: 10.6vw; min-width: 0; max-width: none; transform-origin: center center; }
+    html.tv-browse-active .tv-browse-rail .poster-wrap { aspect-ratio: 2 / 3; height: 25.8vh; }
+    html.tv-browse-active .tv-browse-rail .card img { width: 100%; height: 100%; object-fit: cover; }
+    html.tv-browse-active .tv-browse-rail .card:focus { transform: scale(1.04); }
+    html.tv-browse-active .tv-browse-rail .card-title { font-size: clamp(13px,1.1vw,21px); }
+    html.tv-browse-active .tv-browse-feedback { position: absolute; bottom: .5vh; left: var(--tv-gutter); right: var(--tv-gutter); display: flex; align-items: center; gap: 20px; z-index: 4; font-size: 14px; }
+    html.tv-browse-active .tv-browse-filters { position: absolute; top: 10vh; left: var(--tv-gutter); right: var(--tv-gutter); max-height: 35vh; overflow: auto; padding: 1vh 2vw; border-radius: 16px; background: rgba(10,16,24,.88); z-index: 4; }
+    html.tv-browse-active .tv-browse-filters .secondary-filter-row { display: flex; align-items: flex-start; gap: 14px; margin: .8vh 0; }
+    html.tv-browse-active .tv-browse-filters .secondary-filter-options { display: flex; flex-wrap: wrap; gap: 8px; }
+    html.tv-browse-active .tv-browse-filters button { padding: 4px 10px; font-size: clamp(13px,1.1vw,22px); }
+    html.tv-browse-active .tv-browse-filters button.selected { background: rgba(97,155,126,.5); }
+    html.tv-browse-active .tv-browse.filter-open .tv-browse-shade { background: rgba(8,12,18,.76); }
+    html.tv-browse-active .tv-browse.filter-open .tv-browse-columns,
+    html.tv-browse-active .tv-browse.filter-open .tv-browse-posters { pointer-events: none; }

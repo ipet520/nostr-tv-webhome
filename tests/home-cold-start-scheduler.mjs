@@ -303,7 +303,7 @@ const railRender = categoryJs.match(/    function renderHomeCategoryRail\(id\) \
 check(pumpLoads.includes("recordHomeV14Diag()") && !pumpLoads.includes("renderHome()"), "NO_HOME_WHOLE_RENDER_STORM", "category completion updates diagnostics and does not redraw the whole Home");
 check(railRender.includes("renderHomeDynamicSection(section, config)"), "HOME_RAIL_LOCAL_UPDATE", "category refresh renders only its own rail");
 check(categoryJs.includes("captureHomeRailFocus(rail)") && categoryJs.includes("replaceHomeRailChildren(rail"), "HOME_FOCUS_PRESERVED_DURING_ASYNC_UPDATE", "rail replacement reuses the existing focus identity capture");
-check(configJs.includes("HOME_RAIL_ANCHOR_OFFSET = 8") && readFileSync(new URL("../src/js/21-bindings-focus-anchor.js", import.meta.url), "utf8").includes("HOME_RAIL_ANCHOR_OFFSET"), "HOME_SECTION_ANCHOR_BEHAVIOR_PRESERVED", "existing section anchor reveal remains in place");
+check(readFileSync(new URL("../src/js/11e-tv-browse.js", import.meta.url), "utf8").includes("tvBrowseDirectionalTarget"), "TV_SINGLE_RAIL_FOCUS_GRAPH", "TV browse replaces the obsolete vertical Home anchor");
 
 const homeNostrRender = routeJs.match(/    function scheduleHomeNostrRender\(\) \{[\s\S]*?(?=\n    function homeSectionDomId\()/)?.[0] || "";
 check(hotJs.includes("scheduleHomeNostrRender()") && !hotJs.includes("invalidateHomeCategoryFeeds()"), "NOSTR_RECOMMENDATION_PRESERVED", "Nostr updates do not invalidate TMDB category feeds");
@@ -348,7 +348,7 @@ console.log("ENRICHMENT_LOWER_PRIORITY_THAN_BASE_FEED = PASS");
 console.log("NO_UNBOUNDED_COLD_START_REQUEST_BURST = PASS (active request cap enforced)");
 console.log("NO_HOME_WHOLE_RENDER_STORM = PASS");
 console.log("HOME_FOCUS_PRESERVED_DURING_ASYNC_UPDATE = PASS (static identity hook)");
-console.log("HOME_SECTION_ANCHOR_BEHAVIOR_PRESERVED = PASS (existing anchor hook)");
+console.log("TV_SINGLE_RAIL_FOCUS_GRAPH = PASS (static hook; DOM coverage in tv-immersive-browse.mjs)");
 console.log("SECONDARY_SEMANTICS_PRESERVED = PASS (no Secondary query state persisted)");
 console.log("NOSTR_RECOMMENDATION_PRESERVED = PASS");
 console.log("WEEKLY_SEMANTICS_PRESERVED = PASS");

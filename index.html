@@ -5446,18 +5446,6 @@
       --home-section-gut: clamp(16px, 2vw, 36px);
     }
 
-    html.tv-mode #home.home-root #homeHero,
-    html.tv-preview #home.home-root #homeHero {
-      width: 100%;
-      margin-left: 0;
-      margin-right: 0;
-    }
-
-    html.tv-mode #home.home-root *,
-    html.tv-preview #home.home-root * {
-      animation: none !important;
-    }
-
     html.tv-mode #home.home-root .home-rail > .card,
     html.tv-preview #home.home-root .home-rail > .card {
       transform: translateZ(0);
@@ -5906,47 +5894,12 @@
       transform-origin: center center;
     }
 
-    html.tv-mode #home.home-root #homeHero:focus,
-    html.tv-preview #home.home-root #homeHero:focus,
-    html.tv-mode #home.home-root .home-hero-content:focus,
-    html.tv-mode #home.home-root .home-hero-content:focus-within,
-    html.tv-preview #home.home-root .home-hero-content:focus,
-    html.tv-preview #home.home-root .home-hero-content:focus-within {
-      outline: 0 !important;
-      border: 0 !important;
-      box-shadow: none !important;
-      background: transparent !important;
-    }
-
-    /* TV landscape sections share the full-width Hero outer frame. */
+    /* Shared TV Search rail gutters. */
     @media (orientation: landscape) and (min-width: 901px) {
       html.tv-mode #home.home-root,
       html.tv-preview #home.home-root { --home-section-gut: 16px; }
 
-      html.tv-mode #home.home-root .home-hero-content,
-      html.tv-preview #home.home-root .home-hero-content {
-        transform: translateY(-25px);
-      }
-
-      html.tv-mode #home.home-root .home-hero-dots,
-      html.tv-preview #home.home-root .home-hero-dots {
-        bottom: calc(clamp(54px, 5.2vw, 78px) + 25px);
-      }
-
-      html.tv-mode #home.home-root .home-search-launcher-wrap,
-      html.tv-preview #home.home-root .home-search-launcher-wrap {
-        width: min(620px, calc(100% - (2 * var(--home-v14-gut))));
-      }
-
-      html.tv-mode #home.home-root .home-search-launcher,
-      html.tv-preview #home.home-root .home-search-launcher {
-        min-height: 56px;
-        padding: 0 22px;
-      }
-
-      /* The rail viewport is the same outer frame as the TV Hero.  Its
-         content gutter is intentional presentation spacing, not a centered
-         wrapper or a leading track spacer. */
+      /* Search history and hot results retain their shared rail gutter. */
       html.tv-mode #home.home-root .home-rail,
       html.tv-preview #home.home-root .home-rail {
         width: 100%;
@@ -5967,11 +5920,6 @@
       padding: clamp(22px, 3vw, 52px) var(--home-v14-gut) var(--home-v14-safe-bottom);
       background: var(--home-v14-bg);
       color: var(--home-v14-text);
-    }
-
-    html.tv-mode .secondary-page,
-    html.tv-preview .secondary-page {
-      padding-inline: 16px;
     }
 
     /* Ordinary Home/Search/Secondary pages share #home's atmosphere.  The
@@ -6663,34 +6611,6 @@
       background: rgba(191, 233, 255, .16) !important;
     }
 
-    html.tv-mode .secondary-page button:focus:not(.card):not(.person-card),
-    html.tv-preview .secondary-page button:focus:not(.card):not(.person-card) {
-      background: rgba(255, 255, 255, .18);
-      color: #fff;
-      outline: 2px solid rgba(120, 210, 255, .95) !important;
-      outline-offset: 1px !important;
-      box-shadow: 0 0 0 1px rgba(120, 210, 255, .18), 0 0 12px rgba(80, 180, 255, .3) !important;
-      transform: scale(1.06);
-      z-index: 5;
-      transform-origin: center center;
-    }
-
-    html.tv-mode .secondary-page button.secondary-filter-option:focus:not(.card):not(.person-card),
-    html.tv-preview .secondary-page button.secondary-filter-option:focus:not(.card):not(.person-card) {
-      transform: none !important;
-      outline: 2px solid rgba(120, 210, 255, .95) !important;
-      outline-offset: -2px !important;
-      box-shadow: none !important;
-    }
-
-    html.tv-mode .secondary-page #searchHistoryRail button.search-history-item:focus:not(.card):not(.person-card),
-    html.tv-preview .secondary-page #searchHistoryRail button.search-history-item:focus:not(.card):not(.person-card) {
-      transform: none !important;
-      outline: 2px solid rgba(120, 210, 255, .95) !important;
-      outline-offset: -2px !important;
-      box-shadow: none !important;
-    }
-
     html.tv-mode .card:focus,
     html.tv-mode .person-card:focus,
     html.tv-preview .card:focus,
@@ -7097,18 +7017,45 @@
       gap: 4px;
       line-height: 1.2;
     }
-
-    /* The Hero detail copy is a non-focusable, lightweight hint. */
-    html.tv-mode #home.home-root .home-hero-action:focus,
-    html.tv-preview #home.home-root .home-hero-action:focus {
-      outline: 0 !important;
-      outline-offset: 0 !important;
-      border: 0 !important;
-      box-shadow: none !important;
-      background: transparent !important;
-      color: rgba(255, 255, 255, .9) !important;
-      transform: none !important;
-    }
+    /* Single-screen TV browser. Mobile catalog styles remain independent. */
+    html.tv-browse-active, html.tv-browse-active body { height: 100%; overflow: hidden; }
+    html.tv-browse-active #home.home-root { margin: 0; padding: 0; width: 100%; max-width: none; height: var(--fm-web-height, 100vh); min-height: 0; overflow: hidden; }
+    html.tv-browse-active #infiniteSentinel { display: none; }
+    .tv-browse[hidden], .tv-browse [hidden] { display: none !important; }
+    html.tv-browse-active .tv-browse { position: relative; width: 100%; height: 100%; overflow: hidden; background: #101419; color: #fff; --tv-gutter: 4vw; }
+    html.tv-browse-active .tv-browse-backdrop { position: absolute; inset: 0; background-size: cover; background-position: center; opacity: 0; transition: opacity 240ms ease; pointer-events: none; }
+    html.tv-browse-active .tv-browse-backdrop.visible { opacity: 1; }
+    html.tv-browse-active .tv-browse-shade { position: absolute; inset: 0; background: linear-gradient(90deg,rgba(8,12,18,.92),rgba(8,12,18,.48) 47%,rgba(8,12,18,.08) 80%),linear-gradient(0deg,rgba(8,12,18,.98),rgba(8,12,18,.62) 32%,transparent 70%); pointer-events: none; }
+    html.tv-browse-active .tv-browse-functions { position: absolute; right: var(--tv-gutter); top: 3vh; display: flex; gap: 12px; z-index: 3; }
+    html.tv-browse-active .tv-browse-functions button { padding: 8px 16px; border-radius: 24px; font-size: clamp(14px,1.25vw,24px); background: rgba(15,20,28,.5); }
+    html.tv-browse-active .tv-browse-info { position: absolute; top: 13vh; left: var(--tv-gutter); width: 47vw; max-height: 32vh; overflow: hidden; z-index: 2; }
+    html.tv-browse-active .tv-browse-info h1 { margin: 0 0 1vh; font-size: clamp(24px,3.1vw,58px); line-height: 1.1; }
+    html.tv-browse-active .tv-browse-logo { max-width: 25vw; max-height: 9vh; object-fit: contain; object-position: left center; margin-bottom: 1vh; }
+    html.tv-browse-active .tv-browse-logo:not([hidden]) + h1 { font-size: 1.4vw; }
+    html.tv-browse-active #tvBrowseMeta, html.tv-browse-active #tvBrowseUpdate { font-size: clamp(13px,1.15vw,22px); margin: .8vh 0; color: #d8dee8; }
+    html.tv-browse-active #tvBrowseUpdate { color: #b8dfcc; }
+    html.tv-browse-active #tvBrowseOverview { margin: 1.2vh 0 0; font-size: clamp(14px,1.25vw,24px); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+    html.tv-browse-active .tv-browse-columns { position: absolute; top: 48%; left: var(--tv-gutter); right: var(--tv-gutter); display: flex; gap: 18px; overflow-x: auto; white-space: nowrap; padding: 12px 5px; scrollbar-width: none; z-index: 3; }
+    html.tv-browse-active .tv-browse-columns::-webkit-scrollbar, html.tv-browse-active .tv-browse-rail::-webkit-scrollbar { display: none; }
+    html.tv-browse-active .tv-browse-column { flex: 0 0 auto; padding: 8px 18px; font-size: clamp(16px,1.5vw,29px); border-radius: 24px; background: rgba(18,25,34,.3); border: 1px solid transparent; }
+    html.tv-browse-active .tv-browse-column.selected { color: #bde6d4; border-bottom-color: #8ac9ac; background: rgba(75,118,101,.3); }
+    html.tv-browse-active .tv-browse button:focus { outline: 3px solid var(--focus-color, #d2fae6); outline-offset: 3px; box-shadow: 0 0 18px rgba(164,231,197,.45); }
+    html.tv-browse-active .tv-browse-posters { position: absolute; left: 0; right: 0; bottom: 4vh; height: 34vh; z-index: 3; }
+    html.tv-browse-active .tv-browse-rail { display: flex; align-items: flex-start; gap: 1.4vw; overflow-x: auto; overflow-y: hidden; height: 100%; padding: 1.5vh var(--tv-gutter) 1vh; box-sizing: border-box; scrollbar-width: none; }
+    html.tv-browse-active .tv-browse-rail .card { flex: 0 0 10.6vw; width: 10.6vw; min-width: 0; max-width: none; transform-origin: center center; }
+    html.tv-browse-active .tv-browse-rail .poster-wrap { aspect-ratio: 2 / 3; height: 25.8vh; }
+    html.tv-browse-active .tv-browse-rail .card img { width: 100%; height: 100%; object-fit: cover; }
+    html.tv-browse-active .tv-browse-rail .card:focus { transform: scale(1.04); }
+    html.tv-browse-active .tv-browse-rail .card-title { font-size: clamp(13px,1.1vw,21px); }
+    html.tv-browse-active .tv-browse-feedback { position: absolute; bottom: .5vh; left: var(--tv-gutter); right: var(--tv-gutter); display: flex; align-items: center; gap: 20px; z-index: 4; font-size: 14px; }
+    html.tv-browse-active .tv-browse-filters { position: absolute; top: 10vh; left: var(--tv-gutter); right: var(--tv-gutter); max-height: 35vh; overflow: auto; padding: 1vh 2vw; border-radius: 16px; background: rgba(10,16,24,.88); z-index: 4; }
+    html.tv-browse-active .tv-browse-filters .secondary-filter-row { display: flex; align-items: flex-start; gap: 14px; margin: .8vh 0; }
+    html.tv-browse-active .tv-browse-filters .secondary-filter-options { display: flex; flex-wrap: wrap; gap: 8px; }
+    html.tv-browse-active .tv-browse-filters button { padding: 4px 10px; font-size: clamp(13px,1.1vw,22px); }
+    html.tv-browse-active .tv-browse-filters button.selected { background: rgba(97,155,126,.5); }
+    html.tv-browse-active .tv-browse.filter-open .tv-browse-shade { background: rgba(8,12,18,.76); }
+    html.tv-browse-active .tv-browse.filter-open .tv-browse-columns,
+    html.tv-browse-active .tv-browse.filter-open .tv-browse-posters { pointer-events: none; }
 </style>
   <style id="tv-diagnostic-v1">
     html.tv-mode .tv-diagnostic {
@@ -7543,6 +7490,31 @@
       <div id="searchPageResultsHost"></div>
     </section>
 
+    <template id="recentManageTemplate">
+        <div class="recent-manage-controls" id="recentManageControls" hidden>
+          <button class="recent-manage-button focusable" id="recentManageBtn" type="button">管理</button>
+          <div class="recent-manage-actions" id="recentManageActions" hidden>
+            <span class="recent-manage-selected-count" id="recentManageSelectedCount">已选择 0 项</span>
+            <button class="focusable" id="recentManageSelectAll" type="button">全选</button>
+            <button class="focusable" id="recentManageDelete" type="button">删除所选</button>
+            <button class="focusable" id="recentManageCancel" type="button">取消</button>
+          </div>
+        </div>
+    </template>
+
+    <section class="section" id="searchSection" style="display:none">
+      <div class="section-head">
+        <h3>搜索结果</h3>
+        <div class="section-actions">
+          <button class="mini-icon-btn focusable" id="clearSearchBtn" type="button" aria-label="清空搜索结果" title="清空搜索结果">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="rail" id="searchRail"></div>
+    </section>
+
+    <template id="mobileHomeTemplate">
     <section class="secondary-page secondary-catalog" id="secondaryCatalog" hidden aria-labelledby="secondaryCatalogTitle">
       <div class="weekly-secondary-backdrop" id="weeklySecondaryBackdrop" aria-hidden="true"></div>
       <div class="weekly-secondary-backdrop weekly-secondary-backdrop-next" id="weeklySecondaryBackdropNext" aria-hidden="true"></div>
@@ -7553,15 +7525,7 @@
         </button>
         <h1 id="secondaryCatalogTitle">分类</h1>
         <span class="secondary-page-count" id="secondaryCatalogCount"></span>
-        <div class="recent-manage-controls" id="recentManageControls" hidden>
-          <button class="recent-manage-button focusable" id="recentManageBtn" type="button">管理</button>
-          <div class="recent-manage-actions" id="recentManageActions" hidden>
-            <span class="recent-manage-selected-count" id="recentManageSelectedCount">已选择 0 项</span>
-            <button class="focusable" id="recentManageSelectAll" type="button">全选</button>
-            <button class="focusable" id="recentManageDelete" type="button">删除所选</button>
-            <button class="focusable" id="recentManageCancel" type="button">取消</button>
-          </div>
-        </div>
+        <div id="mobileRecentManageMount"></div>
         <button class="secondary-menu-launcher focusable" id="secondaryMenuLauncher" type="button" aria-controls="homeSidebar" aria-expanded="false" aria-label="打开主菜单">
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>
         </button>
@@ -7579,17 +7543,6 @@
       </div>
     </section>
 
-    <section class="section" id="searchSection" style="display:none">
-      <div class="section-head">
-        <h3>搜索结果</h3>
-        <div class="section-actions">
-          <button class="mini-icon-btn focusable" id="clearSearchBtn" type="button" aria-label="清空搜索结果" title="清空搜索结果">
-            <svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-          </button>
-        </div>
-      </div>
-      <div class="rail" id="searchRail"></div>
-    </section>
 
     <section class="home-hero focusable" id="homeHero" role="button" tabindex="0" aria-labelledby="homeHeroTitle">
       <div class="home-hero-slides" id="homeHeroSlides" aria-live="polite"></div>
@@ -7642,6 +7595,23 @@
       </div>
     </section>
 
+    </template>
+    <div id="mobileHomeMount"></div>
+    <section id="tvBrowse" class="tv-browse" hidden aria-label="影视浏览">
+      <div id="tvBrowseBackdrop" class="tv-browse-backdrop"></div>
+      <div id="tvBrowseBackdropNext" class="tv-browse-backdrop"></div>
+      <div class="tv-browse-shade"></div>
+      <nav id="tvBrowseFunctions" class="tv-browse-functions" aria-label="功能菜单"></nav>
+      <div id="tvBrowseInfo" class="tv-browse-info">
+        <img id="tvBrowseLogo" class="tv-browse-logo" alt="" hidden>
+        <h1 id="tvBrowseTitle"></h1><div id="tvBrowseMeta"></div>
+        <div id="tvBrowseUpdate"></div><p id="tvBrowseOverview"></p>
+      </div>
+      <nav id="tvBrowseColumns" class="tv-browse-columns" aria-label="栏目"></nav>
+      <div id="tvBrowseFilters" class="tv-browse-filters" role="dialog" aria-modal="true" aria-label="栏目筛选" hidden></div>
+      <div class="tv-browse-posters"><div id="tvBrowseRail" class="rail tv-browse-rail"></div></div>
+      <div class="tv-browse-feedback"><span id="tvBrowseStatus" role="status"></span><span id="tvBrowseBlockHint" class="home-block-select-hint" hidden></span><button id="tvBrowseRetry" class="focusable" type="button" hidden>重试</button></div>
+    </section>
     <div class="infinite-sentinel" id="infiniteSentinel" aria-hidden="true"></div>
 
   </main>
@@ -17215,7 +17185,6 @@ utils.encode = function encode(arr, enc) {
         heroAutoplayResumeTimer: 0,
         heroBackdropSeq: 0,
         heroBackdropCache: {},
-        heroConfirmGuard: null,
         heroSwipe: null,
         heroSwipeSuppressClickUntil: 0,
         weeklyBackdropToken: 0,
@@ -17244,13 +17213,7 @@ utils.encode = function encode(arr, enc) {
         sidebarReturnRoute: "",
         sidebarReturnInvalidated: false,
         sidebarFocusId: "",
-        initialHomeFocusPending: false,
-        coldHomeFocusPending: false,
-        coldHomeFocusEpoch: 0,
-        coldHomeFallbackTarget: null,
         focusUserEpoch: 0,
-        homeSectionEntryTarget: null,
-        lastHomeFocusedRail: "",
         snapshotBound: {}
       },
       searchItems: [],
@@ -17406,9 +17369,6 @@ utils.encode = function encode(arr, enc) {
     const HOME_REQUEST_BUDGET_MAX_ACTIVE = 4;
     const HOME_REQUEST_CLASS_MAX_ACTIVE = { foreground: 3, "visible-status": 2, prefetch: 2, background: 1, enrichment: 1 };
     const HOME_REQUEST_PRIORITY = { foreground: 0, "visible-status": 1, prefetch: 2, background: 3, enrichment: 4 };
-    // Keep only a minimal safety gap above the active Home section.  The
-    // section itself, rather than its title or card row, is the anchor.
-    const HOME_RAIL_ANCHOR_OFFSET = 8;
 
     let nativeSdkWait = null;
 
@@ -17479,7 +17439,8 @@ utils.encode = function encode(arr, enc) {
     }
 
     function isTvPreviewMode() {
-      return !!(state.previewMode || document.documentElement.classList.contains("tv-preview"));
+      return !!(state.previewMode || document.documentElement.classList.contains("tv-preview")
+        || ["unknown", "browser"].includes(state.deviceMode) && isTvPreviewRequested() && !isNativeMobileClient());
     }
 
     function isTvDiagnosticEnabled() {
@@ -18013,7 +17974,7 @@ utils.encode = function encode(arr, enc) {
     function publishHomeWeeklySnapshot(source, options) {
       const latest = state.homeLatest;
       if (!latest || !homeLatestHasItems(latest)) return false;
-      if (homeUiRoute() !== "secondary" || state.homeV14.secondaryListId !== "now-playing") return false;
+      if (!(tvBrowseActive() && tvBrowseState().column === "now-playing") && (homeUiRoute() !== "secondary" || state.homeV14.secondaryListId !== "now-playing")) return false;
       const query = secondaryActiveQuery("now-playing") || secondaryGetQuery("now-playing");
       if (!query) return false;
       const opts = options || {};
@@ -18043,7 +18004,7 @@ utils.encode = function encode(arr, enc) {
         firstRenderableMs: latest.refreshStartedAt ? Math.max(0, latest.firstRenderableAt - latest.refreshStartedAt) : 0,
         refreshStillRunning: !!latest.loading
       }));
-      renderSecondaryCatalog();
+      renderCatalogQuery("now-playing");
       return true;
     }
 
@@ -23226,18 +23187,20 @@ utils.encode = function encode(arr, enc) {
 
     function blockableRecommendCard(el) {
       if (state.activeList !== "all" || uiSnapshotRoute() !== "home") return null;
-      const card = el && el.closest && el.closest("#homeRecommendationRail .card");
+      const selector = tvBrowseActive() && tvBrowseState().column === "recommendation" ? "#tvBrowseRail .card" : "#homeRecommendationRail .card";
+      const card = el && el.closest && el.closest(selector);
       if (!card || !card.__mediaItem || card.__mediaItem.source === "history") return null;
       return card;
     }
 
     function currentRecommendationRail() {
-      return $("homeRecommendationRail");
+      return tvBrowseActive() && tvBrowseState().column === "recommendation" ? $("tvBrowseRail") : $("homeRecommendationRail");
     }
 
     function updateBlockSelectUi() {
       document.body.classList.toggle("block-select-active", !!state.blocked.selecting);
-      document.querySelectorAll("#homeRecommendationRail .card").forEach((card) => {
+      const rail = currentRecommendationRail();
+      (rail ? rail.querySelectorAll(".card") : []).forEach((card) => {
         card.classList.toggle("blocked", isBlocked(card.__mediaItem));
       });
       if ($("blockSelectHint")) {
@@ -23507,7 +23470,10 @@ utils.encode = function encode(arr, enc) {
       return consumeRecentWatchingPress(card);
     }
 
+    function recentManageGrid() { return tvBrowseActive() ? $("tvBrowseRail") : $("secondaryCatalogGrid"); }
+
     function isRecentManagePage() {
+      if (tvBrowseActive()) return tvBrowseState().column === "recent";
       return homeUiRoute() === "secondary"
         && state.homeV14 && state.homeV14.secondaryListId === "recent";
     }
@@ -23532,7 +23498,7 @@ utils.encode = function encode(arr, enc) {
       return !!(card
         && card.__mediaItem
         && card.closest
-        && card.closest("#secondaryCatalogGrid")
+        && card.closest("#secondaryCatalogGrid,#tvBrowseRail")
         && isRecentManagePage()
         && recentManageRuntime().active
         && card.classList.contains("recent-watching-card"));
@@ -23555,7 +23521,7 @@ utils.encode = function encode(arr, enc) {
     }
 
     function syncRecentManageCardStates() {
-      const grid = $("secondaryCatalogGrid");
+      const grid = recentManageGrid();
       const manage = recentManageRuntime();
       if (!grid) return;
       Array.from(grid.querySelectorAll(".recent-watching-card")).forEach((card) => {
@@ -24308,7 +24274,7 @@ utils.encode = function encode(arr, enc) {
           query.totalResults = query.items.length;
           query.hasMore = false;
           try {
-            renderSecondaryCatalog();
+            renderCatalogQuery("recent");
           } catch (e) {
             renderFailed = true;
           }
@@ -24328,13 +24294,13 @@ utils.encode = function encode(arr, enc) {
         if (renderFailed) toast("最近观看界面刷新失败");
         requestAnimationFrame(() => {
           if (!isRecentManagePage()) return;
-          const grid = $("secondaryCatalogGrid");
+          const grid = recentManageGrid();
           const cards = grid ? Array.from(grid.querySelectorAll(".recent-watching-card")).filter(canFastHomeFocus) : [];
           const failedKeys = failedGroups.map((group) => group.key);
           let target = failedKeys.length
             ? cards.find((card) => failedKeys.indexOf(recentWatchingMediaKey(card.__mediaItem)) >= 0)
             : cards[0];
-          if (!target) target = $("secondaryCatalogBack");
+          if (!target) target = tvBrowseActive() ? tvBrowsePosterTarget() : $("secondaryCatalogBack");
           if (target && isTvLikeDevice()) focusRemoteTarget(target);
         });
         return successfulList.length > 0;
@@ -24398,7 +24364,7 @@ utils.encode = function encode(arr, enc) {
       if (isRecentManagePage() && recentManageRuntime().active) return false;
       const key = recentWatchingMediaKey(item);
       if (!key) return false;
-      const grid = card && card.closest && card.closest("#homeRecentRail, #secondaryCatalogGrid, .list-panel:not([hidden]) .media-grid");
+      const grid = card && card.closest && card.closest("#homeRecentRail, #secondaryCatalogGrid, #tvBrowseRail, .list-panel:not([hidden]) .media-grid");
       const beforeCards = grid ? Array.from(grid.querySelectorAll(".recent-watching-card")) : [];
       const secondaryRecentDelete = !!(grid
         && grid.id === "secondaryCatalogGrid"
@@ -24479,6 +24445,7 @@ utils.encode = function encode(arr, enc) {
         query.hasMore = false;
         renderSecondaryCatalog();
       }
+      if (tvBrowseActive() && tvBrowseState().column === "recent") renderTvBrowse();
       toast("已删除最近观看");
       requestAnimationFrame(() => {
         let targetGrid = grid;
@@ -24490,6 +24457,7 @@ utils.encode = function encode(arr, enc) {
           : (cards.length ? cards[Math.min(focusIndex, cards.length - 1)] : null);
         if (!target && targetGrid && targetGrid.id === "secondaryCatalogGrid") target = $("secondaryCatalogBack");
         if (!target && targetGrid && targetGrid.id === "homeRecentRail") target = $("homeRecentMore") || homeFirstTarget();
+        if (!target && tvBrowseActive()) target = tvBrowsePosterTarget();
         if (!target && state.activeList === "recent") target = initialHomeFocus();
         if (target) focusRemoteTarget(target);
       });
@@ -25482,6 +25450,12 @@ utils.encode = function encode(arr, enc) {
       if (action.type === "live") return !!openLiveHome();
       if (action.type === "keep") return !!openKeepHome();
       if (action.type === "settings") return !!openSettingHome();
+      if (action.type === "secondary" && tvBrowseActive()) {
+        closeSidebar({ restore: false });
+        const result = tvBrowseSelectColumn(normalizeLegacyCategoryId(action.listId || ""));
+        tvBrowseFocusIntent();
+        return result;
+      }
       if (action.type === "secondary") {
         const currentListId = normalizeLegacyCategoryId(state.homeV14 && state.homeV14.secondaryListId || "");
         const targetListId = normalizeLegacyCategoryId(action.listId || "");
@@ -25926,8 +25900,9 @@ utils.encode = function encode(arr, enc) {
       if (secondary) secondary.hidden = route !== "secondary";
       const form = $("searchForm");
       if (form && route !== "search") form.hidden = true;
+      syncTvBrowseVisibility();
       const launcher = $("homeSearchLauncherWrap");
-      if (launcher) launcher.hidden = !isHome;
+      if (launcher) launcher.hidden = !isHome || isTvLikeDevice();
       if (!isHome) stopHomeHeroAutoplay();
       syncSidebarVisibility();
       return isHome;
@@ -25943,7 +25918,7 @@ utils.encode = function encode(arr, enc) {
     }
 
     function setHomeOnlyPresentationVisible(isHome) {
-      const visible = !!isHome;
+      const visible = !!isHome && !isTvLikeDevice();
       if (!visible) stopHomeHeroAutoplay();
       const hero = $("homeHero");
       const recent = $("homeRecentSection");
@@ -25964,7 +25939,17 @@ utils.encode = function encode(arr, enc) {
       const opts = options || {};
       clearTimeout(state.renderTimer);
       state.renderTimer = 0;
+      syncBrowseDevicePresentation();
       normalizeActiveListForViewport();
+      if (isTvLikeDevice() && homeUiRoute() === "secondary") {
+        restoreTvBrowseSnapshot(null, state.homeV14.secondaryListId);
+        state.homeV14.route = "home"; state.activeList = "all";
+        if (location.hash === "#secondary") history.replaceState({ sheet: "home" }, "", location.pathname + location.search);
+      }
+      if (isTvLikeDevice() && homeUiRoute() === "home" && state.activeList !== "all") {
+        restoreTvBrowseSnapshot(null, normalizeLegacyCategoryId(state.activeList));
+        state.activeList = "all";
+      }
       syncHomeRoutePresentation();
       if (opts.deferContent) scheduleHomeContentRender({ afterPaint: true });
       else renderHomeContent();
@@ -25973,6 +25958,7 @@ utils.encode = function encode(arr, enc) {
     }
 
     function renderHomeContent() {
+      syncTvBrowseVisibility();
       const isHome = isHomeRouteActive();
       const route = homeUiRoute();
       document.documentElement.classList.toggle("home-active", isHome);
@@ -26289,6 +26275,7 @@ utils.encode = function encode(arr, enc) {
     }
 
     function mergeHomeLatestIntoHeroFeed(options) {
+      if (isTvLikeDevice()) return false;
       const feed = homeHeroFeedState();
       if (!feed || feed.loading || !feed.loaded || feed.weeklyMerged || !state.homeLatest || !state.homeLatest.loaded) return false;
       const weekly = filterBlocked(state.homeLatest.items || []).slice(0, 12).map((item) => Object.assign({}, item, { heroSourceKinds: ["weekly-feed"] }));
@@ -26480,6 +26467,7 @@ utils.encode = function encode(arr, enc) {
     }
 
     function ensureHomeHeroFeed() {
+      if (isTvLikeDevice()) return false;
       if (!isHomeRouteActive()) return false;
       const feed = homeHeroFeedState();
       if (!feed) return false;
@@ -26536,40 +26524,6 @@ utils.encode = function encode(arr, enc) {
 
     const HOME_HERO_AUTOPLAY_MS = 5000;
 
-    function clearHomeHeroConfirmGuard() {
-      const home = state.homeV14;
-      const guard = home && home.heroConfirmGuard;
-      if (guard && guard.timer) clearTimeout(guard.timer);
-      if (home) home.heroConfirmGuard = null;
-    }
-
-    function armHomeHeroConfirmGuard(event) {
-      const home = state.homeV14;
-      if (!home) return false;
-      clearHomeHeroConfirmGuard();
-      home.heroConfirmGuard = {
-        key: "Enter",
-        keyCode: Number(event && (event.keyCode || event.which) || 0),
-        armedAt: Date.now(),
-        timer: setTimeout(clearHomeHeroConfirmGuard, 900)
-      };
-      return true;
-    }
-
-    function isHomeHeroConfirmGuardMatch(event) {
-      const guard = state.homeV14 && state.homeV14.heroConfirmGuard;
-      return !!(guard && normalizeRemoteKey(event) === guard.key);
-    }
-
-    function consumeHomeHeroConfirmGuard(event) {
-      if (!isHomeHeroConfirmGuardMatch(event)) return false;
-      event.preventDefault();
-      event.stopPropagation();
-      if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-      if (event.type === "keyup") clearHomeHeroConfirmGuard();
-      return true;
-    }
-
     function clearHomeHeroAutoplayResume() {
       const home = state.homeV14;
       if (home && home.heroAutoplayResumeTimer) clearTimeout(home.heroAutoplayResumeTimer);
@@ -26612,6 +26566,7 @@ utils.encode = function encode(arr, enc) {
     }
 
     function homeHeroCanAutoplay() {
+      if (isTvLikeDevice()) return false;
       const hero = $("homeHero");
       const items = Array.isArray(state.homeV14.heroItems) ? state.homeV14.heroItems : [];
       return isHomeRouteActive()
@@ -26640,11 +26595,6 @@ utils.encode = function encode(arr, enc) {
       const action = $("homeHeroAction");
       const item = hero && hero.__homeHeroItem || action && action.__homeHeroItem;
       if (!item) return false;
-      // A programmatic click from the remote-confirm path has no useful
-      // keyboard event of its own.  Arm the same one-shot guard here as a
-      // safety net for native button activation, while mouse clicks remain
-      // ordinary detail-only clicks.
-      if (event && event.detail === 0 && !(state.homeV14 && state.homeV14.heroConfirmGuard)) armHomeHeroConfirmGuard(event);
       // The Home Hero CTA is a detail entry point only.  Keep playback on the
       // existing Detail/Play path; never turn this CTA into a direct player call.
       pauseHomeHeroAutoplay();
@@ -26913,35 +26863,8 @@ utils.encode = function encode(arr, enc) {
       if (item && home && home.firstHeroReadyMs == null && Number(home.coldStartAt || 0) > 0) {
         home.firstHeroReadyMs = Math.max(0, Date.now() - Number(home.coldStartAt));
       }
-      focusColdHomeHeroIfReady();
       scheduleHomeHeroAutoplay();
       ensureHomeHeroFeed();
-    }
-
-    function focusColdHomeHeroIfReady() {
-      const home = state.homeV14;
-      if (!home || !home.coldHomeFocusPending || !isTvLikeDevice() || !isHomeRouteActive()) return false;
-      if (Number(home.coldHomeFocusEpoch || 0) !== homeFocusUserEpoch()) {
-        home.coldHomeFocusPending = false;
-        home.coldHomeFallbackTarget = null;
-        return false;
-      }
-      const target = $("homeHero");
-      if (!isVisibleFocusable(target)) return false;
-      const active = document.activeElement;
-      const fallbackTarget = home.coldHomeFallbackTarget;
-      const isOwnedFallback = !!(fallbackTarget && active === fallbackTarget);
-      if (isVisibleFocusable(active) && active !== document.body && active !== document.documentElement && !isOwnedFallback) {
-        home.coldHomeFocusPending = false;
-        home.coldHomeFallbackTarget = null;
-        return false;
-      }
-      home.coldHomeFocusPending = false;
-      home.coldHomeFallbackTarget = null;
-      home.initialHomeFocusPending = false;
-      state.remoteInitialFocused = true;
-      focusRemoteTarget(target);
-      return true;
     }
     function showHomeRailStatus(rail, message, options) {
       if (!rail) return;
@@ -27411,6 +27334,7 @@ utils.encode = function encode(arr, enc) {
     }
 
     function homeBaseFeedsReady() {
+      if (tvBrowseActive()) { const query = secondaryActiveQuery(tvBrowseState().column); return !!(query && query.items && query.items.length); }
       const configs = homeSectionConfig().filter((entry) => isHomeCategoryId(entry.listId));
       return configs.length > 0 && configs.every((config) => {
         const feed = state.homeV14.categoryFeeds && state.homeV14.categoryFeeds[config.listId];
@@ -27618,7 +27542,13 @@ utils.encode = function encode(arr, enc) {
           }
         }
       });
-      if (updatedHomeCard) recordHomeV14Diag();
+      if (updatedHomeCard) {
+        if (tvBrowseActive()) {
+          const target = tvBrowsePosterTarget();
+          if (target && target.__mediaItem && tvDetailCacheId(target.__mediaItem) === id) tvBrowsePreview(target.__mediaItem);
+        }
+        recordHomeV14Diag();
+      }
     }
 
     function tvCardNearViewport(card) {
@@ -28060,6 +27990,7 @@ utils.encode = function encode(arr, enc) {
     }
 
     function renderHome() {
+      if (isTvLikeDevice()) { renderSidebar(); renderTvBrowse(); return; }
       const homeRoot = $("home");
       if (!homeRoot || !isHomeRouteActive()) return;
       const home = state.homeV14;
@@ -28115,6 +28046,7 @@ utils.encode = function encode(arr, enc) {
     }
 
     function scheduleHomeNostrRender() {
+      if (isTvLikeDevice()) { renderCatalogQuery("recommendation"); return; }
       if (homeUiRoute() !== "home" || !isHomeRouteActive()) {
         scheduleRender();
         return;
@@ -28204,7 +28136,7 @@ utils.encode = function encode(arr, enc) {
         if (searchRail) searchRail.scrollLeft = Math.max(0, Number(saved.searchRailScrollLeft || 0));
         const searchHotRail = $("searchHotRail");
         if (searchHotRail) searchHotRail.scrollLeft = Math.max(0, Number(saved.searchHotRailScrollLeft || 0));
-        const target = isVisibleFocusable($("homeSearchLauncher"))
+        const target = tvBrowseActive() ? $("tvFunction-search") : isVisibleFocusable($("homeSearchLauncher"))
           ? $("homeSearchLauncher")
           : isVisibleFocusable($("searchSubmitBtn")) ? $("searchSubmitBtn") : initialHomeFocus();
         if (target) focusRemoteTarget(target);
@@ -28255,6 +28187,417 @@ utils.encode = function encode(arr, enc) {
       documentary: ["year", "sort"],
       variety: ["region", "year", "sort"]
     };
+    // TV presentation owns only selection, focus and viewport position. Catalog
+    // results and filters remain owned by the shared catalog query service.
+    function syncBrowseDevicePresentation() {
+      const mount = $("mobileHomeMount"), template = $("mobileHomeTemplate");
+      if (!mount || !template) return;
+      const controlsTemplate = $("recentManageTemplate");
+      let controls = $("recentManageControls");
+      if (!controls && controlsTemplate) {
+        const fragment = controlsTemplate.content.cloneNode(true);
+        controls = fragment.querySelector("#recentManageControls");
+        $("tvBrowseFunctions").appendChild(fragment);
+      }
+      if (isTvLikeDevice()) {
+        if (controls) $("tvBrowseFunctions").appendChild(controls);
+        clearHomeHeroAutoplayResume();
+        stopHomeHeroAutoplay();
+        if (mount.children.length) {
+          mount.replaceChildren();
+          state.homeV14.heroFeed.requestSeq += 1; state.homeV14.heroBackdropSeq += 1;
+          state.homeV14.loadQueue = [];
+          Object.keys(state.homeV14.categoryFeeds || {}).forEach((id) => { state.homeV14.categoryFeeds[id].requestSeq += 1; });
+        }
+        if (state.homeV14.sectionObserver) state.homeV14.sectionObserver.disconnect();
+      } else if (!mount.children.length) {
+        mount.appendChild(template.content.cloneNode(true));
+        bindHomeHeroSwipe();
+        const secondaryBack = $("secondaryCatalogBack"), secondaryMenu = $("secondaryMenuLauncher");
+        if (secondaryBack) secondaryBack.addEventListener("click", requestCloseSecondaryCatalog);
+        if (secondaryMenu) secondaryMenu.addEventListener("click", () => isSidebarOpen() ? closeSidebar() : openSidebar());
+        ["Recent", "Recommendation", "Weekly"].forEach((name) => {
+          const button = $("home" + name + "More");
+          if (button) button.addEventListener("click", () => openSecondaryCatalog(name === "Recent" ? "recent" : name === "Weekly" ? "now-playing" : "recommendation", { originTarget: button }));
+        });
+      }
+      if (!isTvLikeDevice() && controls && $("mobileRecentManageMount")) $("mobileRecentManageMount").appendChild(controls);
+    }
+
+    function tvBrowseState() {
+      return state.tvBrowse || (state.tvBrowse = {
+        column: "recommendation", positions: {}, filterOpen: false,
+        confirm: null, enterHeld: false, suppressClickUntil: 0,
+        previewKey: "", backdropToken: 0, backdropSlot: 0, backdropUrl: "",
+        focusIntent: null, initialized: false
+      });
+    }
+
+    function tvBrowseActive() {
+      return isTvLikeDevice() && homeUiRoute() === "home" && state.activeList === "all";
+    }
+
+    function tvBrowseColumns() {
+      return sidebarNavigationItems().filter((item) => item.action === "secondary");
+    }
+
+    function tvBrowseColumnButton(id) {
+      return $("tvBrowseColumns") && Array.from($("tvBrowseColumns").children).find((el) => el.dataset.column === id) || null;
+    }
+
+    function tvBrowsePosition() {
+      const ui = tvBrowseState(), key = secondaryFilterKey(ui.column, secondaryFilterState(ui.column));
+      return ui.positions[key] || (ui.positions[key] = { key: "", index: 0, scrollLeft: 0 });
+    }
+
+    function tvBrowseSavePosition() {
+      const rail = $("tvBrowseRail");
+      if (!rail || rail.dataset.queryKey !== secondaryFilterKey(tvBrowseState().column, secondaryFilterState(tvBrowseState().column))) return;
+      const position = tvBrowsePosition();
+      position.scrollLeft = Math.max(0, rail.scrollLeft || 0);
+      const card = document.activeElement && document.activeElement.closest("#tvBrowseRail .card");
+      if (card) { position.key = card.dataset.mediaKey || ""; position.index = Number(card.dataset.cardIndex || 0); }
+    }
+
+    function tvBrowsePosterTarget() {
+      const rail = $("tvBrowseRail"), position = tvBrowsePosition();
+      const cards = rail ? Array.from(rail.querySelectorAll(".card")) : [];
+      return cards.find((card) => card.dataset.mediaKey === position.key) || cards[Math.min(position.index, cards.length - 1)] || tvBrowseColumnButton(tvBrowseState().column);
+    }
+
+    function tvBrowseFocusIntent(focus) {
+      tvBrowseState().focusIntent = { epoch: homeFocusUserEpoch(), focus: focus || null };
+      tvBrowseTryFocus();
+    }
+
+    function tvBrowseTryFocus() {
+      const ui = tvBrowseState(), intent = ui.focusIntent;
+      if (!intent || !tvBrowseActive() || isSidebarOpen() || focusScopeRoot() !== document) return;
+      if (intent.epoch !== homeFocusUserEpoch()) { ui.focusIntent = null; return; }
+      const query = secondaryActiveQuery(ui.column);
+      const position = tvBrowsePosition();
+      if (query && query.loaded && query.hasMore && !query.error && !query.retryableError && position.index >= query.items.length) {
+        if (!query.loading) loadSecondaryPage(ui.column, query, query.page + 1).catch(() => {});
+        return;
+      }
+      const saved = intent.focus;
+      const target = saved && saved.type === "id" ? $(saved.key) : tvBrowsePosterTarget();
+      if (!target || !isVisibleFocusable(target)) return;
+      focusRemoteTarget(target);
+      state.remoteInitialFocused = true;
+      // A loading column is an interim cold-start target, not a completed
+      // media restore. The existing user epoch cancels this intent on input.
+      if (target.closest("#tvBrowseRail") || saved && saved.type === "id" || query && query.loaded && (ui.column !== "recommendation" || state.hot.ready)) ui.focusIntent = null;
+    }
+
+    function tvBrowseSelectColumn(id, options) {
+      if (!tvBrowseColumns().some((entry) => entry.listId === id)) return false;
+      const ui = tvBrowseState(), opts = options || {};
+      tvBrowseSavePosition();
+      if (ui.column !== id && recentManageRuntime().deleting) return false;
+      if (ui.column !== id) resetRecentManageState();
+      ui.column = id;
+      ui.filterOpen = false;
+      ui.previewKey = "";
+      if (!opts.keepConfirm) ui.confirm = null;
+      renderTvBrowse();
+      scheduleUiSnapshotSave();
+      return true;
+    }
+
+    function tvBrowseActivateColumn(id) {
+      const ui = tvBrowseState(), now = Date.now();
+      const doubleConfirm = ui.confirm && ui.confirm.id === id && now - ui.confirm.at <= 400;
+      if (ui.column !== id) tvBrowseSelectColumn(id, { keepConfirm: true });
+      ui.confirm = doubleConfirm ? null : { id, at: now };
+      if (doubleConfirm && secondaryFilterGroups(id, secondaryCatalogBaseItems(id)).length) tvBrowseOpenFilters();
+    }
+
+    function tvBrowseOpenFilters() {
+      const ui = tvBrowseState();
+      if (!tvBrowseActive() || !secondaryFilterGroups(ui.column, secondaryCatalogBaseItems(ui.column)).length) return false;
+      ui.filterOpen = true;
+      renderTvBrowseFilters();
+      syncTvBrowseVisibility();
+      const host = $("tvBrowseFilters");
+      focusRemoteTarget(host.querySelector(".selected") || host.querySelector("button"));
+      return true;
+    }
+
+    function tvBrowseCloseFilters() {
+      const ui = tvBrowseState();
+      if (!ui.filterOpen) return false;
+      ui.filterOpen = false;
+      ui.confirm = null;
+      syncTvBrowseVisibility();
+      if (tvBrowseActive()) focusRemoteTarget(tvBrowseColumnButton(ui.column));
+      return true;
+    }
+
+    function renderTvBrowseFilters() {
+      const ui = tvBrowseState(), host = $("tvBrowseFilters");
+      const groups = secondaryFilterGroups(ui.column, secondaryCatalogBaseItems(ui.column));
+      const filters = secondaryNormalizeFilterValues(ui.column, groups);
+      const signature = ui.column + secondaryFilterSchemaSignature(groups);
+      if (host.dataset.schema !== signature) {
+        host.dataset.schema = signature;
+        host.innerHTML = groups.map((group) => `<div class="secondary-filter-row" data-group="${escapeAttr(group.key)}"><span class="secondary-filter-label">${escapeHtml(group.label)}</span><div class="secondary-filter-options">${group.options.map((option) => `<button type="button" class="focusable secondary-filter-option" data-group="${escapeAttr(group.key)}" data-value="${escapeAttr(option.value)}">${escapeHtml(option.label)}</button>`).join("")}</div></div>`).join("");
+        host.querySelectorAll("button").forEach((button) => button.addEventListener("click", () => {
+          tvBrowseSavePosition();
+          const current = secondaryFilterState(ui.column);
+          current[button.dataset.group] = button.dataset.value;
+          current.lastFocused[button.dataset.group] = button.dataset.value;
+          ui.previewKey = "";
+          renderTvBrowse();
+          scheduleUiSnapshotSave();
+        }));
+      }
+      host.querySelectorAll("button").forEach((button) => {
+        const selected = filters[button.dataset.group] === button.dataset.value;
+        button.classList.toggle("selected", selected);
+        button.setAttribute("aria-pressed", String(selected));
+      });
+    }
+
+    function syncTvBrowseVisibility() {
+      const root = $("tvBrowse"), ui = tvBrowseState();
+      if (!root) return;
+      root.hidden = !tvBrowseActive();
+      if (!tvBrowseActive()) { ui.enterHeld = false; ui.confirm = null; ui.filterOpen = false; }
+      root.classList.toggle("filter-open", ui.filterOpen);
+      $("tvBrowseFunctions").hidden = ui.filterOpen;
+      $("tvBrowseInfo").hidden = ui.filterOpen;
+      $("tvBrowseFilters").hidden = !ui.filterOpen;
+      root.querySelectorAll("#tvBrowseColumns button,#tvBrowseRail button").forEach((button) => button.setAttribute("tabindex", ui.filterOpen ? "-1" : "0"));
+      document.documentElement.classList.toggle("tv-browse-active", tvBrowseActive());
+    }
+
+    function initTvBrowse() {
+      const ui = tvBrowseState();
+      if (ui.initialized) return;
+      ui.initialized = true;
+      const controls = $("recentManageControls");
+      if (controls) $("tvBrowseFunctions").appendChild(controls);
+      const columns = $("tvBrowseColumns");
+      tvBrowseColumns().forEach((entry) => {
+        const button = document.createElement("button");
+        button.type = "button"; button.className = "focusable tv-browse-column";
+        button.id = "tvColumn-" + entry.listId; button.dataset.column = entry.listId; button.textContent = entry.label;
+        button.addEventListener("click", (event) => {
+          // Native WebViews may emit a click after the handled physical key.
+          if (ui.enterHeld || Date.now() < ui.suppressClickUntil) { event.preventDefault(); return; }
+          markHomeUserNavigation();
+          tvBrowseActivateColumn(entry.listId);
+        });
+        button.addEventListener("blur", () => { ui.confirm = null; });
+        columns.appendChild(button);
+      });
+      const actions = [
+        ["search", "搜索", openSearchPage], ["live", "直播", openLiveHome],
+        ["recent", "历史", () => { tvBrowseSelectColumn("recent"); tvBrowseFocusIntent(); }],
+        ["keep", "收藏", openKeepHome], ["menu", "菜单", openSidebar]
+      ];
+      actions.forEach(([id, label, action]) => {
+        const button = document.createElement("button");
+        button.id = "tvFunction-" + id; button.type = "button"; button.className = "focusable"; button.textContent = label;
+        button.addEventListener("click", () => { tvBrowseSavePosition(); action(); });
+        $("tvBrowseFunctions").appendChild(button);
+      });
+      window.addEventListener("blur", () => { ui.enterHeld = false; ui.confirm = null; });
+      $("tvBrowse").addEventListener("click", (event) => {
+        if ((ui.enterHeld || Date.now() < ui.suppressClickUntil) && event.detail === 0) {
+          event.preventDefault(); event.stopImmediatePropagation();
+        }
+      }, true);
+      $("tvBrowseRetry").addEventListener("click", () => {
+        const id = ui.column, query = secondaryActiveQuery(id);
+        if (id === "recent") { loadRecentList({ refresh: true }).catch(() => {}); return; }
+        if (id === "recommendation") { forceRefreshNostrRanking().catch(() => {}); return; }
+        if (query && !query.loading) loadSecondaryPage(id, query, query.failedPage || query.page + 1 || 1).catch(() => {});
+      });
+      $("tvBrowseRail").addEventListener("scroll", () => { tvBrowseSavePosition(); scheduleUiSnapshotSave(); }, { passive: true });
+    }
+
+    function renderTvBrowse() {
+      if (!tvBrowseActive()) return;
+      initTvBrowse();
+      syncTvBrowseVisibility();
+      const ui = tvBrowseState(), rail = $("tvBrowseRail");
+      const query = secondaryGetQuery(ui.column);
+      // Finite sources can change independently of the catalog page loader.
+      if (ui.column === "recommendation") {
+        const pool = recommendationPoolItems();
+        query.renderedCount = Math.max(18, Number(query.renderedCount || 0));
+        query.items = pool.slice(0, query.renderedCount);
+        query.hasMore = query.renderedCount < pool.length;
+        query.loaded = !!state.hot.ready; query.loading = !state.hot.ready; query.page = Math.ceil(query.renderedCount / query.batchSize);
+      } else if (ui.column === "recent") {
+        query.items = uniqueRecentWatchingMedia(state.recent.items || []); query.loaded = !!state.recent.loaded; query.loading = !!state.recent.loading; query.error = state.recent.error || "";
+      }
+      const items = (ui.column === "recommendation" || ui.column === "recent"
+        ? filterBlocked(query.items || []) : secondaryFilterItems(ui.column, query.items || [])).filter((item) => ui.column === "recent" || hasPoster(item));
+      const keys = items.map((item, index) => mediaRenderKey(item, index)), oldKeys = rail.__renderKeys || [];
+      const queryChanged = rail.dataset.queryKey !== query.key;
+      const prefix = !queryChanged && oldKeys.length <= keys.length && oldKeys.every((key, index) => key === keys[index]);
+      const focused = rail.contains(document.activeElement) ? document.activeElement.dataset.mediaKey : "";
+      if (!prefix) { rail.replaceChildren(); oldKeys.length = 0; }
+      if (queryChanged) { rail.dataset.queryKey = query.key; rail.scrollLeft = tvBrowsePosition().scrollLeft; }
+      for (let index = oldKeys.length; index < items.length; index += 1) {
+        const item = items[index], card = mediaCard(item, index, { home: true, homeLazy: index > 7, weeklyHome: ui.column === "now-playing" });
+        card.addEventListener("focus", () => {
+          const position = tvBrowsePosition(); position.key = card.dataset.mediaKey; position.index = index;
+          tvBrowsePreview(card.__mediaItem);
+          tvBrowseMaybeLoadMore(index);
+          scheduleUiSnapshotSave();
+        });
+        rail.appendChild(card);
+      }
+      rail.__renderKeys = keys;
+      syncTvBrowseVisibility();
+      if (queryChanged) rail.scrollLeft = tvBrowsePosition().scrollLeft;
+      $("tvBrowseColumns").querySelectorAll("button").forEach((button) => {
+        const selected = button.dataset.column === ui.column;
+        button.classList.toggle("selected", selected); button.setAttribute("aria-pressed", String(selected));
+      });
+      updateRecentManageUi();
+      updateBlockSelectUi();
+      $("tvBrowseBlockHint").hidden = !state.blocked.selecting;
+      const status = query.error || query.retryableError || (query.loading && !items.length ? "加载中…" : !items.length ? "暂无内容" : "");
+      $("tvBrowseStatus").textContent = status;
+      $("tvBrowseRetry").hidden = !(query.error || query.retryableError || !items.length && query.loaded);
+      if (ui.filterOpen) renderTvBrowseFilters();
+      const position = tvBrowsePosition();
+      const selected = items.find((item) => mediaDomKey(item) === position.key) || items[Math.min(position.index, items.length - 1)];
+      if (selected) tvBrowsePreview(selected);
+      else tvBrowseClearPreview();
+      observeHomeImages(rail); observeTvCardEnrichment(rail); observeMovieCardEnrichment(rail);
+      if (focused && !prefix && focusScopeRoot() === document && !isSidebarOpen()) {
+        const target = Array.from(rail.children).find((card) => card.dataset.mediaKey === focused) || tvBrowsePosterTarget();
+        if (target) focusRemoteTarget(target);
+      }
+      tvBrowseTryFocus();
+      if (!query.loaded && !query.loading && !query.error && !["recommendation", "recent"].includes(ui.column)) loadSecondaryPage(ui.column, query, 1).catch(() => {});
+    }
+
+    function tvBrowseMaybeLoadMore(index) {
+      const ui = tvBrowseState(), query = secondaryActiveQuery(ui.column);
+      if (!query || query.loading || query.error || query.retryableError || !query.hasMore || index < query.items.length - 5) return false;
+      loadSecondaryPage(ui.column, query, query.page + 1).catch(() => {});
+      return true;
+    }
+
+    function tvBrowseClearPreview() {
+      const ui = tvBrowseState();
+      ui.previewKey = ""; ui.backdropToken += 1;
+      if (ui.pendingImage) { ui.pendingImage.onload = ui.pendingImage.onerror = null; ui.pendingImage.src = ""; ui.pendingImage = null; }
+      $("tvBrowseTitle").textContent = ""; $("tvBrowseMeta").textContent = "";
+      $("tvBrowseOverview").textContent = ""; $("tvBrowseUpdate").textContent = "";
+      $("tvBrowseLogo").hidden = true;
+      // Keep the last decoded backdrop until a valid replacement is ready.
+    }
+
+    function tvBrowsePreview(item) {
+      const ui = tvBrowseState(), key = mediaDomKey(item);
+      const detail = tvDetailCacheValue(item) || item.tvDetail || item.weeklyDetail || item.heroDetail || null;
+      $("tvBrowseTitle").textContent = item.title || item.name || "";
+      const year = String(item.releaseDate || item.first_air_date || item.release_date || "").slice(0, 4);
+      const genres = homeHeroPresentationGenres(item, detail);
+      const rating = Number(item.voteAverage || item.vote_average || 0);
+      $("tvBrowseMeta").textContent = [year, genres.join(" · "), rating > 0 ? rating.toFixed(1) + " 分" : ""].filter(Boolean).join("  /  ");
+      $("tvBrowseUpdate").textContent = item.weeklyUpdateText || homeHeroPresentationStatus(item, detail) || "";
+      $("tvBrowseOverview").textContent = homeHeroPresentationOverview(item, detail) || item.desc || "";
+      const logo = $("tvBrowseLogo"), logoUrl = item.logo || item.logoUrl || item.logoPath || item.logo_path || "";
+      logo.hidden = !logoUrl;
+      if (logoUrl && logo.getAttribute("src") !== logoUrl) { logo.src = displayImage(logoUrl, { size: "w500" }); logo.onerror = () => { logo.hidden = true; }; }
+      const source = item.landscape || item.backdrop || item.backdrop_path || detail && detail.backdrop_path || item.image || item.pic;
+      const url = displayImage(source, { size: item.landscape || item.backdrop || item.backdrop_path ? "w1280" : "w780" });
+      if (ui.previewKey === key && (url === ui.backdropUrl || ui.pendingImage && ui.pendingImage.src === url)) return;
+      ui.previewKey = key;
+      const token = ++ui.backdropToken;
+      if (!url || url === ui.backdropUrl) return;
+      // One pending decode, two resident layers, no unbounded image cache.
+      if (ui.pendingImage) { ui.pendingImage.onload = ui.pendingImage.onerror = null; ui.pendingImage.src = ""; }
+      const image = new Image(); ui.pendingImage = image;
+      image.onload = () => {
+        if (token !== ui.backdropToken || key !== ui.previewKey) return;
+        ui.pendingImage = null;
+        const next = ui.backdropSlot ? $("tvBrowseBackdrop") : $("tvBrowseBackdropNext");
+        const previous = ui.backdropSlot ? $("tvBrowseBackdropNext") : $("tvBrowseBackdrop");
+        next.style.backgroundImage = "url(" + JSON.stringify(url) + ")";
+        next.classList.add("visible"); previous.classList.remove("visible");
+        ui.backdropSlot = ui.backdropSlot ? 0 : 1; ui.backdropUrl = url;
+      };
+      image.onerror = () => { if (token === ui.backdropToken) ui.pendingImage = null; };
+      image.src = url;
+    }
+
+    function tvBrowseDirectionalTarget(key, active) {
+      const ui = tvBrowseState();
+      if (ui.filterOpen) {
+        const rows = Array.from($("tvBrowseFilters").querySelectorAll(".secondary-filter-row"));
+        const row = active && active.closest(".secondary-filter-row");
+        if (!row) return $("tvBrowseFilters").querySelector("button");
+        const buttons = Array.from(row.querySelectorAll("button")), index = buttons.indexOf(active);
+        if (key === "ArrowLeft" || key === "ArrowRight") return buttons[Math.max(0, Math.min(buttons.length - 1, index + (key === "ArrowRight" ? 1 : -1)))];
+        const next = rows[Math.max(0, Math.min(rows.length - 1, rows.indexOf(row) + (key === "ArrowDown" ? 1 : -1)))];
+        return next.querySelector(".selected") || next.querySelector("button");
+      }
+      const rail = $("tvBrowseRail"), columns = $("tvBrowseColumns"), functions = $("tvBrowseFunctions");
+      if (active === $("tvBrowseRetry")) return key === "ArrowUp" ? tvBrowsePosterTarget() : active;
+      let host = active && active.closest("#tvBrowseRail,#tvBrowseColumns,#tvBrowseFunctions");
+      if (!host) return tvBrowsePosterTarget();
+      if (key === "ArrowLeft" || key === "ArrowRight") {
+        const buttons = Array.from(host.querySelectorAll("button")).filter(isVisibleFocusable), index = buttons.indexOf(active);
+        if (host === rail) tvBrowseMaybeLoadMore(index);
+        return buttons[Math.max(0, Math.min(buttons.length - 1, index + (key === "ArrowRight" ? 1 : -1)))];
+      }
+      if (host === rail) return key === "ArrowDown" && !$("tvBrowseRetry").hidden ? $("tvBrowseRetry") : tvBrowseColumnButton(ui.column);
+      if (host === columns) return key === "ArrowDown" ? tvBrowsePosterTarget() : Array.from(functions.querySelectorAll("button")).find(isVisibleFocusable);
+      return tvBrowseColumnButton(ui.column);
+    }
+
+    function handleTvBrowseKey(event, key, active) {
+      const scope = focusScopeRoot();
+      if (!tvBrowseActive() || isSidebarOpen() || scope !== document && scope !== $("tvBrowseFilters") || isConnectionPanelOpen()) return false;
+      const column = active && active.closest("#tvBrowseColumns button");
+      if (key === "Enter" && !event.repeat) {
+        markHomeUserNavigation();
+        if (!column) tvBrowseState().suppressClickUntil = 0;
+      }
+      if (key === "Enter" && column) {
+        event.preventDefault(); event.stopPropagation();
+        const ui = tvBrowseState();
+        if (event.repeat || ui.enterHeld) return true;
+        ui.enterHeld = true; ui.suppressClickUntil = Date.now() + 200;
+        tvBrowseActivateColumn(column.dataset.column);
+        return true;
+      }
+      if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(key)) return false;
+      event.preventDefault(); event.stopPropagation();
+      focusRemoteTarget(tvBrowseDirectionalTarget(key, active));
+      return true;
+    }
+
+    function tvBrowseSnapshot() {
+      tvBrowseSavePosition();
+      const ui = tvBrowseState();
+      return { column: ui.column, positions: JSON.parse(JSON.stringify(ui.positions)), filters: JSON.parse(JSON.stringify(state.homeV14.secondaryFilters || {})) };
+    }
+
+    function restoreTvBrowseSnapshot(saved, legacyColumn) {
+      const ui = tvBrowseState(), value = saved || {};
+      const id = value.column || legacyColumn || "recommendation";
+      ui.column = tvBrowseColumns().some((entry) => entry.listId === id) ? id : "recommendation";
+      ui.positions = value.positions && typeof value.positions === "object" ? value.positions : {};
+      if (value.filters && typeof value.filters === "object") state.homeV14.secondaryFilters = value.filters;
+      ui.filterOpen = false; ui.confirm = null; ui.previewKey = "";
+    }
+
+    function renderCatalogQuery(id) {
+      if (tvBrowseActive()) {
+        if (tvBrowseState().column === id) renderTvBrowse();
+      } else if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
+    }
     function secondaryFilterDefaults() { return { mediaType: "all", genre: "all", region: "all", year: "all", sort: "hot", lastFocused: {} }; }
     function secondaryFilterState(id) {
       id = normalizeLegacyCategoryId(id);
@@ -28433,13 +28776,13 @@ utils.encode = function encode(arr, enc) {
       }
       query.source = source;
       if (source === "recommendation" && !Array.isArray(query.poolItems)) query.poolItems = [];
-      home.secondaryActiveQueryKey = key;
+      if (!isTvLikeDevice()) home.secondaryActiveQueryKey = key;
       return query;
     }
     function secondaryActiveQuery(id) {
       id = id ? normalizeLegacyCategoryId(id) : id;
       const home = state.homeV14;
-      const query = home && home.secondaryQueries && home.secondaryQueries[home.secondaryActiveQueryKey];
+      const query = home && home.secondaryQueries && home.secondaryQueries[id ? secondaryFilterKey(id, secondaryFilterState(id)) : home.secondaryActiveQueryKey];
       return query && (!id || query.listId === id) ? query : null;
     }
     function secondaryApplyServerFilters(source, filters) {
@@ -28629,18 +28972,6 @@ utils.encode = function encode(arr, enc) {
       if (!serverFilters.has("sort") && filters.sort === "latest") return result.slice().sort((a, b) => String(b.releaseDate || b.first_air_date || "").localeCompare(String(a.releaseDate || a.first_air_date || "")) || metric(b, "latest") - metric(a, "latest"));
       return result;
     }
-    function secondaryFilterFocusTarget(row, fromX) {
-      const options = row ? Array.from(row.querySelectorAll(".secondary-filter-option")).filter(canFastHomeFocus) : [];
-      if (!options.length) return null;
-      const group = row.dataset.secondaryFilterGroup || "";
-      const filters = secondaryFilterState(state.homeV14.secondaryListId);
-      const preferred = filters.lastFocused[group] || filters[group] || (group === "sort" ? "hot" : "all");
-      const exact = options.find((button) => button.dataset.secondaryFilterValue === preferred);
-      if (exact) return exact;
-      const x = Number(fromX);
-      if (Number.isFinite(x)) return options.slice().sort((a, b) => Math.abs(a.getBoundingClientRect().left + a.getBoundingClientRect().width / 2 - x) - Math.abs(b.getBoundingClientRect().left + b.getBoundingClientRect().width / 2 - x))[0];
-      return options[0];
-    }
     function syncSecondaryFilterControls(id, host) {
       const filters = secondaryFilterState(id);
       if (!host) return;
@@ -28728,7 +29059,7 @@ utils.encode = function encode(arr, enc) {
       query.snapshotReady = true;
       if (recommendationSecondaryIsCurrent(query, requestSeq)) {
         state.homeV14.secondaryPage = page;
-        if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === "recommendation") renderSecondaryCatalog();
+        renderCatalogQuery("recommendation");
         observeInfiniteScroll();
       }
       return query;
@@ -28753,7 +29084,7 @@ utils.encode = function encode(arr, enc) {
         query.endpointMap = [];
         query.sourceStates = [];
         state.homeV14.secondaryPage = 1;
-        if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
+        renderCatalogQuery(id);
         return query;
       }
       if (id === "recommendation") return loadRecommendationSecondaryPage(query, page);
@@ -28772,19 +29103,19 @@ utils.encode = function encode(arr, enc) {
         const refreshStillRunning = !!(latest && (latest.loading || latest.promise));
         if (snapshotIsCurrent && homeLatestHasItems(latest)) {
           publishHomeWeeklySnapshot(latest.cacheHydrated ? "cache" : "memory", { refreshing: refreshStillRunning });
-        } else if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) {
-          renderSecondaryCatalog();
+        } else if ((tvBrowseActive() && tvBrowseState().column === id || homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id)) {
+          renderCatalogQuery(id);
         }
         refreshPromise.then(() => {
           if (query.requestSeq !== requestSeq) return;
           const published = publishHomeWeeklySnapshot("network-final", { final: true, refreshing: false });
-          if (!published && homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) {
+          if (!published && (tvBrowseActive() && tvBrowseState().column === id || homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id)) {
             query.loading = false;
             query.loaded = true;
             query.error = state.homeLatest && state.homeLatest.error || "";
             query.hasMore = false;
             query.snapshotReady = false;
-            renderSecondaryCatalog();
+            renderCatalogQuery(id);
           }
         }).catch(() => {
           if (query.requestSeq !== requestSeq) return;
@@ -28797,7 +29128,7 @@ utils.encode = function encode(arr, enc) {
           query.error = "加载失败";
           query.hasMore = false;
           query.snapshotReady = false;
-          if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
+          renderCatalogQuery(id);
         });
         return query;
       }
@@ -28807,7 +29138,7 @@ utils.encode = function encode(arr, enc) {
       query.retryableError = "";
       query.failedPage = 0;
       const requestSeq = ++query.requestSeq;
-      if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
+      renderCatalogQuery(id);
       const filters = secondaryFilterState(id);
       const plan = buildSecondaryQueryPlan(id, filters, query);
       const pending = plan.sources.map((source, index) => ({ source, state: plan.sourceStates[index] }))
@@ -28819,18 +29150,21 @@ utils.encode = function encode(arr, enc) {
         query.hasMore = plan.sourceStates.some(secondaryTmdbSourceHasMore);
         secondaryUpdateTmdbMetrics(query, plan, query.hasMore);
         state.homeV14.secondaryPage = query.page;
-        if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
+        renderCatalogQuery(id);
         return query;
       }
       pending.forEach((entry) => { entry.state.loading = true; });
       const results = await Promise.all(pending.map(({ source, state: sourceState }) => {
         const requestPage = Math.max(1, Number(sourceState.page || 0) + 1);
         return Promise.resolve()
-          .then(() => requestJson(tmdbUrl(source, requestPage), 18))
+          .then(() => isTvLikeDevice() ? homeRequestJson(tmdbUrl(source, requestPage), 18, "foreground", query.key + ":" + sourceState.key + ":" + requestPage) : requestJson(tmdbUrl(source, requestPage), 18))
           .then((body) => ({ source, sourceState, requestPage, body: body || {}, error: null }))
           .catch((error) => ({ source, sourceState, requestPage, body: null, error }));
       }));
-      if (query.requestSeq !== requestSeq || secondaryActiveQuery(id) !== query) return query;
+      if (query.requestSeq !== requestSeq || secondaryActiveQuery(id) !== query) {
+        if (query.requestSeq === requestSeq) query.loading = false;
+        return query;
+      }
       const incoming = [];
       let goodCount = 0;
       results.forEach((result) => {
@@ -28871,7 +29205,7 @@ utils.encode = function encode(arr, enc) {
         query.failedPage = page;
         query.hasMore = hasPendingSource;
         secondaryUpdateTmdbMetrics(query, plan, query.hasMore);
-        if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
+        renderCatalogQuery(id);
         return query;
       }
       query.items = uniqueMedia((query.items || []).concat(incoming));
@@ -28886,7 +29220,7 @@ utils.encode = function encode(arr, enc) {
       query.retryableError = hasRetryableSource ? "部分来源暂时不可用，可继续重试" : "";
       secondaryUpdateTmdbMetrics(query, plan, query.hasMore);
       state.homeV14.secondaryPage = query.page;
-      if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
+      renderCatalogQuery(id);
       observeInfiniteScroll();
       return query;
     }
@@ -29024,6 +29358,7 @@ utils.encode = function encode(arr, enc) {
     function openSecondaryCatalog(listId, options) {
       const opts = options || {};
       listId = normalizeLegacyCategoryId(listId);
+      if (tvBrowseActive()) return tvBrowseSelectColumn(listId);
       if (!listId || !getList(listId) && !["now-playing", "recent", "recommendation"].includes(listId)) return false;
       if (!isHomeRouteActive() && !(homeUiRoute() === "secondary" && opts.fromSidebar)) return false;
       if (isRecentManagePage() && recentManageRuntime().deleting) {
@@ -29414,6 +29749,7 @@ utils.encode = function encode(arr, enc) {
     }
 
     function renderHomeWeekly(options) {
+      if (tvBrowseActive()) { if (tvBrowseState().column === "now-playing") renderTvBrowse(); return; }
       const opts = options || {};
       const section = $("homeWeeklySection");
       const rail = $("homeWeeklyRail");
@@ -29450,6 +29786,7 @@ utils.encode = function encode(arr, enc) {
     }
 
     function renderHomeRecommendation(options) {
+      if (tvBrowseActive()) { if (tvBrowseState().column === "recommendation") renderTvBrowse(); return; }
       const opts = options || {};
       const section = $("homeRecommendationSection");
       const rail = $("homeRecommendationRail");
@@ -29859,12 +30196,6 @@ utils.encode = function encode(arr, enc) {
       });
     }
 
-    function coldHomeInitialFocus() {
-      if (focusScopeRoot() !== document || !isHomeRouteActive() || !isTvLikeDevice()) return null;
-      const target = $("homeHero");
-      return isVisibleFocusable(target) ? target : null;
-    }
-
     function homeFocusUserEpoch() {
       return Number(state.homeV14 && state.homeV14.focusUserEpoch || 0);
     }
@@ -29874,105 +30205,37 @@ utils.encode = function encode(arr, enc) {
       if (!home) return 0;
       if (home.secondaryMediaFocusRestore) cancelSecondaryMediaFocusRestore();
       home.focusUserEpoch = Number(home.focusUserEpoch || 0) + 1;
-      home.coldHomeFocusPending = false;
-      home.coldHomeFallbackTarget = null;
       return home.focusUserEpoch;
     }
 
-    function ensureRemoteInitialFocus(options) {
-      const opts = options || {};
-      const active = document.activeElement;
-      if (state.remoteInitialFocused && isVisibleFocusable(active)) return;
-      // Secondary Catalog has an explicit Back -> filters -> grid graph.  Its
-      // asynchronous page renderer must never replace that graph's focus with
-      // the generic first-content fallback.
-      if (homeUiRoute() === "secondary" || homeUiRoute() === "search") return;
-      const wantsColdHome = !state.remoteInitialFocused && isHomeRouteActive() && isTvLikeDevice();
-      if (wantsColdHome && !state.homeV14.coldHomeFocusPending) {
-        if (isVisibleFocusable(active)) {
-          state.remoteInitialFocused = true;
-          return;
-        }
-        const target = homeRailFallbackTarget(null, null);
-        if (!target) return;
-        state.remoteInitialFocused = true;
-        state.homeV14.initialHomeFocusPending = true;
-        const focusEpoch = homeFocusUserEpoch();
-        requestAnimationFrame(() => {
-          try {
-            if (homeFocusUserEpoch() !== focusEpoch) return;
-            if (!isVisibleFocusable(document.activeElement)) focusRemoteTarget(target);
-          }
-          finally { state.homeV14.initialHomeFocusPending = false; }
-        });
+    function ensureRemoteInitialFocus() {
+      if (tvBrowseActive()) {
+        if (isSidebarOpen() || focusScopeRoot() !== document) return;
+        if (!isVisibleFocusable(document.activeElement)) tvBrowseFocusIntent();
+        else tvBrowseTryFocus();
         return;
       }
-      const coldTarget = wantsColdHome ? coldHomeInitialFocus() : null;
-      if (wantsColdHome && state.homeV14.coldHomeFocusPending && !coldTarget && !opts.allowHomeFallback) return;
-      // Do not briefly focus a Home content target while the initial Home
-      // presentation is still preparing.  A late initial-focus timer may opt
-      // into a fallback only when the data source really produced no target.
-      if (wantsColdHome && !coldTarget && !opts.allowHomeFallback) return;
-      if (wantsColdHome && !coldTarget && opts.allowHomeFallback) {
-        state.homeV14.coldHomeFallbackTarget = initialHomeFocus() || firstContentFocus() || null;
-      }
-      const target = coldTarget || (!state.remoteInitialFocused ? initialHomeFocus() || firstContentFocus() : firstContentFocus());
+      if (state.remoteInitialFocused && isVisibleFocusable(document.activeElement)) return;
+      if (homeUiRoute() === "secondary" || homeUiRoute() === "search") return;
+      const target = initialHomeFocus() || firstContentFocus();
       if (!target) return;
-      state.remoteInitialFocused = true;
-      state.homeV14.initialHomeFocusPending = true;
-      const focusEpoch = homeFocusUserEpoch();
+      const epoch = homeFocusUserEpoch();
       requestAnimationFrame(() => {
-        try {
-          if (homeFocusUserEpoch() !== focusEpoch) return;
-          // The launcher may have become ready between the fallback timer and
-          // this frame.  Never let the queued fallback overwrite it.
-          if (wantsColdHome && document.activeElement === $("homeSearchLauncher")) return;
-          focusRemoteTarget(target);
-        }
-        finally { state.homeV14.initialHomeFocusPending = false; }
+        if (epoch !== homeFocusUserEpoch() || isVisibleFocusable(document.activeElement)) return;
+        state.remoteInitialFocused = true; focusRemoteTarget(target);
       });
     }
 
     function ensureRemoteActiveFocus() {
-      const active = document.activeElement;
-      if (isVisibleFocusable(active)) return false;
+      if (isVisibleFocusable(document.activeElement)) return false;
       if (restoreConnectionPanelFocus()) return true;
-      if (isTvLikeDevice() && isHomeRouteActive() && state.homeV14.coldHomeFocusPending) {
-        if (homeFocusUserEpoch() !== Number(state.homeV14.coldHomeFocusEpoch || 0)) {
-          state.homeV14.coldHomeFocusPending = false;
-          state.homeV14.coldHomeFallbackTarget = null;
-        }
-      }
-      if (isTvLikeDevice() && isHomeRouteActive() && state.homeV14.coldHomeFocusPending) {
-        const coldTarget = coldHomeInitialFocus();
-        if (coldTarget) {
-          state.homeV14.coldHomeFocusPending = false;
-          state.homeV14.coldHomeFallbackTarget = null;
-          focusRemoteTarget(coldTarget);
-          return true;
-        }
-        const fallback = state.homeV14.coldHomeFallbackTarget;
-        if (isVisibleFocusable(fallback)) {
-          focusRemoteTarget(fallback);
-          return true;
-        }
-        state.homeV14.coldHomeFocusPending = false;
-        state.homeV14.coldHomeFallbackTarget = null;
-      }
-      const homeColdPending = !!(state.homeV14 && state.homeV14.coldHomeFocusPending);
-      const target = uiSnapshotRoute() === "home"
-        ? homeColdPending ? coldHomeInitialFocus() || initialHomeFocus() || firstContentFocus() : homeRailFallbackTarget(null, null)
-        : firstContentFocus();
+      const target = tvBrowseActive() && focusScopeRoot() === document ? tvBrowsePosterTarget() : firstContentFocus();
       if (!target) return false;
-      focusRemoteTarget(target);
-      return true;
+      focusRemoteTarget(target); return true;
     }
 
     function focusInitialHomeNow(options) {
-      const target = initialHomeFocus();
-      state.homeV14.initialHomeFocusPending = true;
-      try { focusHomeTopTarget(target, options); }
-      finally { state.homeV14.initialHomeFocusPending = false; }
+      focusHomeTopTarget(initialHomeFocus(), options);
     }
 
     function focusHomeTopTarget(target, options) {
@@ -29991,6 +30254,7 @@ utils.encode = function encode(arr, enc) {
     }
 
     function initialHomeFocus() {
+      if (tvBrowseActive()) return tvBrowsePosterTarget();
       if (focusScopeRoot() !== document) return null;
       if (isHomeRouteActive() && isVisibleFocusable($("homeHero"))) return $("homeHero");
       return firstContentFocus();
@@ -30001,6 +30265,7 @@ utils.encode = function encode(arr, enc) {
       return firstContentFocus() || initialHomeFocus();
     }
     function observeInfiniteScroll() {
+      if (tvBrowseActive()) { if (state.infiniteObserver) state.infiniteObserver.disconnect(); return; }
       const sentinel = $("infiniteSentinel");
       if (!sentinel) return;
       if (!("IntersectionObserver" in window)) return;
@@ -30024,6 +30289,7 @@ utils.encode = function encode(arr, enc) {
     }
 
     function ensureScrollablePage() {
+      if (tvBrowseActive()) return;
       const doc = document.documentElement;
       if (doc.scrollHeight > window.innerHeight + 500) return;
       loadMoreVisible();
@@ -32268,6 +32534,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const secondaryGrid = homeUiRoute() === "secondary" ? $("secondaryCatalogGrid") : null;
       if (state.homeV14) state.homeV14.secondaryMediaFocusRestore = null;
       state.homeReturn = {
+        tvBrowse: isTvLikeDevice() ? tvBrowseSnapshot() : null,
         scrollY: homeScrollTop(),
         activeList: state.activeList || "all",
         route: homeUiRoute(),
@@ -32437,7 +32704,14 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     function restoreHomeReturn() {
       const saved = normalizeLegacySavedState(state.homeReturn);
       if (!saved) return false;
-      if (state.homeV14 && saved.route === "home") state.homeV14.lastHomeFocusedRail = "";
+      if (isTvLikeDevice() && (saved.route === "secondary" || saved.route === "home")) {
+        state.homeReturn = null;
+        restoreTvBrowseSnapshot(saved.tvBrowse, saved.secondaryListId);
+        state.homeV14.route = "home"; state.activeList = "all";
+        renderAll();
+        tvBrowseFocusIntent(saved.focus && saved.focus.type === "id" && saved.focus.key.indexOf("tv") === 0 ? saved.focus : null);
+        return true;
+      }
       const focusEpoch = homeFocusUserEpoch();
       const restoreSecondary = saved.route === "secondary" && saved.secondaryListId;
       const mediaReturn = !!(saved.focus && saved.focus.type === "media");
@@ -40505,17 +40779,12 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       searchSubmit.addEventListener("click", handleSearchSubmitClick);
       if ($("searchPageBack")) $("searchPageBack").addEventListener("click", requestCloseSearchPage);
       if ($("searchHistoryClear")) $("searchHistoryClear").addEventListener("click", clearSearchHistory);
-      if ($("secondaryCatalogBack")) $("secondaryCatalogBack").addEventListener("click", requestCloseSecondaryCatalog);
       if ($("recentManageBtn")) $("recentManageBtn").addEventListener("click", enterRecentManageMode);
       if ($("recentManageSelectAll")) $("recentManageSelectAll").addEventListener("click", toggleRecentManageSelectAll);
       if ($("recentManageDelete")) $("recentManageDelete").addEventListener("click", armRecentManageDelete);
       if ($("recentManageCancel")) $("recentManageCancel").addEventListener("click", handleRecentManageCancel);
       if ($("homeSearchLauncher")) $("homeSearchLauncher").addEventListener("click", openSearchPage);
       if ($("homeMenuLauncher")) $("homeMenuLauncher").addEventListener("click", () => {
-        if (isSidebarOpen()) closeSidebar();
-        else openSidebar();
-      });
-      if ($("secondaryMenuLauncher")) $("secondaryMenuLauncher").addEventListener("click", () => {
         if (isSidebarOpen()) closeSidebar();
         else openSidebar();
       });
@@ -40531,9 +40800,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         event.stopPropagation();
         closeConnectionPanel();
       });
-      if ($("homeRecentMore")) $("homeRecentMore").addEventListener("click", () => openSecondaryCatalog("recent", { originSection: "recent", originTarget: $("homeRecentMore") }));
-      if ($("homeRecommendationMore")) $("homeRecommendationMore").addEventListener("click", () => openSecondaryCatalog("recommendation", { originSection: "recommendation", originTarget: $("homeRecommendationMore") }));
-      if ($("homeWeeklyMore")) $("homeWeeklyMore").addEventListener("click", () => openSecondaryCatalog("now-playing", { originSection: "now-playing", originTarget: $("homeWeeklyMore") }));
       (function () {
         const clearBtn = $("clearSearchBtn");
         if (clearBtn) {
@@ -40657,23 +40923,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return Array.from(rail.querySelectorAll(".card")).find(isVisibleFocusable) || null;
     }
 
-    function handleHomeHeroDirectionalKey(key, event) {
-      if (!isTvLikeDevice() || focusScopeRoot() !== document || isConnectionPanelOpen() || isSearchSuggestOpen()) return false;
-      if (key !== "ArrowLeft" && key !== "ArrowRight") return false;
-      const hero = $("homeHero");
-      if (state.activeList !== "all" || !hero || document.activeElement !== hero || !isVisibleFocusable(hero)) return false;
-      const items = Array.isArray(state.homeV14.heroItems) ? state.homeV14.heroItems : [];
-      if (items.length <= 1) return false;
-      const delta = key === "ArrowRight" ? 1 : -1;
-      event.preventDefault();
-      event.stopPropagation();
-      if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-      setHomeHeroIndex(Number(state.homeV14.heroIndex || 0) + delta, { manual: true });
-      return true;
-    }
-
     function installRemoteKeys() {
       document.addEventListener("pointerdown", (event) => {
+        if (tvBrowseActive() && event.target.closest && event.target.closest("#tvBrowse")) markHomeUserNavigation();
         if (homeUiRoute() === "secondary") cancelSecondaryMediaFocusRestore();
         const recentDelete = state.recentDelete;
         if (!recentDelete || !(recentDelete.armedKey || recentDelete.pendingKey)) return;
@@ -40688,17 +40940,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         const trackedCard = recentDelete && (recentDelete.armedCard || recentDelete.pendingCard || recentDelete.remotePressCard);
         if (trackedCard && !trackedCard.contains(document.activeElement)) cancelRecentDeleteArm();
       });
-      // Hero -> Detail opens and focuses the Detail primary action on a
-      // short timer.  Consume the remainder of the same physical Confirm
-      // lifecycle at capture time so its keyup cannot activate that newly
-      // focused action.  The guard is released by the matching keyup; its
-      // short timer is only a lost-event safety net.
-      document.addEventListener("keydown", (event) => {
-        consumeHomeHeroConfirmGuard(event);
-      }, true);
-      document.addEventListener("keyup", (event) => {
-        consumeHomeHeroConfirmGuard(event);
-      }, true);
       document.addEventListener("keydown", (event) => {
         const key = normalizeRemoteKey(event);
         if (key === "Escape" || key === "Backspace") recordBackDiag(event, "bubble_keydown", { bubbleKeydownObserved: true });
@@ -40724,6 +40965,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           event.preventDefault();
           return;
         }
+        if (handleTvBrowseKey(event, key, el)) return;
         if (key === "Enter") {
           const recentCard = recentWatchingCard(el);
           if (consumeRecentCardEnterDown(recentCard, event)) return;
@@ -40743,7 +40985,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         }
         if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(key)) {
           if (handleSidebarDirectionalKey(key, event)) return;
-          if (handleHomeHeroDirectionalKey(key, event)) return;
           if (handleSearchSuggestDirectionalKey(key, event)) return;
           if (handleClearSearchDirectionalKey(key, event)) return;
           if (handleSearchFormDirectionalKey(key, event)) return;
@@ -40807,12 +41048,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(key)) return;
         if (handlePanDirectionalKey(key, event)) return;
         if (handleDetailDirectionalKey(key, event)) return;
-        if (key === "ArrowLeft" && isSecondaryLeftBoundary(el)) {
-          event.preventDefault();
-          if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-          openSidebar();
-          return;
-        }
         if (key === "ArrowLeft" && isHomeLeftBoundary(el)) {
           event.preventDefault();
           if (event.stopImmediatePropagation) event.stopImmediatePropagation();
@@ -40838,6 +41073,11 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           if (el && isTextEditingElement(el) && !el.readOnly) return;
         }
         if (handleSidebarBackKey(event)) return;
+        if (tvBrowseActive() && isRecentManagePage() && recentManageRuntime().active) {
+          event.preventDefault(); event.stopPropagation();
+          if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+          exitRecentManageMode({ focus: true }); return;
+        }
         if (isRecentManagePage() && recentManageRuntime().active && handleSecondaryBackKey(event)) return;
         if (state.recentDelete && (state.recentDelete.armedKey || state.recentDelete.pendingKey || state.recentDelete.remotePressLocked)) {
           cancelRecentDeleteArm();
@@ -40860,6 +41100,11 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           recordBackDiag(event, "history.back", { historyBackCalled: true });
           return history.back();
         }
+        if (tvBrowseActive() && tvBrowseState().filterOpen && tvBrowseCloseFilters()) {
+          event.preventDefault(); event.stopPropagation();
+          if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+          return;
+        }
         if (handleSecondaryBackKey(event)) return;
         if (handleSearchBackKey(event)) return;
       }, true);
@@ -40870,6 +41115,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       document.addEventListener("keyup", (event) => {
         const key = normalizeRemoteKey(event);
         if (key !== "Enter") return;
+        if (state.tvBrowse && state.tvBrowse.enterHeld) {
+          state.tvBrowse.enterHeld = false; state.tvBrowse.suppressClickUntil = Date.now() + 120;
+          event.preventDefault(); return;
+        }
         if (handleSearchSubmitEnterUp(event)) return;
         if (handleRecentCardEnterUp(event)) return;
         if (handleBlockCardEnterUp(event)) return;
@@ -40896,7 +41145,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         selectPanType(panType);
         return true;
       }
-      if (el === $("homeHero")) armHomeHeroConfirmGuard(event);
       if (typeof el.click === "function") {
         el.click();
       } else {
@@ -41642,57 +41890,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return Array.from(home.querySelectorAll("#homeRecentSection, #homeRecommendationSection, #homeWeeklySection, #listStack > .home-dynamic-section")).filter((section) => !section.hidden && !section.closest("[hidden]"));
     }
 
-    function homeRailContextForTarget(target) {
-      if (!isTvLikeDevice() || !isHomeRouteActive() || isSidebarOpen() || !target || !target.closest) return null;
-      const home = $("home");
-      if (!home || !home.contains(target)) return null;
-      const section = target.closest(".home-section");
-      if (!section || section.hidden || section.closest("[hidden]")) return null;
-      const rail = section.querySelector(".home-rail");
-      if (!rail) return null;
-      return {
-        key: String(rail.dataset.railKey || rail.dataset.homeListId || rail.id || section.id || ""),
-        section,
-        rail,
-        head: section.querySelector(".home-section-head")
-      };
-    }
-
     function homeSectionCards(section) {
       return section ? Array.from(section.querySelectorAll(".home-rail > .card")).filter((card) => !card.classList.contains("home-more-card") && canFastHomeFocus(card)) : [];
-    }
-
-    function rememberBackTopFocusOrigin(target) {
-      const button = visibleBackTopTarget();
-      if (!button || !target) return null;
-      button.__focusOrigin = {
-        route: homeUiRoute(),
-        listId: state.homeV14 && state.homeV14.secondaryListId || "",
-        target,
-        mediaKey: String(target.dataset && target.dataset.mediaKey || target.__mediaItem && mediaDomKey(target.__mediaItem) || "")
-      };
-      return button;
-    }
-
-    function resolveBackTopFocusOrigin(button) {
-      const origin = button && button.__focusOrigin;
-      if (!origin || origin.route !== homeUiRoute()) return null;
-      if (origin.route === "secondary" && origin.listId !== String(state.homeV14 && state.homeV14.secondaryListId || "")) return null;
-      if (origin.target && document.contains(origin.target) && isVisibleFocusable(origin.target)) return origin.target;
-      if (!origin.mediaKey) return null;
-      if (origin.route === "secondary") {
-        const grid = $("secondaryCatalogGrid");
-        const weekly = !!(grid && grid.classList.contains("weekly-secondary-rail"));
-        const cards = weekly ? weeklySecondaryFocusableCards(grid) : grid ? Array.from(grid.querySelectorAll(".card")).filter(canFastHomeFocus) : [];
-        return cards.find((card) => String(card.dataset && card.dataset.mediaKey || card.__mediaItem && mediaDomKey(card.__mediaItem) || "") === origin.mediaKey) || null;
-      }
-      const sections = homeRailSections();
-      for (const section of sections) {
-        const cards = homeSectionCards(section);
-        const target = cards.find((card) => String(card.dataset && card.dataset.mediaKey || card.__mediaItem && mediaDomKey(card.__mediaItem) || "") === origin.mediaKey);
-        if (target) return target;
-      }
-      return null;
     }
 
     function homeFirstTarget() {
@@ -41705,244 +41904,13 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return $("homeHero") && isVisibleFocusable($("homeHero")) ? $("homeHero") : currentHomeFocus();
     }
 
-    function homeTarget(key, active) {
-      if (!isTvLikeDevice() || !isHomeRouteActive() || focusScopeRoot() !== document) return null;
-      const home = $("home");
-      if (!home || !active) return null;
-      const searchLauncher = $("homeSearchLauncher");
-      const hero = $("homeHero");
-      const backTop = $("backTopBtn");
-      if (active === backTop) {
-        if (key === "ArrowUp" || key === "ArrowLeft") {
-          const origin = resolveBackTopFocusOrigin(backTop);
-          if (origin) return origin;
-          const sections = homeRailSections();
-          for (let index = sections.length - 1; index >= 0; index--) {
-            const cards = homeSectionCards(sections[index]);
-            if (cards.length) return cards[cards.length - 1];
-          }
-          return isVisibleFocusable(hero) ? hero : active;
-        }
-        return active;
-      }
-      if (active === searchLauncher) {
-        if (key === "ArrowDown") return isVisibleFocusable(hero) ? hero : homeFirstTarget() || active;
-        if (key === "ArrowUp" || key === "ArrowLeft" || key === "ArrowRight") return active;
-        return null;
-      }
-      if (active === hero) {
-        if (key === "ArrowUp") return isVisibleFocusable(searchLauncher) ? searchLauncher : active;
-        if (key === "ArrowDown") {
-          const target = homeFirstTarget() || active;
-          if (target !== active && target.closest && target.closest(".home-section")) state.homeV14.homeSectionEntryTarget = target;
-          return target;
-        }
-        if (key === "ArrowLeft" || key === "ArrowRight") return active;
-        return null;
-      }
-      const more = active.closest && active.closest(".home-section-more");
-      const section = active.closest && active.closest(".home-section");
-      if (!section) return null;
-      const sections = homeRailSections();
-      const sectionIndex = sections.indexOf(section);
-      const currentCards = homeSectionCards(section);
-      const ownMore = section.querySelector && section.querySelector(".home-section-more");
-      const railMore = section.querySelector && section.querySelector(".home-rail > .home-more-card");
-      if (more) {
-        if (key === "ArrowUp") {
-          for (let previous = sectionIndex - 1; previous >= 0; previous--) {
-            const previousCards = homeSectionCards(sections[previous]);
-            if (previousCards.length) return previousCards[0];
-          }
-          return isVisibleFocusable(hero) ? hero : more;
-        }
-        if (key === "ArrowDown") {
-          for (let next = sectionIndex + 1; next < sections.length; next++) {
-            const nextCards = homeSectionCards(sections[next]);
-            if (nextCards.length) return nextCards[0];
-          }
-          return rememberBackTopFocusOrigin(more) || more;
-        }
-        if (key === "ArrowLeft") return isVisibleFocusable(railMore) ? railMore : currentCards[currentCards.length - 1] || more;
-        if (key === "ArrowRight") return more;
-        return null;
-      }
-      const rail = active.closest && active.closest(".home-rail");
-      if (!rail || !active.classList.contains("card")) return null;
-      const cards = Array.from(rail.children).filter((child) => child.classList && child.classList.contains("card") && canFastHomeFocus(child));
-      const index = cards.indexOf(active);
-      if (index < 0) return active;
-      if (key === "ArrowLeft") return cards[index - 1] || active;
-      if (key === "ArrowRight") {
-        if (cards[index + 1]) return cards[index + 1];
-        if (isVisibleFocusable(ownMore)) return ownMore;
-        return rememberBackTopFocusOrigin(active) || active;
-      }
-      if (key === "ArrowDown") {
-        for (let next = sectionIndex + 1; next < sections.length; next++) {
-          const nextCards = homeSectionCards(sections[next]);
-          if (nextCards.length) return nextCards[Math.min(index, nextCards.length - 1)];
-          const nextMore = sections[next].querySelector(".home-section-more");
-          if (isVisibleFocusable(nextMore)) return nextMore;
-        }
-        return rememberBackTopFocusOrigin(active) || active;
-      }
-      if (key === "ArrowUp") {
-        for (let previous = sectionIndex - 1; previous >= 0; previous--) {
-          const previousCards = homeSectionCards(sections[previous]);
-          if (previousCards.length) return previousCards[Math.min(index, previousCards.length - 1)];
-          const previousMore = sections[previous].querySelector(".home-section-more");
-          if (isVisibleFocusable(previousMore)) return previousMore;
-        }
-        return isVisibleFocusable(hero) ? hero : currentHomeFocus() || active;
-      }
-      return null;
-    }
-
-    function isSecondaryLeftBoundary(active) {
-      if (!isTvLikeDevice() || homeUiRoute() !== "secondary" || !active) return false;
-      if (active === $("secondaryCatalogBack")) return true;
-      const row = active.closest && active.closest(".secondary-filter-row");
-      if (row) {
-        const options = Array.from(row.querySelectorAll(".secondary-filter-option")).filter(canFastHomeFocus);
-        return options[0] === active;
-      }
-      const grid = $("secondaryCatalogGrid");
-      if (!grid || !grid.contains(active) || !active.classList || !active.classList.contains("card")) return false;
-      const weekly = grid.classList.contains("weekly-secondary-rail");
-      const cards = weekly
-        ? weeklySecondaryFocusableCards(grid)
-        : Array.from(grid.querySelectorAll(".card")).filter(canFastHomeFocus);
-      const index = cards.indexOf(active);
-      if (index < 0) return false;
-      return weekly ? index === 0 : index % Math.max(1, gridColumns(grid)) === 0;
-    }
-
-    function secondaryGridDownTarget(grid, cards, active, index, columns) {
-      if (!grid || !Array.isArray(cards) || !active || index < 0) return null;
-      const width = Math.max(1, columns);
-      const currentRow = Math.floor(index / width);
-      const nextRowStart = (currentRow + 1) * width;
-      if (nextRowStart >= cards.length) return null;
-      const nextRowEnd = Math.min(nextRowStart + width, cards.length);
-      const nextRowCards = cards.slice(nextRowStart, nextRowEnd);
-      if (!nextRowCards.length) return null;
-      const sameColumn = nextRowCards[index - nextRowStart];
-      if (sameColumn) return sameColumn;
-      const activeRect = active.getBoundingClientRect ? active.getBoundingClientRect() : { left: index, width: 1 };
-      const activeCenterX = Number(activeRect.left || 0) + Number(activeRect.width || 0) / 2;
-      let nearest = nextRowCards[0];
-      let nearestDistance = Infinity;
-      nextRowCards.forEach((candidate) => {
-        const rect = candidate && candidate.getBoundingClientRect ? candidate.getBoundingClientRect() : { left: nextRowStart, width: 1 };
-        const centerX = Number(rect.left || 0) + Number(rect.width || 0) / 2;
-        const distance = Math.abs(centerX - activeCenterX);
-        if (distance < nearestDistance) {
-          nearest = candidate;
-          nearestDistance = distance;
-        }
-      });
-      return nearest;
-    }
-
-    function secondaryCatalogDirectionalTarget(key, active) {
-      if (homeUiRoute() !== "secondary" || !active || key.indexOf("Arrow") !== 0) return null;
-      const back = $("secondaryCatalogBack"), host = $("secondaryCatalogFilters"), grid = $("secondaryCatalogGrid"), rows = host ? Array.from(host.querySelectorAll(".secondary-filter-row")) : [];
-      const buttons = (row) => row ? Array.from(row.querySelectorAll(".secondary-filter-option")).filter(canFastHomeFocus) : [];
-      const weeklySecondary = !!(grid && state.homeV14 && state.homeV14.secondaryListId === "now-playing" || grid && grid.classList.contains("weekly-secondary-rail"));
-      const cards = weeklySecondary
-        ? weeklySecondaryFocusableCards(grid)
-        : grid ? Array.from(grid.querySelectorAll(".card")).filter(canFastHomeFocus) : [];
-      const firstCard = cards[0] || null;
-      const backTop = visibleBackTopTarget();
-      const recentHeaderItems = state.homeV14 && state.homeV14.secondaryListId === "recent"
-        ? [
-          back,
-          recentManageRuntime().active ? $("recentManageSelectAll") : $("recentManageBtn"),
-          recentManageRuntime().active ? $("recentManageDelete") : null,
-          recentManageRuntime().active ? $("recentManageCancel") : null
-        ].filter(canFastHomeFocus)
-        : [];
-      if (recentHeaderItems.length && recentHeaderItems.indexOf(active) >= 0) {
-        const headerIndex = recentHeaderItems.indexOf(active);
-        if (key === "ArrowLeft" || key === "ArrowRight") {
-          const target = recentHeaderItems[headerIndex + (key === "ArrowRight" ? 1 : -1)];
-          return target || active;
-        }
-        if (key === "ArrowDown") return firstCard || active;
-        if (key === "ArrowUp") return headerIndex > 0 ? recentHeaderItems[headerIndex - 1] : active;
-        return active;
-      }
-      if (active === backTop) {
-        if (key === "ArrowUp" || key === "ArrowLeft") return resolveBackTopFocusOrigin(backTop) || cards[cards.length - 1] || back || active;
-        return active;
-      }
-      if (active === back) {
-        if (weeklySecondary) return key === "ArrowDown" ? firstCard || active : active;
-        if (key === "ArrowDown") return rows.length ? secondaryFilterFocusTarget(rows[0], back.getBoundingClientRect().left) || firstCard || active : firstCard || active;
-        return active;
-      }
-      const row = active.closest && active.closest(".secondary-filter-row");
-      if (row) {
-        const list = buttons(row), index = list.indexOf(active), rowIndex = rows.indexOf(row);
-        if (index < 0) return active;
-        if (key === "ArrowLeft" || key === "ArrowRight") return list[index + (key === "ArrowRight" ? 1 : -1)] || active;
-        if (key === "ArrowUp") {
-          const previous = rows[rowIndex - 1];
-          return previous ? secondaryFilterFocusTarget(previous, active.getBoundingClientRect().left) || active : back || active;
-        }
-        if (key === "ArrowDown") {
-          const next = rows[rowIndex + 1];
-          if (next) return secondaryFilterFocusTarget(next, active.getBoundingClientRect().left) || active;
-          return firstCard || active;
-        }
-        return active;
-      }
-      if (grid && grid.contains(active) && active.classList && active.classList.contains("card")) {
-        if (weeklySecondary && active.classList.contains("weekly-card")) {
-          const index = cards.indexOf(active);
-          if (key === "ArrowLeft") return cards[index - 1] || active;
-          if (key === "ArrowRight") return cards[index + 1] || (index === cards.length - 1 ? rememberBackTopFocusOrigin(active) || active : active);
-          if (key === "ArrowUp") return back || active;
-          return active;
-        }
-        const index = cards.indexOf(active), columns = Math.max(1, gridColumns(grid)), rowIndex = index >= 0 ? Math.floor(index / columns) : 0;
-        if (index < 0) return active;
-        if (key === "ArrowLeft") return index % columns > 0 ? cards[index - 1] : active;
-        if (key === "ArrowRight") {
-          const next = cards[index + 1];
-          if (index % columns < columns - 1 && next) return next;
-          return rememberBackTopFocusOrigin(active) || active;
-        }
-        if (key === "ArrowUp") {
-          if (rowIndex > 0) return cards[index - columns] || cards[Math.max(0, index - 1)] || active;
-          if (recentHeaderItems.length) return recentHeaderItems[1] || recentHeaderItems[0] || active;
-          const lastRow = rows[rows.length - 1];
-          return lastRow ? secondaryFilterFocusTarget(lastRow, active.getBoundingClientRect().left) || back || active : back || active;
-        }
-        if (key === "ArrowDown") {
-          const nextRowTarget = secondaryGridDownTarget(grid, cards, active, index, columns);
-          if (nextRowTarget) return nextRowTarget;
-          const canLoadMore = secondaryCanLoadMore();
-          if (canLoadMore) {
-            secondaryLoadNextPage();
-            return active;
-          }
-          return active;
-        }
-      }
-      return null;
-    }
-
     function fastHomeDirectionalTarget(key, active) {
       if (!isTvLikeDevice() || focusScopeRoot() !== document || isConnectionPanelOpen() || isSearchSuggestOpen()) return null;
       if (!active || !["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(key)) return null;
       if (isTextEditingElement(active)) return null;
       if ($("connectionDock") && $("connectionDock").contains(active)) return null;
       if ($("searchForm") && $("searchForm").contains(active)) return null;
-      return secondaryCatalogDirectionalTarget(key, active)
-        || homeTarget(key, active)
-        || fastHomeGridTarget(key, active)
+      return fastHomeGridTarget(key, active)
         || fastHomeSearchRailTarget(key, active)
         || fastHomeLiveEntryTarget(key, active);
     }
@@ -42041,12 +42009,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
 
     function focusRemoteTarget(target, options) {
       if (!target) return;
-      const home = state.homeV14;
       const previous = document.activeElement;
-      const heroSectionEntry = previous === $("homeHero") && isHomeRouteActive() && target.closest && target.closest(".home-section");
-      const sectionEntry = !!((home && home.homeSectionEntryTarget === target) || heroSectionEntry);
-      if (sectionEntry) home.homeSectionEntryTarget = null;
-      const focusOptions = Object.assign({}, options || {}, sectionEntry ? { alignHomeSectionHead: true } : {});
+      const focusOptions = options || {};
       try {
         target.focus({ preventScroll: true });
       } catch (e) {
@@ -42481,38 +42445,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       return { x: 0, y: next - before };
     }
 
-    function alignHomeRailToAnchor(context) {
-      if (!context || !context.rail || !context.rail.getBoundingClientRect) return { x: 0, y: 0 };
-      const root = document.scrollingElement || document.documentElement;
-      const height = window.innerHeight || document.documentElement.clientHeight || 0;
-      const anchor = context.section && context.section.getBoundingClientRect ? context.section : context.rail;
-      const anchorRect = anchor.getBoundingClientRect();
-      const before = homeScrollTop();
-      const max = Math.max(0, Number(root.scrollHeight || document.documentElement.scrollHeight || 0) - Number(root.clientHeight || height || 0));
-      const desired = before + anchorRect.top - HOME_RAIL_ANCHOR_OFFSET;
-      const next = Math.max(0, Math.min(max, desired));
-      if (Math.abs(next - before) > .5) applyHomeScrollTop(next);
-      return { x: 0, y: next - before };
-    }
-
-    function revealHomeFocusedTarget(target, options) {
+    function revealPageFocusedTarget(target, options) {
       const opts = options || {};
       const root = document.scrollingElement || document.documentElement;
-      const homeHero = $("homeHero");
-      if (isHomeRouteActive() && target === homeHero) {
-        if (state.homeV14) state.homeV14.lastHomeFocusedRail = "";
-        const beforeTop = homeScrollTop();
-        if (beforeTop > 0) applyHomeScrollTop(0);
-        return { x: 0, y: -beforeTop };
-      }
-      const homeRail = homeRailContextForTarget(target);
-      if (homeRail && homeRail.key) {
-        const lastRail = String(state.homeV14 && state.homeV14.lastHomeFocusedRail || "");
-        if (homeRail.key === lastRail) return { x: 0, y: 0 };
-        const anchorDelta = alignHomeRailToAnchor(homeRail);
-        if (state.homeV14) state.homeV14.lastHomeFocusedRail = homeRail.key;
-        return anchorDelta;
-      }
       const itemRect = focusOuterBounds(target);
       const height = window.innerHeight || document.documentElement.clientHeight || 0;
       const safe = tvFocusSafeInsets(null);
@@ -42615,7 +42550,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       } else if (!(connectionBody && connectionBody.contains(target))
         && !(sidebar && sidebar.contains(target))
         && !(suggestPanel && suggestPanel.contains(target))) {
-        const homeDelta = revealHomeFocusedTarget(target, options);
+        const homeDelta = revealPageFocusedTarget(target, options);
         deltaY += homeDelta.y;
       }
       if (isTvDiagnosticEnabled()) {
@@ -42666,6 +42601,13 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     }
     function keepFocusInView(target, options) {
       if (!target) return;
+      if (tvBrowseActive() && target.closest && target.closest("#tvBrowse")) {
+        const container = target.closest(".rail,.tv-browse-columns,.secondary-filter-options");
+        if (container) revealHorizontalInContainer(target, container);
+        const row = target.closest(".secondary-filter-row");
+        if (row) revealVerticalInContainer(row, $("tvBrowseFilters"), 8, 8);
+        return;
+      }
       if (isTvLikeDevice()) {
         revealFocusedTarget(target, options);
         return;
@@ -42714,6 +42656,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if ($("detailSheet") && $("detailSheet").classList.contains("active")) return $("detailSheet");
       if (isConnectionPanelOpen() && $("connectionBody")) return $("connectionBody");
       if (isSidebarOpen()) return $("homeSidebar");
+      if (tvBrowseActive() && tvBrowseState().filterOpen) return $("tvBrowseFilters");
       return document;
     }
 
@@ -42788,6 +42731,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const snapshotFocus = isSidebarOpen() ? state.homeV14.sidebarReturnTarget : document.activeElement;
       return {
         version: 1,
+        tvBrowse: isTvLikeDevice() ? tvBrowseSnapshot() : null,
         savedAt: Date.now(),
         route: uiSnapshotRoute(),
         hash: location.hash || "",
@@ -42948,13 +42892,20 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       } else {
         state.homeV14.route = "home";
         state.homeV14.secondaryListId = "";
-        state.homeV14.lastHomeFocusedRail = "";
       }
       if (legacyHomeRoute) state.activeList = "all";
       else if (snapshot.activeList) state.activeList = normalizeLegacyCategoryId(snapshot.activeList);
       normalizeActiveListForViewport();
+      if (isTvLikeDevice()) {
+        restoreTvBrowseSnapshot(snapshot.tvBrowse || savedHomeReturn && savedHomeReturn.tvBrowse, snapshotSecondaryListId);
+        if (state.homeV14.route === "secondary") {
+          state.homeV14.route = "home"; state.activeList = "all";
+          if (location.hash === "#secondary") history.replaceState({ sheet: "home" }, "", location.pathname + location.search);
+        }
+      }
       const snapshotFocusEpoch = homeFocusUserEpoch();
-      renderAll({ deferContent: snapshot.route === "home" });
+      renderAll({ deferContent: !isTvLikeDevice() && snapshot.route === "home" });
+      if (tvBrowseActive() && snapshot.route !== "detail" && snapshot.route !== "sync") tvBrowseFocusIntent(snapshot.homeFocus && snapshot.homeFocus.type === "id" && snapshot.homeFocus.key.indexOf("tv") === 0 ? snapshot.homeFocus : null);
       if (snapshot.connectionOpen && $("connectionDock") && $("connectionBody")) {
         setConnectionPanelOpen(true);
       }
@@ -42973,11 +42924,11 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       } else if (snapshot.route === "sync") {
         history.replaceState({ sheet: "sync" }, "", "#sync");
         openSync({ restore: true, skipHistory: true });
-      } else {
+      } else if (!tvBrowseActive()) {
         requestAnimationFrame(() => {
           if (homeFocusUserEpoch() !== snapshotFocusEpoch) return;
           window.scrollTo(0, Number(snapshot.scrollY || 0));
-          if (!blockedDocumentarySnapshot && snapshot.homeFocus) {
+          if (snapshot.homeFocus) {
             const savedHome = {
               activeList: snapshot.activeList || state.activeList,
               mediaKey: snapshot.homeFocus.key || "",
@@ -42989,7 +42940,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         });
         setTimeout(() => {
           if (homeFocusUserEpoch() !== snapshotFocusEpoch) return;
-          if (!blockedDocumentarySnapshot && snapshot.homeFocus && ["home", "search", "secondary"].includes(uiSnapshotRoute())) {
+          if (snapshot.homeFocus && ["home", "search", "secondary"].includes(uiSnapshotRoute())) {
             const savedHome = {
               activeList: snapshot.activeList || state.activeList,
               mediaKey: snapshot.homeFocus.key || "",
@@ -43214,6 +43165,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const restoreRecentNativeHome = opts.restoreRecentNativeHome === true && !($("detailSheet") && $("detailSheet").classList.contains("active")) && isRecentNativeHomeReturn();
       const isPanPlaybackReturn = !!(state.pan.playbackReturn && $("detailSheet") && $("detailSheet").classList.contains("active") && $("panSearchBlock") && $("panSearchBlock").classList.contains("active"));
       const isPlayerReturn = opts.playerReturn === true;
+      syncBrowseDevicePresentation();
       lockViewportWidth();
       fitConnectionPanel();
       renderConnection();
@@ -43327,15 +43279,11 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       button.classList.toggle("is-hidden", hide);
     }
 
-    function handleTvSecondarySidebarBack() {
-      if (!isTvLikeDevice() || !isSidebarOpen() || homeUiRoute() !== "secondary" || location.hash === "#secondary") return false;
-      closeSidebar();
-      try { history.forward(); } catch (e) {}
-      return true;
-    }
-
     window.addEventListener("popstate", (event) => {
       const detailSheet = $("detailSheet");
+      if (tvBrowseActive() && tvBrowseState().filterOpen && focusScopeRoot() === $("tvBrowseFilters")) {
+        tvBrowseCloseFilters(); ensureHomeHistoryEntry(); return;
+      }
       if (state.homeV14 && state.homeV14.sidebarHistoryBackPending) {
         const deferredAction = state.homeV14.sidebarDeferredAction;
         state.homeV14.sidebarDeferredAction = null;
@@ -43372,9 +43320,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         closeConnectionPanel({ fromPopState: true });
         return;
       }
-      // Native TV Back can bypass keydown; consume the Sidebar layer before
-      // the normal Secondary -> Home history transition.
-      if (handleTvSecondarySidebarBack()) return;
       // 正在关闭动画中，忽略重复触发
       const isClosing = detailSheet && detailSheet.classList.contains("sheet-closing");
       if (isClosing) return;
@@ -43570,6 +43515,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     }
 
     async function boot() {
+      const coldFocusEpoch = homeFocusUserEpoch();
+      syncBrowseDevicePresentation();
       lockViewportWidth();
       bindActions();
       installRemoteKeys();
@@ -43601,19 +43548,11 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       updateBackTopButton();
       if (!restored) {
         if (isHomeRouteActive() && isTvLikeDevice()) {
-          state.homeV14.coldHomeFocusPending = true;
-          state.homeV14.coldHomeFocusEpoch = homeFocusUserEpoch();
-          state.homeV14.coldHomeFallbackTarget = null;
-          focusColdHomeHeroIfReady();
-        } else {
-          state.homeV14.coldHomeFocusPending = false;
-          state.homeV14.coldHomeFallbackTarget = null;
+          if (homeFocusUserEpoch() === coldFocusEpoch) tvBrowseFocusIntent();
         }
-        setTimeout(() => ensureRemoteInitialFocus({ allowHomeFallback: false }), 80);
-        setTimeout(() => ensureRemoteInitialFocus({ allowHomeFallback: true }), 260);
+        setTimeout(ensureRemoteInitialFocus, 80);
+        setTimeout(ensureRemoteInitialFocus, 260);
       } else if (uiSnapshotRoute() !== "home") {
-        state.homeV14.coldHomeFocusPending = false;
-        state.homeV14.coldHomeFallbackTarget = null;
         setTimeout(ensureRemoteInitialFocus, 80);
       }
     }

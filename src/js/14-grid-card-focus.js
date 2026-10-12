@@ -268,12 +268,6 @@
       });
     }
 
-    function coldHomeInitialFocus() {
-      if (focusScopeRoot() !== document || !isHomeRouteActive() || !isTvLikeDevice()) return null;
-      const target = $("homeHero");
-      return isVisibleFocusable(target) ? target : null;
-    }
-
     function homeFocusUserEpoch() {
       return Number(state.homeV14 && state.homeV14.focusUserEpoch || 0);
     }
@@ -283,105 +277,37 @@
       if (!home) return 0;
       if (home.secondaryMediaFocusRestore) cancelSecondaryMediaFocusRestore();
       home.focusUserEpoch = Number(home.focusUserEpoch || 0) + 1;
-      home.coldHomeFocusPending = false;
-      home.coldHomeFallbackTarget = null;
       return home.focusUserEpoch;
     }
 
-    function ensureRemoteInitialFocus(options) {
-      const opts = options || {};
-      const active = document.activeElement;
-      if (state.remoteInitialFocused && isVisibleFocusable(active)) return;
-      // Secondary Catalog has an explicit Back -> filters -> grid graph.  Its
-      // asynchronous page renderer must never replace that graph's focus with
-      // the generic first-content fallback.
-      if (homeUiRoute() === "secondary" || homeUiRoute() === "search") return;
-      const wantsColdHome = !state.remoteInitialFocused && isHomeRouteActive() && isTvLikeDevice();
-      if (wantsColdHome && !state.homeV14.coldHomeFocusPending) {
-        if (isVisibleFocusable(active)) {
-          state.remoteInitialFocused = true;
-          return;
-        }
-        const target = homeRailFallbackTarget(null, null);
-        if (!target) return;
-        state.remoteInitialFocused = true;
-        state.homeV14.initialHomeFocusPending = true;
-        const focusEpoch = homeFocusUserEpoch();
-        requestAnimationFrame(() => {
-          try {
-            if (homeFocusUserEpoch() !== focusEpoch) return;
-            if (!isVisibleFocusable(document.activeElement)) focusRemoteTarget(target);
-          }
-          finally { state.homeV14.initialHomeFocusPending = false; }
-        });
+    function ensureRemoteInitialFocus() {
+      if (tvBrowseActive()) {
+        if (isSidebarOpen() || focusScopeRoot() !== document) return;
+        if (!isVisibleFocusable(document.activeElement)) tvBrowseFocusIntent();
+        else tvBrowseTryFocus();
         return;
       }
-      const coldTarget = wantsColdHome ? coldHomeInitialFocus() : null;
-      if (wantsColdHome && state.homeV14.coldHomeFocusPending && !coldTarget && !opts.allowHomeFallback) return;
-      // Do not briefly focus a Home content target while the initial Home
-      // presentation is still preparing.  A late initial-focus timer may opt
-      // into a fallback only when the data source really produced no target.
-      if (wantsColdHome && !coldTarget && !opts.allowHomeFallback) return;
-      if (wantsColdHome && !coldTarget && opts.allowHomeFallback) {
-        state.homeV14.coldHomeFallbackTarget = initialHomeFocus() || firstContentFocus() || null;
-      }
-      const target = coldTarget || (!state.remoteInitialFocused ? initialHomeFocus() || firstContentFocus() : firstContentFocus());
+      if (state.remoteInitialFocused && isVisibleFocusable(document.activeElement)) return;
+      if (homeUiRoute() === "secondary" || homeUiRoute() === "search") return;
+      const target = initialHomeFocus() || firstContentFocus();
       if (!target) return;
-      state.remoteInitialFocused = true;
-      state.homeV14.initialHomeFocusPending = true;
-      const focusEpoch = homeFocusUserEpoch();
+      const epoch = homeFocusUserEpoch();
       requestAnimationFrame(() => {
-        try {
-          if (homeFocusUserEpoch() !== focusEpoch) return;
-          // The launcher may have become ready between the fallback timer and
-          // this frame.  Never let the queued fallback overwrite it.
-          if (wantsColdHome && document.activeElement === $("homeSearchLauncher")) return;
-          focusRemoteTarget(target);
-        }
-        finally { state.homeV14.initialHomeFocusPending = false; }
+        if (epoch !== homeFocusUserEpoch() || isVisibleFocusable(document.activeElement)) return;
+        state.remoteInitialFocused = true; focusRemoteTarget(target);
       });
     }
 
     function ensureRemoteActiveFocus() {
-      const active = document.activeElement;
-      if (isVisibleFocusable(active)) return false;
+      if (isVisibleFocusable(document.activeElement)) return false;
       if (restoreConnectionPanelFocus()) return true;
-      if (isTvLikeDevice() && isHomeRouteActive() && state.homeV14.coldHomeFocusPending) {
-        if (homeFocusUserEpoch() !== Number(state.homeV14.coldHomeFocusEpoch || 0)) {
-          state.homeV14.coldHomeFocusPending = false;
-          state.homeV14.coldHomeFallbackTarget = null;
-        }
-      }
-      if (isTvLikeDevice() && isHomeRouteActive() && state.homeV14.coldHomeFocusPending) {
-        const coldTarget = coldHomeInitialFocus();
-        if (coldTarget) {
-          state.homeV14.coldHomeFocusPending = false;
-          state.homeV14.coldHomeFallbackTarget = null;
-          focusRemoteTarget(coldTarget);
-          return true;
-        }
-        const fallback = state.homeV14.coldHomeFallbackTarget;
-        if (isVisibleFocusable(fallback)) {
-          focusRemoteTarget(fallback);
-          return true;
-        }
-        state.homeV14.coldHomeFocusPending = false;
-        state.homeV14.coldHomeFallbackTarget = null;
-      }
-      const homeColdPending = !!(state.homeV14 && state.homeV14.coldHomeFocusPending);
-      const target = uiSnapshotRoute() === "home"
-        ? homeColdPending ? coldHomeInitialFocus() || initialHomeFocus() || firstContentFocus() : homeRailFallbackTarget(null, null)
-        : firstContentFocus();
+      const target = tvBrowseActive() && focusScopeRoot() === document ? tvBrowsePosterTarget() : firstContentFocus();
       if (!target) return false;
-      focusRemoteTarget(target);
-      return true;
+      focusRemoteTarget(target); return true;
     }
 
     function focusInitialHomeNow(options) {
-      const target = initialHomeFocus();
-      state.homeV14.initialHomeFocusPending = true;
-      try { focusHomeTopTarget(target, options); }
-      finally { state.homeV14.initialHomeFocusPending = false; }
+      focusHomeTopTarget(initialHomeFocus(), options);
     }
 
     function focusHomeTopTarget(target, options) {
@@ -400,6 +326,7 @@
     }
 
     function initialHomeFocus() {
+      if (tvBrowseActive()) return tvBrowsePosterTarget();
       if (focusScopeRoot() !== document) return null;
       if (isHomeRouteActive() && isVisibleFocusable($("homeHero"))) return $("homeHero");
       return firstContentFocus();
@@ -410,6 +337,7 @@
       return firstContentFocus() || initialHomeFocus();
     }
     function observeInfiniteScroll() {
+      if (tvBrowseActive()) { if (state.infiniteObserver) state.infiniteObserver.disconnect(); return; }
       const sentinel = $("infiniteSentinel");
       if (!sentinel) return;
       if (!("IntersectionObserver" in window)) return;
@@ -433,6 +361,7 @@
     }
 
     function ensureScrollablePage() {
+      if (tvBrowseActive()) return;
       const doc = document.documentElement;
       if (doc.scrollHeight > window.innerHeight + 500) return;
       loadMoreVisible();

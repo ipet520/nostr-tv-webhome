@@ -176,13 +176,13 @@
       }
       query.source = source;
       if (source === "recommendation" && !Array.isArray(query.poolItems)) query.poolItems = [];
-      home.secondaryActiveQueryKey = key;
+      if (!isTvLikeDevice()) home.secondaryActiveQueryKey = key;
       return query;
     }
     function secondaryActiveQuery(id) {
       id = id ? normalizeLegacyCategoryId(id) : id;
       const home = state.homeV14;
-      const query = home && home.secondaryQueries && home.secondaryQueries[home.secondaryActiveQueryKey];
+      const query = home && home.secondaryQueries && home.secondaryQueries[id ? secondaryFilterKey(id, secondaryFilterState(id)) : home.secondaryActiveQueryKey];
       return query && (!id || query.listId === id) ? query : null;
     }
     function secondaryApplyServerFilters(source, filters) {

@@ -22,18 +22,6 @@
       if (!serverFilters.has("sort") && filters.sort === "latest") return result.slice().sort((a, b) => String(b.releaseDate || b.first_air_date || "").localeCompare(String(a.releaseDate || a.first_air_date || "")) || metric(b, "latest") - metric(a, "latest"));
       return result;
     }
-    function secondaryFilterFocusTarget(row, fromX) {
-      const options = row ? Array.from(row.querySelectorAll(".secondary-filter-option")).filter(canFastHomeFocus) : [];
-      if (!options.length) return null;
-      const group = row.dataset.secondaryFilterGroup || "";
-      const filters = secondaryFilterState(state.homeV14.secondaryListId);
-      const preferred = filters.lastFocused[group] || filters[group] || (group === "sort" ? "hot" : "all");
-      const exact = options.find((button) => button.dataset.secondaryFilterValue === preferred);
-      if (exact) return exact;
-      const x = Number(fromX);
-      if (Number.isFinite(x)) return options.slice().sort((a, b) => Math.abs(a.getBoundingClientRect().left + a.getBoundingClientRect().width / 2 - x) - Math.abs(b.getBoundingClientRect().left + b.getBoundingClientRect().width / 2 - x))[0];
-      return options[0];
-    }
     function syncSecondaryFilterControls(id, host) {
       const filters = secondaryFilterState(id);
       if (!host) return;
@@ -121,7 +109,7 @@
       query.snapshotReady = true;
       if (recommendationSecondaryIsCurrent(query, requestSeq)) {
         state.homeV14.secondaryPage = page;
-        if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === "recommendation") renderSecondaryCatalog();
+        renderCatalogQuery("recommendation");
         observeInfiniteScroll();
       }
       return query;
@@ -146,7 +134,7 @@
         query.endpointMap = [];
         query.sourceStates = [];
         state.homeV14.secondaryPage = 1;
-        if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
+        renderCatalogQuery(id);
         return query;
       }
       if (id === "recommendation") return loadRecommendationSecondaryPage(query, page);
@@ -165,19 +153,19 @@
         const refreshStillRunning = !!(latest && (latest.loading || latest.promise));
         if (snapshotIsCurrent && homeLatestHasItems(latest)) {
           publishHomeWeeklySnapshot(latest.cacheHydrated ? "cache" : "memory", { refreshing: refreshStillRunning });
-        } else if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) {
-          renderSecondaryCatalog();
+        } else if ((tvBrowseActive() && tvBrowseState().column === id || homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id)) {
+          renderCatalogQuery(id);
         }
         refreshPromise.then(() => {
           if (query.requestSeq !== requestSeq) return;
           const published = publishHomeWeeklySnapshot("network-final", { final: true, refreshing: false });
-          if (!published && homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) {
+          if (!published && (tvBrowseActive() && tvBrowseState().column === id || homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id)) {
             query.loading = false;
             query.loaded = true;
             query.error = state.homeLatest && state.homeLatest.error || "";
             query.hasMore = false;
             query.snapshotReady = false;
-            renderSecondaryCatalog();
+            renderCatalogQuery(id);
           }
         }).catch(() => {
           if (query.requestSeq !== requestSeq) return;
@@ -190,7 +178,7 @@
           query.error = "加载失败";
           query.hasMore = false;
           query.snapshotReady = false;
-          if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
+          renderCatalogQuery(id);
         });
         return query;
       }
@@ -200,7 +188,7 @@
       query.retryableError = "";
       query.failedPage = 0;
       const requestSeq = ++query.requestSeq;
-      if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
+      renderCatalogQuery(id);
       const filters = secondaryFilterState(id);
       const plan = buildSecondaryQueryPlan(id, filters, query);
       const pending = plan.sources.map((source, index) => ({ source, state: plan.sourceStates[index] }))
@@ -212,18 +200,21 @@
         query.hasMore = plan.sourceStates.some(secondaryTmdbSourceHasMore);
         secondaryUpdateTmdbMetrics(query, plan, query.hasMore);
         state.homeV14.secondaryPage = query.page;
-        if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
+        renderCatalogQuery(id);
         return query;
       }
       pending.forEach((entry) => { entry.state.loading = true; });
       const results = await Promise.all(pending.map(({ source, state: sourceState }) => {
         const requestPage = Math.max(1, Number(sourceState.page || 0) + 1);
         return Promise.resolve()
-          .then(() => requestJson(tmdbUrl(source, requestPage), 18))
+          .then(() => isTvLikeDevice() ? homeRequestJson(tmdbUrl(source, requestPage), 18, "foreground", query.key + ":" + sourceState.key + ":" + requestPage) : requestJson(tmdbUrl(source, requestPage), 18))
           .then((body) => ({ source, sourceState, requestPage, body: body || {}, error: null }))
           .catch((error) => ({ source, sourceState, requestPage, body: null, error }));
       }));
-      if (query.requestSeq !== requestSeq || secondaryActiveQuery(id) !== query) return query;
+      if (query.requestSeq !== requestSeq || secondaryActiveQuery(id) !== query) {
+        if (query.requestSeq === requestSeq) query.loading = false;
+        return query;
+      }
       const incoming = [];
       let goodCount = 0;
       results.forEach((result) => {
@@ -264,7 +255,7 @@
         query.failedPage = page;
         query.hasMore = hasPendingSource;
         secondaryUpdateTmdbMetrics(query, plan, query.hasMore);
-        if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
+        renderCatalogQuery(id);
         return query;
       }
       query.items = uniqueMedia((query.items || []).concat(incoming));
@@ -279,7 +270,7 @@
       query.retryableError = hasRetryableSource ? "部分来源暂时不可用，可继续重试" : "";
       secondaryUpdateTmdbMetrics(query, plan, query.hasMore);
       state.homeV14.secondaryPage = query.page;
-      if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
+      renderCatalogQuery(id);
       observeInfiniteScroll();
       return query;
     }
@@ -417,6 +408,7 @@
     function openSecondaryCatalog(listId, options) {
       const opts = options || {};
       listId = normalizeLegacyCategoryId(listId);
+      if (tvBrowseActive()) return tvBrowseSelectColumn(listId);
       if (!listId || !getList(listId) && !["now-playing", "recent", "recommendation"].includes(listId)) return false;
       if (!isHomeRouteActive() && !(homeUiRoute() === "secondary" && opts.fromSidebar)) return false;
       if (isRecentManagePage() && recentManageRuntime().deleting) {
@@ -807,6 +799,7 @@
     }
 
     function renderHomeWeekly(options) {
+      if (tvBrowseActive()) { if (tvBrowseState().column === "now-playing") renderTvBrowse(); return; }
       const opts = options || {};
       const section = $("homeWeeklySection");
       const rail = $("homeWeeklyRail");
@@ -843,6 +836,7 @@
     }
 
     function renderHomeRecommendation(options) {
+      if (tvBrowseActive()) { if (tvBrowseState().column === "recommendation") renderTvBrowse(); return; }
       const opts = options || {};
       const section = $("homeRecommendationSection");
       const rail = $("homeRecommendationRail");

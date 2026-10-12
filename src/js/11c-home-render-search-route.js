@@ -34,6 +34,7 @@
     }
 
     function scheduleHomeNostrRender() {
+      if (isTvLikeDevice()) { renderCatalogQuery("recommendation"); return; }
       if (homeUiRoute() !== "home" || !isHomeRouteActive()) {
         scheduleRender();
         return;
@@ -123,7 +124,7 @@
         if (searchRail) searchRail.scrollLeft = Math.max(0, Number(saved.searchRailScrollLeft || 0));
         const searchHotRail = $("searchHotRail");
         if (searchHotRail) searchHotRail.scrollLeft = Math.max(0, Number(saved.searchHotRailScrollLeft || 0));
-        const target = isVisibleFocusable($("homeSearchLauncher"))
+        const target = tvBrowseActive() ? $("tvFunction-search") : isVisibleFocusable($("homeSearchLauncher"))
           ? $("homeSearchLauncher")
           : isVisibleFocusable($("searchSubmitBtn")) ? $("searchSubmitBtn") : initialHomeFocus();
         if (target) focusRemoteTarget(target);

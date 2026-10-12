@@ -1,5 +1,12 @@
     function keepFocusInView(target, options) {
       if (!target) return;
+      if (tvBrowseActive() && target.closest && target.closest("#tvBrowse")) {
+        const container = target.closest(".rail,.tv-browse-columns,.secondary-filter-options");
+        if (container) revealHorizontalInContainer(target, container);
+        const row = target.closest(".secondary-filter-row");
+        if (row) revealVerticalInContainer(row, $("tvBrowseFilters"), 8, 8);
+        return;
+      }
       if (isTvLikeDevice()) {
         revealFocusedTarget(target, options);
         return;
@@ -48,6 +55,7 @@
       if ($("detailSheet") && $("detailSheet").classList.contains("active")) return $("detailSheet");
       if (isConnectionPanelOpen() && $("connectionBody")) return $("connectionBody");
       if (isSidebarOpen()) return $("homeSidebar");
+      if (tvBrowseActive() && tvBrowseState().filterOpen) return $("tvBrowseFilters");
       return document;
     }
 
@@ -122,6 +130,7 @@
       const snapshotFocus = isSidebarOpen() ? state.homeV14.sidebarReturnTarget : document.activeElement;
       return {
         version: 1,
+        tvBrowse: isTvLikeDevice() ? tvBrowseSnapshot() : null,
         savedAt: Date.now(),
         route: uiSnapshotRoute(),
         hash: location.hash || "",
@@ -282,13 +291,20 @@
       } else {
         state.homeV14.route = "home";
         state.homeV14.secondaryListId = "";
-        state.homeV14.lastHomeFocusedRail = "";
       }
       if (legacyHomeRoute) state.activeList = "all";
       else if (snapshot.activeList) state.activeList = normalizeLegacyCategoryId(snapshot.activeList);
       normalizeActiveListForViewport();
+      if (isTvLikeDevice()) {
+        restoreTvBrowseSnapshot(snapshot.tvBrowse || savedHomeReturn && savedHomeReturn.tvBrowse, snapshotSecondaryListId);
+        if (state.homeV14.route === "secondary") {
+          state.homeV14.route = "home"; state.activeList = "all";
+          if (location.hash === "#secondary") history.replaceState({ sheet: "home" }, "", location.pathname + location.search);
+        }
+      }
       const snapshotFocusEpoch = homeFocusUserEpoch();
-      renderAll({ deferContent: snapshot.route === "home" });
+      renderAll({ deferContent: !isTvLikeDevice() && snapshot.route === "home" });
+      if (tvBrowseActive() && snapshot.route !== "detail" && snapshot.route !== "sync") tvBrowseFocusIntent(snapshot.homeFocus && snapshot.homeFocus.type === "id" && snapshot.homeFocus.key.indexOf("tv") === 0 ? snapshot.homeFocus : null);
       if (snapshot.connectionOpen && $("connectionDock") && $("connectionBody")) {
         setConnectionPanelOpen(true);
       }
@@ -307,11 +323,11 @@
       } else if (snapshot.route === "sync") {
         history.replaceState({ sheet: "sync" }, "", "#sync");
         openSync({ restore: true, skipHistory: true });
-      } else {
+      } else if (!tvBrowseActive()) {
         requestAnimationFrame(() => {
           if (homeFocusUserEpoch() !== snapshotFocusEpoch) return;
           window.scrollTo(0, Number(snapshot.scrollY || 0));
-          if (!blockedDocumentarySnapshot && snapshot.homeFocus) {
+          if (snapshot.homeFocus) {
             const savedHome = {
               activeList: snapshot.activeList || state.activeList,
               mediaKey: snapshot.homeFocus.key || "",
@@ -323,7 +339,7 @@
         });
         setTimeout(() => {
           if (homeFocusUserEpoch() !== snapshotFocusEpoch) return;
-          if (!blockedDocumentarySnapshot && snapshot.homeFocus && ["home", "search", "secondary"].includes(uiSnapshotRoute())) {
+          if (snapshot.homeFocus && ["home", "search", "secondary"].includes(uiSnapshotRoute())) {
             const savedHome = {
               activeList: snapshot.activeList || state.activeList,
               mediaKey: snapshot.homeFocus.key || "",
@@ -548,6 +564,7 @@
       const restoreRecentNativeHome = opts.restoreRecentNativeHome === true && !($("detailSheet") && $("detailSheet").classList.contains("active")) && isRecentNativeHomeReturn();
       const isPanPlaybackReturn = !!(state.pan.playbackReturn && $("detailSheet") && $("detailSheet").classList.contains("active") && $("panSearchBlock") && $("panSearchBlock").classList.contains("active"));
       const isPlayerReturn = opts.playerReturn === true;
+      syncBrowseDevicePresentation();
       lockViewportWidth();
       fitConnectionPanel();
       renderConnection();
@@ -661,15 +678,11 @@
       button.classList.toggle("is-hidden", hide);
     }
 
-    function handleTvSecondarySidebarBack() {
-      if (!isTvLikeDevice() || !isSidebarOpen() || homeUiRoute() !== "secondary" || location.hash === "#secondary") return false;
-      closeSidebar();
-      try { history.forward(); } catch (e) {}
-      return true;
-    }
-
     window.addEventListener("popstate", (event) => {
       const detailSheet = $("detailSheet");
+      if (tvBrowseActive() && tvBrowseState().filterOpen && focusScopeRoot() === $("tvBrowseFilters")) {
+        tvBrowseCloseFilters(); ensureHomeHistoryEntry(); return;
+      }
       if (state.homeV14 && state.homeV14.sidebarHistoryBackPending) {
         const deferredAction = state.homeV14.sidebarDeferredAction;
         state.homeV14.sidebarDeferredAction = null;
@@ -706,9 +719,6 @@
         closeConnectionPanel({ fromPopState: true });
         return;
       }
-      // Native TV Back can bypass keydown; consume the Sidebar layer before
-      // the normal Secondary -> Home history transition.
-      if (handleTvSecondarySidebarBack()) return;
       // 正在关闭动画中，忽略重复触发
       const isClosing = detailSheet && detailSheet.classList.contains("sheet-closing");
       if (isClosing) return;
@@ -904,6 +914,8 @@
     }
 
     async function boot() {
+      const coldFocusEpoch = homeFocusUserEpoch();
+      syncBrowseDevicePresentation();
       lockViewportWidth();
       bindActions();
       installRemoteKeys();
@@ -935,19 +947,11 @@
       updateBackTopButton();
       if (!restored) {
         if (isHomeRouteActive() && isTvLikeDevice()) {
-          state.homeV14.coldHomeFocusPending = true;
-          state.homeV14.coldHomeFocusEpoch = homeFocusUserEpoch();
-          state.homeV14.coldHomeFallbackTarget = null;
-          focusColdHomeHeroIfReady();
-        } else {
-          state.homeV14.coldHomeFocusPending = false;
-          state.homeV14.coldHomeFallbackTarget = null;
+          if (homeFocusUserEpoch() === coldFocusEpoch) tvBrowseFocusIntent();
         }
-        setTimeout(() => ensureRemoteInitialFocus({ allowHomeFallback: false }), 80);
-        setTimeout(() => ensureRemoteInitialFocus({ allowHomeFallback: true }), 260);
+        setTimeout(ensureRemoteInitialFocus, 80);
+        setTimeout(ensureRemoteInitialFocus, 260);
       } else if (uiSnapshotRoute() !== "home") {
-        state.homeV14.coldHomeFocusPending = false;
-        state.homeV14.coldHomeFallbackTarget = null;
         setTimeout(ensureRemoteInitialFocus, 80);
       }
     }

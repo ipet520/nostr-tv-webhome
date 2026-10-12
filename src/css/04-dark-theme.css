@@ -1205,18 +1205,6 @@
       --home-section-gut: clamp(16px, 2vw, 36px);
     }
 
-    html.tv-mode #home.home-root #homeHero,
-    html.tv-preview #home.home-root #homeHero {
-      width: 100%;
-      margin-left: 0;
-      margin-right: 0;
-    }
-
-    html.tv-mode #home.home-root *,
-    html.tv-preview #home.home-root * {
-      animation: none !important;
-    }
-
     html.tv-mode #home.home-root .home-rail > .card,
     html.tv-preview #home.home-root .home-rail > .card {
       transform: translateZ(0);

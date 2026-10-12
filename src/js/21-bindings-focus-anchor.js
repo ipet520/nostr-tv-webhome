@@ -225,17 +225,12 @@
       searchSubmit.addEventListener("click", handleSearchSubmitClick);
       if ($("searchPageBack")) $("searchPageBack").addEventListener("click", requestCloseSearchPage);
       if ($("searchHistoryClear")) $("searchHistoryClear").addEventListener("click", clearSearchHistory);
-      if ($("secondaryCatalogBack")) $("secondaryCatalogBack").addEventListener("click", requestCloseSecondaryCatalog);
       if ($("recentManageBtn")) $("recentManageBtn").addEventListener("click", enterRecentManageMode);
       if ($("recentManageSelectAll")) $("recentManageSelectAll").addEventListener("click", toggleRecentManageSelectAll);
       if ($("recentManageDelete")) $("recentManageDelete").addEventListener("click", armRecentManageDelete);
       if ($("recentManageCancel")) $("recentManageCancel").addEventListener("click", handleRecentManageCancel);
       if ($("homeSearchLauncher")) $("homeSearchLauncher").addEventListener("click", openSearchPage);
       if ($("homeMenuLauncher")) $("homeMenuLauncher").addEventListener("click", () => {
-        if (isSidebarOpen()) closeSidebar();
-        else openSidebar();
-      });
-      if ($("secondaryMenuLauncher")) $("secondaryMenuLauncher").addEventListener("click", () => {
         if (isSidebarOpen()) closeSidebar();
         else openSidebar();
       });
@@ -251,9 +246,6 @@
         event.stopPropagation();
         closeConnectionPanel();
       });
-      if ($("homeRecentMore")) $("homeRecentMore").addEventListener("click", () => openSecondaryCatalog("recent", { originSection: "recent", originTarget: $("homeRecentMore") }));
-      if ($("homeRecommendationMore")) $("homeRecommendationMore").addEventListener("click", () => openSecondaryCatalog("recommendation", { originSection: "recommendation", originTarget: $("homeRecommendationMore") }));
-      if ($("homeWeeklyMore")) $("homeWeeklyMore").addEventListener("click", () => openSecondaryCatalog("now-playing", { originSection: "now-playing", originTarget: $("homeWeeklyMore") }));
       (function () {
         const clearBtn = $("clearSearchBtn");
         if (clearBtn) {
@@ -377,23 +369,9 @@
       return Array.from(rail.querySelectorAll(".card")).find(isVisibleFocusable) || null;
     }
 
-    function handleHomeHeroDirectionalKey(key, event) {
-      if (!isTvLikeDevice() || focusScopeRoot() !== document || isConnectionPanelOpen() || isSearchSuggestOpen()) return false;
-      if (key !== "ArrowLeft" && key !== "ArrowRight") return false;
-      const hero = $("homeHero");
-      if (state.activeList !== "all" || !hero || document.activeElement !== hero || !isVisibleFocusable(hero)) return false;
-      const items = Array.isArray(state.homeV14.heroItems) ? state.homeV14.heroItems : [];
-      if (items.length <= 1) return false;
-      const delta = key === "ArrowRight" ? 1 : -1;
-      event.preventDefault();
-      event.stopPropagation();
-      if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-      setHomeHeroIndex(Number(state.homeV14.heroIndex || 0) + delta, { manual: true });
-      return true;
-    }
-
     function installRemoteKeys() {
       document.addEventListener("pointerdown", (event) => {
+        if (tvBrowseActive() && event.target.closest && event.target.closest("#tvBrowse")) markHomeUserNavigation();
         if (homeUiRoute() === "secondary") cancelSecondaryMediaFocusRestore();
         const recentDelete = state.recentDelete;
         if (!recentDelete || !(recentDelete.armedKey || recentDelete.pendingKey)) return;
@@ -408,17 +386,6 @@
         const trackedCard = recentDelete && (recentDelete.armedCard || recentDelete.pendingCard || recentDelete.remotePressCard);
         if (trackedCard && !trackedCard.contains(document.activeElement)) cancelRecentDeleteArm();
       });
-      // Hero -> Detail opens and focuses the Detail primary action on a
-      // short timer.  Consume the remainder of the same physical Confirm
-      // lifecycle at capture time so its keyup cannot activate that newly
-      // focused action.  The guard is released by the matching keyup; its
-      // short timer is only a lost-event safety net.
-      document.addEventListener("keydown", (event) => {
-        consumeHomeHeroConfirmGuard(event);
-      }, true);
-      document.addEventListener("keyup", (event) => {
-        consumeHomeHeroConfirmGuard(event);
-      }, true);
       document.addEventListener("keydown", (event) => {
         const key = normalizeRemoteKey(event);
         if (key === "Escape" || key === "Backspace") recordBackDiag(event, "bubble_keydown", { bubbleKeydownObserved: true });
@@ -444,6 +411,7 @@
           event.preventDefault();
           return;
         }
+        if (handleTvBrowseKey(event, key, el)) return;
         if (key === "Enter") {
           const recentCard = recentWatchingCard(el);
           if (consumeRecentCardEnterDown(recentCard, event)) return;
@@ -463,7 +431,6 @@
         }
         if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(key)) {
           if (handleSidebarDirectionalKey(key, event)) return;
-          if (handleHomeHeroDirectionalKey(key, event)) return;
           if (handleSearchSuggestDirectionalKey(key, event)) return;
           if (handleClearSearchDirectionalKey(key, event)) return;
           if (handleSearchFormDirectionalKey(key, event)) return;
@@ -527,12 +494,6 @@
         if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(key)) return;
         if (handlePanDirectionalKey(key, event)) return;
         if (handleDetailDirectionalKey(key, event)) return;
-        if (key === "ArrowLeft" && isSecondaryLeftBoundary(el)) {
-          event.preventDefault();
-          if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-          openSidebar();
-          return;
-        }
         if (key === "ArrowLeft" && isHomeLeftBoundary(el)) {
           event.preventDefault();
           if (event.stopImmediatePropagation) event.stopImmediatePropagation();
@@ -558,6 +519,11 @@
           if (el && isTextEditingElement(el) && !el.readOnly) return;
         }
         if (handleSidebarBackKey(event)) return;
+        if (tvBrowseActive() && isRecentManagePage() && recentManageRuntime().active) {
+          event.preventDefault(); event.stopPropagation();
+          if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+          exitRecentManageMode({ focus: true }); return;
+        }
         if (isRecentManagePage() && recentManageRuntime().active && handleSecondaryBackKey(event)) return;
         if (state.recentDelete && (state.recentDelete.armedKey || state.recentDelete.pendingKey || state.recentDelete.remotePressLocked)) {
           cancelRecentDeleteArm();
@@ -580,6 +546,11 @@
           recordBackDiag(event, "history.back", { historyBackCalled: true });
           return history.back();
         }
+        if (tvBrowseActive() && tvBrowseState().filterOpen && tvBrowseCloseFilters()) {
+          event.preventDefault(); event.stopPropagation();
+          if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+          return;
+        }
         if (handleSecondaryBackKey(event)) return;
         if (handleSearchBackKey(event)) return;
       }, true);
@@ -590,6 +561,10 @@
       document.addEventListener("keyup", (event) => {
         const key = normalizeRemoteKey(event);
         if (key !== "Enter") return;
+        if (state.tvBrowse && state.tvBrowse.enterHeld) {
+          state.tvBrowse.enterHeld = false; state.tvBrowse.suppressClickUntil = Date.now() + 120;
+          event.preventDefault(); return;
+        }
         if (handleSearchSubmitEnterUp(event)) return;
         if (handleRecentCardEnterUp(event)) return;
         if (handleBlockCardEnterUp(event)) return;
@@ -616,7 +591,6 @@
         selectPanType(panType);
         return true;
       }
-      if (el === $("homeHero")) armHomeHeroConfirmGuard(event);
       if (typeof el.click === "function") {
         el.click();
       } else {
@@ -1362,57 +1336,8 @@
       return Array.from(home.querySelectorAll("#homeRecentSection, #homeRecommendationSection, #homeWeeklySection, #listStack > .home-dynamic-section")).filter((section) => !section.hidden && !section.closest("[hidden]"));
     }
 
-    function homeRailContextForTarget(target) {
-      if (!isTvLikeDevice() || !isHomeRouteActive() || isSidebarOpen() || !target || !target.closest) return null;
-      const home = $("home");
-      if (!home || !home.contains(target)) return null;
-      const section = target.closest(".home-section");
-      if (!section || section.hidden || section.closest("[hidden]")) return null;
-      const rail = section.querySelector(".home-rail");
-      if (!rail) return null;
-      return {
-        key: String(rail.dataset.railKey || rail.dataset.homeListId || rail.id || section.id || ""),
-        section,
-        rail,
-        head: section.querySelector(".home-section-head")
-      };
-    }
-
     function homeSectionCards(section) {
       return section ? Array.from(section.querySelectorAll(".home-rail > .card")).filter((card) => !card.classList.contains("home-more-card") && canFastHomeFocus(card)) : [];
-    }
-
-    function rememberBackTopFocusOrigin(target) {
-      const button = visibleBackTopTarget();
-      if (!button || !target) return null;
-      button.__focusOrigin = {
-        route: homeUiRoute(),
-        listId: state.homeV14 && state.homeV14.secondaryListId || "",
-        target,
-        mediaKey: String(target.dataset && target.dataset.mediaKey || target.__mediaItem && mediaDomKey(target.__mediaItem) || "")
-      };
-      return button;
-    }
-
-    function resolveBackTopFocusOrigin(button) {
-      const origin = button && button.__focusOrigin;
-      if (!origin || origin.route !== homeUiRoute()) return null;
-      if (origin.route === "secondary" && origin.listId !== String(state.homeV14 && state.homeV14.secondaryListId || "")) return null;
-      if (origin.target && document.contains(origin.target) && isVisibleFocusable(origin.target)) return origin.target;
-      if (!origin.mediaKey) return null;
-      if (origin.route === "secondary") {
-        const grid = $("secondaryCatalogGrid");
-        const weekly = !!(grid && grid.classList.contains("weekly-secondary-rail"));
-        const cards = weekly ? weeklySecondaryFocusableCards(grid) : grid ? Array.from(grid.querySelectorAll(".card")).filter(canFastHomeFocus) : [];
-        return cards.find((card) => String(card.dataset && card.dataset.mediaKey || card.__mediaItem && mediaDomKey(card.__mediaItem) || "") === origin.mediaKey) || null;
-      }
-      const sections = homeRailSections();
-      for (const section of sections) {
-        const cards = homeSectionCards(section);
-        const target = cards.find((card) => String(card.dataset && card.dataset.mediaKey || card.__mediaItem && mediaDomKey(card.__mediaItem) || "") === origin.mediaKey);
-        if (target) return target;
-      }
-      return null;
     }
 
     function homeFirstTarget() {
@@ -1425,244 +1350,13 @@
       return $("homeHero") && isVisibleFocusable($("homeHero")) ? $("homeHero") : currentHomeFocus();
     }
 
-    function homeTarget(key, active) {
-      if (!isTvLikeDevice() || !isHomeRouteActive() || focusScopeRoot() !== document) return null;
-      const home = $("home");
-      if (!home || !active) return null;
-      const searchLauncher = $("homeSearchLauncher");
-      const hero = $("homeHero");
-      const backTop = $("backTopBtn");
-      if (active === backTop) {
-        if (key === "ArrowUp" || key === "ArrowLeft") {
-          const origin = resolveBackTopFocusOrigin(backTop);
-          if (origin) return origin;
-          const sections = homeRailSections();
-          for (let index = sections.length - 1; index >= 0; index--) {
-            const cards = homeSectionCards(sections[index]);
-            if (cards.length) return cards[cards.length - 1];
-          }
-          return isVisibleFocusable(hero) ? hero : active;
-        }
-        return active;
-      }
-      if (active === searchLauncher) {
-        if (key === "ArrowDown") return isVisibleFocusable(hero) ? hero : homeFirstTarget() || active;
-        if (key === "ArrowUp" || key === "ArrowLeft" || key === "ArrowRight") return active;
-        return null;
-      }
-      if (active === hero) {
-        if (key === "ArrowUp") return isVisibleFocusable(searchLauncher) ? searchLauncher : active;
-        if (key === "ArrowDown") {
-          const target = homeFirstTarget() || active;
-          if (target !== active && target.closest && target.closest(".home-section")) state.homeV14.homeSectionEntryTarget = target;
-          return target;
-        }
-        if (key === "ArrowLeft" || key === "ArrowRight") return active;
-        return null;
-      }
-      const more = active.closest && active.closest(".home-section-more");
-      const section = active.closest && active.closest(".home-section");
-      if (!section) return null;
-      const sections = homeRailSections();
-      const sectionIndex = sections.indexOf(section);
-      const currentCards = homeSectionCards(section);
-      const ownMore = section.querySelector && section.querySelector(".home-section-more");
-      const railMore = section.querySelector && section.querySelector(".home-rail > .home-more-card");
-      if (more) {
-        if (key === "ArrowUp") {
-          for (let previous = sectionIndex - 1; previous >= 0; previous--) {
-            const previousCards = homeSectionCards(sections[previous]);
-            if (previousCards.length) return previousCards[0];
-          }
-          return isVisibleFocusable(hero) ? hero : more;
-        }
-        if (key === "ArrowDown") {
-          for (let next = sectionIndex + 1; next < sections.length; next++) {
-            const nextCards = homeSectionCards(sections[next]);
-            if (nextCards.length) return nextCards[0];
-          }
-          return rememberBackTopFocusOrigin(more) || more;
-        }
-        if (key === "ArrowLeft") return isVisibleFocusable(railMore) ? railMore : currentCards[currentCards.length - 1] || more;
-        if (key === "ArrowRight") return more;
-        return null;
-      }
-      const rail = active.closest && active.closest(".home-rail");
-      if (!rail || !active.classList.contains("card")) return null;
-      const cards = Array.from(rail.children).filter((child) => child.classList && child.classList.contains("card") && canFastHomeFocus(child));
-      const index = cards.indexOf(active);
-      if (index < 0) return active;
-      if (key === "ArrowLeft") return cards[index - 1] || active;
-      if (key === "ArrowRight") {
-        if (cards[index + 1]) return cards[index + 1];
-        if (isVisibleFocusable(ownMore)) return ownMore;
-        return rememberBackTopFocusOrigin(active) || active;
-      }
-      if (key === "ArrowDown") {
-        for (let next = sectionIndex + 1; next < sections.length; next++) {
-          const nextCards = homeSectionCards(sections[next]);
-          if (nextCards.length) return nextCards[Math.min(index, nextCards.length - 1)];
-          const nextMore = sections[next].querySelector(".home-section-more");
-          if (isVisibleFocusable(nextMore)) return nextMore;
-        }
-        return rememberBackTopFocusOrigin(active) || active;
-      }
-      if (key === "ArrowUp") {
-        for (let previous = sectionIndex - 1; previous >= 0; previous--) {
-          const previousCards = homeSectionCards(sections[previous]);
-          if (previousCards.length) return previousCards[Math.min(index, previousCards.length - 1)];
-          const previousMore = sections[previous].querySelector(".home-section-more");
-          if (isVisibleFocusable(previousMore)) return previousMore;
-        }
-        return isVisibleFocusable(hero) ? hero : currentHomeFocus() || active;
-      }
-      return null;
-    }
-
-    function isSecondaryLeftBoundary(active) {
-      if (!isTvLikeDevice() || homeUiRoute() !== "secondary" || !active) return false;
-      if (active === $("secondaryCatalogBack")) return true;
-      const row = active.closest && active.closest(".secondary-filter-row");
-      if (row) {
-        const options = Array.from(row.querySelectorAll(".secondary-filter-option")).filter(canFastHomeFocus);
-        return options[0] === active;
-      }
-      const grid = $("secondaryCatalogGrid");
-      if (!grid || !grid.contains(active) || !active.classList || !active.classList.contains("card")) return false;
-      const weekly = grid.classList.contains("weekly-secondary-rail");
-      const cards = weekly
-        ? weeklySecondaryFocusableCards(grid)
-        : Array.from(grid.querySelectorAll(".card")).filter(canFastHomeFocus);
-      const index = cards.indexOf(active);
-      if (index < 0) return false;
-      return weekly ? index === 0 : index % Math.max(1, gridColumns(grid)) === 0;
-    }
-
-    function secondaryGridDownTarget(grid, cards, active, index, columns) {
-      if (!grid || !Array.isArray(cards) || !active || index < 0) return null;
-      const width = Math.max(1, columns);
-      const currentRow = Math.floor(index / width);
-      const nextRowStart = (currentRow + 1) * width;
-      if (nextRowStart >= cards.length) return null;
-      const nextRowEnd = Math.min(nextRowStart + width, cards.length);
-      const nextRowCards = cards.slice(nextRowStart, nextRowEnd);
-      if (!nextRowCards.length) return null;
-      const sameColumn = nextRowCards[index - nextRowStart];
-      if (sameColumn) return sameColumn;
-      const activeRect = active.getBoundingClientRect ? active.getBoundingClientRect() : { left: index, width: 1 };
-      const activeCenterX = Number(activeRect.left || 0) + Number(activeRect.width || 0) / 2;
-      let nearest = nextRowCards[0];
-      let nearestDistance = Infinity;
-      nextRowCards.forEach((candidate) => {
-        const rect = candidate && candidate.getBoundingClientRect ? candidate.getBoundingClientRect() : { left: nextRowStart, width: 1 };
-        const centerX = Number(rect.left || 0) + Number(rect.width || 0) / 2;
-        const distance = Math.abs(centerX - activeCenterX);
-        if (distance < nearestDistance) {
-          nearest = candidate;
-          nearestDistance = distance;
-        }
-      });
-      return nearest;
-    }
-
-    function secondaryCatalogDirectionalTarget(key, active) {
-      if (homeUiRoute() !== "secondary" || !active || key.indexOf("Arrow") !== 0) return null;
-      const back = $("secondaryCatalogBack"), host = $("secondaryCatalogFilters"), grid = $("secondaryCatalogGrid"), rows = host ? Array.from(host.querySelectorAll(".secondary-filter-row")) : [];
-      const buttons = (row) => row ? Array.from(row.querySelectorAll(".secondary-filter-option")).filter(canFastHomeFocus) : [];
-      const weeklySecondary = !!(grid && state.homeV14 && state.homeV14.secondaryListId === "now-playing" || grid && grid.classList.contains("weekly-secondary-rail"));
-      const cards = weeklySecondary
-        ? weeklySecondaryFocusableCards(grid)
-        : grid ? Array.from(grid.querySelectorAll(".card")).filter(canFastHomeFocus) : [];
-      const firstCard = cards[0] || null;
-      const backTop = visibleBackTopTarget();
-      const recentHeaderItems = state.homeV14 && state.homeV14.secondaryListId === "recent"
-        ? [
-          back,
-          recentManageRuntime().active ? $("recentManageSelectAll") : $("recentManageBtn"),
-          recentManageRuntime().active ? $("recentManageDelete") : null,
-          recentManageRuntime().active ? $("recentManageCancel") : null
-        ].filter(canFastHomeFocus)
-        : [];
-      if (recentHeaderItems.length && recentHeaderItems.indexOf(active) >= 0) {
-        const headerIndex = recentHeaderItems.indexOf(active);
-        if (key === "ArrowLeft" || key === "ArrowRight") {
-          const target = recentHeaderItems[headerIndex + (key === "ArrowRight" ? 1 : -1)];
-          return target || active;
-        }
-        if (key === "ArrowDown") return firstCard || active;
-        if (key === "ArrowUp") return headerIndex > 0 ? recentHeaderItems[headerIndex - 1] : active;
-        return active;
-      }
-      if (active === backTop) {
-        if (key === "ArrowUp" || key === "ArrowLeft") return resolveBackTopFocusOrigin(backTop) || cards[cards.length - 1] || back || active;
-        return active;
-      }
-      if (active === back) {
-        if (weeklySecondary) return key === "ArrowDown" ? firstCard || active : active;
-        if (key === "ArrowDown") return rows.length ? secondaryFilterFocusTarget(rows[0], back.getBoundingClientRect().left) || firstCard || active : firstCard || active;
-        return active;
-      }
-      const row = active.closest && active.closest(".secondary-filter-row");
-      if (row) {
-        const list = buttons(row), index = list.indexOf(active), rowIndex = rows.indexOf(row);
-        if (index < 0) return active;
-        if (key === "ArrowLeft" || key === "ArrowRight") return list[index + (key === "ArrowRight" ? 1 : -1)] || active;
-        if (key === "ArrowUp") {
-          const previous = rows[rowIndex - 1];
-          return previous ? secondaryFilterFocusTarget(previous, active.getBoundingClientRect().left) || active : back || active;
-        }
-        if (key === "ArrowDown") {
-          const next = rows[rowIndex + 1];
-          if (next) return secondaryFilterFocusTarget(next, active.getBoundingClientRect().left) || active;
-          return firstCard || active;
-        }
-        return active;
-      }
-      if (grid && grid.contains(active) && active.classList && active.classList.contains("card")) {
-        if (weeklySecondary && active.classList.contains("weekly-card")) {
-          const index = cards.indexOf(active);
-          if (key === "ArrowLeft") return cards[index - 1] || active;
-          if (key === "ArrowRight") return cards[index + 1] || (index === cards.length - 1 ? rememberBackTopFocusOrigin(active) || active : active);
-          if (key === "ArrowUp") return back || active;
-          return active;
-        }
-        const index = cards.indexOf(active), columns = Math.max(1, gridColumns(grid)), rowIndex = index >= 0 ? Math.floor(index / columns) : 0;
-        if (index < 0) return active;
-        if (key === "ArrowLeft") return index % columns > 0 ? cards[index - 1] : active;
-        if (key === "ArrowRight") {
-          const next = cards[index + 1];
-          if (index % columns < columns - 1 && next) return next;
-          return rememberBackTopFocusOrigin(active) || active;
-        }
-        if (key === "ArrowUp") {
-          if (rowIndex > 0) return cards[index - columns] || cards[Math.max(0, index - 1)] || active;
-          if (recentHeaderItems.length) return recentHeaderItems[1] || recentHeaderItems[0] || active;
-          const lastRow = rows[rows.length - 1];
-          return lastRow ? secondaryFilterFocusTarget(lastRow, active.getBoundingClientRect().left) || back || active : back || active;
-        }
-        if (key === "ArrowDown") {
-          const nextRowTarget = secondaryGridDownTarget(grid, cards, active, index, columns);
-          if (nextRowTarget) return nextRowTarget;
-          const canLoadMore = secondaryCanLoadMore();
-          if (canLoadMore) {
-            secondaryLoadNextPage();
-            return active;
-          }
-          return active;
-        }
-      }
-      return null;
-    }
-
     function fastHomeDirectionalTarget(key, active) {
       if (!isTvLikeDevice() || focusScopeRoot() !== document || isConnectionPanelOpen() || isSearchSuggestOpen()) return null;
       if (!active || !["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(key)) return null;
       if (isTextEditingElement(active)) return null;
       if ($("connectionDock") && $("connectionDock").contains(active)) return null;
       if ($("searchForm") && $("searchForm").contains(active)) return null;
-      return secondaryCatalogDirectionalTarget(key, active)
-        || homeTarget(key, active)
-        || fastHomeGridTarget(key, active)
+      return fastHomeGridTarget(key, active)
         || fastHomeSearchRailTarget(key, active)
         || fastHomeLiveEntryTarget(key, active);
     }
@@ -1761,12 +1455,8 @@
 
     function focusRemoteTarget(target, options) {
       if (!target) return;
-      const home = state.homeV14;
       const previous = document.activeElement;
-      const heroSectionEntry = previous === $("homeHero") && isHomeRouteActive() && target.closest && target.closest(".home-section");
-      const sectionEntry = !!((home && home.homeSectionEntryTarget === target) || heroSectionEntry);
-      if (sectionEntry) home.homeSectionEntryTarget = null;
-      const focusOptions = Object.assign({}, options || {}, sectionEntry ? { alignHomeSectionHead: true } : {});
+      const focusOptions = options || {};
       try {
         target.focus({ preventScroll: true });
       } catch (e) {
@@ -2201,38 +1891,9 @@
       return { x: 0, y: next - before };
     }
 
-    function alignHomeRailToAnchor(context) {
-      if (!context || !context.rail || !context.rail.getBoundingClientRect) return { x: 0, y: 0 };
-      const root = document.scrollingElement || document.documentElement;
-      const height = window.innerHeight || document.documentElement.clientHeight || 0;
-      const anchor = context.section && context.section.getBoundingClientRect ? context.section : context.rail;
-      const anchorRect = anchor.getBoundingClientRect();
-      const before = homeScrollTop();
-      const max = Math.max(0, Number(root.scrollHeight || document.documentElement.scrollHeight || 0) - Number(root.clientHeight || height || 0));
-      const desired = before + anchorRect.top - HOME_RAIL_ANCHOR_OFFSET;
-      const next = Math.max(0, Math.min(max, desired));
-      if (Math.abs(next - before) > .5) applyHomeScrollTop(next);
-      return { x: 0, y: next - before };
-    }
-
-    function revealHomeFocusedTarget(target, options) {
+    function revealPageFocusedTarget(target, options) {
       const opts = options || {};
       const root = document.scrollingElement || document.documentElement;
-      const homeHero = $("homeHero");
-      if (isHomeRouteActive() && target === homeHero) {
-        if (state.homeV14) state.homeV14.lastHomeFocusedRail = "";
-        const beforeTop = homeScrollTop();
-        if (beforeTop > 0) applyHomeScrollTop(0);
-        return { x: 0, y: -beforeTop };
-      }
-      const homeRail = homeRailContextForTarget(target);
-      if (homeRail && homeRail.key) {
-        const lastRail = String(state.homeV14 && state.homeV14.lastHomeFocusedRail || "");
-        if (homeRail.key === lastRail) return { x: 0, y: 0 };
-        const anchorDelta = alignHomeRailToAnchor(homeRail);
-        if (state.homeV14) state.homeV14.lastHomeFocusedRail = homeRail.key;
-        return anchorDelta;
-      }
       const itemRect = focusOuterBounds(target);
       const height = window.innerHeight || document.documentElement.clientHeight || 0;
       const safe = tvFocusSafeInsets(null);
@@ -2335,7 +1996,7 @@
       } else if (!(connectionBody && connectionBody.contains(target))
         && !(sidebar && sidebar.contains(target))
         && !(suggestPanel && suggestPanel.contains(target))) {
-        const homeDelta = revealHomeFocusedTarget(target, options);
+        const homeDelta = revealPageFocusedTarget(target, options);
         deltaY += homeDelta.y;
       }
       if (isTvDiagnosticEnabled()) {

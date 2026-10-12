@@ -2,7 +2,17 @@
       const opts = options || {};
       clearTimeout(state.renderTimer);
       state.renderTimer = 0;
+      syncBrowseDevicePresentation();
       normalizeActiveListForViewport();
+      if (isTvLikeDevice() && homeUiRoute() === "secondary") {
+        restoreTvBrowseSnapshot(null, state.homeV14.secondaryListId);
+        state.homeV14.route = "home"; state.activeList = "all";
+        if (location.hash === "#secondary") history.replaceState({ sheet: "home" }, "", location.pathname + location.search);
+      }
+      if (isTvLikeDevice() && homeUiRoute() === "home" && state.activeList !== "all") {
+        restoreTvBrowseSnapshot(null, normalizeLegacyCategoryId(state.activeList));
+        state.activeList = "all";
+      }
       syncHomeRoutePresentation();
       if (opts.deferContent) scheduleHomeContentRender({ afterPaint: true });
       else renderHomeContent();
@@ -11,6 +21,7 @@
     }
 
     function renderHomeContent() {
+      syncTvBrowseVisibility();
       const isHome = isHomeRouteActive();
       const route = homeUiRoute();
       document.documentElement.classList.toggle("home-active", isHome);
@@ -327,6 +338,7 @@
     }
 
     function mergeHomeLatestIntoHeroFeed(options) {
+      if (isTvLikeDevice()) return false;
       const feed = homeHeroFeedState();
       if (!feed || feed.loading || !feed.loaded || feed.weeklyMerged || !state.homeLatest || !state.homeLatest.loaded) return false;
       const weekly = filterBlocked(state.homeLatest.items || []).slice(0, 12).map((item) => Object.assign({}, item, { heroSourceKinds: ["weekly-feed"] }));
@@ -518,6 +530,7 @@
     }
 
     function ensureHomeHeroFeed() {
+      if (isTvLikeDevice()) return false;
       if (!isHomeRouteActive()) return false;
       const feed = homeHeroFeedState();
       if (!feed) return false;
@@ -574,40 +587,6 @@
 
     const HOME_HERO_AUTOPLAY_MS = 5000;
 
-    function clearHomeHeroConfirmGuard() {
-      const home = state.homeV14;
-      const guard = home && home.heroConfirmGuard;
-      if (guard && guard.timer) clearTimeout(guard.timer);
-      if (home) home.heroConfirmGuard = null;
-    }
-
-    function armHomeHeroConfirmGuard(event) {
-      const home = state.homeV14;
-      if (!home) return false;
-      clearHomeHeroConfirmGuard();
-      home.heroConfirmGuard = {
-        key: "Enter",
-        keyCode: Number(event && (event.keyCode || event.which) || 0),
-        armedAt: Date.now(),
-        timer: setTimeout(clearHomeHeroConfirmGuard, 900)
-      };
-      return true;
-    }
-
-    function isHomeHeroConfirmGuardMatch(event) {
-      const guard = state.homeV14 && state.homeV14.heroConfirmGuard;
-      return !!(guard && normalizeRemoteKey(event) === guard.key);
-    }
-
-    function consumeHomeHeroConfirmGuard(event) {
-      if (!isHomeHeroConfirmGuardMatch(event)) return false;
-      event.preventDefault();
-      event.stopPropagation();
-      if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-      if (event.type === "keyup") clearHomeHeroConfirmGuard();
-      return true;
-    }
-
     function clearHomeHeroAutoplayResume() {
       const home = state.homeV14;
       if (home && home.heroAutoplayResumeTimer) clearTimeout(home.heroAutoplayResumeTimer);
@@ -650,6 +629,7 @@
     }
 
     function homeHeroCanAutoplay() {
+      if (isTvLikeDevice()) return false;
       const hero = $("homeHero");
       const items = Array.isArray(state.homeV14.heroItems) ? state.homeV14.heroItems : [];
       return isHomeRouteActive()
@@ -678,11 +658,6 @@
       const action = $("homeHeroAction");
       const item = hero && hero.__homeHeroItem || action && action.__homeHeroItem;
       if (!item) return false;
-      // A programmatic click from the remote-confirm path has no useful
-      // keyboard event of its own.  Arm the same one-shot guard here as a
-      // safety net for native button activation, while mouse clicks remain
-      // ordinary detail-only clicks.
-      if (event && event.detail === 0 && !(state.homeV14 && state.homeV14.heroConfirmGuard)) armHomeHeroConfirmGuard(event);
       // The Home Hero CTA is a detail entry point only.  Keep playback on the
       // existing Detail/Play path; never turn this CTA into a direct player call.
       pauseHomeHeroAutoplay();
@@ -951,33 +926,6 @@
       if (item && home && home.firstHeroReadyMs == null && Number(home.coldStartAt || 0) > 0) {
         home.firstHeroReadyMs = Math.max(0, Date.now() - Number(home.coldStartAt));
       }
-      focusColdHomeHeroIfReady();
       scheduleHomeHeroAutoplay();
       ensureHomeHeroFeed();
-    }
-
-    function focusColdHomeHeroIfReady() {
-      const home = state.homeV14;
-      if (!home || !home.coldHomeFocusPending || !isTvLikeDevice() || !isHomeRouteActive()) return false;
-      if (Number(home.coldHomeFocusEpoch || 0) !== homeFocusUserEpoch()) {
-        home.coldHomeFocusPending = false;
-        home.coldHomeFallbackTarget = null;
-        return false;
-      }
-      const target = $("homeHero");
-      if (!isVisibleFocusable(target)) return false;
-      const active = document.activeElement;
-      const fallbackTarget = home.coldHomeFallbackTarget;
-      const isOwnedFallback = !!(fallbackTarget && active === fallbackTarget);
-      if (isVisibleFocusable(active) && active !== document.body && active !== document.documentElement && !isOwnedFallback) {
-        home.coldHomeFocusPending = false;
-        home.coldHomeFallbackTarget = null;
-        return false;
-      }
-      home.coldHomeFocusPending = false;
-      home.coldHomeFallbackTarget = null;
-      home.initialHomeFocusPending = false;
-      state.remoteInitialFocused = true;
-      focusRemoteTarget(target);
-      return true;
     }

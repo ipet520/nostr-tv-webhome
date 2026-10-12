@@ -71,7 +71,7 @@ try {
   console.log("APPLICATION_CONCAT_SYNTAX = PASS");
   console.log("FINAL_INLINE_SCRIPT_SYNTAX = PASS");
   console.log("CORE_SEMANTIC_MARKERS = PASS");
-  console.log("HOME_ANCHOR_MARKER_PRESENT = PASS");
+  console.log("TV_BROWSE_MARKERS_PRESENT = PASS");
   console.log("DIAGNOSTICS_PATH_MARKER = PASS");
   console.log("DIAGNOSTICS_RELATIVE_URL_UNCHANGED = PASS");
   console.log("ROOT_INDEX_MATCHES_SOURCE = PASS");

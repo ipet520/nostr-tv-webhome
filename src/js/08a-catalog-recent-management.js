@@ -363,18 +363,20 @@
 
     function blockableRecommendCard(el) {
       if (state.activeList !== "all" || uiSnapshotRoute() !== "home") return null;
-      const card = el && el.closest && el.closest("#homeRecommendationRail .card");
+      const selector = tvBrowseActive() && tvBrowseState().column === "recommendation" ? "#tvBrowseRail .card" : "#homeRecommendationRail .card";
+      const card = el && el.closest && el.closest(selector);
       if (!card || !card.__mediaItem || card.__mediaItem.source === "history") return null;
       return card;
     }
 
     function currentRecommendationRail() {
-      return $("homeRecommendationRail");
+      return tvBrowseActive() && tvBrowseState().column === "recommendation" ? $("tvBrowseRail") : $("homeRecommendationRail");
     }
 
     function updateBlockSelectUi() {
       document.body.classList.toggle("block-select-active", !!state.blocked.selecting);
-      document.querySelectorAll("#homeRecommendationRail .card").forEach((card) => {
+      const rail = currentRecommendationRail();
+      (rail ? rail.querySelectorAll(".card") : []).forEach((card) => {
         card.classList.toggle("blocked", isBlocked(card.__mediaItem));
       });
       if ($("blockSelectHint")) {
@@ -644,7 +646,10 @@
       return consumeRecentWatchingPress(card);
     }
 
+    function recentManageGrid() { return tvBrowseActive() ? $("tvBrowseRail") : $("secondaryCatalogGrid"); }
+
     function isRecentManagePage() {
+      if (tvBrowseActive()) return tvBrowseState().column === "recent";
       return homeUiRoute() === "secondary"
         && state.homeV14 && state.homeV14.secondaryListId === "recent";
     }
@@ -669,7 +674,7 @@
       return !!(card
         && card.__mediaItem
         && card.closest
-        && card.closest("#secondaryCatalogGrid")
+        && card.closest("#secondaryCatalogGrid,#tvBrowseRail")
         && isRecentManagePage()
         && recentManageRuntime().active
         && card.classList.contains("recent-watching-card"));
@@ -692,7 +697,7 @@
     }
 
     function syncRecentManageCardStates() {
-      const grid = $("secondaryCatalogGrid");
+      const grid = recentManageGrid();
       const manage = recentManageRuntime();
       if (!grid) return;
       Array.from(grid.querySelectorAll(".recent-watching-card")).forEach((card) => {

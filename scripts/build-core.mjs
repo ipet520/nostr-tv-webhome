@@ -47,6 +47,7 @@ export const applicationFiles = Object.freeze([
   "11b-home-category-render.js",
   "11c-home-render-search-route.js",
   "11d-secondary-filter-schema.js",
+  "11e-tv-browse.js",
   "12-secondary-query-nostr.js",
   "13-secondary-catalog-render.js",
   "14-grid-card-focus.js",
@@ -71,9 +72,9 @@ export const semanticMarkers = Object.freeze([
   ["Direct terminalization", "terminalizeDirectDiscoveryAfterProviderCommit"],
   ["Curated candidate", "resolveCuratedPlaybackCandidate"],
   ["Direct playback", "playBestQuark"],
-  ["Home anchor", "HOME_RAIL_ANCHOR_OFFSET"],
-  ["Home anchor alignment", "alignHomeRailToAnchor"],
-  ["Home focus reveal", "revealHomeFocusedTarget"],
+  ["TV browse", "tvBrowseSelectColumn"],
+  ["TV focus graph", "tvBrowseDirectionalTarget"],
+  ["TV preview", "tvBrowsePreview"],
   ["Nostr tools", "NostrTools"],
   ["Nostr Recommendation Pool", "recommendationPoolItems"],
   ["Nostr Hero signal", "homeHeroNostrCandidates"],
@@ -132,7 +133,7 @@ export function validateManifest() {
   const applicationPaths = applicationFiles.map((name) => `js/${name}`);
 
   if (cssManifest.length !== 11) throw new Error(`CSS manifest expected 11 files, found ${cssManifest.length}`);
-  if (applicationFiles.length !== 30) throw new Error(`Application manifest expected 30 files, found ${applicationFiles.length}`);
+  if (applicationFiles.length !== 31) throw new Error(`Application manifest expected 31 files, found ${applicationFiles.length}`);
   assertUnique(cssPaths, "CSS manifest");
   assertUnique(fixedScriptPaths, "Fixed script manifest");
   assertUnique(applicationFiles, "Application manifest");

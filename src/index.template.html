@@ -156,6 +156,31 @@
       <div id="searchPageResultsHost"></div>
     </section>
 
+    <template id="recentManageTemplate">
+        <div class="recent-manage-controls" id="recentManageControls" hidden>
+          <button class="recent-manage-button focusable" id="recentManageBtn" type="button">管理</button>
+          <div class="recent-manage-actions" id="recentManageActions" hidden>
+            <span class="recent-manage-selected-count" id="recentManageSelectedCount">已选择 0 项</span>
+            <button class="focusable" id="recentManageSelectAll" type="button">全选</button>
+            <button class="focusable" id="recentManageDelete" type="button">删除所选</button>
+            <button class="focusable" id="recentManageCancel" type="button">取消</button>
+          </div>
+        </div>
+    </template>
+
+    <section class="section" id="searchSection" style="display:none">
+      <div class="section-head">
+        <h3>搜索结果</h3>
+        <div class="section-actions">
+          <button class="mini-icon-btn focusable" id="clearSearchBtn" type="button" aria-label="清空搜索结果" title="清空搜索结果">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="rail" id="searchRail"></div>
+    </section>
+
+    <template id="mobileHomeTemplate">
     <section class="secondary-page secondary-catalog" id="secondaryCatalog" hidden aria-labelledby="secondaryCatalogTitle">
       <div class="weekly-secondary-backdrop" id="weeklySecondaryBackdrop" aria-hidden="true"></div>
       <div class="weekly-secondary-backdrop weekly-secondary-backdrop-next" id="weeklySecondaryBackdropNext" aria-hidden="true"></div>
@@ -166,15 +191,7 @@
         </button>
         <h1 id="secondaryCatalogTitle">分类</h1>
         <span class="secondary-page-count" id="secondaryCatalogCount"></span>
-        <div class="recent-manage-controls" id="recentManageControls" hidden>
-          <button class="recent-manage-button focusable" id="recentManageBtn" type="button">管理</button>
-          <div class="recent-manage-actions" id="recentManageActions" hidden>
-            <span class="recent-manage-selected-count" id="recentManageSelectedCount">已选择 0 项</span>
-            <button class="focusable" id="recentManageSelectAll" type="button">全选</button>
-            <button class="focusable" id="recentManageDelete" type="button">删除所选</button>
-            <button class="focusable" id="recentManageCancel" type="button">取消</button>
-          </div>
-        </div>
+        <div id="mobileRecentManageMount"></div>
         <button class="secondary-menu-launcher focusable" id="secondaryMenuLauncher" type="button" aria-controls="homeSidebar" aria-expanded="false" aria-label="打开主菜单">
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>
         </button>
@@ -192,17 +209,6 @@
       </div>
     </section>
 
-    <section class="section" id="searchSection" style="display:none">
-      <div class="section-head">
-        <h3>搜索结果</h3>
-        <div class="section-actions">
-          <button class="mini-icon-btn focusable" id="clearSearchBtn" type="button" aria-label="清空搜索结果" title="清空搜索结果">
-            <svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-          </button>
-        </div>
-      </div>
-      <div class="rail" id="searchRail"></div>
-    </section>
 
     <section class="home-hero focusable" id="homeHero" role="button" tabindex="0" aria-labelledby="homeHeroTitle">
       <div class="home-hero-slides" id="homeHeroSlides" aria-live="polite"></div>
@@ -255,6 +261,23 @@
       </div>
     </section>
 
+    </template>
+    <div id="mobileHomeMount"></div>
+    <section id="tvBrowse" class="tv-browse" hidden aria-label="影视浏览">
+      <div id="tvBrowseBackdrop" class="tv-browse-backdrop"></div>
+      <div id="tvBrowseBackdropNext" class="tv-browse-backdrop"></div>
+      <div class="tv-browse-shade"></div>
+      <nav id="tvBrowseFunctions" class="tv-browse-functions" aria-label="功能菜单"></nav>
+      <div id="tvBrowseInfo" class="tv-browse-info">
+        <img id="tvBrowseLogo" class="tv-browse-logo" alt="" hidden>
+        <h1 id="tvBrowseTitle"></h1><div id="tvBrowseMeta"></div>
+        <div id="tvBrowseUpdate"></div><p id="tvBrowseOverview"></p>
+      </div>
+      <nav id="tvBrowseColumns" class="tv-browse-columns" aria-label="栏目"></nav>
+      <div id="tvBrowseFilters" class="tv-browse-filters" role="dialog" aria-modal="true" aria-label="栏目筛选" hidden></div>
+      <div class="tv-browse-posters"><div id="tvBrowseRail" class="rail tv-browse-rail"></div></div>
+      <div class="tv-browse-feedback"><span id="tvBrowseStatus" role="status"></span><span id="tvBrowseBlockHint" class="home-block-select-hint" hidden></span><button id="tvBrowseRetry" class="focusable" type="button" hidden>重试</button></div>
+    </section>
     <div class="infinite-sentinel" id="infiniteSentinel" aria-hidden="true"></div>
 
   </main>

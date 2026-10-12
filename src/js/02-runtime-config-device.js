@@ -286,7 +286,6 @@
         heroAutoplayResumeTimer: 0,
         heroBackdropSeq: 0,
         heroBackdropCache: {},
-        heroConfirmGuard: null,
         heroSwipe: null,
         heroSwipeSuppressClickUntil: 0,
         weeklyBackdropToken: 0,
@@ -315,13 +314,7 @@
         sidebarReturnRoute: "",
         sidebarReturnInvalidated: false,
         sidebarFocusId: "",
-        initialHomeFocusPending: false,
-        coldHomeFocusPending: false,
-        coldHomeFocusEpoch: 0,
-        coldHomeFallbackTarget: null,
         focusUserEpoch: 0,
-        homeSectionEntryTarget: null,
-        lastHomeFocusedRail: "",
         snapshotBound: {}
       },
       searchItems: [],
@@ -477,9 +470,6 @@
     const HOME_REQUEST_BUDGET_MAX_ACTIVE = 4;
     const HOME_REQUEST_CLASS_MAX_ACTIVE = { foreground: 3, "visible-status": 2, prefetch: 2, background: 1, enrichment: 1 };
     const HOME_REQUEST_PRIORITY = { foreground: 0, "visible-status": 1, prefetch: 2, background: 3, enrichment: 4 };
-    // Keep only a minimal safety gap above the active Home section.  The
-    // section itself, rather than its title or card row, is the anchor.
-    const HOME_RAIL_ANCHOR_OFFSET = 8;
 
     let nativeSdkWait = null;
 
@@ -550,7 +540,8 @@
     }
 
     function isTvPreviewMode() {
-      return !!(state.previewMode || document.documentElement.classList.contains("tv-preview"));
+      return !!(state.previewMode || document.documentElement.classList.contains("tv-preview")
+        || ["unknown", "browser"].includes(state.deviceMode) && isTvPreviewRequested() && !isNativeMobileClient());
     }
 
     function isTvDiagnosticEnabled() {

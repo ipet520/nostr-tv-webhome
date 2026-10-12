@@ -397,7 +397,7 @@
     function publishHomeWeeklySnapshot(source, options) {
       const latest = state.homeLatest;
       if (!latest || !homeLatestHasItems(latest)) return false;
-      if (homeUiRoute() !== "secondary" || state.homeV14.secondaryListId !== "now-playing") return false;
+      if (!(tvBrowseActive() && tvBrowseState().column === "now-playing") && (homeUiRoute() !== "secondary" || state.homeV14.secondaryListId !== "now-playing")) return false;
       const query = secondaryActiveQuery("now-playing") || secondaryGetQuery("now-playing");
       if (!query) return false;
       const opts = options || {};
@@ -427,7 +427,7 @@
         firstRenderableMs: latest.refreshStartedAt ? Math.max(0, latest.firstRenderableAt - latest.refreshStartedAt) : 0,
         refreshStillRunning: !!latest.loading
       }));
-      renderSecondaryCatalog();
+      renderCatalogQuery("now-playing");
       return true;
     }
 

@@ -452,11 +452,9 @@
           && sourceOf(openSidebar).includes("isSidebarRouteActive")
           && sourceOf(syncSidebarVisibility).includes("isSidebarRouteActive"),
         "the existing Sidebar authority is available on both Home and Secondary", "STATIC_HOOK");
-      check("SECONDARY_LEFT_BOUNDARY_OPENS_SIDEBAR",
-        typeof isSecondaryLeftBoundary === "function"
-          && hasAll(sourceOf(isSecondaryLeftBoundary), ["secondaryCatalogBack", "secondary-filter-row", "gridColumns"])
-          && sourceOf(installRemoteKeys).includes("isSecondaryLeftBoundary"),
-        "TV Secondary left boundaries delegate to the shared Sidebar", "STATIC_HOOK");
+      check("TV_BROWSE_MENU_ENTRY",
+        typeof tvBrowseDirectionalTarget === "function" && sourceOf(initTvBrowse).includes("openSidebar"),
+        "TV uses its right-top menu while retaining the shared Sidebar", "STATIC_HOOK");
       check("SIDEBAR_TV_CONTINUOUS_NAVIGATION",
         sourceOf(requestSidebarNavigation).includes("sameSecondary")
           && sourceOf(openSecondaryCatalog).includes("opts.fromSidebar")
@@ -478,11 +476,9 @@
           && sourceOf(renderWeeklySecondaryCatalog).includes("if (!isSidebarOpen()) focusWeeklySecondaryInitial")
           && sourceOf(focusSidebarCurrentPageDefault).includes("focusWeeklySecondaryInitial"),
         "Weekly keeps its pending initial focus while Sidebar owns focus", "STATIC_HOOK");
-      check("TV_SECONDARY_SIDEBAR_BACK_LAYER",
-        hasAll(sourceOf(handleTvSecondarySidebarBack), ["isTvLikeDevice", "isSidebarOpen", "homeUiRoute", "closeSidebar", "history.forward"])
-          && sourceOf(handleTvSecondarySidebarBack).includes('location.hash === "#secondary"')
-          && sourceOf(closeSecondaryCatalog).includes("closeSidebar"),
-        "TV Secondary Back consumes the open Sidebar layer before returning Home", "STATIC_HOOK");
+      check("TV_BROWSE_SIDEBAR_BACK_LAYER",
+        sourceOf(installRemoteKeys).includes("handleSidebarBackKey") && sourceOf(closeSidebar).includes("restoreSidebarFocus"),
+        "Sidebar closes through its stable Home return identity", "STATIC_HOOK");
 
       const searchHot = getSearchHotItems();
       const searchHotUrlSource = sourceOf(searchHotUrl);
@@ -501,10 +497,6 @@
       const searchHotIdentityResolveSource = sourceOf(resolveSearchHotIdentity);
       const searchHotActivateSource = sourceOf(activateSearchHotItem);
       const searchHotFallbackSource = sourceOf(activateSearchHotFallback);
-      const secondaryCatalogDirectionalSource = sourceOf(secondaryCatalogDirectionalTarget);
-      const secondaryGridDownBranch = secondaryCatalogDirectionalSource.slice(
-        secondaryCatalogDirectionalSource.lastIndexOf('if (key === "ArrowDown")')
-      );
       const searchHotStyleText = Array.from(document.querySelectorAll("style"))
         .map((style) => String(style.textContent || ""))
         .join("\n");
@@ -546,12 +538,11 @@
           && searchHotStyleText.includes("overflow-y: hidden")
           && searchHotStyleText.includes("#searchRail"),
         "Search results rail keeps its existing horizontal overflow behavior", "STATIC_HOOK");
-      check("TV_SECONDARY_BUTTON_FOCUS_UNCHANGED",
-        searchHotStyleText.includes("html.tv-mode .secondary-page button:focus")
-          && searchHotStyleText.includes("outline: 2px solid")
-          && searchHotStyleText.includes("box-shadow:")
-          && searchHotStyleText.includes("transform: scale(1.06)"),
-        "TV Secondary button focus visuals remain unchanged", "STATIC_HOOK");
+      check("TV_BROWSE_FOCUS_VISUAL",
+        searchHotStyleText.includes(".tv-browse button:focus")
+          && searchHotStyleText.includes("outline: 3px solid")
+          && searchHotStyleText.includes("transform: scale(1.04)"),
+        "TV browse cards and controls expose one focus visual contract", "STATIC_HOOK");
       const searchHistoryClearTopStyleMatch = searchHotStyleText.match(/\.search-history-clear-top\s*\{[^}]*\}/);
       const searchHistoryClearTopStyle = searchHistoryClearTopStyleMatch ? searchHistoryClearTopStyleMatch[0] : "";
       const searchHistoryClearStyleMatch = searchHotStyleText.match(/\.search-history-clear\s*\{[^}]*\}/);
@@ -1754,79 +1745,18 @@
         hasAll(sourceOf(browserRequest), ["AbortController", "setTimeout", "clearTimeout", "signal"]),
         "browser fallback still honors the Native request timeout contract", "STATIC_HOOK");
 
-      const anchorSource = sourceOf(alignHomeRailToAnchor) + sourceOf(revealHomeFocusedTarget) + sourceOf(homeRailContextForTarget);
-      check("HOME_RAIL_ANCHOR_PRESERVED",
-        typeof HOME_RAIL_ANCHOR_OFFSET === "number"
-          && HOME_RAIL_ANCHOR_OFFSET === 8
-          && anchorSource.includes("home-section"),
-        "Home TV focus anchor remains section-based at 8px", "STATIC_HOOK");
+      check("TV_SINGLE_BROWSE_AUTHORITY",
+        typeof tvBrowseDirectionalTarget === "function" && typeof tvBrowsePreview === "function"
+          && sourceOf(renderHome).includes("renderTvBrowse"),
+        "TV runs its single rail and focus-driven preview; Mobile owns its legacy presentation", "STATIC_HOOK");
 
-      const makeSecondaryGridFixtureCards = (centers) => centers.map((center, index) => ({
-        id: "secondary-grid-card-" + index,
-        getBoundingClientRect: () => ({ left: Number(center) - 10, width: 20 })
-      }));
-      const secondaryFullRowCards = makeSecondaryGridFixtureCards([10, 30, 50, 70, 90, 10, 30, 50, 70, 90]);
-      const secondaryRaggedRowCards = makeSecondaryGridFixtureCards([10, 30, 50, 70, 90, 10, 30]);
-      const secondaryFullRowTarget = secondaryGridDownTarget({}, secondaryFullRowCards, secondaryFullRowCards[2], 2, 5);
-      const secondaryRaggedRowTargets = [0, 1, 2, 3, 4].map((index) =>
-        secondaryGridDownTarget({}, secondaryRaggedRowCards, secondaryRaggedRowCards[index], index, 5)
-      );
-      check("SECONDARY_DOWN_SAME_COLUMN",
-        secondaryFullRowTarget === secondaryFullRowCards[7],
-        "a complete next row keeps the same column", "RUNTIME_MOCK");
-      check("SECONDARY_DOWN_RAGGED_ROW_NEAREST",
-        secondaryRaggedRowTargets.length === 5
-          && secondaryRaggedRowTargets[0] === secondaryRaggedRowCards[5]
-          && secondaryRaggedRowTargets[1] === secondaryRaggedRowCards[6]
-          && secondaryRaggedRowTargets[2] === secondaryRaggedRowCards[6]
-          && secondaryRaggedRowTargets[3] === secondaryRaggedRowCards[6]
-          && secondaryRaggedRowTargets[4] === secondaryRaggedRowCards[6],
-        "a ragged next row selects the nearest card by rendered X position", "RUNTIME_MOCK");
-      check("SECONDARY_RAGGED_ROW_BEFORE_LOAD_MORE",
-        secondaryRaggedRowTargets[3]
-          && secondaryRaggedRowTargets[4]
-          && secondaryCatalogDirectionalSource.indexOf("secondaryGridDownTarget") >= 0
-          && secondaryCatalogDirectionalSource.indexOf("secondaryGridDownTarget") < secondaryCatalogDirectionalSource.indexOf("secondaryCanLoadMore"),
-        "an already-rendered ragged row wins before the load-more branch", "RUNTIME_MOCK");
-      const secondaryBottomCard = secondaryRaggedRowCards[6];
-      const secondaryBottomTarget = secondaryGridDownTarget({}, secondaryRaggedRowCards, secondaryBottomCard, 6, 5);
-      const secondaryMoreAvailable = true;
-      let secondaryLoadMoreCalls = 0;
-      let secondaryLoadMoreTarget = secondaryBottomCard;
-      if (!secondaryBottomTarget && secondaryMoreAvailable) {
-        secondaryLoadMoreCalls += 1;
-        secondaryLoadMoreTarget = secondaryBottomCard;
-      }
-      check("SECONDARY_DOWN_LOAD_MORE_STAYS_FOCUSED",
-        secondaryBottomTarget === null
-          && secondaryLoadMoreCalls === 1
-          && secondaryLoadMoreTarget === secondaryBottomCard
-          && secondaryGridDownBranch.includes("secondaryLoadNextPage();")
-          && secondaryGridDownBranch.includes("return active;"),
-        "the true bottom loads one page while retaining the active card", "RUNTIME_MOCK");
-      const secondaryMoreUnavailable = false;
-      let secondaryBottomNoMoreTarget = secondaryBottomCard;
-      if (!secondaryBottomTarget && secondaryMoreUnavailable) secondaryBottomNoMoreTarget = secondaryBottomCard;
-      check("SECONDARY_DOWN_BOTTOM_STAYS_FOCUSED",
-        secondaryBottomTarget === null && secondaryBottomNoMoreTarget === secondaryBottomCard,
-        "the exhausted bottom keeps the current card focused", "RUNTIME_MOCK");
-      check("SECONDARY_DOWN_BOTTOM_NO_BACKTOP_JUMP",
-        secondaryBottomNoMoreTarget === secondaryBottomCard
-          && !secondaryGridDownBranch.includes("rememberBackTopFocusOrigin"),
-        "ArrowDown at the exhausted bottom does not jump to Back Top", "STATIC_HOOK");
-      check("SECONDARY_UP_UNCHANGED",
-        secondaryRaggedRowCards[5] !== secondaryRaggedRowCards[0]
-          && secondaryRaggedRowCards[6] !== secondaryRaggedRowCards[1]
-          && secondaryCatalogDirectionalSource.includes("cards[index - columns] || cards[Math.max(0, index - 1)] || active"),
-        "ArrowUp retains its existing previous-row fallback", "STATIC_HOOK");
-      check("SECONDARY_WEEKLY_FOCUS_UNCHANGED",
-        secondaryCatalogDirectionalSource.includes("weeklySecondaryFocusableCards")
-          && secondaryCatalogDirectionalSource.includes("weeklySecondary && active.classList.contains(\"weekly-card\")"),
-        "Weekly Secondary continues through its dedicated horizontal focus branch", "STATIC_HOOK");
-      check("SECONDARY_FILTER_FOCUS_UNCHANGED",
-        secondaryCatalogDirectionalSource.includes("secondaryFilterFocusTarget")
-          && secondaryCatalogDirectionalSource.includes("secondary-filter-row"),
-        "Secondary filter focus continues through the existing helper", "STATIC_HOOK");
+      check("TV_BROWSE_LOCAL_FOCUS_GRAPH",
+        hasAll(sourceOf(tvBrowseDirectionalTarget), ["tvBrowseRail", "tvBrowseColumns", "tvBrowseFunctions", "filterOpen"]),
+        "one local graph covers columns, posters, functions and modal filters", "STATIC_HOOK");
+      check("TV_BROWSE_PAGING_STALE_GUARD",
+        hasAll(sourceOf(tvBrowseMaybeLoadMore), ["query.loading", "query.error", "loadSecondaryPage"])
+          && sourceOf(loadSecondaryPage).includes("query.requestSeq !== requestSeq"),
+        "query paging remains bounded and commits through the existing request sequence", "STATIC_HOOK");
       check("HOME_FOCUS_UNCHANGED",
         typeof fastHomeGridTarget === "function"
           && sourceOf(fastHomeGridTarget).includes("activeMediaGrid")

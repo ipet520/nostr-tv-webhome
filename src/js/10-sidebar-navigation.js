@@ -112,6 +112,12 @@
       if (action.type === "live") return !!openLiveHome();
       if (action.type === "keep") return !!openKeepHome();
       if (action.type === "settings") return !!openSettingHome();
+      if (action.type === "secondary" && tvBrowseActive()) {
+        closeSidebar({ restore: false });
+        const result = tvBrowseSelectColumn(normalizeLegacyCategoryId(action.listId || ""));
+        tvBrowseFocusIntent();
+        return result;
+      }
       if (action.type === "secondary") {
         const currentListId = normalizeLegacyCategoryId(state.homeV14 && state.homeV14.secondaryListId || "");
         const targetListId = normalizeLegacyCategoryId(action.listId || "");
@@ -556,8 +562,9 @@
       if (secondary) secondary.hidden = route !== "secondary";
       const form = $("searchForm");
       if (form && route !== "search") form.hidden = true;
+      syncTvBrowseVisibility();
       const launcher = $("homeSearchLauncherWrap");
-      if (launcher) launcher.hidden = !isHome;
+      if (launcher) launcher.hidden = !isHome || isTvLikeDevice();
       if (!isHome) stopHomeHeroAutoplay();
       syncSidebarVisibility();
       return isHome;
@@ -573,7 +580,7 @@
     }
 
     function setHomeOnlyPresentationVisible(isHome) {
-      const visible = !!isHome;
+      const visible = !!isHome && !isTvLikeDevice();
       if (!visible) stopHomeHeroAutoplay();
       const hero = $("homeHero");
       const recent = $("homeRecentSection");

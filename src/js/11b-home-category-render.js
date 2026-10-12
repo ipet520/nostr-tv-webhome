@@ -466,6 +466,7 @@
     }
 
     function homeBaseFeedsReady() {
+      if (tvBrowseActive()) { const query = secondaryActiveQuery(tvBrowseState().column); return !!(query && query.items && query.items.length); }
       const configs = homeSectionConfig().filter((entry) => isHomeCategoryId(entry.listId));
       return configs.length > 0 && configs.every((config) => {
         const feed = state.homeV14.categoryFeeds && state.homeV14.categoryFeeds[config.listId];
@@ -673,7 +674,13 @@
           }
         }
       });
-      if (updatedHomeCard) recordHomeV14Diag();
+      if (updatedHomeCard) {
+        if (tvBrowseActive()) {
+          const target = tvBrowsePosterTarget();
+          if (target && target.__mediaItem && tvDetailCacheId(target.__mediaItem) === id) tvBrowsePreview(target.__mediaItem);
+        }
+        recordHomeV14Diag();
+      }
     }
 
     function tvCardNearViewport(card) {
@@ -1115,6 +1122,7 @@
     }
 
     function renderHome() {
+      if (isTvLikeDevice()) { renderSidebar(); renderTvBrowse(); return; }
       const homeRoot = $("home");
       if (!homeRoot || !isHomeRouteActive()) return;
       const home = state.homeV14;

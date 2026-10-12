@@ -154,7 +154,7 @@
           query.totalResults = query.items.length;
           query.hasMore = false;
           try {
-            renderSecondaryCatalog();
+            renderCatalogQuery("recent");
           } catch (e) {
             renderFailed = true;
           }
@@ -174,13 +174,13 @@
         if (renderFailed) toast("最近观看界面刷新失败");
         requestAnimationFrame(() => {
           if (!isRecentManagePage()) return;
-          const grid = $("secondaryCatalogGrid");
+          const grid = recentManageGrid();
           const cards = grid ? Array.from(grid.querySelectorAll(".recent-watching-card")).filter(canFastHomeFocus) : [];
           const failedKeys = failedGroups.map((group) => group.key);
           let target = failedKeys.length
             ? cards.find((card) => failedKeys.indexOf(recentWatchingMediaKey(card.__mediaItem)) >= 0)
             : cards[0];
-          if (!target) target = $("secondaryCatalogBack");
+          if (!target) target = tvBrowseActive() ? tvBrowsePosterTarget() : $("secondaryCatalogBack");
           if (target && isTvLikeDevice()) focusRemoteTarget(target);
         });
         return successfulList.length > 0;
@@ -244,7 +244,7 @@
       if (isRecentManagePage() && recentManageRuntime().active) return false;
       const key = recentWatchingMediaKey(item);
       if (!key) return false;
-      const grid = card && card.closest && card.closest("#homeRecentRail, #secondaryCatalogGrid, .list-panel:not([hidden]) .media-grid");
+      const grid = card && card.closest && card.closest("#homeRecentRail, #secondaryCatalogGrid, #tvBrowseRail, .list-panel:not([hidden]) .media-grid");
       const beforeCards = grid ? Array.from(grid.querySelectorAll(".recent-watching-card")) : [];
       const secondaryRecentDelete = !!(grid
         && grid.id === "secondaryCatalogGrid"
@@ -325,6 +325,7 @@
         query.hasMore = false;
         renderSecondaryCatalog();
       }
+      if (tvBrowseActive() && tvBrowseState().column === "recent") renderTvBrowse();
       toast("已删除最近观看");
       requestAnimationFrame(() => {
         let targetGrid = grid;
@@ -336,6 +337,7 @@
           : (cards.length ? cards[Math.min(focusIndex, cards.length - 1)] : null);
         if (!target && targetGrid && targetGrid.id === "secondaryCatalogGrid") target = $("secondaryCatalogBack");
         if (!target && targetGrid && targetGrid.id === "homeRecentRail") target = $("homeRecentMore") || homeFirstTarget();
+        if (!target && tvBrowseActive()) target = tvBrowsePosterTarget();
         if (!target && state.activeList === "recent") target = initialHomeFocus();
         if (target) focusRemoteTarget(target);
       });
