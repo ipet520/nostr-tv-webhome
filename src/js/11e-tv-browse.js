@@ -144,6 +144,7 @@
       tvBrowseSavePosition();
       if (ui.column !== id && recentManageRuntime().deleting) return false;
       if (ui.column !== id) resetRecentManageState();
+      if (ui.filterOpen) clearTvPanelHistoryEntry("filters", "#tv-filters");
       ui.column = id;
       ui.filterOpen = false;
       ui.previewKey = "";
@@ -179,16 +180,21 @@
         || host.querySelector(".selected") || buttons[0] || null;
     }
 
-    function tvBrowseCloseFilters() {
+    function tvBrowseCloseFilters(options) {
       const ui = tvBrowseState();
       if (!ui.filterOpen) return false;
+      const opts = options || {}, active = document.activeElement;
+      const card = active && active.closest("#tvBrowseRail .card");
+      tvBrowseSavePosition();
+      if (!opts.fromPopState) clearTvPanelHistoryEntry("filters", "#tv-filters");
       ui.filterOpen = false;
       ui.confirm = null; ui.focusIntent = null;
       syncTvBrowseVisibility();
       if (tvBrowseActive()) {
         const poster = tvBrowsePosterTarget();
         if (poster && poster.__mediaItem) tvBrowsePreview(poster.__mediaItem);
-        focusRemoteTarget(tvBrowseColumnButton(ui.column));
+        if (!isVisibleFocusable(card)) focusRemoteTarget(tvBrowseColumnButton(ui.column));
+        scheduleUiSnapshotSave();
       }
       return true;
     }
@@ -235,6 +241,8 @@
       $("tvBrowseRecentTools").hidden = ui.filterOpen;
       $("tvBrowseInfo").hidden = ui.filterOpen;
       $("tvBrowseFilters").hidden = !ui.filterOpen;
+      $("tvBrowseColumns").hidden = ui.filterOpen;
+      if (tvBrowseActive() && ui.filterOpen && location.hash !== "#detail" && uiSnapshotRoute() === "home") ensureTvPanelHistoryEntry("filters", "#tv-filters");
       root.querySelectorAll("#tvBrowseColumns button").forEach((button) => button.setAttribute("tabindex", ui.filterOpen ? "-1" : "0"));
       document.documentElement.classList.toggle("tv-browse-active", tvBrowseActive());
     }

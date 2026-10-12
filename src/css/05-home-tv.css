@@ -1218,7 +1218,6 @@
       flex: 0 0 auto; box-sizing: border-box; height: var(--tv-filter-height); min-height: 0;
       padding: 0 12px; font-size: var(--tv-filter-font); line-height: 1.2;
     }
-    html.tv-browse-active .tv-browse.filter-open .tv-browse-columns { pointer-events: none; }
     html.tv-browse-active #tvBrowseFunctions #connectionDock { position: relative; flex: 0 0 auto; width: auto; min-width: 0; margin: 0; height: auto; align-self: auto; }
     html.tv-browse-active #tvBrowseFunctions #connectionToggle { display: flex; align-items: center; justify-content: center; width: var(--tv-control-height); min-width: 0; min-height: 0; height: var(--tv-control-height); gap: 0; padding: 0; border-radius: 8px; }
     html.tv-browse-active #tvBrowseFunctions .connection-title, html.tv-browse-active #tvBrowseFunctions .connection-arrow { display: none; }

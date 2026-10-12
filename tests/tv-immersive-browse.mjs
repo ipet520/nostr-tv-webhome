@@ -255,7 +255,56 @@ async function round5ArtworkLimits() {
   await p.close();assert.deepEqual(errors,[]);console.log('ROUND5_DIRECT_DETAIL_TALL_STALE_BOUNDED_TITLE = PASS (Chromium fixtures)');
 }
 
+
+async function filterBackAcceptance() {
+  for (const zone of ['filter','card','empty']) {
+    const p=await pageAt(true);await p.waitForTimeout(300);
+    await p.evaluate(()=>{testBrowse.seed('movie',12).hasMore=false;testBrowse.tvBrowseSelectColumn('movie');testBrowse.state.tvFullscreen=true;window.nativeBackCalls=0;window.fm={back:()=>{nativeBackCalls++;}};});
+    const railBefore=await p.locator('#tvBrowseRail').boundingBox();
+    await focus(p,'#tvColumn-movie');await press(p,'Enter');await press(p,'Enter');
+    assert.equal(await p.evaluate(()=>location.hash),'#tv-filters');assert.equal(await p.locator('#tvBrowseColumns').isVisible(),false);
+    assert.equal(await p.evaluate(()=>document.querySelector('#tvBrowseColumns button').tabIndex),-1);
+    await p.evaluate(()=>{window.columnNode=document.querySelector('#tvColumn-movie');window.initialQuery=testBrowse.secondaryActiveQuery('movie').requestSeq;});
+    if(zone==='card') {
+      await focus(p,'#tvBrowseFilters button[data-group="sort"][data-value="rating"]');
+      await press(p,'ArrowDown');await press(p,'ArrowRight');
+      await p.evaluate(()=>testBrowse.focusRemoteTarget(document.querySelectorAll('#tvBrowseRail .card')[9]));
+      await p.evaluate(()=>{window.returnCard=document.activeElement;window.returnScroll=document.querySelector('#tvBrowseRail').scrollLeft;window.returnIndex=testBrowse.tvBrowseState().positions[testBrowse.secondaryActiveQuery('movie').key].index;});
+      await press(p,'ArrowUp');assert.equal(await p.evaluate(()=>document.activeElement.dataset.value),'rating');await press(p,'ArrowDown');
+    } else if(zone==='empty') {
+      await p.evaluate(()=>{const q=testBrowse.secondaryActiveQuery('movie');q.items=[];q.hasMore=false;testBrowse.renderTvBrowse();});
+      await focus(p,'#tvBrowseFilters button[data-group="sort"][data-value="hot"]');await press(p,'ArrowDown');assert.equal(await p.evaluate(()=>document.activeElement.dataset.group),'sort');
+    }
+    await p.waitForTimeout(75);
+    if(zone==='card') await p.evaluate(()=>{returnScroll=document.querySelector('#tvBrowseRail').scrollLeft;});
+    // Native HomeWebController uses WebView.goBack(), not HTML keydown.
+    await p.evaluate(()=>history.back());await p.waitForFunction(()=>!testBrowse.tvBrowseState().filterOpen);
+    assert.equal(await p.locator('#tvBrowseColumns').isVisible(),true);assert.equal(await p.evaluate(()=>nativeBackCalls),0);assert.equal(await p.evaluate(()=>testBrowse.state.tvFullscreen),true);
+    assert.equal(await p.evaluate(()=>columnNode===document.querySelector('#tvColumn-movie')),true);
+    assert.equal(await p.evaluate(()=>testBrowse.secondaryActiveQuery('movie').requestSeq===initialQuery),true);
+    assert.deepEqual(await p.locator('#tvBrowseRail').boundingBox(),railBefore);
+    assert.equal(await p.evaluate(()=>!!document.activeElement.closest('[hidden]')),false);
+    if(zone==='card') {
+      assert.equal(await p.evaluate(()=>document.activeElement===returnCard),true);
+      assert.equal(await p.evaluate(()=>document.querySelector('#tvBrowseRail').scrollLeft===returnScroll),true);
+      assert.equal(await p.evaluate(()=>testBrowse.tvBrowseState().positions[testBrowse.secondaryActiveQuery('movie').key].index===returnIndex),true);
+    } else assert.equal(await active(p),'tvColumn-movie');
+    assert.equal(await p.evaluate(()=>location.hash),'');
+    await press(p,'Escape');assert.equal(await p.evaluate(()=>nativeBackCalls),1);assert.equal(await p.evaluate(()=>testBrowse.state.tvFullscreen),false);
+    await p.close();
+  }
+  const p=await pageAt(true);await p.waitForTimeout(300);await p.evaluate(()=>{testBrowse.seed('movie',3).hasMore=false;testBrowse.tvBrowseSelectColumn('movie');});
+  await focus(p,'#tvColumn-movie');await press(p,'Enter');await press(p,'Enter');
+  await press(p,'Escape');assert.equal(await active(p),'tvColumn-movie');assert.equal(await p.evaluate(()=>location.hash),'');
+  await press(p,'Enter');await press(p,'Enter');
+  await focus(p,'#tvBrowseFilters button[data-group="sort"][data-value="hot"]');await press(p,'ArrowDown');const saved=await active(p);await press(p,'Escape');assert.equal(await active(p),saved);
+  await focus(p,'#connectionToggle');await press(p,'Enter');assert.equal(await p.evaluate(()=>location.hash),'#connection');await p.evaluate(()=>history.back());await p.waitForTimeout(200);assert.equal(await p.locator('#connectionBody').evaluate(el=>el.classList.contains('open')),false);assert.equal(await active(p),'connectionToggle');
+  await p.close();assert.deepEqual(errors,[]);console.log('FILTER_NATIVE_HISTORY_BACK_AND_KEY_BACK = PASS (browser simulation; Native device boundary NOT_RUN)');
+}
+
 try {
+  if(process.env.WEBHOME_TEST_CASE === "filter-back") { await filterBackAcceptance(); } else {
+  if (process.env.WEBHOME_TEST_CASE !== "artwork-limits") await filterBackAcceptance();
   await round5ArtworkLimits();
   if (process.env.WEBHOME_TEST_CASE !== "artwork-limits") {
   await round5Checks();
@@ -318,6 +367,7 @@ try {
   await focus(tv, "#tvColumn-movie"); await press(tv, "Enter");
   assert.equal(await tv.evaluate(() => testBrowse.tvBrowseState().column), "movie");
   assert.equal(await tv.evaluate(() => location.hash), "");
+  const normalColumnRect = await tv.locator("#tvBrowseColumns").boundingBox();
   await press(tv, "Enter");
   assert.equal(await tv.evaluate(() => testBrowse.tvBrowseState().filterOpen), true);
   assert.equal(await tv.locator("#tvBrowseFunctions").isVisible(), false);
@@ -328,7 +378,8 @@ try {
   const filterOption=await tv.locator('#tvBrowseFilters button').last().evaluate(el=>({bg:getComputedStyle(el).backgroundColor,border:getComputedStyle(el).borderTopColor,blur:getComputedStyle(el).backdropFilter}));
   assert.deepEqual(filterOption,{bg:'rgba(0, 0, 0, 0)',border:'rgba(0, 0, 0, 0)',blur:'none'});
   const railRect = await tv.locator('#tvBrowseRail').boundingBox();
-  const columnRect = await tv.locator('#tvBrowseColumns').boundingBox();
+  const columnRect = normalColumnRect;
+  assert.equal(await tv.locator('#tvBrowseColumns').isVisible(),false);
   const filterBefore = await tv.evaluate(() => document.activeElement.dataset.value);
   await press(tv, "ArrowRight");
   assert.notEqual(await tv.evaluate(() => document.activeElement.dataset.value), filterBefore);
@@ -587,5 +638,6 @@ try {
   assert.deepEqual(errors, [], "no browser runtime errors");
   console.log("TV_IMMERSIVE_BROWSE = PASS (real Chromium DOM / keyboard / query fixtures)");
   console.log("NATIVE_DEVICE_PLAYBACK_AND_RESUME = NOT_RUN (real device required)");
+  }
   }
 } finally { await browser.close(); }

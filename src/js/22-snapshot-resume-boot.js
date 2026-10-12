@@ -679,6 +679,12 @@
 
     window.addEventListener("popstate", (event) => {
       const detailSheet = $("detailSheet");
+      // Native Back traverses the same transient panel history as Basic Settings.
+      // A Detail -> filters return still owns its detail close/restore chain.
+      if (tvBrowseActive() && tvBrowseState().filterOpen && !tvPanelHistoryEntryActive("filters", "#tv-filters")
+        && !(detailSheet && detailSheet.classList.contains("active")) && uiSnapshotRoute() === "home") {
+        tvBrowseCloseFilters({ fromPopState: true }); return;
+      }
       if (state.homeV14 && state.homeV14.sidebarHistoryBackPending) {
         const deferredAction = state.homeV14.sidebarDeferredAction;
         state.homeV14.sidebarDeferredAction = null;

@@ -225,50 +225,50 @@
       return generation;
     }
 
-    function connectionHistoryEntryActive() {
+    function tvPanelHistoryEntryActive(sheet, hash) {
       const current = history.state;
       return isTvLikeDevice()
-        && location.hash === "#connection"
-        && !!(current && current.sheet === "connection" && current.connectionTransient === true);
+        && location.hash === hash
+        && !!(current && current.sheet === sheet && current[sheet + "Transient"] === true);
     }
 
-    function ensureConnectionHistoryEntry() {
-      if (!isTvLikeDevice() || connectionHistoryEntryActive()) return false;
+    function ensureTvPanelHistoryEntry(sheet, hash) {
+      if (!isTvLikeDevice() || tvPanelHistoryEntryActive(sheet, hash)) return false;
       const current = history.state && typeof history.state === "object" ? history.state : {};
       const returnState = Object.assign({}, current);
-      if (returnState.sheet === "connection") returnState.sheet = "home";
-      delete returnState.connectionTransient;
-      delete returnState.connectionReturnUrl;
-      delete returnState.connectionReturnState;
+      if (returnState.sheet === sheet) returnState.sheet = "home";
+      delete returnState[sheet + "Transient"];
+      delete returnState[sheet + "ReturnUrl"];
+      delete returnState[sheet + "ReturnState"];
       if (!returnState.sheet) returnState.sheet = "home";
-      const returnHash = location.hash === "#connection" ? "" : location.hash;
+      const returnHash = location.hash === hash ? "" : location.hash;
       const returnUrl = location.pathname + location.search + returnHash;
       const nextState = Object.assign({}, current, {
-        sheet: "connection",
-        connectionTransient: true,
-        connectionReturnUrl: returnUrl,
-        connectionReturnState: returnState
+        sheet,
+        [sheet + "Transient"]: true,
+        [sheet + "ReturnUrl"]: returnUrl,
+        [sheet + "ReturnState"]: returnState
       });
       try {
-        if (location.hash === "#connection") history.replaceState(nextState, "", "#connection");
-        else history.pushState(nextState, "", "#connection");
+        if (location.hash === hash) history.replaceState(nextState, "", hash);
+        else history.pushState(nextState, "", hash);
         return true;
       } catch (e) {
         return false;
       }
     }
 
-    function clearConnectionHistoryEntry() {
-      if (!isTvLikeDevice() || location.hash !== "#connection") return false;
+    function clearTvPanelHistoryEntry(sheet, hash) {
+      if (!isTvLikeDevice() || location.hash !== hash) return false;
       const current = history.state && typeof history.state === "object" ? history.state : {};
-      const nextState = current.connectionReturnState && typeof current.connectionReturnState === "object"
-        ? Object.assign({}, current.connectionReturnState)
+      const nextState = current[sheet + "ReturnState"] && typeof current[sheet + "ReturnState"] === "object"
+        ? Object.assign({}, current[sheet + "ReturnState"])
         : Object.assign({}, current);
-      delete nextState.connectionTransient;
-      delete nextState.connectionReturnUrl;
-      delete nextState.connectionReturnState;
-      if (nextState.sheet === "connection" || !nextState.sheet) nextState.sheet = "home";
-      const returnUrl = current.connectionReturnUrl || (location.pathname + location.search);
+      delete nextState[sheet + "Transient"];
+      delete nextState[sheet + "ReturnUrl"];
+      delete nextState[sheet + "ReturnState"];
+      if (nextState.sheet === sheet || !nextState.sheet) nextState.sheet = "home";
+      const returnUrl = current[sheet + "ReturnUrl"] || (location.pathname + location.search);
       try {
         history.replaceState(nextState, "", returnUrl);
         return true;
@@ -276,6 +276,10 @@
         return false;
       }
     }
+
+    function connectionHistoryEntryActive() { return tvPanelHistoryEntryActive("connection", "#connection"); }
+    function ensureConnectionHistoryEntry() { return ensureTvPanelHistoryEntry("connection", "#connection"); }
+    function clearConnectionHistoryEntry() { return clearTvPanelHistoryEntry("connection", "#connection"); }
 
     function closeConnectionPanel(options) {
       const opts = options || {};
