@@ -1197,6 +1197,7 @@
     html.tv-browse-active .tv-browse-column { flex: 0 0 auto; padding: var(--tv-column-pad-y,8px) var(--tv-column-pad-x,18px); font-size: var(--tv-column-font); }
     html.tv-browse-active .tv-browse-column[aria-pressed="false"]:not(:focus) { background: rgba(40,40,40,.18); }
     html.tv-browse-active .history-open .tv-browse-columns { visibility: hidden; pointer-events: none; }
+    html.tv-browse-active .history-open .tv-browse-recent-tools { grid-row: 1; }
     html.tv-browse-active .history-open .card-meta { display: none; }
     html.tv-browse-active .tv-history-resume { grid-row: 2; margin: 0 var(--tv-gutter); display: flex; align-items: center; gap: var(--tv-column-gap); z-index: 3; min-width: 0; }
     html.tv-browse-active #tvHistoryContinue { border-radius: 999px; height: var(--tv-control-height); min-height: 0; padding: 0 28px; font-size: var(--tv-meta-font); flex: 0 0 auto; }

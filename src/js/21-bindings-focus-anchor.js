@@ -509,6 +509,7 @@
         if (isRecentManagePage() && recentManageRuntime().active && handleSecondaryBackKey(event)) return;
         if (state.recentDelete && (state.recentDelete.armedKey || state.recentDelete.pendingKey || state.recentDelete.remotePressLocked)) {
           cancelRecentDeleteArm();
+          if (tvBrowseActive() && tvBrowseState().view === "history" && focusScopeRoot() === document && !isConnectionPanelOpen()) tvBrowseCloseHistory();
           event.preventDefault();
           event.stopPropagation();
           if (event.stopImmediatePropagation) event.stopImmediatePropagation();
@@ -548,6 +549,7 @@
       document.addEventListener("keyup", (event) => {
         const key = normalizeRemoteKey(event);
         if (key !== "Enter") return;
+        if (tvBrowseActive() && tvBrowseState().view === "history") tvBrowseState().suppressClickUntil = Date.now() + 120;
         if (state.tvBrowse && state.tvBrowse.enterHeld) {
           state.tvBrowse.enterHeld = false; state.tvBrowse.suppressClickUntil = Date.now() + 120;
           event.preventDefault(); return;

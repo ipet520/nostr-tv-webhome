@@ -497,6 +497,26 @@
       return card && card.__mediaItem && card.__mediaItem.recentWatching ? card : null;
     }
 
+    function isTvHistoryPoster(card) {
+      return !!(tvBrowseActive() && tvBrowseState().view === "history" && card && card.closest && card.closest("#tvBrowseRail"));
+    }
+
+    function tvHistoryPressItem(card) {
+      if (!isTvHistoryPoster(card) || !card.isConnected) return null;
+      const item = card.__mediaItem;
+      if (!item || !(item.nativeHistoryKey || item.siteKey && item.vodId)) return null;
+      const identity = nativeHistoryDeleteIdentityKey(item);
+      return (state.recent.items || []).find((candidate) => nativeHistoryDeleteIdentityKey(candidate) === identity) || null;
+    }
+
+    function recentWatchingPressKey(card) {
+      if (isTvHistoryPoster(card)) {
+        const item = tvHistoryPressItem(card);
+        return item ? nativeHistoryDeleteIdentityKey(item) : "";
+      }
+      return recentWatchingMediaKey(card && card.__mediaItem);
+    }
+
     function clearRecentSinglePressPending() {
       const recentDelete = state.recentDelete;
       if (!recentDelete) return;
@@ -521,8 +541,7 @@
     }
 
     function armRecentDelete(card) {
-      const item = card && card.__mediaItem;
-      const key = recentWatchingMediaKey(item);
+      const key = recentWatchingPressKey(card);
       if (!card || !key) return false;
       const recentDelete = state.recentDelete;
       if (recentDelete.armedCard && recentDelete.armedCard !== card) cancelRecentDeleteArm();
@@ -577,8 +596,9 @@
 
     function beginRecentWatchingSinglePress(card) {
       const recentDelete = state.recentDelete;
-      const key = recentWatchingMediaKey(card && card.__mediaItem);
+      const key = recentWatchingPressKey(card);
       if (!card || !recentDelete || !key) return false;
+      const tvHistory = isTvHistoryPoster(card);
       clearRecentSinglePressPending();
       recentDelete.pendingKey = key;
       recentDelete.pendingCard = card;
@@ -587,20 +607,25 @@
         const targetKey = recentDelete.pendingKey;
         clearRecentSinglePressPending();
         if (!target || !target.__mediaItem || !target.isConnected) return;
-        if (recentWatchingMediaKey(target.__mediaItem) !== targetKey) return;
-        openRecentWatchingDetail(target);
+        if (recentWatchingPressKey(target) !== targetKey) return;
+        if (tvHistory) {
+          if (!isTvHistoryPoster(target) || focusScopeRoot() !== document || document.activeElement !== target || recentManageRuntime().active) return;
+          const current = tvHistoryPressItem(target);
+          if (current) tvBrowseContinueHistory(current, target);
+        } else openRecentWatchingDetail(target);
       }, RECENT_DOUBLE_PRESS_WINDOW_MS);
       return true;
     }
 
     function consumeRecentWatchingPress(card) {
       const recentDelete = state.recentDelete;
-      const key = recentWatchingMediaKey(card && card.__mediaItem);
-      if (!card || !recentDelete || !key) return false;
+      const key = recentWatchingPressKey(card);
       if (recentManageCard(card)) return toggleRecentManageSelection(card);
+      if (isTvHistoryPoster(card) && !key) { cancelRecentDeleteArm(); return true; }
+      if (!card || !recentDelete || !key) return false;
       if (recentDelete.armedKey) {
         if (recentDelete.armedKey === key) {
-          deleteRecentWatchingMedia(card.__mediaItem, card).catch(() => {});
+          deleteRecentWatchingMedia(tvHistoryPressItem(card) || card.__mediaItem, card).catch(() => {});
           return true;
         }
         cancelRecentDeleteArm();
@@ -624,9 +649,15 @@
       if (event.stopImmediatePropagation) event.stopImmediatePropagation();
       // A held OK may emit repeat keydowns.  They are not new press cycles.
       if (event.repeat || recentDelete.remotePressLocked) return true;
+      if (isTvHistoryPoster(card) && !recentManageCard(card) && !recentWatchingPressKey(card)) { cancelRecentDeleteArm(); return true; }
       recentDelete.remotePressLocked = true;
       recentDelete.remotePressCard = card;
-      recentDelete.remotePressKey = recentWatchingMediaKey(card.__mediaItem);
+      recentDelete.remotePressKey = recentWatchingPressKey(card);
+      // A second physical press inside the window owns the decision until keyup.
+      if (isTvHistoryPoster(card) && recentDelete.pendingKey === recentDelete.remotePressKey) {
+        if (recentDelete.pendingTimer) clearTimeout(recentDelete.pendingTimer);
+        recentDelete.pendingTimer = 0;
+      }
       return true;
     }
 
@@ -637,13 +668,20 @@
       event.stopPropagation();
       if (event.stopImmediatePropagation) event.stopImmediatePropagation();
       const card = recentDelete.remotePressCard;
+      const key = recentDelete.remotePressKey;
       recentDelete.remotePressLocked = false;
       recentDelete.remotePressCard = null;
       recentDelete.remotePressKey = "";
+      if (isTvHistoryPoster(card)) {
+        tvBrowseState().suppressClickUntil = Date.now() + 120;
+        if (document.activeElement !== card || !recentManageCard(card) && (!key || recentWatchingPressKey(card) !== key)) { cancelRecentDeleteArm(); return true; }
+      }
       return consumeRecentWatchingPress(card);
     }
 
-    function consumeRecentWatchingClick(card) {
+    function consumeRecentWatchingClick(card, event) {
+      // Physical Center is counted on keyup; its synthetic click is never another press.
+      if (isTvHistoryPoster(card) && (event && event.detail === 0 || state.recentDelete.remotePressLocked || Date.now() < tvBrowseState().suppressClickUntil)) return true;
       return consumeRecentWatchingPress(card);
     }
 
@@ -775,6 +813,7 @@
         if (!opts.silent) toast("正在删除，请稍候");
         return true;
       }
+      if (tvBrowseActive() && tvBrowseState().view === "history") cancelRecentDeleteArm();
       cancelRecentManageDeleteArm();
       manage.active = false;
       manage.selectedKeys = {};
@@ -789,6 +828,7 @@
 
     function resetRecentManageState() {
       const manage = recentManageRuntime();
+      if (tvBrowseActive() && tvBrowseState().view === "history") cancelRecentDeleteArm();
       cancelRecentManageDeleteArm();
       manage.active = false;
       manage.selectedKeys = {};

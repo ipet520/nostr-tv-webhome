@@ -133,7 +133,8 @@ async function historyChecks(viewport) {
   });
   await p.locator('#tvFunction-history').click();await p.waitForFunction(()=>!testBrowse.state.recent.loading&&document.querySelectorAll('#tvBrowseRail .card').length===2); await p.waitForFunction(()=>document.querySelector('#tvBrowseOverview').textContent.includes('匹配的 TMDB'));
   assert.equal(await p.locator('#tvBrowseFunctions button').count(),5);
-  const top=await p.locator('#tvBrowseFunctions').boundingBox();assert.ok(top.x>=0&&top.x+top.width<viewport.width);
+  assert.equal(await p.locator('#tvBrowseFunctions').isVisible(),false);assert.equal(await p.locator('#tvBrowseFunctions button[tabindex="0"]').count(),0);
+  const top=await p.locator('#tvBrowseRecentTools').boundingBox();assert.ok(top.x>=0&&top.x+top.width<viewport.width);
   assert.equal(await p.evaluate(()=>testBrowse.tvBrowseState().view),'history');
   assert.equal(await p.locator('#tvColumn-recent').count(),0);
   assert.equal(await p.locator('#tvBrowseColumns').isVisible(),false);
@@ -159,9 +160,7 @@ async function historyChecks(viewport) {
   await p.evaluate(()=>{localStorage.removeItem('fm_pan_playing');historyFixture=historyFixture.slice(0,1);});await p.evaluate(()=>testBrowse.loadRecentList({refresh:true,silent:true}));
   assert.equal(await p.locator('#tvBrowseRail .card').count(),1);assert.equal(await p.locator('#tvHistoryTime').textContent(),'0:08 / 0:23');
   assert.equal(await p.evaluate(()=>testBrowse.tvBrowseState().positions['native-history'].key),await p.locator('#tvBrowseRail .card').getAttribute('data-media-key'));
-  await p.locator('#connectionToggle').focus(); await press(p,'Enter');
-  assert.equal(await p.locator('#connectionBody').evaluate(e=>e.classList.contains('open')),true);await p.evaluate(()=>testBrowse.renderTvBrowse());assert.equal(await p.evaluate(()=>location.hash),'#connection');
-  await press(p,'Escape');assert.equal(await p.locator('#connectionBody').evaluate(e=>e.classList.contains('open')),false);assert.equal(await p.evaluate(()=>testBrowse.tvBrowseState().view),'history');
+  assert.equal(await p.locator('#connectionToggle').isVisible(),false);
   await press(p,'Escape');assert.equal(await p.evaluate(()=>testBrowse.tvBrowseState().view),'home');assert.equal(await active(p),'tvFunction-history');assert.equal(await p.evaluate(()=>nativeBacks),0);
   await press(p,'Escape');assert.equal(await p.evaluate(()=>nativeBacks),1,'second back reaches the unchanged Native boundary');
   await p.locator('#tvFunction-history').click();await p.waitForTimeout(50);await p.evaluate(()=>history.back());await p.waitForTimeout(120);assert.equal(await p.evaluate(()=>testBrowse.tvBrowseState().view),'home','native-style history traversal uses existing popstate');
@@ -189,7 +188,7 @@ async function historyEdgeChecks() {
 }
 
 try {
-  await logoChecks();await statusChecks();await historyEdgeChecks();
+  if(process.env.WEBHOME_TEST_CASE!=="history") { await logoChecks();await statusChecks(); } await historyEdgeChecks();
   for(const viewport of [{width:1920,height:1080},{width:1280,height:720},{width:960,height:540},{width:1728,height:894},{width:2048,height:930},{width:1280,height:400}])await historyChecks(viewport);
   if(process.env.WEBHOME_VISUAL_DIR)writeFileSync(join(process.env.WEBHOME_VISUAL_DIR,'geometry.json'),JSON.stringify(geometryResults,null,2));
   assert.deepEqual(errors,[]);console.log('ROUND8_HISTORY_LOGO_STATUS = PASS; ANDROID_DEVICE = NOT_RUN');

@@ -325,7 +325,7 @@
         query.hasMore = false;
         renderSecondaryCatalog();
       }
-      if (tvBrowseActive() && tvBrowseState().column === "recent") renderTvBrowse();
+      if (tvBrowseActive() && tvBrowseState().view === "history") renderTvBrowse();
       toast("已删除最近观看");
       requestAnimationFrame(() => {
         let targetGrid = grid;

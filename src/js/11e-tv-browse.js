@@ -160,7 +160,11 @@
     function tvBrowsePosterTarget() {
       const rail = $("tvBrowseRail"), position = tvBrowsePosition();
       const cards = rail ? Array.from(rail.querySelectorAll(".card")) : [];
-      return cards.find((card) => card.dataset.mediaKey === position.key) || cards[Math.min(position.index, cards.length - 1)] || (tvBrowseState().view === "history" ? $("tvFunction-history") : tvBrowseColumnButton(tvBrowseState().column));
+      return cards.find((card) => card.dataset.mediaKey === position.key) || cards[Math.min(position.index, cards.length - 1)] || (tvBrowseState().view === "history" ? tvBrowseHistoryToolsTarget() : tvBrowseColumnButton(tvBrowseState().column));
+    }
+
+    function tvBrowseHistoryToolsTarget() {
+      return Array.from($("tvBrowseRecentTools").querySelectorAll("button")).find(isVisibleFocusable) || null;
     }
 
     function tvBrowseFocusIntent(focus) {
@@ -292,7 +296,9 @@
       root.classList.toggle("history-open", ui.view === "history");
       if (tvBrowseActive() && ui.view === "history" && uiSnapshotRoute() === "home" && !isConnectionPanelOpen()
         && (!location.hash || location.hash === "#tv-history")) ensureTvPanelHistoryEntry("tvHistory", "#tv-history");
-      $("tvBrowseFunctions").hidden = ui.filterOpen;
+      const hideFunctions = ui.filterOpen || ui.view === "history";
+      $("tvBrowseFunctions").hidden = hideFunctions;
+      $("tvBrowseFunctions").querySelectorAll("button").forEach((button) => button.tabIndex = hideFunctions ? -1 : 0);
       $("tvBrowseRecentTools").hidden = ui.filterOpen;
       $("tvBrowseInfo").hidden = ui.filterOpen;
       $("tvBrowseFilters").hidden = !ui.filterOpen;
@@ -400,7 +406,7 @@
       toggle.classList.remove("home-sidebar-item"); toggle.classList.add("tv-browse-control");
       toggle.setAttribute("aria-label", "基础设置"); toggle.removeAttribute("data-sidebar-key"); toggle.removeAttribute("data-sidebar-action");
       $("tvBrowseFunctions").appendChild(dock);
-      window.addEventListener("blur", () => { ui.enterHeld = false; ui.confirm = null; });
+      window.addEventListener("blur", () => { ui.enterHeld = false; ui.confirm = null; if (ui.view === "history") cancelRecentDeleteArm(); });
       $("tvBrowse").addEventListener("click", (event) => {
         if ((ui.enterHeld || Date.now() < ui.suppressClickUntil) && event.detail === 0) {
           event.preventDefault(); event.stopImmediatePropagation();
@@ -440,7 +446,7 @@
       if (!prefix) { rail.replaceChildren(); oldKeys.length = 0; }
       if (queryChanged) { rail.dataset.queryKey = query.key; rail.scrollLeft = tvBrowsePosition().scrollLeft; }
       for (let index = oldKeys.length; index < items.length; index += 1) {
-        const item = items[index], card = mediaCard(item, index, { home: true, homeLazy: index > 7, weeklyHome: !historyView && ui.column === "now-playing", activate: historyView ? tvBrowseContinueHistory : null });
+        const item = items[index], card = mediaCard(item, index, { home: true, homeLazy: index > 7, weeklyHome: !historyView && ui.column === "now-playing" });
         card.addEventListener("focus", () => {
           const position = tvBrowsePosition(); position.key = card.dataset.mediaKey; position.index = index;
           tvBrowsePreview(card.__mediaItem);
@@ -451,6 +457,8 @@
       }
       rail.__renderKeys = keys;
       Array.from(rail.children).forEach((card, index) => { card.__mediaItem = items[index]; });
+      const tracked = state.recentDelete && (state.recentDelete.armedCard || state.recentDelete.pendingCard || state.recentDelete.remotePressCard);
+      if (historyView && tracked && (!tracked.isConnected || !recentWatchingPressKey(tracked))) cancelRecentDeleteArm();
       syncTvBrowseVisibility();
       if (queryChanged) rail.scrollLeft = tvBrowsePosition().scrollLeft;
       $("tvBrowseColumns").querySelectorAll("button").forEach((button) => {
@@ -604,11 +612,11 @@
 
     function tvBrowseDirectionalTarget(key, active) {
       const ui = tvBrowseState();
-      if (ui.view === "history" && !recentManageRuntime().active) {
+      if (ui.view === "history") {
         const cards = Array.from($("tvBrowseRail").children).filter(isVisibleFocusable);
-        if (active === $("tvHistoryContinue")) return key === "ArrowDown" ? tvBrowsePosterTarget() : key === "ArrowUp" ? (isVisibleFocusable($("recentManageBtn")) ? $("recentManageBtn") : $("tvFunction-history")) : active;
+        if (active === $("tvHistoryContinue")) return key === "ArrowDown" ? tvBrowsePosterTarget() : key === "ArrowUp" ? tvBrowseHistoryToolsTarget() || active : active;
         if (active && active.closest("#tvBrowseRail")) {
-          if (key === "ArrowUp") return isVisibleFocusable($("tvHistoryContinue")) ? $("tvHistoryContinue") : $("tvFunction-history");
+          if (key === "ArrowUp") return !recentManageRuntime().active && isVisibleFocusable($("tvHistoryContinue")) ? $("tvHistoryContinue") : tvBrowseHistoryToolsTarget() || active;
           if (key === "ArrowDown") return active;
           return cards[Math.max(0, Math.min(cards.length - 1, cards.indexOf(active) + (key === "ArrowRight" ? 1 : -1)))] || active;
         }
@@ -642,7 +650,7 @@
       if (host === columns) return key === "ArrowDown" ? tvBrowsePosterTarget() : $("tvFunction-search");
       if (ui.view === "history") {
         if (host === functions && key === "ArrowDown" && isVisibleFocusable($("recentManageBtn"))) return $("recentManageBtn");
-        if (host === $("tvBrowseRecentTools") && key === "ArrowUp") return $("tvFunction-history");
+        if (host === $("tvBrowseRecentTools") && key === "ArrowUp") return active;
         return isVisibleFocusable($("tvHistoryContinue")) ? $("tvHistoryContinue") : tvBrowsePosterTarget();
       }
       return ui.view === "history" ? tvBrowsePosterTarget() : tvBrowseColumnButton(ui.column);
@@ -652,12 +660,12 @@
       const scope = focusScopeRoot();
       if (!tvBrowseActive() || isSidebarOpen() || scope !== document || isConnectionPanelOpen()) return false;
       const column = active && active.closest("#tvBrowseColumns button");
-      const ui = tvBrowseState(), historyCard = active && active.closest("#tvBrowseRail .card");
-      if (key === "Enter" && ui.view === "history" && !recentManageRuntime().active && (historyCard || active === $("tvHistoryContinue"))) {
+      const ui = tvBrowseState();
+      if (key === "Enter" && ui.view === "history" && active === $("tvHistoryContinue")) {
         event.preventDefault(); event.stopPropagation();
         if (!event.repeat && !ui.enterHeld) {
           ui.enterHeld = true; ui.suppressClickUntil = Date.now() + 200;
-          tvBrowseContinueHistory(historyCard && historyCard.__mediaItem, active);
+          cancelRecentDeleteArm(); tvBrowseContinueHistory(null, active);
         }
         return true;
       }

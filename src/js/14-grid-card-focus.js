@@ -520,9 +520,8 @@
       button.addEventListener("contextmenu", (event) => {
         if (Date.now() < Number(state.blocked.suppressClickUntil || 0)) event.preventDefault();
       });
-      button.addEventListener("click", () => {
-        if (typeof opts.activate === "function" && !recentManageRuntime().active) { opts.activate(button.__mediaItem, button); return; }
-        if (recentWatching && consumeRecentWatchingClick(button)) return;
+      button.addEventListener("click", (event) => {
+        if (recentWatching && consumeRecentWatchingClick(button, event)) return;
         if (Date.now() < Number(state.blocked.suppressClickUntil || 0)) return;
         if (state.blocked.selecting && blockableRecommendCard(button)) {
           toggleBlockedCard(button);
