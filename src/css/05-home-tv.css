@@ -1150,7 +1150,7 @@
     html.tv-browse-active .tv-browse-backdrop.visible { opacity: 1; }
     html.tv-browse-active .tv-browse-shade { position: absolute; inset: 0; background: linear-gradient(90deg,rgba(8,12,18,.58),rgba(8,12,18,.22) 34%,transparent 65%),linear-gradient(0deg,rgba(8,12,18,.58),rgba(8,12,18,.16) 25%,transparent 42%); pointer-events: none; }
     /* Browse selection and remote focus have separate roles. Detail actions are independent. */
-    html.tv-browse-active .tv-browse { --tv-state-line: 18px; --tv-text-protection: 0 1px 2px rgba(0,0,0,.95), 0 0 5px rgba(0,0,0,.6); }
+    html.tv-browse-active .tv-browse { --tv-nav-accent: #35E07A; --tv-state-line: 18px; --tv-text-protection: 0 1px 2px rgba(0,0,0,.95), 0 0 5px rgba(0,0,0,.6); }
     html.tv-browse-active .tv-browse-control,
     html.tv-browse-active #tvBrowseFunctions #connectionToggle {
       background: transparent; border: 1px solid transparent; color: rgba(255,255,255,.94);
@@ -1166,6 +1166,8 @@
       transform: translateX(-50%); border-radius: 2px; background: #fff;
       box-shadow: 0 1px 3px rgba(0,0,0,.85); pointer-events: none;
     }
+    html.tv-browse-active .tv-browse-columns .tv-browse-pill[aria-pressed="true"]::after,
+    html.tv-browse-active .tv-browse-functions button:not(.tv-browse-search):focus::after { background: var(--tv-nav-accent); }
     html.tv-browse-active .tv-browse .tv-browse-pill:focus {
       background: rgba(255,255,255,.55); color: #17212b; text-shadow: none;
       box-shadow: inset 0 0 0 1px rgba(0,0,0,.25); outline: none;
@@ -1180,6 +1182,7 @@
     html.tv-browse-active .tv-browse-functions button { height: var(--tv-control-height); min-height: 0; box-sizing: border-box; display: flex; align-items: center; justify-content: center; padding: 0 clamp(12px,1vw,20px); border-radius: 8px; font-size: clamp(14px,1.05vw,20px); font-weight: 600; }
     html.tv-browse-active .tv-browse-functions .tv-browse-search { width: clamp(140px,9.6vw,190px); border-radius: calc(var(--tv-control-height) / 2); justify-content: space-between; background: rgba(0,0,0,.12); border-color: rgba(255,255,255,.25); }
     html.tv-browse-active .tv-browse-search .icon { width: var(--tv-control-icon); height: var(--tv-control-icon); }
+    html.tv-browse-active .tv-browse-functions .tv-browse-search:focus > .icon { stroke: var(--tv-nav-accent); }
     html.tv-browse-active .tv-browse-info { grid-column: 1; grid-row: 1 / 3; align-self: start; padding-top: var(--tv-info-offset,0px); min-width: 0; max-width: 47vw; z-index: 2; text-shadow: var(--tv-text-protection); }
     html.tv-browse-active .tv-browse-title { height: var(--tv-logo-height); position: relative; margin-bottom: var(--tv-info-gap); }
     html.tv-browse-active .tv-browse-info h1 { position: absolute; inset: 0; margin: 0; font-size: var(--tv-title-font); line-height: 1.1; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--tv-title-lines,2); overflow: hidden; }
@@ -1202,7 +1205,7 @@
     html.tv-browse-active .tv-history-resume { grid-row: 2; margin: 0 var(--tv-gutter); display: flex; align-items: center; gap: var(--tv-column-gap); z-index: 3; min-width: 0; }
     html.tv-browse-active #tvHistoryContinue { border-radius: 999px; height: var(--tv-control-height); min-height: 0; padding: 0 28px; font-size: var(--tv-meta-font); flex: 0 0 auto; }
     html.tv-browse-active #tvHistoryContinue > .icon { fill: #35E07A; stroke: none; }
-    html.tv-browse-active .tv-history-progress-info { min-width: 0; width: min(38vw,560px); font-size: var(--tv-meta-font); color: rgba(255,255,255,.9); }
+    html.tv-browse-active .tv-history-progress-info { min-width: 0; width: clamp(220px,16vw,320px); font-size: var(--tv-meta-font); color: rgba(255,255,255,.9); }
     html.tv-browse-active .tv-history-progress-label { display: flex; gap: var(--tv-gap); justify-content: space-between; margin-bottom: 5px; }
     html.tv-browse-active #tvHistoryEpisode { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     html.tv-browse-active #tvHistoryTime { flex: 0 0 auto; }

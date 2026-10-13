@@ -126,7 +126,7 @@ try {
     assert.equal(after[i].column[key],before[i].column[key],'selected semantics unchanged');
     if(i===1) assert.equal(after[i].focused[key],before[i].focused[key],'focused capsule semantics unchanged');
    }
-   assert.deepEqual(after[i].line,before[i].line);assert.deepEqual(after[i].line.slice(0,2),['18px','2px']);
+   assert.deepEqual(after[i].line.slice(0,2),before[i].line.slice(0,2));assert.deepEqual(after[i].line,['18px','2px','rgb(53, 224, 122)']);
    for(const key of ['fontWeight','textOverflow','whiteSpace','overflow']) assert.equal(after[i].title[key],before[i].title[key]);
    for(const key of ['padding','transform']) assert.equal(after[i].card[key],before[i].card[key]);
    assert.ok(Math.abs(after[i].layout.poster.width/after[i].layout.poster.height-2/3)<.001,'ordinary and focused posters preserve 2:3');
