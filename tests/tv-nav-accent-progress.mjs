@@ -81,11 +81,18 @@ const green='rgb(53, 224, 122)';const measured=[];
 async function snapshot(p,selector) {
  return p.locator(selector).evaluate(e=>{const s=getComputedStyle(e),a=getComputedStyle(e,'::after');const props=['backgroundColor','color','fontSize','fontWeight','border','borderRadius','boxShadow','outline','padding','width','height','transform','filter'];
  const style=n=>Object.fromEntries(props.map(k=>[k,getComputedStyle(n)[k]]));
- return {style:style(e),line:{content:a.content,width:a.width,height:a.height,left:a.left,bottom:a.bottom,transform:a.transform,shadow:a.boxShadow,color:a.backgroundColor},icons:Array.from(e.querySelectorAll('svg,.dot')).map(n=>({style:style(n),stroke:getComputedStyle(n).stroke,fill:getComputedStyle(n).fill})),rect:e.getBoundingClientRect().toJSON()};});
+ return {column:e.classList.contains('tv-browse-column'),style:style(e),line:{content:a.content,width:a.width,height:a.height,left:a.left,bottom:a.bottom,transform:a.transform,shadow:a.boxShadow,color:a.backgroundColor},icons:Array.from(e.querySelectorAll('svg,.dot')).map(n=>({style:style(n),stroke:getComputedStyle(n).stroke,fill:getComputedStyle(n).fill})),rect:e.getBoundingClientRect().toJSON()};});
 }
 function preserved(before,after,{line=false,search=false}={}) {
- assert.deepEqual(after.style,before.style);assert.deepEqual(after.rect,before.rect);
- assert.deepEqual({...after.line,color:line?before.line.color:after.line.color},before.line);
+ // Round 9 deliberately changes column typography/geometry and the shared
+ // vertical budget. Compare protected skin and control sizes here; the layout
+ // test separately measures and validates the intended positional changes.
+ const column=after.column;assert.equal(column,before.column);
+ const stableStyle=s=>Object.fromEntries(Object.entries(s).filter(([k])=>!column || !['fontSize','padding','width','height'].includes(k)));
+ assert.deepEqual(stableStyle(after.style),stableStyle(before.style));
+ if(!column)for(const k of ['x','width','height'])assert.equal(after.rect[k],before.rect[k]);
+ assert.deepEqual({...after.line,left:column?before.line.left:after.line.left,color:line?before.line.color:after.line.color},before.line);
+ if(column&&after.line.content==='""')assert.ok(Math.abs(parseFloat(after.line.left)-after.rect.width/2)<1.1,'line stays centered in the compact button');
  assert.deepEqual(after.icons.map(i=>({...i,stroke:search?before.icons[0].stroke:i.stroke})),before.icons);
  if(line)assert.equal(after.line.color,green);if(search)assert.equal(after.icons[0].stroke,green);
 }
@@ -126,7 +133,7 @@ async function checkView(viewport) {
   preserved(await snapshot(ref,selector),await snapshot(p,selector));await p.locator(selector).focus();await ref.locator(selector).focus();await p.waitForTimeout(250);await ref.waitForTimeout(250);preserved(await snapshot(ref,selector),await snapshot(p,selector));
  }
  const before=await geometry(ref),after=await geometry(p);const expected=Math.max(220,Math.min(viewport.width*.16,320));assert.ok(Math.abs(after.width-expected)<.1);
- assert.deepEqual(after.button,before.button);assert.equal(after.progressHeight,3);assert.equal(after.played,'rgb(217, 87, 99)');assert.equal(after.unplayed,'rgba(255, 255, 255, 0.45)');assert.equal(after.tabIndex,-1);assert.ok(Math.abs(after.ratio-3608/7322)<.002);assert.equal(after.timeText,'1:00:08 / 2:02:02');
+ for(const k of ['x','width','height'])assert.equal(after.button[k],before.button[k]);assert.equal(after.progressHeight,3);assert.equal(after.played,'rgb(217, 87, 99)');assert.equal(after.unplayed,'rgba(255, 255, 255, 0.45)');assert.equal(after.tabIndex,-1);assert.ok(Math.abs(after.ratio-3608/7322)<.002);assert.equal(after.timeText,'1:00:08 / 2:02:02');
  assert.equal(after.nameRule,'ellipsis');assert.equal(after.nameOverflow,true);assert.ok(after.timeInk.right<=after.info.right+.1 && after.timeInk.left>=after.info.left-.1);assert.ok(after.info.right<viewport.width);
  if(viewport.width===960){await p.locator('.tv-history-resume').evaluate(e=>e.style.maxWidth='320px');const tight=await geometry(p);assert.ok(tight.width<220);assert.deepEqual(tight.button.width,after.button.width);assert.ok(tight.timeInk.right<=tight.row.right+.1);measured.push({viewport,mode:'constrained-320px-row',...tight});await p.locator('.tv-history-resume').evaluate(e=>e.style.maxWidth='');}
  measured.push({viewport,mode:'normal',beforeWidth:before.width,...after});console.log('NAV_ACCENT_PROGRESS',JSON.stringify({viewport,beforeWidth:before.width,width:after.width,timeText:after.timeText}));

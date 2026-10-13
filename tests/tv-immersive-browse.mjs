@@ -276,13 +276,17 @@ async function filterBackAcceptance() {
       await focus(p,'#tvBrowseFilters button[data-group="sort"][data-value="hot"]');await press(p,'ArrowDown');assert.equal(await p.evaluate(()=>document.activeElement.dataset.group),'sort');
     }
     await p.waitForTimeout(75);
+    // Empty results intentionally show status/retry and reserve feedback space.
+    // Closing filters must preserve that current layout, not the old full pool.
+    const railAtClose=await p.locator('#tvBrowseRail').boundingBox();
+    if(zone!=='empty')assert.deepEqual(railAtClose,railBefore);
     if(zone==='card') await p.evaluate(()=>{returnScroll=document.querySelector('#tvBrowseRail').scrollLeft;});
     // Native HomeWebController uses WebView.goBack(), not HTML keydown.
     await p.evaluate(()=>history.back());await p.waitForFunction(()=>!testBrowse.tvBrowseState().filterOpen);
     assert.equal(await p.locator('#tvBrowseColumns').isVisible(),true);assert.equal(await p.evaluate(()=>nativeBackCalls),0);assert.equal(await p.evaluate(()=>testBrowse.state.tvFullscreen),true);
     assert.equal(await p.evaluate(()=>columnNode===document.querySelector('#tvColumn-movie')),true);
     assert.equal(await p.evaluate(()=>testBrowse.secondaryActiveQuery('movie').requestSeq===initialQuery),true);
-    assert.deepEqual(await p.locator('#tvBrowseRail').boundingBox(),railBefore);
+    assert.deepEqual(await p.locator('#tvBrowseRail').boundingBox(),railAtClose);
     assert.equal(await p.evaluate(()=>!!document.activeElement.closest('[hidden]')),false);
     if(zone==='card') {
       assert.equal(await p.evaluate(()=>document.activeElement===returnCard),true);
@@ -363,7 +367,7 @@ try {
   const glass = await tv.locator('#connectionToggle').evaluate(el=>({bg:getComputedStyle(el).backgroundColor, outline:getComputedStyle(el).outlineStyle}));
   assert.equal(glass.bg, 'rgba(0, 0, 0, 0)'); assert.equal(glass.outline, 'none');
   await press(tv, "ArrowDown"); assert.equal(await active(tv), "tvColumn-recommendation");
-  await press(tv, "ArrowRight"); assert.equal(await tv.evaluate(() => testBrowse.tvBrowseState().column), "recommendation", "navigation does not activate a column");
+  await press(tv, "ArrowRight"); assert.equal(await tv.evaluate(() => testBrowse.tvBrowseState().column), "now-playing", "category focus immediately selects its content");
   await focus(tv, "#tvColumn-movie"); await press(tv, "Enter");
   assert.equal(await tv.evaluate(() => testBrowse.tvBrowseState().column), "movie");
   assert.equal(await tv.evaluate(() => location.hash), "");

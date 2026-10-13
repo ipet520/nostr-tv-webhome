@@ -1143,7 +1143,7 @@
     html.tv-browse-active #infiniteSentinel { display: none; }
     .tv-browse[hidden], .tv-browse [hidden] { display: none !important; }
     html.tv-browse-active .tv-browse { position: relative; width: 100%; height: 100%; overflow: hidden; background: #101419; color: #fff; --tv-gutter: 4vw; --tv-gap: 8px; --tv-info-gap: 4px; --tv-safe-top: 16px; --tv-safe-bottom: 20px; --tv-control-height: 36px; --tv-control-icon: 21px; --tv-caption-font: 14px; --tv-meta-font: 14px; --tv-overview-font: 16px; --tv-column-font: 19px; --tv-logo-height: 72px; --tv-title-font: 36px; --tv-poster-width: 140px; --tv-poster-height: 210px; --tv-rail-slot: 260px; --tv-focus-space: 6px; }
-    html.tv-browse-active .tv-browse-foreground { position: relative; display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: minmax(0,1fr) auto var(--tv-rail-slot) auto; gap: var(--tv-gap); height: var(--tv-visible-height,100%); padding: var(--tv-safe-top) 0 var(--tv-safe-bottom); }
+    html.tv-browse-active .tv-browse-foreground { position: relative; display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: minmax(0,1fr) auto var(--tv-rail-slot); gap: var(--tv-gap); height: var(--tv-visible-height,100%); padding: var(--tv-safe-top) 0 var(--tv-safe-bottom); }
     html.tv-browse-active .tv-browse-foreground > * { grid-column: 1; }
     html.tv-browse-active .tv-browse-upper { grid-row: 1; display: grid; grid-template-columns: minmax(0,1fr) auto; grid-template-rows: auto minmax(0,1fr); gap: var(--tv-gap); margin: 0 var(--tv-gutter); min-height: 0; }
     html.tv-browse-active .tv-browse-backdrop { position: absolute; inset: 0; background-size: cover; background-position: center; opacity: 0; transition: opacity 240ms ease; pointer-events: none; }
@@ -1186,7 +1186,7 @@
     html.tv-browse-active .tv-browse-info { grid-column: 1; grid-row: 1 / 3; align-self: start; padding-top: var(--tv-info-offset,0px); min-width: 0; max-width: 47vw; z-index: 2; text-shadow: var(--tv-text-protection); }
     html.tv-browse-active .tv-browse-title { height: var(--tv-logo-height); position: relative; margin-bottom: var(--tv-info-gap); }
     html.tv-browse-active .tv-browse-info h1 { position: absolute; inset: 0; margin: 0; font-size: var(--tv-title-font); line-height: 1.1; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--tv-title-lines,2); overflow: hidden; }
-    html.tv-browse-active .tv-browse-logo { position: absolute; top: 0; left: 0; width: auto; height: auto; max-width: 100%; max-width: min(32vw,100%); max-height: 100%; object-fit: contain; object-position: left center; animation: tv-title-reveal 180ms ease; }
+    html.tv-browse-active .tv-browse-logo { position: absolute; top: 0; left: 0; width: auto; height: auto; max-width: min(38vw,100%); max-height: 100%; object-fit: contain; object-position: left center; animation: tv-title-reveal 180ms ease; }
     @keyframes tv-title-reveal { from { opacity: 0; } to { opacity: 1; } }
     html.tv-browse-active .tv-browse-core { display: grid; grid-template-columns: var(--tv-core-columns,minmax(0,1fr)); gap: var(--tv-info-gap); }
     html.tv-browse-active #tvBrowseMeta, html.tv-browse-active #tvBrowseUpdate { font-size: var(--tv-meta-font); line-height: 1.2; margin: 0; color: #d8dee8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1202,7 +1202,7 @@
     html.tv-browse-active .history-open .tv-browse-columns { visibility: hidden; pointer-events: none; }
     html.tv-browse-active .history-open .tv-browse-recent-tools { grid-row: 1; }
     html.tv-browse-active .history-open .card-meta { display: none; }
-    html.tv-browse-active .tv-history-resume { grid-row: 2; margin: 0 var(--tv-gutter); display: flex; align-items: center; gap: var(--tv-column-gap); z-index: 3; min-width: 0; }
+    html.tv-browse-active .tv-history-resume { grid-row: 2; margin: 0 var(--tv-gutter); display: flex; align-items: center; gap: var(--tv-resume-gap,18px); z-index: 3; min-width: 0; }
     html.tv-browse-active #tvHistoryContinue { border-radius: 999px; height: var(--tv-control-height); min-height: 0; padding: 0 28px; font-size: var(--tv-meta-font); flex: 0 0 auto; }
     html.tv-browse-active #tvHistoryContinue > .icon { fill: #35E07A; stroke: none; }
     html.tv-browse-active .tv-history-progress-info { min-width: 0; width: clamp(220px,16vw,320px); font-size: var(--tv-meta-font); color: rgba(255,255,255,.9); }

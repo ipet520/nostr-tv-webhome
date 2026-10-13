@@ -30,7 +30,7 @@ const hook = `window.testBrowse = { state, mediaCard, tvBrowsePreview, tvBrowseS
 `;
 const html = output.replace(/boot\(\)\.catch\(function\(e\) \{[\s\S]*?\n    \}\);/, hook);
 assert.notEqual(html, output);
-const baselineHtml=execFileSync('git',['show','e9250ccfaa463d7fd53b965e2457228182213a30:index.html'],{encoding:'utf8',maxBuffer:4*1024*1024}).replace(/boot\(\)\.catch\(function\(e\) \{[\s\S]*?\n    \}\);/,hook);
+const baselineHtml=execFileSync('git',['show','1cc51d13dcbc314bcbd2facee0de8cb21b1d8252:index.html'],{encoding:'utf8',maxBuffer:4*1024*1024}).replace(/boot\(\)\.catch\(function\(e\) \{[\s\S]*?\n    \}\);/,hook);
 assert.notEqual(baselineHtml,html,'baseline fixture uses the actual previous DOM and CSS');
 const browser = await playwright.chromium.launch({ headless: true, ...(process.env.WEBHOME_BROWSER_EXECUTABLE ? { executablePath: process.env.WEBHOME_BROWSER_EXECUTABLE } : { channel: process.env.WEBHOME_BROWSER_CHANNEL || "chrome" }) });
 const errors = [];
@@ -69,6 +69,9 @@ try {
  const capture=async p=>{
   const values=[];
   for(const target of ['#tvColumn-movie','#tvColumn-tv','#tvBrowseRail .card']) {
+   // Compare the same active-column state in the historical fixture: current
+   // builds select on focus, while the old fixture needed explicit selection.
+   if(target.startsWith('#tvColumn-'))await p.evaluate(id=>testBrowse.tvBrowseSelectColumn(id),target.slice('#tvColumn-'.length));
    await p.locator(target).first().focus();await p.waitForTimeout(350);
    values.push(await p.evaluate(()=>{
     const style=el=>{const s=getComputedStyle(el);return Object.fromEntries(['backgroundColor','color','fontSize','fontWeight','border','borderRadius','boxShadow','outline','padding','width','height','transform','textOverflow','whiteSpace','overflow'].map(k=>[k,s[k]]));};
@@ -119,6 +122,7 @@ try {
   for(let move=0;move<12;move++) await p.keyboard.press(move%2?'ArrowLeft':'ArrowRight');
   assert.equal(await p.locator('#tvBrowseRail .poster-wrap').evaluateAll(els=>els.filter(el=>getComputedStyle(el,'::after').content==='""').length),1,'rapid focus changes leave exactly one poster frame');
   const ref=await pageAt(true,viewport,true,true);await ref.waitForTimeout(300);
+  for(const page of [p,ref])await page.evaluate(()=>{testBrowse.seed('tv',3).hasMore=false;});
   await ref.evaluate(()=>{const q=testBrowse.seed('movie',3);q.hasMore=false;testBrowse.tvBrowseSelectColumn('movie');});
   const before=await capture(ref),after=await capture(p);
   for(let i=0;i<after.length;i++) {
@@ -126,7 +130,8 @@ try {
     assert.equal(after[i].column[key],before[i].column[key],'selected semantics unchanged');
     if(i===1) assert.equal(after[i].focused[key],before[i].focused[key],'focused capsule semantics unchanged');
    }
-   assert.deepEqual(after[i].line.slice(0,2),before[i].line.slice(0,2));assert.deepEqual(after[i].line,['18px','2px','rgb(53, 224, 122)']);
+   assert.deepEqual(after[i].line,before[i].line);
+   assert.deepEqual(after[i].line,i===0?['18px','2px','rgb(53, 224, 122)']:['auto','auto','rgba(0, 0, 0, 0)']);
    for(const key of ['fontWeight','textOverflow','whiteSpace','overflow']) assert.equal(after[i].title[key],before[i].title[key]);
    for(const key of ['padding','transform']) assert.equal(after[i].card[key],before[i].card[key]);
    assert.ok(Math.abs(after[i].layout.poster.width/after[i].layout.poster.height-2/3)<.001,'ordinary and focused posters preserve 2:3');
