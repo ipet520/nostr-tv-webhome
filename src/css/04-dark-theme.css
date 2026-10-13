@@ -304,10 +304,10 @@
     /* ── 修复：横向滑动列表(rail)最后一张卡片贴边，滑到底时显示不全 ──
        原 .rail 只有上下 padding，没有右侧缓冲区，这里补一条右侧留白，
        不改变卡片尺寸/间距/排列方式，只是让最后一项能完整滑入视口。 */
-    .rail {
+    .rail:not(.tv-browse-rail) {
       padding-right: 14px !important;
     }
-    html.tv-mode .rail {
+    html.tv-mode .rail:not(.tv-browse-rail) {
       padding-right: 5px !important;
     }
 

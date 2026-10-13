@@ -248,30 +248,64 @@
       document.documentElement.classList.toggle("tv-browse-active", tvBrowseActive());
     }
 
-    function sizeTvBrowsePosters() {
-      const rail = $("tvBrowseRail");
-      if (!tvBrowseActive() || !rail || !rail.children.length) return;
-      const rect = rail.getBoundingClientRect(), style = getComputedStyle(rail);
-      const viewport = window.visualViewport;
-      const visibleBottom = Math.min(rect.bottom, viewport ? viewport.offsetTop + viewport.height : innerHeight);
-      const available = Math.max(0, visibleBottom - rect.top - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom));
-      const caption = Array.from(rail.children).reduce((height, card) => {
-        const body = card.querySelector(".card-body");
-        return Math.max(height, body ? body.offsetHeight : 0);
-      }, 0);
-      const height = Math.max(0, Math.min(innerHeight * .258, innerWidth * .106 * 1.5, available / 1.04 - caption));
-      rail.style.setProperty("--tv-poster-height", height + "px");
-      rail.style.setProperty("--tv-poster-width", height * 2 / 3 + "px");
+    function layoutTvBrowse() {
+      const root = $("tvBrowse"), rail = $("tvBrowseRail");
+      if (!tvBrowseActive() || !root || !rail) return;
+      const rect = root.getBoundingClientRect(), viewport = window.visualViewport;
+      const height = Math.min(rect.height, (viewport ? viewport.offsetTop + viewport.height : innerHeight) - rect.top);
+      if (height <= 0) return;
+      const clamp = (min, value, max) => Math.max(min, Math.min(value, max));
+      const set = (name, value) => root.style.setProperty("--tv-" + name, value);
+      const px = (name, value) => set(name, value + "px");
+      const gap = clamp(4, height * .01, 12), infoGap = clamp(2, height * .004, 5);
+      const top = clamp(8, height * .03, 32);
+      const bottom = Math.max(clamp(8, height * .025, 24), parseFloat(getComputedStyle(root).getPropertyValue("--fm-safe-bottom")) || 0);
+      const captionFont = clamp(13, height * 21 / 1080, 21), metaFont = clamp(13, height * 22 / 1080, 22);
+      const overviewFont = clamp(14, height * 24 / 1080, 24), titleFont = clamp(24, height * .05, 54);
+      px("visible-height", height); px("safe-top", top); px("safe-bottom", bottom);
+      px("gap", gap); px("info-gap", infoGap); px("caption-font", captionFont);
+      px("meta-font", metaFont); px("overview-font", overviewFont); px("title-font", titleFont);
+      px("control-height", clamp(36, height * .045, 50)); px("control-icon", clamp(21, height * .025, 28));
+      px("column-font", clamp(16, height * 29 / 1080, 29));
+      const feedback = root.querySelector(".tv-browse-feedback");
+      const caption = Array.from(rail.children).reduce((max, card) => Math.max(max, card.querySelector(".card-body").offsetHeight), captionFont * 1.2 + 13);
+      let core;
+      let poster, focusSpace, railSlot, upper, compact;
+      // Two bounded profiles coordinate the entire screen; neither depends on
+      // filter visibility or the currently selected media's synopsis length.
+      for (let profile = 0; profile < 2; profile += 1) {
+        compact = profile === 1;
+        core = metaFont * (compact ? 1.2 : 2.4) + infoGap * 4;
+        set("core-columns", compact ? "minmax(0,1fr) minmax(0,1fr)" : "minmax(0,1fr)");
+        px("column-pad-y", compact ? 4 : 8); px("column-pad-x", compact ? 12 : 18);
+        px("column-gap", compact ? 12 : 18); px("function-gap", compact ? 6 : clamp(8, rect.width * .008, 16));
+        px("column-space", compact ? 0 : gap);
+        px("card-gap", clamp(12, rect.width * .014, 28));
+        const minWidth = compact ? 96 : Math.max(96, captionFont * 6 + 16);
+        poster = Math.max(minWidth * 1.5, height * .33);
+        focusSpace = Math.ceil((poster + caption) * .021);
+        railSlot = Math.ceil((poster + caption) * 1.04) + focusSpace * 2;
+        upper = height - top - bottom - $("tvBrowseColumns").offsetHeight - railSlot - gap * 3 - feedback.offsetHeight;
+        if (upper >= height * .11 + core + overviewFont * 4.5 || compact) break;
+      }
+      const logoHeight = Math.min(height * .11, Math.max(titleFont * 1.1, upper - core));
+      const lines = Math.max(0, Math.min(3, Math.floor((upper - logoHeight - core) / (overviewFont * 1.5))));
+      px("logo-height", logoHeight); px("info-offset", Math.min(height * .04, Math.max(0, upper - logoHeight - core - lines * overviewFont * 1.5)));
+      set("title-lines", compact ? "1" : "2"); set("overview-lines", String(lines));
+      set("overview-display", lines ? "-webkit-box" : "none");
+      px("poster-height", poster); px("poster-width", poster * 2 / 3);
+      px("focus-space", focusSpace); px("rail-slot", railSlot);
     }
 
     function initTvBrowse() {
       const ui = tvBrowseState();
       if (ui.initialized) return;
       ui.initialized = true;
-      // The observer owns geometry only; the persistent rail is initialized once.
-      if (typeof ResizeObserver === "function") new ResizeObserver(sizeTvBrowsePosters).observe($("tvBrowseRail"));
-      else window.addEventListener("resize", sizeTvBrowsePosters);
-      if (window.visualViewport) window.visualViewport.addEventListener("resize", sizeTvBrowsePosters);
+      // One environment observer drives the foreground budget. Child grids
+      // and filter transitions do not create competing size writers.
+      if (typeof ResizeObserver === "function") new ResizeObserver(layoutTvBrowse).observe($("tvBrowse"));
+      else window.addEventListener("resize", layoutTvBrowse);
+      if (window.visualViewport) window.visualViewport.addEventListener("resize", layoutTvBrowse);
       const controls = $("recentManageControls");
       if (controls) $("tvBrowseFunctions").appendChild(controls);
       const columns = $("tvBrowseColumns");
@@ -363,7 +397,6 @@
       }
       rail.__renderKeys = keys;
       syncTvBrowseVisibility();
-      sizeTvBrowsePosters();
       if (queryChanged) rail.scrollLeft = tvBrowsePosition().scrollLeft;
       $("tvBrowseColumns").querySelectorAll("button").forEach((button) => {
         const selected = button.dataset.column === ui.column;
@@ -375,6 +408,7 @@
       const status = query.error || query.retryableError || (query.loading && !items.length ? "加载中…" : !items.length ? "暂无内容" : "");
       $("tvBrowseStatus").textContent = status;
       $("tvBrowseRetry").hidden = !(query.error || query.retryableError || !items.length && query.loaded);
+      layoutTvBrowse();
       if (ui.filterOpen) renderTvBrowseFilters();
       const position = tvBrowsePosition();
       const selected = items.find((item) => mediaDomKey(item) === position.key) || items[Math.min(position.index, items.length - 1)];

@@ -1142,7 +1142,10 @@
     html.tv-browse-active #home.home-root { margin: 0; padding: 0; width: 100%; max-width: none; height: var(--fm-web-height, 100vh); min-height: 0; overflow: hidden; }
     html.tv-browse-active #infiniteSentinel { display: none; }
     .tv-browse[hidden], .tv-browse [hidden] { display: none !important; }
-    html.tv-browse-active .tv-browse { position: relative; display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: 48% auto minmax(0,1fr); width: 100%; height: 100%; overflow: hidden; background: #101419; color: #fff; --tv-gutter: 4vw; --tv-control-height: clamp(36px,4.5vh,50px); --tv-control-icon: clamp(21px,2.5vh,28px); }
+    html.tv-browse-active .tv-browse { position: relative; width: 100%; height: 100%; overflow: hidden; background: #101419; color: #fff; --tv-gutter: 4vw; --tv-gap: 8px; --tv-info-gap: 4px; --tv-safe-top: 16px; --tv-safe-bottom: 20px; --tv-control-height: 36px; --tv-control-icon: 21px; --tv-caption-font: 14px; --tv-meta-font: 14px; --tv-overview-font: 16px; --tv-column-font: 19px; --tv-logo-height: 72px; --tv-title-font: 36px; --tv-poster-width: 140px; --tv-poster-height: 210px; --tv-rail-slot: 260px; --tv-focus-space: 6px; }
+    html.tv-browse-active .tv-browse-foreground { position: relative; display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: minmax(0,1fr) auto var(--tv-rail-slot) auto; gap: var(--tv-gap); height: var(--tv-visible-height,100%); padding: var(--tv-safe-top) 0 var(--tv-safe-bottom); }
+    html.tv-browse-active .tv-browse-foreground > * { grid-column: 1; }
+    html.tv-browse-active .tv-browse-upper { grid-row: 1; display: grid; grid-template-columns: minmax(0,1fr) auto; grid-template-rows: auto minmax(0,1fr); gap: var(--tv-gap); margin: 0 var(--tv-gutter); min-height: 0; }
     html.tv-browse-active .tv-browse-backdrop { position: absolute; inset: 0; background-size: cover; background-position: center; opacity: 0; transition: opacity 240ms ease; pointer-events: none; }
     html.tv-browse-active .tv-browse-backdrop.visible { opacity: 1; }
     html.tv-browse-active .tv-browse-shade { position: absolute; inset: 0; background: linear-gradient(90deg,rgba(8,12,18,.58),rgba(8,12,18,.22) 34%,transparent 65%),linear-gradient(0deg,rgba(8,12,18,.58),rgba(8,12,18,.16) 25%,transparent 42%); pointer-events: none; }
@@ -1173,41 +1176,43 @@
     html.tv-browse-active .tv-browse-functions button:focus > span,
     html.tv-browse-active .tv-browse-functions button:focus > svg { transform: scale(1.06); filter: brightness(1.18); }
     html.tv-browse-active .tv-browse-functions button:focus::after { bottom: -5px; }
-    html.tv-browse-active .tv-browse-functions { position: absolute; right: var(--tv-gutter); top: 3vh; display: flex; align-items: center; gap: clamp(8px,.8vw,16px); z-index: 3; }
+    html.tv-browse-active .tv-browse-functions { grid-column: 2; grid-row: 1; align-self: start; display: flex; align-items: center; gap: var(--tv-function-gap,12px); z-index: 3; }
     html.tv-browse-active .tv-browse-functions button { height: var(--tv-control-height); min-height: 0; box-sizing: border-box; display: flex; align-items: center; justify-content: center; padding: 0 clamp(12px,1vw,20px); border-radius: 8px; font-size: clamp(14px,1.05vw,20px); font-weight: 600; }
     html.tv-browse-active .tv-browse-functions .tv-browse-search { width: clamp(140px,9.6vw,190px); border-radius: calc(var(--tv-control-height) / 2); justify-content: space-between; background: rgba(0,0,0,.12); border-color: rgba(255,255,255,.25); }
     html.tv-browse-active .tv-browse-search .icon { width: var(--tv-control-icon); height: var(--tv-control-icon); }
-    html.tv-browse-active .tv-browse-info { position: absolute; top: 7vh; left: var(--tv-gutter); width: 47vw; z-index: 2; text-shadow: var(--tv-text-protection); }
-    html.tv-browse-active .tv-browse-title { min-height: 11vh; position: relative; display: grid; align-items: center; justify-items: start; margin-bottom: 1vh; }
-    html.tv-browse-active .tv-browse-title > h1, html.tv-browse-active .tv-browse-title > img { grid-area: 1 / 1; }
-    html.tv-browse-active .tv-browse-info h1 { margin: 0; font-size: clamp(24px,2.8vw,54px); line-height: 1.1; }
-    html.tv-browse-active .tv-browse-logo { width: auto; height: auto; max-width: 32vw; max-height: 10vh; object-fit: contain; object-position: left center; animation: tv-title-reveal 180ms ease; }
+    html.tv-browse-active .tv-browse-info { grid-column: 1; grid-row: 1 / 3; align-self: start; padding-top: var(--tv-info-offset,0px); min-width: 0; max-width: 47vw; z-index: 2; text-shadow: var(--tv-text-protection); }
+    html.tv-browse-active .tv-browse-title { height: var(--tv-logo-height); position: relative; margin-bottom: var(--tv-info-gap); }
+    html.tv-browse-active .tv-browse-info h1 { position: absolute; inset: 0; margin: 0; font-size: var(--tv-title-font); line-height: 1.1; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--tv-title-lines,2); overflow: hidden; }
+    html.tv-browse-active .tv-browse-logo { position: absolute; top: 0; left: 0; width: auto; height: auto; max-width: 100%; max-width: min(32vw,100%); max-height: 100%; object-fit: contain; object-position: left center; animation: tv-title-reveal 180ms ease; }
     @keyframes tv-title-reveal { from { opacity: 0; } to { opacity: 1; } }
-    html.tv-browse-active #tvBrowseMeta, html.tv-browse-active #tvBrowseUpdate { font-size: clamp(13px,1.15vw,22px); margin: .8vh 0; color: #d8dee8; }
+    html.tv-browse-active .tv-browse-core { display: grid; grid-template-columns: var(--tv-core-columns,minmax(0,1fr)); gap: var(--tv-info-gap); }
+    html.tv-browse-active #tvBrowseMeta, html.tv-browse-active #tvBrowseUpdate { font-size: var(--tv-meta-font); line-height: 1.2; margin: 0; color: #d8dee8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    html.tv-browse-active #tvBrowseMeta:empty, html.tv-browse-active #tvBrowseUpdate:empty, html.tv-browse-active #tvBrowseOverview:empty { display: none; }
     html.tv-browse-active #tvBrowseUpdate { color: #b8dfcc; }
-    html.tv-browse-active #tvBrowseOverview { margin: 1.2vh 0 0; font-size: clamp(14px,1.25vw,24px); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-    html.tv-browse-active .tv-browse-columns { grid-row: 2; min-width: 0; margin: 0 var(--tv-gutter); display: flex; gap: 18px; overflow-x: auto; white-space: nowrap; padding: 12px 0; scrollbar-width: none; z-index: 3; }
+    html.tv-browse-active #tvBrowseOverview { margin: var(--tv-info-gap) 0 0; font-size: var(--tv-overview-font); line-height: 1.5; display: var(--tv-overview-display,-webkit-box); -webkit-line-clamp: var(--tv-overview-lines,3); -webkit-box-orient: vertical; overflow: hidden; }
+    html.tv-browse-active .tv-browse-columns { grid-row: 2; min-width: 0; margin: 0 var(--tv-gutter); display: flex; gap: var(--tv-column-gap,18px); overflow-x: auto; white-space: nowrap; padding: var(--tv-column-space,8px) 0; scrollbar-width: none; z-index: 3; }
     /* Preserve the measured column row while filters hide it; posters do not jump. */
     html.tv-browse-active .tv-browse.filter-open .tv-browse-columns { visibility: hidden; pointer-events: none; }
     html.tv-browse-active .tv-browse-columns::-webkit-scrollbar, html.tv-browse-active .tv-browse-rail::-webkit-scrollbar { display: none; }
-    html.tv-browse-active .tv-browse-column { flex: 0 0 auto; padding: 8px 18px; font-size: clamp(16px,1.5vw,29px); }
+    html.tv-browse-active .tv-browse-column { flex: 0 0 auto; padding: var(--tv-column-pad-y,8px) var(--tv-column-pad-x,18px); font-size: var(--tv-column-font); }
     html.tv-browse-active .tv-browse-column[aria-pressed="false"]:not(:focus) { background: rgba(40,40,40,.1); }
-    html.tv-browse-active .tv-browse-posters { grid-row: 3; min-height: 0; margin-bottom: 4vh; z-index: 3; }
-    html.tv-browse-active .tv-browse-rail { display: flex; align-items: flex-start; gap: 1.4vw; overflow-x: auto; overflow-y: hidden; height: 100%; padding: 1.5vh var(--tv-gutter) 1vh; box-sizing: border-box; scrollbar-width: none; }
+    html.tv-browse-active .tv-browse-posters { grid-row: 3; min-height: 0; z-index: 3; }
+    html.tv-browse-active .tv-browse-rail { display: flex; align-items: flex-start; gap: var(--tv-card-gap,1.4vw); overflow-x: auto; overflow-y: hidden; height: 100%; padding: var(--tv-focus-space) var(--tv-gutter); box-sizing: border-box; scrollbar-width: none; }
     /* One measured height budget determines both dimensions at 2:3.
        No flex shrink may compress the image independently of its width. */
     html.tv-browse-active .tv-browse-rail .card { flex: 0 0 var(--tv-poster-width,17.2vh); display: flex; flex-direction: column; width: var(--tv-poster-width,17.2vh); min-width: 0; max-width: none; overflow: visible; transform-origin: center center; }
     html.tv-browse-active .tv-browse-rail .poster-wrap { flex: 0 0 auto; width: 100%; max-width: 100%; margin: 0; aspect-ratio: 2 / 3; height: var(--tv-poster-height,25.8vh); border-radius: inherit; overflow: hidden; }
-    html.tv-browse-active .tv-browse-rail .card-body { flex: 0 0 auto; }
+    html.tv-browse-active .tv-browse-rail .card-body { flex: 0 0 auto; padding: 6px 8px; }
     html.tv-browse-active .tv-browse-rail .card img { width: 100%; height: 100%; object-fit: cover; }
     html.tv-browse-active .tv-browse-rail .card:focus { transform: scale(1.04); }
     html.tv-browse-active .tv-browse-rail .card:focus .poster-wrap::after { content: ""; position: absolute; inset: 0; border: 2px solid rgba(255,255,255,.9); border-radius: inherit; box-sizing: border-box; pointer-events: none; z-index: 4; }
-    html.tv-browse-active .tv-browse-rail .card-title { font-size: clamp(13px,1.1vw,21px); text-align: center; }
-    html.tv-browse-active .tv-browse-feedback { position: absolute; bottom: .5vh; left: var(--tv-gutter); right: var(--tv-gutter); display: flex; align-items: center; gap: 20px; z-index: 4; font-size: 14px; }
+    html.tv-browse-active .tv-browse-rail .card-title { font-size: var(--tv-caption-font); text-align: center; }
+    html.tv-browse-active .tv-browse-rail .weekly-air-status { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+    html.tv-browse-active .tv-browse-feedback { grid-row: 4; min-height: 20px; margin: 0 var(--tv-gutter); display: flex; align-items: center; gap: var(--tv-gap); z-index: 4; font-size: 14px; }
     html.tv-browse-active .tv-browse-filters {
-      position: absolute; top: 10vh; left: var(--tv-gutter); right: var(--tv-gutter); max-height: 35vh; overflow: auto;
-      padding: 1vh 2vw; border: 0; box-shadow: none; background: transparent; z-index: 4;
-      --tv-filter-font: clamp(14px,1.1vw,22px); --tv-filter-height: clamp(32px,4vh,44px);
+      grid-column: 1; grid-row: 1 / 3; min-height: 0; margin: 0 var(--tv-gutter); overflow: auto;
+      padding: var(--tv-gap) 2vw; border: 0; box-shadow: none; background: transparent; z-index: 4;
+      --tv-filter-font: var(--tv-caption-font); --tv-filter-height: var(--tv-control-height);
     }
     html.tv-browse-active .tv-browse-filters .secondary-filter-row {
       display: flex; align-items: center; gap: 14px; margin: 0 0 clamp(6px,.8vh,9px); padding: 0;
@@ -1232,4 +1237,4 @@
     html.tv-browse-active #tvBrowseFunctions #connectionToggle { display: flex; align-items: center; justify-content: center; width: var(--tv-control-height); min-width: 0; min-height: 0; height: var(--tv-control-height); gap: 0; padding: 0; border-radius: 8px; }
     html.tv-browse-active #tvBrowseFunctions .connection-title, html.tv-browse-active #tvBrowseFunctions .connection-arrow { display: none; }
     html.tv-browse-active #tvBrowseFunctions .dot { width: var(--tv-control-icon); height: var(--tv-control-icon); flex: 0 0 var(--tv-control-icon); margin: 0; }
-    html.tv-browse-active .tv-browse-recent-tools { position: absolute; right: var(--tv-gutter); top: 10vh; z-index: 3; }
+    html.tv-browse-active .tv-browse-recent-tools { grid-column: 2; grid-row: 2; justify-self: end; align-self: start; z-index: 3; }

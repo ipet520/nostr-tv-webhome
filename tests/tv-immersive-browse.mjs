@@ -567,7 +567,9 @@ try {
   assert.ok((await artwork.locator('#tvBrowseLogo').getAttribute('src')).endsWith('/art-current.png'),'late detail response cannot repaint a different selected title');
   await artwork.evaluate(()=>testBrowse.tvBrowsePreview({tmdbId:9103,mediaType:'tv',title:'窄长标题',logo:'/art-tall.png'}));
   await artwork.waitForFunction(()=>!document.querySelector('#tvBrowseLogo').hidden);
-  const tall=await artwork.locator('#tvBrowseLogo').boundingBox(); assert.ok(tall.height<=72.1 && tall.width<tall.height);
+  const tall=await artwork.locator('#tvBrowseLogo').boundingBox();
+  const logoSlot=await artwork.locator('.tv-browse-title').boundingBox();
+  assert.ok(tall.height<=logoSlot.height+.1 && tall.width<tall.height,'portrait artwork fits the unified title slot');
   await artwork.evaluate(()=>{testBrowse.tvBrowseClearPreview();testBrowse.tvBrowsePreview({tmdbId:9103,mediaType:'tv',title:'窄长标题',logo:'/art-tall.png'});});
   await artwork.waitForFunction(()=>!document.querySelector('#tvBrowseLogo').hidden);
   await artwork.evaluate(()=>testBrowse.tvBrowsePreview({tmdbId:9100,mediaType:'movie',title:'即时文字标题',overview:'明亮和深色背景下的作品信息可读性验证。',releaseDate:'2025-01-01'}));

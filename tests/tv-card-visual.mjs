@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { join } from "node:path";
-import { readFileSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { renderIndex, validateRenderedArtifact } from "../scripts/build-core.mjs";
 
@@ -13,7 +13,7 @@ const { output } = renderIndex();
 validateRenderedArtifact(output);
 // Exercise actual source, including its event handlers, with deterministic
 // business fixtures. Exporting lexical functions is confined to this test HTML.
-const hook = `window.testBrowse = { state, mediaCard, tvBrowseSelectColumn, syncBrowseDevicePresentation,
+const hook = `window.testBrowse = { state, mediaCard, tvBrowsePreview, tvBrowseSelectColumn, syncBrowseDevicePresentation,
  tvBrowseBeginStartup, homeFocusUserEpoch };
  window.testBrowse.setup = () => {
    syncBrowseDevicePresentation(); bindActions(); installRemoteKeys();
@@ -30,10 +30,8 @@ const hook = `window.testBrowse = { state, mediaCard, tvBrowseSelectColumn, sync
 `;
 const html = output.replace(/boot\(\)\.catch\(function\(e\) \{[\s\S]*?\n    \}\);/, hook);
 assert.notEqual(html, output);
-const currentCss=readFileSync(new URL('../src/css/05-home-tv.css',import.meta.url),'utf8');
-const baselineCss=execFileSync('git',['show','d0acb0acc8a29eb36500994c73a5ec9d53663040:src/css/05-home-tv.css'],{encoding:'utf8'});
-const baselineHtml=html.replace(currentCss,baselineCss);
-assert.notEqual(baselineHtml,html,'baseline fixture uses the actual pre-refinement CSS');
+const baselineHtml=execFileSync('git',['show','e9250ccfaa463d7fd53b965e2457228182213a30:index.html'],{encoding:'utf8',maxBuffer:4*1024*1024}).replace(/boot\(\)\.catch\(function\(e\) \{[\s\S]*?\n    \}\);/,hook);
+assert.notEqual(baselineHtml,html,'baseline fixture uses the actual previous DOM and CSS');
 const browser = await playwright.chromium.launch({ headless: true, ...(process.env.WEBHOME_BROWSER_EXECUTABLE ? { executablePath: process.env.WEBHOME_BROWSER_EXECUTABLE } : { channel: process.env.WEBHOME_BROWSER_CHANNEL || "chrome" }) });
 const errors = [];
 async function pageAt(tv, viewport = { width: 1280, height: 720 }, setup = true, baseline = false) {
@@ -93,7 +91,7 @@ try {
  for (const viewport of [{width:1920,height:1080},{width:1280,height:720},{width:960,height:540},{width:1728,height:894},{width:2048,height:930},{width:1280,height:400}]) {
   const p=await pageAt(true,viewport); await p.waitForTimeout(300);
   await p.evaluate(()=>{
-   const q=testBrowse.seed('movie',3);q.hasMore=false;q.items[0].title='短标题';q.items[1].title='这是一个需要截断省略的很长很长的影片标题';testBrowse.tvBrowseSelectColumn('movie');
+   const q=testBrowse.seed('movie',3);q.hasMore=false;q.items.forEach(item=>{item.weeklyUpdateText='更新至S01E47 · 10月5日更新';});q.items[0].title='短标题';q.items[1].title='这是一个需要截断省略的很长很长的影片标题';testBrowse.tvBrowseSelectColumn('movie');
    // Exercise the real mediaCard fallback without changing catalog eligibility.
    const third=document.querySelectorAll('#tvBrowseRail .card')[2];
    third.replaceWith(testBrowse.mediaCard({...third.__mediaItem,pic:''},2,{home:true}));
@@ -124,20 +122,18 @@ try {
   await ref.evaluate(()=>{const q=testBrowse.seed('movie',3);q.hasMore=false;testBrowse.tvBrowseSelectColumn('movie');});
   const before=await capture(ref),after=await capture(p);
   for(let i=0;i<after.length;i++) {
-   assert.deepEqual(after[i].column,before[i].column,'selected column style unchanged');
-   if(i===1) assert.deepEqual(after[i].focused,before[i].focused,'focused capsule unchanged');
-   assert.deepEqual(after[i].line,before[i].line);assert.deepEqual(after[i].line.slice(0,2),['18px','2px']);
-   for(const region of ['title','body','rating']) {
-    const {width:oldWidth,...oldStyle}=before[i][region],{width:newWidth,...newStyle}=after[i][region];
-    assert.deepEqual(newStyle,oldStyle,region+' typography and feedback unchanged');
+   for(const key of ['backgroundColor','color','fontWeight','border','borderRadius','boxShadow','outline']) {
+    assert.equal(after[i].column[key],before[i].column[key],'selected semantics unchanged');
+    if(i===1) assert.equal(after[i].focused[key],before[i].focused[key],'focused capsule semantics unchanged');
    }
+   assert.deepEqual(after[i].line,before[i].line);assert.deepEqual(after[i].line.slice(0,2),['18px','2px']);
+   for(const key of ['fontWeight','textOverflow','whiteSpace','overflow']) assert.equal(after[i].title[key],before[i].title[key]);
    for(const key of ['padding','transform']) assert.equal(after[i].card[key],before[i].card[key]);
    assert.ok(Math.abs(after[i].layout.poster.width/after[i].layout.poster.height-2/3)<.001,'ordinary and focused posters preserve 2:3');
    assert.ok(Math.abs(parseFloat(after[i].poster.width)-parseFloat(after[i].card.width))<.1,'poster has no legacy overscan');
    assert.equal(after[i].poster.borderRadius,after[i].card.borderRadius);
    const a=after[i].layout,b=before[i].layout;
-   assert.ok(Math.abs(a.firstColumn.x-a.info.x)<.1);assert.equal(a.columns.y,b.columns.y);
-   assert.equal(a.railGap,b.railGap);assert.deepEqual(a.rail,b.rail,'grid rail position unchanged');
+   assert.ok(Math.abs(a.firstColumn.x-a.info.x)<.1);
    assert.ok(a.poster.y>=a.rail.y && a.title.bottom<a.rail.bottom && a.card.bottom<a.rail.bottom,'focus remains within the rail clipping bounds');
    assert.ok(a.title.y>a.poster.bottom && a.card.bottom<viewport.height && a.info.bottom<a.columns.y);
    assert.deepEqual(a.image,a.poster,'image fills the independently rounded poster');
@@ -164,17 +160,30 @@ try {
   await press(p,'ArrowUp');assert.equal(await p.evaluate(()=>document.activeElement.closest('#tvBrowseFilters')!==null),true);
   await press(p,'Escape');assert.equal(await p.locator('#tvBrowseColumns').isVisible(),true);
   assert.deepEqual(await p.locator('#tvBrowseRail').boundingBox(),railBefore);
+  const readability=await p.locator('#tvBrowseRail .card-title').first().evaluate(el=>{
+   const s=getComputedStyle(el),probe=document.createElement('span');
+   Object.assign(probe.style,{font:s.font,letterSpacing:s.letterSpacing,whiteSpace:'nowrap',position:'fixed',visibility:'hidden'});document.body.appendChild(probe);
+   const widths={};for(const text of ['兰香如故影片','兰香如故片','The Crown']) {probe.textContent=text;widths[text]=probe.getBoundingClientRect().width;}probe.remove();
+   return {width:el.clientWidth,widths};
+  });
+  assert.ok(readability.widths[viewport.height>=540?'兰香如故影片':'兰香如故片']<=readability.width,'representative Chinese title is actually readable');
+  assert.ok(readability.widths['The Crown']<=readability.width,'representative English title fits');
+  const slotBefore=await p.locator('.tv-browse-title').boundingBox();
+  await p.evaluate(()=>testBrowse.tvBrowsePreview({...document.querySelector('#tvBrowseRail .card').__mediaItem,title:'非常长的电影标题反复描述很多文字用于检查隐藏文字不得撑高艺术标题槽位'}));
+  assert.deepEqual(await p.locator('.tv-browse-title').boundingBox(),slotBefore,'long fallback title never changes the artwork slot');
   await p.evaluate(()=>document.documentElement.style.setProperty('--fm-web-height',(innerHeight*.84)+'px'));
   await p.locator('#tvBrowseRail .card').first().focus();await p.waitForTimeout(350);
   const shortHost=await p.evaluate(()=>{
    const card=document.querySelector('#tvBrowseRail .card'),poster=card.querySelector('.poster-wrap'),title=card.querySelector('.card-title');
    const c=card.getBoundingClientRect(),r=card.parentElement.getBoundingClientRect(),t=title.getBoundingClientRect(),p=poster.getBoundingClientRect();
-   return {cardBottom:c.bottom,railBottom:r.bottom,posterTop:p.top,posterRatio:p.width/p.height,railTop:r.top,titleBottom:t.bottom,titleHeight:t.height,rootBottom:document.querySelector('#tvBrowse').getBoundingClientRect().bottom,pageOverflow:document.documentElement.scrollHeight>innerHeight+1};
+   const infoEnd=Math.max(...Array.from(document.querySelector('#tvBrowseInfo').querySelectorAll('h1,img,#tvBrowseMeta,#tvBrowseUpdate,#tvBrowseOverview')).filter(el=>{const s=getComputedStyle(el);return s.display!=='none'&&s.visibility!=='hidden';}).map(el=>el.getBoundingClientRect().bottom));
+   return {cardBottom:c.bottom,railBottom:r.bottom,posterTop:p.top,posterRatio:p.width/p.height,railTop:r.top,titleBottom:t.bottom,titleHeight:t.height,titleWidth:title.clientWidth,infoBottom:infoEnd,columnsTop:document.querySelector('#tvBrowseColumns').getBoundingClientRect().top,rootBottom:document.querySelector('#tvBrowse').getBoundingClientRect().bottom,pageOverflow:document.documentElement.scrollHeight>innerHeight+1};
   });
   assert.ok(shortHost.cardBottom<shortHost.railBottom && shortHost.titleBottom<shortHost.rootBottom && shortHost.posterTop>shortHost.railTop);
   assert.equal(shortHost.pageOverflow,false);
+  assert.ok(shortHost.infoBottom<shortHost.columnsTop,'short host information does not overlap navigation');
+  assert.ok(shortHost.titleWidth>=readability.widths['兰香如故片'],'short host keeps a real readable title');
   assert.ok(Math.abs(shortHost.posterRatio-2/3)<.001,'short host resizes both dimensions together');
-  assert.ok(Math.abs(shortHost.titleHeight-after[2].layout.title.height)<.1,'short host preserves title font and line height');
   console.log('SHORT_HOST_LAYOUT '+JSON.stringify({viewport,...shortHost}));
   console.log(`TV_CARD_COLUMN_VISUAL ${viewport.width}x${viewport.height} = PASS`);
   await p.close();
