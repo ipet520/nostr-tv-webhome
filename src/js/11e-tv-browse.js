@@ -248,10 +248,30 @@
       document.documentElement.classList.toggle("tv-browse-active", tvBrowseActive());
     }
 
+    function sizeTvBrowsePosters() {
+      const rail = $("tvBrowseRail");
+      if (!tvBrowseActive() || !rail || !rail.children.length) return;
+      const rect = rail.getBoundingClientRect(), style = getComputedStyle(rail);
+      const viewport = window.visualViewport;
+      const visibleBottom = Math.min(rect.bottom, viewport ? viewport.offsetTop + viewport.height : innerHeight);
+      const available = Math.max(0, visibleBottom - rect.top - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom));
+      const caption = Array.from(rail.children).reduce((height, card) => {
+        const body = card.querySelector(".card-body");
+        return Math.max(height, body ? body.offsetHeight : 0);
+      }, 0);
+      const height = Math.max(0, Math.min(innerHeight * .258, innerWidth * .106 * 1.5, available / 1.04 - caption));
+      rail.style.setProperty("--tv-poster-height", height + "px");
+      rail.style.setProperty("--tv-poster-width", height * 2 / 3 + "px");
+    }
+
     function initTvBrowse() {
       const ui = tvBrowseState();
       if (ui.initialized) return;
       ui.initialized = true;
+      // The observer owns geometry only; the persistent rail is initialized once.
+      if (typeof ResizeObserver === "function") new ResizeObserver(sizeTvBrowsePosters).observe($("tvBrowseRail"));
+      else window.addEventListener("resize", sizeTvBrowsePosters);
+      if (window.visualViewport) window.visualViewport.addEventListener("resize", sizeTvBrowsePosters);
       const controls = $("recentManageControls");
       if (controls) $("tvBrowseFunctions").appendChild(controls);
       const columns = $("tvBrowseColumns");
@@ -343,6 +363,7 @@
       }
       rail.__renderKeys = keys;
       syncTvBrowseVisibility();
+      sizeTvBrowsePosters();
       if (queryChanged) rail.scrollLeft = tvBrowsePosition().scrollLeft;
       $("tvBrowseColumns").querySelectorAll("button").forEach((button) => {
         const selected = button.dataset.column === ui.column;

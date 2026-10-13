@@ -1194,10 +1194,10 @@
     html.tv-browse-active .tv-browse-column[aria-pressed="false"]:not(:focus) { background: rgba(40,40,40,.1); }
     html.tv-browse-active .tv-browse-posters { grid-row: 3; min-height: 0; margin-bottom: 4vh; z-index: 3; }
     html.tv-browse-active .tv-browse-rail { display: flex; align-items: flex-start; gap: 1.4vw; overflow-x: auto; overflow-y: hidden; height: 100%; padding: 1.5vh var(--tv-gutter) 1vh; box-sizing: border-box; scrollbar-width: none; }
-    /* Keep the normal poster size, but reserve focus scale within the actual
-       rail height when WebView's available height is smaller than window vh. */
-    html.tv-browse-active .tv-browse-rail .card { flex: 0 0 10.6vw; display: flex; flex-direction: column; width: 10.6vw; min-width: 0; max-width: none; max-height: calc(100% / 1.04); overflow: visible; transform-origin: center center; }
-    html.tv-browse-active .tv-browse-rail .poster-wrap { flex: 0 1 auto; min-height: 0; width: 100%; max-width: 100%; margin: 0; aspect-ratio: 2 / 3; height: 25.8vh; border-radius: inherit; overflow: hidden; }
+    /* One measured height budget determines both dimensions at 2:3.
+       No flex shrink may compress the image independently of its width. */
+    html.tv-browse-active .tv-browse-rail .card { flex: 0 0 var(--tv-poster-width,17.2vh); display: flex; flex-direction: column; width: var(--tv-poster-width,17.2vh); min-width: 0; max-width: none; overflow: visible; transform-origin: center center; }
+    html.tv-browse-active .tv-browse-rail .poster-wrap { flex: 0 0 auto; width: 100%; max-width: 100%; margin: 0; aspect-ratio: 2 / 3; height: var(--tv-poster-height,25.8vh); border-radius: inherit; overflow: hidden; }
     html.tv-browse-active .tv-browse-rail .card-body { flex: 0 0 auto; }
     html.tv-browse-active .tv-browse-rail .card img { width: 100%; height: 100%; object-fit: cover; }
     html.tv-browse-active .tv-browse-rail .card:focus { transform: scale(1.04); }

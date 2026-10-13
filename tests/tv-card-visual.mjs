@@ -31,7 +31,7 @@ const hook = `window.testBrowse = { state, mediaCard, tvBrowseSelectColumn, sync
 const html = output.replace(/boot\(\)\.catch\(function\(e\) \{[\s\S]*?\n    \}\);/, hook);
 assert.notEqual(html, output);
 const currentCss=readFileSync(new URL('../src/css/05-home-tv.css',import.meta.url),'utf8');
-const baselineCss=execFileSync('git',['show','c2f75d21db712f39a09abf377d0e42e92ec359c2:src/css/05-home-tv.css'],{encoding:'utf8'});
+const baselineCss=execFileSync('git',['show','d0acb0acc8a29eb36500994c73a5ec9d53663040:src/css/05-home-tv.css'],{encoding:'utf8'});
 const baselineHtml=html.replace(currentCss,baselineCss);
 assert.notEqual(baselineHtml,html,'baseline fixture uses the actual pre-refinement CSS');
 const browser = await playwright.chromium.launch({ headless: true, ...(process.env.WEBHOME_BROWSER_EXECUTABLE ? { executablePath: process.env.WEBHOME_BROWSER_EXECUTABLE } : { channel: process.env.WEBHOME_BROWSER_CHANNEL || "chrome" }) });
@@ -42,7 +42,7 @@ async function pageAt(tv, viewport = { width: 1280, height: 720 }, setup = true,
   await page.route("**/*", async (route) => {
     const url = route.request().url();
     if (url.startsWith("http://fixture.local/") && new URL(url).pathname === "/") return route.fulfill({ contentType: "text/html", body: baseline ? baselineHtml : html });
-    if (route.request().resourceType() === "image") return route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><rect width="1280" height="720" fill="#274538"/></svg>' });
+    if (route.request().resourceType() === "image") return route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="342" height="513"><rect width="342" height="513" fill="#274538"/><rect x="8" y="8" width="326" height="497" fill="none" stroke="#79b39b" stroke-width="4"/></svg>' });
     if (url.includes("api.themoviedb.org") || url.includes("fixture.local/tmdb")) {
       const p = Number(new URL(url).searchParams.get("page") || 1);
       await new Promise((resolve) => setTimeout(resolve, url.includes("discover/tv") ? 70 : 20));
@@ -90,7 +90,7 @@ try {
  };
  const screenshots=process.env.WEBHOME_VISUAL_DIR;
  if(screenshots) mkdirSync(screenshots,{recursive:true});
- for (const viewport of [{width:1920,height:1080},{width:1280,height:720},{width:960,height:540},{width:1366,height:768},{width:1728,height:894},{width:1408,height:640}]) {
+ for (const viewport of [{width:1920,height:1080},{width:1280,height:720},{width:960,height:540},{width:1728,height:894},{width:2048,height:930},{width:1280,height:400}]) {
   const p=await pageAt(true,viewport); await p.waitForTimeout(300);
   await p.evaluate(()=>{
    const q=testBrowse.seed('movie',3);q.hasMore=false;q.items[0].title='短标题';q.items[1].title='这是一个需要截断省略的很长很长的影片标题';testBrowse.tvBrowseSelectColumn('movie');
@@ -127,14 +127,17 @@ try {
    assert.deepEqual(after[i].column,before[i].column,'selected column style unchanged');
    if(i===1) assert.deepEqual(after[i].focused,before[i].focused,'focused capsule unchanged');
    assert.deepEqual(after[i].line,before[i].line);assert.deepEqual(after[i].line.slice(0,2),['18px','2px']);
-   for(const region of ['title','body','rating']) assert.deepEqual(after[i][region],before[i][region],region+' styles unchanged');
-   for(const key of ['width','padding','transform']) assert.equal(after[i].card[key],before[i].card[key]);
-   assert.equal(after[i].poster.height,before[i].poster.height,'poster height unchanged');
+   for(const region of ['title','body','rating']) {
+    const {width:oldWidth,...oldStyle}=before[i][region],{width:newWidth,...newStyle}=after[i][region];
+    assert.deepEqual(newStyle,oldStyle,region+' typography and feedback unchanged');
+   }
+   for(const key of ['padding','transform']) assert.equal(after[i].card[key],before[i].card[key]);
+   assert.ok(Math.abs(after[i].layout.poster.width/after[i].layout.poster.height-2/3)<.001,'ordinary and focused posters preserve 2:3');
    assert.ok(Math.abs(parseFloat(after[i].poster.width)-parseFloat(after[i].card.width))<.1,'poster has no legacy overscan');
    assert.equal(after[i].poster.borderRadius,after[i].card.borderRadius);
    const a=after[i].layout,b=before[i].layout;
    assert.ok(Math.abs(a.firstColumn.x-a.info.x)<.1);assert.equal(a.columns.y,b.columns.y);
-   assert.equal(a.railGap,b.railGap);assert.ok(a.gap<b.gap,'rail moves closer to columns');
+   assert.equal(a.railGap,b.railGap);assert.deepEqual(a.rail,b.rail,'grid rail position unchanged');
    assert.ok(a.poster.y>=a.rail.y && a.title.bottom<a.rail.bottom && a.card.bottom<a.rail.bottom,'focus remains within the rail clipping bounds');
    assert.ok(a.title.y>a.poster.bottom && a.card.bottom<viewport.height && a.info.bottom<a.columns.y);
    assert.deepEqual(a.image,a.poster,'image fills the independently rounded poster');
@@ -166,10 +169,11 @@ try {
   const shortHost=await p.evaluate(()=>{
    const card=document.querySelector('#tvBrowseRail .card'),poster=card.querySelector('.poster-wrap'),title=card.querySelector('.card-title');
    const c=card.getBoundingClientRect(),r=card.parentElement.getBoundingClientRect(),t=title.getBoundingClientRect(),p=poster.getBoundingClientRect();
-   return {cardBottom:c.bottom,railBottom:r.bottom,posterTop:p.top,railTop:r.top,titleBottom:t.bottom,titleHeight:t.height,rootBottom:document.querySelector('#tvBrowse').getBoundingClientRect().bottom,pageOverflow:document.documentElement.scrollHeight>innerHeight+1};
+   return {cardBottom:c.bottom,railBottom:r.bottom,posterTop:p.top,posterRatio:p.width/p.height,railTop:r.top,titleBottom:t.bottom,titleHeight:t.height,rootBottom:document.querySelector('#tvBrowse').getBoundingClientRect().bottom,pageOverflow:document.documentElement.scrollHeight>innerHeight+1};
   });
   assert.ok(shortHost.cardBottom<shortHost.railBottom && shortHost.titleBottom<shortHost.rootBottom && shortHost.posterTop>shortHost.railTop);
   assert.equal(shortHost.pageOverflow,false);
+  assert.ok(Math.abs(shortHost.posterRatio-2/3)<.001,'short host resizes both dimensions together');
   assert.ok(Math.abs(shortHost.titleHeight-after[2].layout.title.height)<.1,'short host preserves title font and line height');
   console.log('SHORT_HOST_LAYOUT '+JSON.stringify({viewport,...shortHost}));
   console.log(`TV_CARD_COLUMN_VISUAL ${viewport.width}x${viewport.height} = PASS`);
