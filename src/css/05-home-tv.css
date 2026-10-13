@@ -1076,10 +1076,13 @@
       }
     }
 
-    /* Final media-card surface contract.  Keep this after the shared TV
-       focus rules so Home and Weekly cannot regain a panel frame. */
+    /* Final media-card surface contract. Keep this after shared TV focus
+       rules so Home, the immersive TV rail and Weekly remain frameless.
+       The immersive rail retains its own focus scale below. */
     #home.home-root .home-rail > .card,
     #home.home-root .home-rail > .card:focus,
+    html.tv-browse-active #tvBrowseRail > .card,
+    html.tv-browse-active #tvBrowseRail > .card:focus,
     #secondaryCatalog.weekly-secondary-page #secondaryCatalogGrid.weekly-secondary-rail > .weekly-card,
     #secondaryCatalog.weekly-secondary-page #secondaryCatalogGrid.weekly-secondary-rail > .weekly-card:focus {
       border: 0 !important;
@@ -1186,13 +1189,14 @@
     html.tv-browse-active .tv-browse-columns { position: absolute; top: 48%; left: var(--tv-gutter); right: var(--tv-gutter); display: flex; gap: 18px; overflow-x: auto; white-space: nowrap; padding: 12px 5px; scrollbar-width: none; z-index: 3; }
     html.tv-browse-active .tv-browse-columns::-webkit-scrollbar, html.tv-browse-active .tv-browse-rail::-webkit-scrollbar { display: none; }
     html.tv-browse-active .tv-browse-column { flex: 0 0 auto; padding: 8px 18px; font-size: clamp(16px,1.5vw,29px); }
+    html.tv-browse-active .tv-browse-column[aria-pressed="false"]:not(:focus) { background: rgba(40,40,40,.1); }
     html.tv-browse-active .tv-browse-posters { position: absolute; left: 0; right: 0; bottom: 4vh; height: 34vh; z-index: 3; }
     html.tv-browse-active .tv-browse-rail { display: flex; align-items: flex-start; gap: 1.4vw; overflow-x: auto; overflow-y: hidden; height: 100%; padding: 1.5vh var(--tv-gutter) 1vh; box-sizing: border-box; scrollbar-width: none; }
-    html.tv-browse-active .tv-browse-rail .card { flex: 0 0 10.6vw; width: 10.6vw; min-width: 0; max-width: none; border: 0 !important; transform-origin: center center; }
+    html.tv-browse-active .tv-browse-rail .card { flex: 0 0 10.6vw; width: 10.6vw; min-width: 0; max-width: none; transform-origin: center center; }
     html.tv-browse-active .tv-browse-rail .poster-wrap { aspect-ratio: 2 / 3; height: 25.8vh; }
     html.tv-browse-active .tv-browse-rail .card img { width: 100%; height: 100%; object-fit: cover; }
     html.tv-browse-active .tv-browse-rail .card:focus { transform: scale(1.04); }
-    html.tv-browse-active .tv-browse-rail .card-title { font-size: clamp(13px,1.1vw,21px); }
+    html.tv-browse-active .tv-browse-rail .card-title { font-size: clamp(13px,1.1vw,21px); text-align: center; }
     html.tv-browse-active .tv-browse-feedback { position: absolute; bottom: .5vh; left: var(--tv-gutter); right: var(--tv-gutter); display: flex; align-items: center; gap: 20px; z-index: 4; font-size: 14px; }
     html.tv-browse-active .tv-browse-filters {
       position: absolute; top: 10vh; left: var(--tv-gutter); right: var(--tv-gutter); max-height: 35vh; overflow: auto;
