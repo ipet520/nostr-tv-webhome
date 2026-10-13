@@ -1059,16 +1059,19 @@
       pointer-events: none;
     }
 
-    #secondaryCatalog.recent-manage-active .card.recent-watching-card .recent-batch-indicator {
+    #secondaryCatalog.recent-manage-active .card.recent-watching-card .recent-batch-indicator,
+    #tvBrowseRail .card.recent-watching-card[aria-pressed] .recent-batch-indicator {
       display: grid;
     }
 
-    #secondaryCatalog.recent-manage-active .card.recent-watching-card.recent-batch-selected .recent-batch-indicator {
+    #secondaryCatalog.recent-manage-active .card.recent-watching-card.recent-batch-selected .recent-batch-indicator,
+    #tvBrowseRail .card.recent-watching-card[aria-pressed="true"] .recent-batch-indicator {
       border-color: rgba(191, 233, 255, .96);
       background: #4e9fc7;
     }
 
-    #secondaryCatalog.recent-manage-active .card.recent-watching-card.recent-batch-selected .recent-batch-indicator::after {
+    #secondaryCatalog.recent-manage-active .card.recent-watching-card.recent-batch-selected .recent-batch-indicator::after,
+    #tvBrowseRail .card.recent-watching-card[aria-pressed="true"] .recent-batch-indicator::after {
       content: "✓";
     }
 
@@ -5959,10 +5962,10 @@
     .recent-manage-actions button {
       min-height: 36px;
       padding: 0 11px;
-      border: 1px solid rgba(255, 255, 255, .16);
+      border: 1px solid var(--recent-manage-border,rgba(255, 255, 255, .16));
       border-radius: 7px;
-      background: rgba(255, 255, 255, .08);
-      color: rgba(255, 255, 255, .92);
+      background: var(--recent-manage-bg,rgba(255, 255, 255, .08));
+      color: var(--recent-manage-color,rgba(255, 255, 255, .92));
       font-size: 14px;
       white-space: nowrap;
     }
@@ -5976,7 +5979,7 @@
     .recent-manage-actions button:focus {
       outline: none;
       border-color: rgba(191, 233, 255, .88);
-      background: rgba(191, 233, 255, .16);
+      background: var(--recent-manage-focus-bg,rgba(191, 233, 255, .16));
     }
 
     @media (pointer: coarse), (max-width: 719px) {
@@ -7044,7 +7047,7 @@
     html.tv-browse-active .tv-browse-column { flex: 0 0 auto; padding: var(--tv-column-pad-y,8px) var(--tv-column-pad-x,18px); font-size: var(--tv-column-font); }
     html.tv-browse-active .tv-browse-column[aria-pressed="false"]:not(:focus) { background: rgba(40,40,40,.18); }
     html.tv-browse-active .history-open .tv-browse-columns { visibility: hidden; pointer-events: none; }
-    html.tv-browse-active .tv-history-resume { grid-row: 2; margin: 0 var(--tv-gutter); display: flex; align-items: center; gap: var(--tv-resume-gap,18px); z-index: 3; min-width: 0; }
+    html.tv-browse-active .tv-history-resume { grid-row: 1 / 3; align-self: end; margin: 0 var(--tv-gutter) var(--tv-preview-gap,22px); display: flex; align-items: center; gap: var(--tv-resume-gap,18px); z-index: 3; min-width: 0; }
     html.tv-browse-active #tvHistoryContinue { border-radius: 999px; height: var(--tv-control-height); min-height: 0; padding: 0 28px; font-size: var(--tv-meta-font); flex: 0 0 auto; }
     html.tv-browse-active #tvHistoryContinue > .icon { fill: #35E07A; stroke: none; }
     html.tv-browse-active .tv-history-progress-info { min-width: 0; width: clamp(220px,16vw,320px); font-size: var(--tv-meta-font); color: rgba(255,255,255,.9); }
@@ -7066,7 +7069,7 @@
     html.tv-browse-active .tv-browse-rail .card-title { width: 100%; max-width: 100%; min-width: 0; font-size: var(--tv-caption-font); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     html.tv-browse-active .tv-browse-rail .card-meta { display: none; }
     html.tv-browse-active .tv-browse-rail .weekly-air-status { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
-    html.tv-browse-active .tv-browse-feedback { grid-row: 4; min-height: 20px; margin: var(--tv-gap) var(--tv-gutter) 0; display: flex; align-items: center; gap: var(--tv-gap); z-index: 4; font-size: 14px; }
+    html.tv-browse-active .tv-browse-feedback { grid-row: 1; align-self: end; justify-self: end; min-height: 20px; max-width: 30vw; margin: 0 var(--tv-gutter) var(--tv-gap); display: flex; align-items: center; flex-wrap: wrap; gap: var(--tv-gap); z-index: 4; font-size: 14px; }
     html.tv-browse-active .tv-browse-filters {
       grid-column: 1 / -1; grid-row: 1; min-height: 0; margin: 0; overflow: auto;
       padding: 2px 2vw; border: 0; box-shadow: none; background: transparent; z-index: 4;
@@ -7077,7 +7080,7 @@
       min-height: 0; overflow: visible;
     }
     html.tv-browse-active .tv-browse-filters .secondary-filter-row:last-of-type { margin-bottom: 0; }
-    html.tv-browse-active .tv-browse-filter-overview { grid-column: 1; grid-row: 1 / 3; align-self: end; min-height: 0; margin: 0 var(--tv-gutter) var(--tv-info-gap); max-width: min(60vw,900px); color: #d8dee8; font-size: var(--tv-overview-font); line-height: 1.5; text-shadow: var(--tv-text-protection); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--tv-filter-overview-lines,0); overflow: hidden; }
+    html.tv-browse-active .tv-browse-filter-overview { grid-column: 1; grid-row: 1 / 3; align-self: end; min-height: 0; margin: 0 var(--tv-gutter) var(--tv-preview-gap,22px); max-width: min(60vw,900px); color: #d8dee8; font-size: var(--tv-overview-font); line-height: 1.5; text-shadow: var(--tv-text-protection); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--tv-filter-overview-lines,0); overflow: hidden; }
     html.tv-browse-active .tv-browse-filters .secondary-filter-label {
       flex: 0 0 clamp(58px,4.5vw,86px); height: var(--tv-filter-height); display: flex; align-items: center;
       font-size: var(--tv-filter-font); font-weight: 500; line-height: 1.2; color: rgba(255,255,255,.85); text-shadow: var(--tv-text-protection);
@@ -7095,7 +7098,7 @@
     html.tv-browse-active #tvBrowseFunctions #connectionToggle { display: flex; align-items: center; justify-content: center; width: var(--tv-control-height); min-width: 0; min-height: 0; height: var(--tv-control-height); gap: 0; padding: 0; border-radius: 8px; }
     html.tv-browse-active #tvBrowseFunctions .connection-title, html.tv-browse-active #tvBrowseFunctions .connection-arrow { display: none; }
     html.tv-browse-active #tvBrowseFunctions .dot { width: var(--tv-control-icon); height: var(--tv-control-icon); flex: 0 0 var(--tv-control-icon); margin: 0; }
-    html.tv-browse-active .tv-browse-recent-tools { grid-column: 2; grid-row: 1; justify-self: end; align-self: start; z-index: 3; }
+    html.tv-browse-active .tv-browse-recent-tools { grid-column: 2; grid-row: 1; justify-self: end; align-self: start; z-index: 3; --recent-manage-bg: rgba(8,12,18,.76); --recent-manage-color: #fff; --recent-manage-border: rgba(255,255,255,.4); --recent-manage-focus-bg: rgba(24,48,62,.9); }
 </style>
   <style id="tv-diagnostic-v1">
     html.tv-mode .tv-diagnostic {
@@ -23616,8 +23619,9 @@ utils.encode = function encode(arr, enc) {
     }
 
     function consumeRecentWatchingClick(card, event) {
-      // Physical Center is counted on keyup; its synthetic click is never another press.
-      if (isTvHistoryPoster(card) && (event && event.detail === 0 || state.recentDelete.remotePressLocked || Date.now() < tvBrowseState().suppressClickUntil)) return true;
+      // Native confirm can deliver only activeElement.click(), with detail=0.
+      // Suppress a click only when a DOM key cycle actually owns this press.
+      if (isTvHistoryPoster(card) && (state.recentDelete.remotePressLocked || Date.now() < tvBrowseState().suppressClickUntil)) return true;
       return consumeRecentWatchingPress(card);
     }
 
@@ -28473,6 +28477,9 @@ utils.encode = function encode(arr, enc) {
 
     function tvBrowsePosterTarget() {
       const rail = $("tvBrowseRail"), position = tvBrowsePosition();
+      // Down immediately after a column focus must enter the current query,
+      // even if its coalesced after-paint render has not run yet.
+      if (rail && tvBrowseActive() && rail.dataset.queryKey !== tvBrowseQueryKey()) renderTvBrowse();
       const cards = rail ? Array.from(rail.querySelectorAll(".card")) : [];
       return cards.find((card) => card.dataset.mediaKey === position.key) || cards[Math.min(position.index, cards.length - 1)] || (tvBrowseState().view === "history" ? tvBrowseHistoryToolsTarget() : tvBrowseColumnButton(tvBrowseState().column));
     }
@@ -28519,7 +28526,10 @@ utils.encode = function encode(arr, enc) {
       ui.filterOpen = false;
       ui.previewKey = "";
       if (!opts.keepConfirm) ui.confirm = null;
-      renderTvBrowse();
+      if (opts.afterPaint) {
+        syncTvBrowseColumns();
+        scheduleHomeContentRender({ afterPaint: true });
+      } else renderTvBrowse();
       scheduleUiSnapshotSave();
       return true;
     }
@@ -28639,7 +28649,10 @@ utils.encode = function encode(arr, enc) {
       const height = Math.min(rect.height, (viewport ? viewport.offsetTop + viewport.height : innerHeight) - rect.top);
       if (height <= 0) return;
       const clamp = (min, value, max) => Math.max(min, Math.min(value, max));
-      const set = (name, value) => root.style.setProperty("--tv-" + name, value);
+      const set = (name, value) => {
+        const property = "--tv-" + name;
+        if (root.style.getPropertyValue(property) !== String(value)) root.style.setProperty(property, value);
+      };
       const px = (name, value) => set(name, value + "px");
       const gap = clamp(4, height * .01, 12), infoGap = clamp(2, height * .004, 5);
       const top = clamp(8, height * .03, 32);
@@ -28652,9 +28665,9 @@ utils.encode = function encode(arr, enc) {
       px("filter-height", clamp(28, height * 34 / 1080, 36));
       px("control-height", clamp(36, height * .045, 50)); px("control-icon", clamp(21, height * .025, 28));
       px("column-font", clamp(16, height * 24 / 1080, 24));
+      px("preview-gap", clamp(12, height * .03, 40));
       const feedback = root.querySelector(".tv-browse-feedback");
-      // Empty feedback does not own a grid row or its preceding gap. Visible
-      // status, retry and selection hints retain their measured space.
+      // Feedback shares the upper row; loading cannot change the rail baseline.
       feedback.hidden = !Array.from(feedback.children).some((child) => !child.hidden && child.textContent.trim());
       // A single title line has the same footprint in every browse mode.
       const caption = Math.max(15, captionFont * 1.2) + 13;
@@ -28681,8 +28694,7 @@ utils.encode = function encode(arr, enc) {
         const titleEdge = railSlot - focusSpace - (poster + caption) * 1.02 + 6 * 1.04;
         px("safe-bottom", Math.max(2, Math.max(8, height * .019) - titleEdge));
         const bottom = parseFloat(getComputedStyle(foreground).paddingBottom);
-        upper = height - top - bottom - Math.max($("tvBrowseColumns").offsetHeight, $("tvHistoryResume").offsetHeight) - railSlot - gap
-          - (feedback.hidden ? 0 : feedback.offsetHeight + gap);
+        upper = height - top - bottom - $("tvBrowseColumns").offsetHeight - railSlot - gap;
         if (upper >= height * .15 + core + overviewFont * 4.5 || compact) break;
       }
       const logoHeight = Math.min(height * (compact ? .11 : .15), Math.max(titleFont * 1.1, upper - core));
@@ -28697,7 +28709,7 @@ utils.encode = function encode(arr, enc) {
       const filters = $("tvBrowseFilters"), upperHost = root.querySelector(".tv-browse-upper");
       const used = Array.from(filters.querySelectorAll(".secondary-filter-row")).reduce((sum, row) =>
         sum + row.offsetHeight + parseFloat(getComputedStyle(row).marginBottom), 4);
-      const spare = upperHost.clientHeight - used - gap;
+      const spare = upperHost.clientHeight - used - gap - parseFloat(root.style.getPropertyValue("--tv-preview-gap"));
       set("filter-overview-lines", String(height < 450 ? 0 : clamp(0, Math.floor(spare / (overviewFont * 1.5)), height >= 720 ? 3 : 2)));
       syncTvBrowseFilterOverview();
     }
@@ -28722,7 +28734,7 @@ utils.encode = function encode(arr, enc) {
           // Focus selects content; Enter only owns the existing double-confirm
           // filter gesture. Returning to the active column keeps its position.
           if (ui.view === "home" && !ui.filterOpen && ui.column !== entry.listId) {
-            tvBrowseSelectColumn(entry.listId);
+            tvBrowseSelectColumn(entry.listId, { afterPaint: true });
           }
         });
         button.addEventListener("click", (event) => {
@@ -28773,8 +28785,21 @@ utils.encode = function encode(arr, enc) {
       $("tvBrowseRail").addEventListener("scroll", () => { tvBrowseSavePosition(); scheduleUiSnapshotSave(); }, { passive: true });
     }
 
-    function renderTvBrowse() {
+    function syncTvBrowseColumns() {
+      const ui = tvBrowseState();
+      $("tvBrowseColumns").querySelectorAll("button").forEach((button) => {
+        const selected = button.dataset.column === ui.column;
+        button.classList.toggle("selected", selected); button.setAttribute("aria-pressed", String(selected));
+      });
+    }
+
+    function renderTvBrowse(options) {
       if (!tvBrowseActive()) return;
+      // Direct restores supersede a pending focus-driven render in the same
+      // shared Home scheduler. It must not rebuild this query a second time.
+      if (state.homeContentTimer) {
+        cancelAnimationFrame(state.homeContentTimer); state.homeContentTimer = 0; state.homeContentSeq += 1;
+      }
       initTvBrowse();
       syncTvBrowseVisibility();
       const ui = tvBrowseState(), rail = $("tvBrowseRail");
@@ -28790,32 +28815,37 @@ utils.encode = function encode(arr, enc) {
       }
       const items = (historyView ? query.items : ui.column === "recommendation"
         ? filterBlocked(query.items || []) : secondaryFilterItems(ui.column, query.items || [])).filter((item) => historyView || hasPoster(item));
-      const keys = items.map((item, index) => mediaRenderKey(item, index)), oldKeys = rail.__renderKeys || [];
       const queryChanged = rail.dataset.queryKey !== query.key;
+      const oldKeys = rail.__renderKeys || [];
+      // Keep catalog data whole; materialize the visible batch and saved focus
+      // first. Further cards append when DPAD approaches the current DOM end.
+      const limit = historyView ? items.length : Math.max(18, tvBrowsePosition().index + 8,
+        queryChanged ? 0 : oldKeys.length + (options && options.append ? 18 : 0));
+      const keys = items.slice(0, limit).map((item, index) => mediaRenderKey(item, index));
       const prefix = !queryChanged && oldKeys.length <= keys.length && oldKeys.every((key, index) => key === keys[index]);
       const focused = rail.contains(document.activeElement) ? document.activeElement.dataset.mediaKey : "";
-      if (!prefix) { rail.replaceChildren(); oldKeys.length = 0; }
+      const fragment = document.createDocumentFragment();
+      const start = prefix ? oldKeys.length : 0;
       if (queryChanged) { rail.dataset.queryKey = query.key; rail.scrollLeft = tvBrowsePosition().scrollLeft; }
-      for (let index = oldKeys.length; index < items.length; index += 1) {
-        const item = items[index], card = mediaCard(item, index, { home: true, homeLazy: index > 7, weeklyHome: !historyView && ui.column === "now-playing" });
+      for (let index = start; index < keys.length; index += 1) {
+        const item = items[index], card = mediaCard(item, index, { home: true, history: historyView, homeLazy: index > 7, weeklyHome: !historyView && ui.column === "now-playing" });
         card.addEventListener("focus", () => {
           const position = tvBrowsePosition(); position.key = card.dataset.mediaKey; position.index = index;
           tvBrowsePreview(card.__mediaItem);
           tvBrowseMaybeLoadMore(index);
           scheduleUiSnapshotSave();
         });
-        rail.appendChild(card);
+        fragment.appendChild(card);
       }
+      if (!prefix) rail.replaceChildren(fragment);
+      else if (fragment.childNodes.length) rail.appendChild(fragment);
       rail.__renderKeys = keys;
       Array.from(rail.children).forEach((card, index) => { card.__mediaItem = items[index]; });
       const tracked = state.recentDelete && (state.recentDelete.armedCard || state.recentDelete.pendingCard || state.recentDelete.remotePressCard);
       if (historyView && tracked && (!tracked.isConnected || !recentWatchingPressKey(tracked))) cancelRecentDeleteArm();
       syncTvBrowseVisibility();
       if (queryChanged) rail.scrollLeft = tvBrowsePosition().scrollLeft;
-      $("tvBrowseColumns").querySelectorAll("button").forEach((button) => {
-        const selected = button.dataset.column === ui.column;
-        button.classList.toggle("selected", selected); button.setAttribute("aria-pressed", String(selected));
-      });
+      syncTvBrowseColumns();
       updateRecentManageUi();
       updateBlockSelectUi();
       $("tvBrowseBlockHint").hidden = !state.blocked.selecting;
@@ -28834,7 +28864,8 @@ utils.encode = function encode(arr, enc) {
         [$("tvBrowseBackdrop"), $("tvBrowseBackdropNext")].forEach((layer) => { layer.style.backgroundImage = ""; layer.classList.remove("visible"); });
         if (document.activeElement === $("tvHistoryContinue")) focusRemoteTarget(tvBrowsePosterTarget());
       }
-      observeHomeImages(rail); observeTvCardEnrichment(rail); observeMovieCardEnrichment(rail);
+      // observeHomeImages already registers TV episode enrichment.
+      observeHomeImages(rail); observeMovieCardEnrichment(rail);
       if (focused && !prefix && focusScopeRoot() === document && !isSidebarOpen()) {
         const target = Array.from(rail.children).find((card) => card.dataset.mediaKey === focused) || (ui.filterOpen ? Array.from(rail.children).find(isVisibleFocusable) || tvBrowseFilterTarget() : tvBrowsePosterTarget());
         if (target) focusRemoteTarget(target);
@@ -28845,6 +28876,10 @@ utils.encode = function encode(arr, enc) {
 
     function tvBrowseMaybeLoadMore(index) {
       const ui = tvBrowseState(), query = secondaryActiveQuery(ui.column);
+      const rail = $("tvBrowseRail");
+      if (ui.view !== "history" && query && rail.children.length < query.items.length && index >= rail.children.length - 5) {
+        renderTvBrowse({ append: true });
+      }
       if (ui.view === "history" || !query || query.loading || query.error || query.retryableError || !query.hasMore || index < query.items.length - 5) return false;
       loadSecondaryPage(ui.column, query, query.page + 1).catch(() => {});
       return true;
@@ -29059,7 +29094,8 @@ utils.encode = function encode(arr, enc) {
 
     function renderCatalogQuery(id) {
       if (tvBrowseActive()) {
-        if (tvBrowseState().column === id || id === "recent" && tvBrowseState().view === "history") renderTvBrowse();
+        const ui = tvBrowseState();
+        if (ui.view === "home" && ui.column === id || id === "recent" && ui.view === "history") renderTvBrowse();
       } else if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
     }
     function secondaryFilterDefaults() { return { mediaType: "all", genre: "all", region: "all", year: "all", sort: "hot", lastFocused: {} }; }
@@ -30887,7 +30923,7 @@ utils.encode = function encode(arr, enc) {
         <div class="poster-wrap${hasAirStatus ? " has-air-status" : ""}">
           <img class="poster" alt="" ${imageAttrs(posterSrc, imageOpt)}>
           ${peopleBadgeHtml}
-          ${recentWatching && !home && !weekly ? `<span class="recent-batch-indicator" aria-hidden="true"></span>` : ""}
+          ${recentWatching && (!home && !weekly || opts.history) ? `<span class="recent-batch-indicator" aria-hidden="true"></span>` : ""}
           ${recentWatching ? `<span class="recent-delete-indicator" aria-hidden="true">🗑</span>` : ""}
           ${ratingBadgeHtml}
           ${airStatusHtml}

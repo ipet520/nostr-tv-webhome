@@ -118,7 +118,7 @@ async function run(viewport,baseline,host=false){
  await press(p,'Escape');await p.evaluate(()=>{const q=testBrowse.seed('movie',12);q.hasMore=false;testBrowse.tvBrowseSelectColumn('movie');});await p.locator('#tvBrowseRail .card').first().focus();await p.waitForTimeout(300);
  const stable=await measure(p);
  await p.evaluate(()=>{const q=testBrowse.secondaryGetQuery('movie');q.error='受控错误提示';testBrowse.renderTvBrowse();});await p.waitForTimeout(300);
- assert.equal(await p.locator('.tv-browse-feedback').isVisible(),true);const warned=await measure(p);assert.ok(warned.rects.card.bottom<warned.rects.feedback.y);assert.ok(Math.abs(warned.rects.poster.height-stable.rects.poster.height)<.001,'floating geometry keeps poster size');
+ assert.equal(await p.locator('.tv-browse-feedback').isVisible(),true);const warned=await measure(p);assert.ok(warned.rects.feedback.bottom<warned.rects.rail.y,'feedback stays in upper area');assert.deepEqual(warned.rects.rail,stable.rects.rail,'visible feedback cannot move posters');assert.ok(Math.abs(warned.rects.poster.height-stable.rects.poster.height)<.001,'feedback keeps poster size');
  await p.evaluate(()=>{testBrowse.secondaryGetQuery('movie').error='';testBrowse.renderTvBrowse();});await p.waitForTimeout(300);assert.deepEqual((await measure(p)).rects.rail,stable.rects.rail);
  }
  measurements.push({viewport,host,version:baseline?'before':'after',states});await p.close();return states;

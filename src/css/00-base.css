@@ -830,16 +830,19 @@
       pointer-events: none;
     }
 
-    #secondaryCatalog.recent-manage-active .card.recent-watching-card .recent-batch-indicator {
+    #secondaryCatalog.recent-manage-active .card.recent-watching-card .recent-batch-indicator,
+    #tvBrowseRail .card.recent-watching-card[aria-pressed] .recent-batch-indicator {
       display: grid;
     }
 
-    #secondaryCatalog.recent-manage-active .card.recent-watching-card.recent-batch-selected .recent-batch-indicator {
+    #secondaryCatalog.recent-manage-active .card.recent-watching-card.recent-batch-selected .recent-batch-indicator,
+    #tvBrowseRail .card.recent-watching-card[aria-pressed="true"] .recent-batch-indicator {
       border-color: rgba(191, 233, 255, .96);
       background: #4e9fc7;
     }
 
-    #secondaryCatalog.recent-manage-active .card.recent-watching-card.recent-batch-selected .recent-batch-indicator::after {
+    #secondaryCatalog.recent-manage-active .card.recent-watching-card.recent-batch-selected .recent-batch-indicator::after,
+    #tvBrowseRail .card.recent-watching-card[aria-pressed="true"] .recent-batch-indicator::after {
       content: "✓";
     }
 

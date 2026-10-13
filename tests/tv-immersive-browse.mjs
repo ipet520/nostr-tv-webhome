@@ -409,7 +409,14 @@ try {
   await press(tv, "ArrowDown");
   // Paging uses the actual shared TMDB loader and appends without replacing the prefix.
   await tv.evaluate(() => { window.firstPoster = document.querySelector("#tvBrowseRail .card"); document.querySelector("#tvBrowseRail .card:last-child").focus(); });
-  await tv.waitForFunction(() => document.querySelectorAll("#tvBrowseRail .card").length >= 40);
+  await tv.waitForFunction(() => testBrowse.secondaryActiveQuery('movie').items.length >= 40);
+  // Whole pages stay in the query cache; bounded TV DOM batches are exposed
+  // as focus advances. Verify every next card remains reachable, not just a count.
+  for (let index = 18; index < 36; index += 1) {
+    await tv.locator('#tvBrowseRail .card').nth(index).focus();
+    assert.equal(await tv.evaluate(() => Number(document.activeElement.dataset.cardIndex)), index);
+  }
+  assert.ok(await tv.locator('#tvBrowseRail .card').count() >= 40);
   assert.equal(await tv.evaluate(() => firstPoster === document.querySelector("#tvBrowseRail .card")), true);
   await tv.evaluate(() => { document.querySelectorAll("#tvBrowseRail .card")[22].focus(); testBrowse.rememberHomeReturn(document.activeElement.__mediaItem, document.activeElement); });
   const returnKey = await active(tv);

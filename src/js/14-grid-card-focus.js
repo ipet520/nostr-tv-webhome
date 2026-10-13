@@ -495,7 +495,7 @@
         <div class="poster-wrap${hasAirStatus ? " has-air-status" : ""}">
           <img class="poster" alt="" ${imageAttrs(posterSrc, imageOpt)}>
           ${peopleBadgeHtml}
-          ${recentWatching && !home && !weekly ? `<span class="recent-batch-indicator" aria-hidden="true"></span>` : ""}
+          ${recentWatching && (!home && !weekly || opts.history) ? `<span class="recent-batch-indicator" aria-hidden="true"></span>` : ""}
           ${recentWatching ? `<span class="recent-delete-indicator" aria-hidden="true">🗑</span>` : ""}
           ${ratingBadgeHtml}
           ${airStatusHtml}

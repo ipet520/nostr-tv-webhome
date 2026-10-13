@@ -680,8 +680,9 @@
     }
 
     function consumeRecentWatchingClick(card, event) {
-      // Physical Center is counted on keyup; its synthetic click is never another press.
-      if (isTvHistoryPoster(card) && (event && event.detail === 0 || state.recentDelete.remotePressLocked || Date.now() < tvBrowseState().suppressClickUntil)) return true;
+      // Native confirm can deliver only activeElement.click(), with detail=0.
+      // Suppress a click only when a DOM key cycle actually owns this press.
+      if (isTvHistoryPoster(card) && (state.recentDelete.remotePressLocked || Date.now() < tvBrowseState().suppressClickUntil)) return true;
       return consumeRecentWatchingPress(card);
     }
 

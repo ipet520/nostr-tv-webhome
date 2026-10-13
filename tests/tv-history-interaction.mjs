@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
+import { execFileSync } from "node:child_process";
 import { renderIndex, validateRenderedArtifact } from "../scripts/build-core.mjs";
 
 const require = createRequire(import.meta.url);
@@ -37,7 +38,8 @@ const hook = `window.testBrowse = { state, renderAll, renderTvBrowse, tvBrowseSt
    })); return query;
  };
 `;
-const html = output.replace(/boot\(\)\.catch\(function\(e\) \{[\s\S]*?\n    \}\);/, hook);
+const testOutput = process.env.WEBHOME_TEST_REF ? execFileSync('git', ['show', process.env.WEBHOME_TEST_REF + ':index.html'], {encoding:'utf8',maxBuffer:4*1024*1024}) : output;
+const html = testOutput.replace(/boot\(\)\.catch\(function\(e\) \{[\s\S]*?\n    \}\);/, hook);
 assert.notEqual(html, output);
 const browser = await playwright.chromium.launch({ headless: true, ...(process.env.WEBHOME_BROWSER_EXECUTABLE ? { executablePath: process.env.WEBHOME_BROWSER_EXECUTABLE } : { channel: process.env.WEBHOME_BROWSER_CHANNEL || "chrome" }) });
 const errors = []; const geometryResults=[];
@@ -103,7 +105,70 @@ async function counts(p){return p.evaluate(()=>({vod:vodCalls.length,deleted:del
 async function ok(name,p){results.push(name);console.log(name+' = PASS');await p.close();}
 
 async function checks() {
-  let p=await historyPage();
+  // Leanback HomeActivity consumes confirm and dispatches activeElement.click()
+  // on release. No DOM keydown/keyup accompanies this Native activation.
+  const nativeConfirm = async p => { await p.evaluate(()=>document.activeElement.click()); await p.waitForTimeout(45); };
+  let p=await historyPage();await nativeConfirm(p);await waitWindow(p);
+  assert.equal((await counts(p)).vod,1,'Native click-only confirm must reach the shared Continue Gate');
+  assert.equal((await counts(p)).deleted,0);assert.equal(await p.evaluate(()=>vodCalls[0][1]),'vod-1');
+  await ok('NATIVE_CLICK_ONLY_SINGLE_CONTINUES_ONCE',p);
+
+  p=await historyPage();await p.evaluate(()=>{
+    document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{keyCode:23,bubbles:true,cancelable:true}));
+    document.activeElement.click();
+    document.activeElement.dispatchEvent(new KeyboardEvent('keyup',{keyCode:23,bubbles:true,cancelable:true}));
+    document.activeElement.click();
+  });await waitWindow(p);assert.equal((await counts(p)).vod,1);assert.equal((await counts(p)).armed,'');
+  await ok('DPAD_CENTER_DOM_CYCLE_CLICK_DEDUPES',p);
+
+  p=await historyPage();await nativeConfirm(p);await nativeConfirm(p);await waitWindow(p);
+  assert.equal((await counts(p)).vod,0);assert.ok((await counts(p)).armed);await nativeConfirm(p);
+  await p.waitForFunction(()=>deleteCalls.length===1&&document.querySelectorAll('#tvBrowseRail .card').length===2);
+  assert.equal((await counts(p)).vod,0);await ok('NATIVE_CLICK_ONLY_DOUBLE_ARM_THIRD_DELETE',p);
+
+  p=await historyPage();await p.locator('#recentManageBtn').focus();await nativeConfirm(p);
+  assert.equal(await p.evaluate(()=>testBrowse.state.recentManage.active),true);
+  await p.locator('#tvBrowseRail .card').first().focus();await nativeConfirm(p);
+  assert.equal(await p.locator('#tvBrowseRail .card').first().getAttribute('aria-pressed'),'true');
+  assert.equal(await p.locator('#tvBrowseRail .card').first().locator('.recent-batch-indicator').isVisible(),true);
+  await nativeConfirm(p);assert.equal(await p.locator('#tvBrowseRail .card').first().getAttribute('aria-pressed'),'false');
+  await p.locator('#tvBrowseRail .card').nth(1).focus();await nativeConfirm(p);
+  assert.equal(await p.evaluate(()=>Object.keys(testBrowse.state.recentManage.selectedKeys).length),1);
+  await p.locator('#recentManageDelete').focus();await nativeConfirm(p);await nativeConfirm(p);
+  await p.waitForFunction(()=>!testBrowse.state.recentManage.deleting&&historyFixture.length===2);
+  assert.equal((await counts(p)).deleted,1);assert.equal((await counts(p)).vod,0);
+  assert.equal(await p.evaluate(()=>historyFixture.some(x=>x.key.includes('vod-2'))),false);
+  await p.locator('#recentManageCancel').focus();await nativeConfirm(p);
+  await p.locator('#tvBrowseRail .card').first().focus();await nativeConfirm(p);await waitWindow(p);
+  assert.equal((await counts(p)).vod,1);await ok('NATIVE_MANAGE_INDIVIDUAL_CANCEL_DELETE_EXIT',p);
+
+  p=await historyPage();await nativeConfirm(p);await press(p,'ArrowRight');await waitWindow(p);
+  assert.equal((await counts(p)).vod,0);await nativeConfirm(p);await nativeConfirm(p);
+  assert.ok((await counts(p)).armed);assert.equal((await counts(p)).vod,0);
+  await press(p,'Escape');assert.equal((await counts(p)).armed,'');await ok('NATIVE_MOVEMENT_AND_BACK_CANCEL_PENDING',p);
+
+  p=await historyPage();
+  for(const background of ['#080c12','#ffffff','linear-gradient(90deg,#fff 50%,#080c12 50%)']){
+    const backgroundName=background.includes('gradient')?'mixed':background==='#ffffff'?'white':'dark';
+    await p.evaluate(bg=>{document.querySelectorAll('.tv-browse-backdrop,.tv-browse-shade').forEach(e=>e.style.background='none');document.querySelector('#tvBrowse').style.background=bg;},background);
+    await p.locator('#tvBrowseRail .card').first().focus();
+    const normal=await p.locator('#recentManageBtn').evaluate(e=>{const s=getComputedStyle(e),r=e.getBoundingClientRect();return {background:s.backgroundColor,color:s.color,border:s.borderColor,opacity:s.opacity,rect:{x:r.x,y:r.y,width:r.width,height:r.height}};});
+    assert.equal(normal.background,'rgba(8, 12, 18, 0.76)');assert.equal(normal.color,'rgb(255, 255, 255)');assert.equal(normal.opacity,'1');
+    if(process.env.WEBHOME_VISUAL_DIR)await p.screenshot({path:join(process.env.WEBHOME_VISUAL_DIR,'manage-normal-'+backgroundName+'.png')});
+    const white=[8,12,18].map(c=>(c*.76+255*.24)/255).map(c=>c<=.04045?c/12.92:((c+.055)/1.055)**2.4);
+    assert.ok(1.05/(.2126*white[0]+.7152*white[1]+.0722*white[2]+.05)>4.5,'white background contrast');
+    await p.locator('#recentManageBtn').focus();
+    assert.equal(await p.locator('#recentManageBtn').evaluate(e=>getComputedStyle(e).backgroundColor),'rgba(24, 48, 62, 0.9)');
+    if(process.env.WEBHOME_VISUAL_DIR)await p.screenshot({path:join(process.env.WEBHOME_VISUAL_DIR,'manage-'+backgroundName+'.png')});
+    await nativeConfirm(p);assert.equal(await p.evaluate(()=>testBrowse.state.recentManage.active),true);
+    if(process.env.WEBHOME_VISUAL_DIR)await p.screenshot({path:join(process.env.WEBHOME_VISUAL_DIR,'manage-active-'+backgroundName+'.png')});
+    await p.locator('#recentManageCancel').focus();await nativeConfirm(p);
+    assert.equal(await p.evaluate(()=>testBrowse.state.recentManage.active),false);
+    assert.deepEqual(await p.locator('#recentManageBtn').evaluate(e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};}),normal.rect,'background and focus do not move Manage');
+  }
+  await ok('MANAGE_CONTRAST_DARK_WHITE_MIXED_FOCUS_AND_ENTRY',p);
+
+  p=await historyPage();
   assert.equal(await p.locator('#tvBrowseFunctions').isVisible(),false);assert.equal(await p.locator('#tvBrowseColumns').isVisible(),false);
   assert.equal(await p.locator('#tvBrowseFunctions button[tabindex="0"]').count(),0);
   assert.deepEqual(await p.locator('#tvBrowseRecentTools button').evaluateAll(bs=>bs.filter(b=>!b.hidden&&!b.closest('[hidden]')).map(b=>b.id)),['recentManageBtn']);

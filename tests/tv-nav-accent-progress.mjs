@@ -83,12 +83,14 @@ async function snapshot(p,selector) {
  const style=n=>Object.fromEntries(props.map(k=>[k,getComputedStyle(n)[k]]));
  return {filter:!!e.closest('#tvBrowseFilters'),column:e.classList.contains('tv-browse-column'),style:style(e),line:{content:a.content,width:a.width,height:a.height,left:a.left,bottom:a.bottom,transform:a.transform,shadow:a.boxShadow,color:a.backgroundColor},icons:Array.from(e.querySelectorAll('svg,.dot')).map(n=>({style:style(n),stroke:getComputedStyle(n).stroke,fill:getComputedStyle(n).fill})),rect:e.getBoundingClientRect().toJSON()};});
 }
-function preserved(before,after,{line=false,search=false}={}) {
+function preserved(before,after,{line=false,search=false,manageContrast=false}={}) {
  // Round 9 deliberately changes column typography/geometry and the shared
  // vertical budget. Compare protected skin and control sizes here; the layout
  // test separately measures and validates the intended positional changes.
  const column=after.column,filter=after.filter;assert.equal(column,before.column);assert.equal(filter,before.filter);
- const stableStyle=s=>Object.fromEntries(Object.entries(s).filter(([k])=>(!column || !['fontSize','padding','width','height'].includes(k))&&(!filter||k!=='height')));
+ // Manage contrast now changes only its paint colors; independent white,
+ // dark and mixed-background tests validate those new colors and entry.
+ const stableStyle=s=>Object.fromEntries(Object.entries(s).filter(([k])=>(!column || !['fontSize','padding','width','height'].includes(k))&&(!filter||k!=='height')&&(!manageContrast||!['backgroundColor','color','border','outline'].includes(k))));
  assert.deepEqual(stableStyle(after.style),stableStyle(before.style));
  if(!column)for(const k of filter?['width']:['x','width','height'])assert.equal(after.rect[k],before.rect[k]);
  assert.deepEqual({...after.line,left:column?before.line.left:after.line.left,color:line?before.line.color:after.line.color},before.line);
@@ -130,7 +132,8 @@ async function checkView(viewport) {
  await openFixtureHistory(p);await openFixtureHistory(ref);
  assert.equal(await p.locator('#tvBrowseFunctions').isVisible(),false);assert.equal(await p.locator('#tvBrowseFunctions button[tabindex="0"]').count(),0);
  for(const selector of ['#recentManageBtn','#tvHistoryContinue']){
-  preserved(await snapshot(ref,selector),await snapshot(p,selector));await p.locator(selector).focus();await ref.locator(selector).focus();await p.waitForTimeout(250);await ref.waitForTimeout(250);preserved(await snapshot(ref,selector),await snapshot(p,selector));
+  const options={manageContrast:selector==='#recentManageBtn'};
+  preserved(await snapshot(ref,selector),await snapshot(p,selector),options);await p.locator(selector).focus();await ref.locator(selector).focus();await p.waitForTimeout(250);await ref.waitForTimeout(250);preserved(await snapshot(ref,selector),await snapshot(p,selector),options);
  }
  const before=await geometry(ref),after=await geometry(p);const expected=Math.max(220,Math.min(viewport.width*.16,320));assert.ok(Math.abs(after.width-expected)<.1);
  for(const k of ['x','width','height'])assert.equal(after.button[k],before.button[k]);assert.equal(after.progressHeight,3);assert.equal(after.played,'rgb(217, 87, 99)');assert.equal(after.unplayed,'rgba(255, 255, 255, 0.45)');assert.equal(after.tabIndex,-1);assert.ok(Math.abs(after.ratio-3608/7322)<.002);assert.equal(after.timeText,'1:00:08 / 2:02:02');
@@ -144,5 +147,7 @@ try {
  for(const v of [{width:1920,height:1080},{width:1280,height:720},{width:960,height:540},{width:2048,height:930}])await checkView(v);
  const mobile=await pageAt(false,{width:390,height:844}),baseMobile=await pageAt(false,{width:390,height:844},true,true);
  assert.equal(await mobile.locator('#tvBrowse').isVisible(),false);preserved(await snapshot(baseMobile,'#homeSearchLauncher'),await snapshot(mobile,'#homeSearchLauncher'));
+ // Mobile does not inherit the TV history toolbar's contrast variables.
+ preserved(await snapshot(baseMobile,'#recentManageBtn'),await snapshot(mobile,'#recentManageBtn'));
  await mobile.close();await baseMobile.close();assert.deepEqual(errors,[]);console.log('TV_NAV_ACCENT_PROGRESS = PASS; ANDROID_DEVICE = NOT_RUN');
 }finally{if(process.env.WEBHOME_VISUAL_DIR)writeFileSync(join(process.env.WEBHOME_VISUAL_DIR,'geometry.json'),JSON.stringify(measured,null,2));await browser.close();}

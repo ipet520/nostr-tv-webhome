@@ -159,6 +159,9 @@
 
     function tvBrowsePosterTarget() {
       const rail = $("tvBrowseRail"), position = tvBrowsePosition();
+      // Down immediately after a column focus must enter the current query,
+      // even if its coalesced after-paint render has not run yet.
+      if (rail && tvBrowseActive() && rail.dataset.queryKey !== tvBrowseQueryKey()) renderTvBrowse();
       const cards = rail ? Array.from(rail.querySelectorAll(".card")) : [];
       return cards.find((card) => card.dataset.mediaKey === position.key) || cards[Math.min(position.index, cards.length - 1)] || (tvBrowseState().view === "history" ? tvBrowseHistoryToolsTarget() : tvBrowseColumnButton(tvBrowseState().column));
     }
@@ -205,7 +208,10 @@
       ui.filterOpen = false;
       ui.previewKey = "";
       if (!opts.keepConfirm) ui.confirm = null;
-      renderTvBrowse();
+      if (opts.afterPaint) {
+        syncTvBrowseColumns();
+        scheduleHomeContentRender({ afterPaint: true });
+      } else renderTvBrowse();
       scheduleUiSnapshotSave();
       return true;
     }
@@ -325,7 +331,10 @@
       const height = Math.min(rect.height, (viewport ? viewport.offsetTop + viewport.height : innerHeight) - rect.top);
       if (height <= 0) return;
       const clamp = (min, value, max) => Math.max(min, Math.min(value, max));
-      const set = (name, value) => root.style.setProperty("--tv-" + name, value);
+      const set = (name, value) => {
+        const property = "--tv-" + name;
+        if (root.style.getPropertyValue(property) !== String(value)) root.style.setProperty(property, value);
+      };
       const px = (name, value) => set(name, value + "px");
       const gap = clamp(4, height * .01, 12), infoGap = clamp(2, height * .004, 5);
       const top = clamp(8, height * .03, 32);
@@ -338,9 +347,9 @@
       px("filter-height", clamp(28, height * 34 / 1080, 36));
       px("control-height", clamp(36, height * .045, 50)); px("control-icon", clamp(21, height * .025, 28));
       px("column-font", clamp(16, height * 24 / 1080, 24));
+      px("preview-gap", clamp(12, height * .03, 40));
       const feedback = root.querySelector(".tv-browse-feedback");
-      // Empty feedback does not own a grid row or its preceding gap. Visible
-      // status, retry and selection hints retain their measured space.
+      // Feedback shares the upper row; loading cannot change the rail baseline.
       feedback.hidden = !Array.from(feedback.children).some((child) => !child.hidden && child.textContent.trim());
       // A single title line has the same footprint in every browse mode.
       const caption = Math.max(15, captionFont * 1.2) + 13;
@@ -367,8 +376,7 @@
         const titleEdge = railSlot - focusSpace - (poster + caption) * 1.02 + 6 * 1.04;
         px("safe-bottom", Math.max(2, Math.max(8, height * .019) - titleEdge));
         const bottom = parseFloat(getComputedStyle(foreground).paddingBottom);
-        upper = height - top - bottom - Math.max($("tvBrowseColumns").offsetHeight, $("tvHistoryResume").offsetHeight) - railSlot - gap
-          - (feedback.hidden ? 0 : feedback.offsetHeight + gap);
+        upper = height - top - bottom - $("tvBrowseColumns").offsetHeight - railSlot - gap;
         if (upper >= height * .15 + core + overviewFont * 4.5 || compact) break;
       }
       const logoHeight = Math.min(height * (compact ? .11 : .15), Math.max(titleFont * 1.1, upper - core));
@@ -383,7 +391,7 @@
       const filters = $("tvBrowseFilters"), upperHost = root.querySelector(".tv-browse-upper");
       const used = Array.from(filters.querySelectorAll(".secondary-filter-row")).reduce((sum, row) =>
         sum + row.offsetHeight + parseFloat(getComputedStyle(row).marginBottom), 4);
-      const spare = upperHost.clientHeight - used - gap;
+      const spare = upperHost.clientHeight - used - gap - parseFloat(root.style.getPropertyValue("--tv-preview-gap"));
       set("filter-overview-lines", String(height < 450 ? 0 : clamp(0, Math.floor(spare / (overviewFont * 1.5)), height >= 720 ? 3 : 2)));
       syncTvBrowseFilterOverview();
     }
@@ -408,7 +416,7 @@
           // Focus selects content; Enter only owns the existing double-confirm
           // filter gesture. Returning to the active column keeps its position.
           if (ui.view === "home" && !ui.filterOpen && ui.column !== entry.listId) {
-            tvBrowseSelectColumn(entry.listId);
+            tvBrowseSelectColumn(entry.listId, { afterPaint: true });
           }
         });
         button.addEventListener("click", (event) => {
@@ -459,8 +467,21 @@
       $("tvBrowseRail").addEventListener("scroll", () => { tvBrowseSavePosition(); scheduleUiSnapshotSave(); }, { passive: true });
     }
 
-    function renderTvBrowse() {
+    function syncTvBrowseColumns() {
+      const ui = tvBrowseState();
+      $("tvBrowseColumns").querySelectorAll("button").forEach((button) => {
+        const selected = button.dataset.column === ui.column;
+        button.classList.toggle("selected", selected); button.setAttribute("aria-pressed", String(selected));
+      });
+    }
+
+    function renderTvBrowse(options) {
       if (!tvBrowseActive()) return;
+      // Direct restores supersede a pending focus-driven render in the same
+      // shared Home scheduler. It must not rebuild this query a second time.
+      if (state.homeContentTimer) {
+        cancelAnimationFrame(state.homeContentTimer); state.homeContentTimer = 0; state.homeContentSeq += 1;
+      }
       initTvBrowse();
       syncTvBrowseVisibility();
       const ui = tvBrowseState(), rail = $("tvBrowseRail");
@@ -476,32 +497,37 @@
       }
       const items = (historyView ? query.items : ui.column === "recommendation"
         ? filterBlocked(query.items || []) : secondaryFilterItems(ui.column, query.items || [])).filter((item) => historyView || hasPoster(item));
-      const keys = items.map((item, index) => mediaRenderKey(item, index)), oldKeys = rail.__renderKeys || [];
       const queryChanged = rail.dataset.queryKey !== query.key;
+      const oldKeys = rail.__renderKeys || [];
+      // Keep catalog data whole; materialize the visible batch and saved focus
+      // first. Further cards append when DPAD approaches the current DOM end.
+      const limit = historyView ? items.length : Math.max(18, tvBrowsePosition().index + 8,
+        queryChanged ? 0 : oldKeys.length + (options && options.append ? 18 : 0));
+      const keys = items.slice(0, limit).map((item, index) => mediaRenderKey(item, index));
       const prefix = !queryChanged && oldKeys.length <= keys.length && oldKeys.every((key, index) => key === keys[index]);
       const focused = rail.contains(document.activeElement) ? document.activeElement.dataset.mediaKey : "";
-      if (!prefix) { rail.replaceChildren(); oldKeys.length = 0; }
+      const fragment = document.createDocumentFragment();
+      const start = prefix ? oldKeys.length : 0;
       if (queryChanged) { rail.dataset.queryKey = query.key; rail.scrollLeft = tvBrowsePosition().scrollLeft; }
-      for (let index = oldKeys.length; index < items.length; index += 1) {
-        const item = items[index], card = mediaCard(item, index, { home: true, homeLazy: index > 7, weeklyHome: !historyView && ui.column === "now-playing" });
+      for (let index = start; index < keys.length; index += 1) {
+        const item = items[index], card = mediaCard(item, index, { home: true, history: historyView, homeLazy: index > 7, weeklyHome: !historyView && ui.column === "now-playing" });
         card.addEventListener("focus", () => {
           const position = tvBrowsePosition(); position.key = card.dataset.mediaKey; position.index = index;
           tvBrowsePreview(card.__mediaItem);
           tvBrowseMaybeLoadMore(index);
           scheduleUiSnapshotSave();
         });
-        rail.appendChild(card);
+        fragment.appendChild(card);
       }
+      if (!prefix) rail.replaceChildren(fragment);
+      else if (fragment.childNodes.length) rail.appendChild(fragment);
       rail.__renderKeys = keys;
       Array.from(rail.children).forEach((card, index) => { card.__mediaItem = items[index]; });
       const tracked = state.recentDelete && (state.recentDelete.armedCard || state.recentDelete.pendingCard || state.recentDelete.remotePressCard);
       if (historyView && tracked && (!tracked.isConnected || !recentWatchingPressKey(tracked))) cancelRecentDeleteArm();
       syncTvBrowseVisibility();
       if (queryChanged) rail.scrollLeft = tvBrowsePosition().scrollLeft;
-      $("tvBrowseColumns").querySelectorAll("button").forEach((button) => {
-        const selected = button.dataset.column === ui.column;
-        button.classList.toggle("selected", selected); button.setAttribute("aria-pressed", String(selected));
-      });
+      syncTvBrowseColumns();
       updateRecentManageUi();
       updateBlockSelectUi();
       $("tvBrowseBlockHint").hidden = !state.blocked.selecting;
@@ -520,7 +546,8 @@
         [$("tvBrowseBackdrop"), $("tvBrowseBackdropNext")].forEach((layer) => { layer.style.backgroundImage = ""; layer.classList.remove("visible"); });
         if (document.activeElement === $("tvHistoryContinue")) focusRemoteTarget(tvBrowsePosterTarget());
       }
-      observeHomeImages(rail); observeTvCardEnrichment(rail); observeMovieCardEnrichment(rail);
+      // observeHomeImages already registers TV episode enrichment.
+      observeHomeImages(rail); observeMovieCardEnrichment(rail);
       if (focused && !prefix && focusScopeRoot() === document && !isSidebarOpen()) {
         const target = Array.from(rail.children).find((card) => card.dataset.mediaKey === focused) || (ui.filterOpen ? Array.from(rail.children).find(isVisibleFocusable) || tvBrowseFilterTarget() : tvBrowsePosterTarget());
         if (target) focusRemoteTarget(target);
@@ -531,6 +558,10 @@
 
     function tvBrowseMaybeLoadMore(index) {
       const ui = tvBrowseState(), query = secondaryActiveQuery(ui.column);
+      const rail = $("tvBrowseRail");
+      if (ui.view !== "history" && query && rail.children.length < query.items.length && index >= rail.children.length - 5) {
+        renderTvBrowse({ append: true });
+      }
       if (ui.view === "history" || !query || query.loading || query.error || query.retryableError || !query.hasMore || index < query.items.length - 5) return false;
       loadSecondaryPage(ui.column, query, query.page + 1).catch(() => {});
       return true;
@@ -745,6 +776,7 @@
 
     function renderCatalogQuery(id) {
       if (tvBrowseActive()) {
-        if (tvBrowseState().column === id || id === "recent" && tvBrowseState().view === "history") renderTvBrowse();
+        const ui = tvBrowseState();
+        if (ui.view === "home" && ui.column === id || id === "recent" && ui.view === "history") renderTvBrowse();
       } else if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
     }
