@@ -650,7 +650,7 @@
     function recentManageGrid() { return tvBrowseActive() ? $("tvBrowseRail") : $("secondaryCatalogGrid"); }
 
     function isRecentManagePage() {
-      if (tvBrowseActive()) return tvBrowseState().column === "recent";
+      if (tvBrowseActive()) return tvBrowseState().view === "history";
       return homeUiRoute() === "secondary"
         && state.homeV14 && state.homeV14.secondaryListId === "recent";
     }

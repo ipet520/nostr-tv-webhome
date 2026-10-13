@@ -412,11 +412,9 @@
       const weeklyUpdate = (weeklyHome || weekly)
         ? String(item.weeklyUpdateText || "").trim()
         : "";
-      const isVarietyCard = normalizeLegacyCategoryId(item && (item.listId || item.categoryId || item.category) || "") === "variety";
       const hasNostrPeople = item && item.source === "nostr-hot" && people > 0;
       const tvEpisodeCard = String(item && item.mediaType || "").toLowerCase() === "tv" && !!tvDetailCacheId(item);
       const initialTvDetail = tvEpisodeCard ? tvDetailCacheValue(item) || item.tvDetail || item.weeklyDetail || item.heroDetail || null : null;
-      const initialTvEpisodeStatus = tvEpisodeCard ? (isVarietyCard ? varietyEpisodeStatusLabel(initialTvDetail) : tvEpisodeStatusLabel(initialTvDetail)) : "";
       const nostrMovieReleaseCard = item && item.source === "nostr-hot"
         && String(item.mediaType || item.media_type || "").toLowerCase() === "movie"
         && !!movieDetailCacheId(item);
@@ -427,7 +425,7 @@
         ? Object.assign({}, item, { releaseDate: initialMovieReleaseDate })
         : item;
       const movieReleaseStatus = movieReleaseStatusText(moviePresentationItem, weeklyHome || weekly ? weeklyUpdate : undefined);
-      const airStatusText = weeklyUpdate || initialTvEpisodeStatus || movieReleaseStatus;
+      const airStatusText = tvEpisodeCard ? tvPresentationStatus(item, initialTvDetail) : weeklyUpdate || movieReleaseStatus;
       const airStatusClass = weeklyUpdate ? "card-air-status weekly-air-status" : "card-air-status";
       const movieReleaseStatusPlaceholder = nostrMovieReleaseCard && !initialMovieReleaseDate;
       const airStatusHtml = (weeklyUpdate || tvEpisodeCard || movieReleaseStatus || movieReleaseStatusPlaceholder)
@@ -523,6 +521,7 @@
         if (Date.now() < Number(state.blocked.suppressClickUntil || 0)) event.preventDefault();
       });
       button.addEventListener("click", () => {
+        if (typeof opts.activate === "function" && !recentManageRuntime().active) { opts.activate(button.__mediaItem, button); return; }
         if (recentWatching && consumeRecentWatchingClick(button)) return;
         if (Date.now() < Number(state.blocked.suppressClickUntil || 0)) return;
         if (state.blocked.selecting && blockableRecommendCard(button)) {

@@ -661,9 +661,7 @@
         if (tvDetailCacheId(cardItem) !== id) return;
         const status = card.querySelector(".card-air-status");
         if (!status) return;
-        const weeklyText = String(cardItem.weeklyUpdateText || "").trim();
-        const isVariety = normalizeLegacyCategoryId(cardItem.listId || cardItem.categoryId || cardItem.category) === "variety";
-        const label = weeklyText || (isVariety ? varietyEpisodeStatusLabel(detail) : tvEpisodeStatusLabel(detail));
+        const label = tvPresentationStatus(cardItem, detail);
         syncCardAirStatusLayout(card, label);
         if (card.closest && card.closest("#home")) {
           updatedHomeCard = true;

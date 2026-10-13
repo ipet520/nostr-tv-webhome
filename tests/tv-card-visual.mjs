@@ -139,7 +139,7 @@ try {
    assert.deepEqual(a.image,a.poster,'image fills the independently rounded poster');
    assert.equal(after[i].frame.content,i===2?'""':'none');
    if(i===2) {assert.equal(after[i].frame.border,'2px solid rgba(255, 255, 255, 0.9)');assert.equal(after[i].frame.borderRadius,after[i].poster.borderRadius);assert.equal(after[i].frame.inset,'0px');assert.equal(after[i].frame.pointerEvents,'none');}
-   assert.equal(after[i].normal.backgroundColor,'rgba(40, 40, 40, 0.1)');assert.equal(after[i].normal.boxShadow,'none');
+   assert.equal(after[i].normal.backgroundColor,'rgba(40, 40, 40, 0.18)');assert.equal(after[i].normal.boxShadow,'none');
   }
   console.log(JSON.stringify({viewport:after[2].viewport,before:before[2].layout,after:after[2].layout}));
   await ref.close();

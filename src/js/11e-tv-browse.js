@@ -53,8 +53,7 @@
 
     function tvBrowseState() {
       return state.tvBrowse || (state.tvBrowse = {
-        column: "recent", positions: {}, filterOpen: false, filterFocusGroup: "",
-        startupEpoch: null,
+        column: "recommendation", view: "home", historyReturnFocus: null, positions: {}, filterOpen: false, filterFocusGroup: "",
         confirm: null, enterHeld: false, suppressClickUntil: 0,
         previewKey: "", backdropToken: 0, backdropSlot: 0, backdropUrl: "",
         focusIntent: null, initialized: false
@@ -64,21 +63,8 @@
     function tvBrowseBeginStartup(epoch) {
       const ui = tvBrowseState();
       if (!tvBrowseActive() || homeFocusUserEpoch() !== epoch) return;
-      ui.column = "recent"; ui.startupEpoch = epoch;
+      ui.column = "recommendation"; ui.view = "home";
       renderTvBrowse(); tvBrowseFocusIntent();
-      loadRecentList({ silent: true }).catch(() => {});
-    }
-
-    function tvBrowseResolveStartup() {
-      const ui = tvBrowseState();
-      if (ui.startupEpoch == null) return;
-      if (homeFocusUserEpoch() !== ui.startupEpoch) { ui.startupEpoch = null; return; }
-      const recent = state.recent;
-      if (!recent.loaded || recent.loading) return;
-      // Failure stays on Recent with its existing retry UI; it is not an empty history result.
-      if (!recent.error && !uniqueRecentWatchingMedia(state.recent.items || []).length) ui.column = "recommendation";
-      ui.startupEpoch = null;
-      ui.focusIntent = { epoch: homeFocusUserEpoch(), focus: null };
     }
 
     function tvBrowseActive() {
@@ -86,7 +72,71 @@
     }
 
     function tvBrowseColumns() {
-      return browseColumnItems();
+      return browseColumnItems().filter((entry) => entry.listId !== "recent");
+    }
+
+    function tvBrowseQueryKey() {
+      const ui = tvBrowseState();
+      return ui.view === "history" ? "native-history" : secondaryFilterKey(ui.column, secondaryFilterState(ui.column));
+    }
+
+    function tvBrowseOpenHistory() {
+      const ui = tvBrowseState();
+      if (!tvBrowseActive() || ui.view === "history") return;
+      tvBrowseSavePosition();
+      ui.historyReturnFocus = homeFocusSnapshot(document.activeElement);
+      if (ui.filterOpen) clearTvPanelHistoryEntry("filters", "#tv-filters");
+      ui.view = "history"; ui.filterOpen = false; ui.previewKey = ""; ui.confirm = null;
+      ensureTvPanelHistoryEntry("tvHistory", "#tv-history");
+      renderTvBrowse(); tvBrowseFocusIntent();
+      loadRecentList({ refresh: shouldRefreshRecentList(), silent: true }).catch(() => {});
+      renderTvBrowse();
+    }
+
+    function tvBrowseCloseHistory(options) {
+      const ui = tvBrowseState();
+      if (!tvBrowseActive() || ui.view !== "history") return false;
+      if (recentManageRuntime().deleting) { toast("正在删除，请稍候"); return true; }
+      tvBrowseSavePosition(); resetRecentManageState();
+      if (!(options && options.fromPopState)) clearTvPanelHistoryEntry("tvHistory", "#tv-history");
+      ui.view = "home"; ui.previewKey = ""; ui.focusIntent = null;
+      const saved = ui.historyReturnFocus; ui.historyReturnFocus = null;
+      renderTvBrowse(); tvBrowseFocusIntent(saved);
+      scheduleUiSnapshotSave();
+      return true;
+    }
+
+    function tvBrowseContinueHistory(item, button) {
+      const ui = tvBrowseState(), position = tvBrowsePosition();
+      // Resolve the live Native list on every activation; never play a deleted object.
+      const target = (state.recent.items || []).find((entry) => mediaDomKey(entry) === (item ? mediaDomKey(item) : position.key));
+      if (ui.view !== "history" || !target || !detailContinueHistoryIsValid(target)
+        || !target.siteKey || !target.vodId) { toast("该记录暂不支持原生续播"); return Promise.resolve(false); }
+      if (state.recent.nativeHandoff) return state.recent.nativeHandoff;
+      if (localStorage.getItem("fm_pan_playing") === "1") return Promise.resolve(true);
+      const task = playNativeHistoryExact(target, { returnTarget: button || $("tvHistoryContinue") })
+        .catch((error) => { toast("续播失败：" + (error.message || "unknown")); return false; })
+        .finally(() => { if (state.recent.nativeHandoff === task) state.recent.nativeHandoff = null; });
+      state.recent.nativeHandoff = task;
+      return task;
+    }
+
+    function tvBrowseRenderContinue(item) {
+      const ui = tvBrowseState(), host = $("tvHistoryResume");
+      host.hidden = ui.view !== "history" || !item;
+      if (host.hidden) return;
+      const raw = item.nativeHistoryRaw || {};
+      const rawPosition = historyNestedValue(raw, ["position", "playbackPosition", "playback_position"]);
+      const position = validHistoryMs(rawPosition);
+      const duration = validHistoryMs(historyNestedValue(raw, ["duration", "durationMs", "duration_ms"]));
+      const positionKnown = rawPosition !== "" && Number.isFinite(Number(rawPosition)) && Number(rawPosition) >= 0 && (position > 0 || Number(rawPosition) === 0);
+      const progressKnown = positionKnown && duration > 0 && position <= duration;
+      $("tvHistoryContinue").disabled = !detailContinueHistoryIsValid(item) || !item.siteKey || !item.vodId;
+      $("tvHistoryEpisode").textContent = String(historyNestedValue(raw, ["episodeTitle", "episodeName", "episode_title"]) || item.badge || item.title || "");
+      $("tvHistoryTime").textContent = progressKnown ? `${formatHistoryTime(position)} / ${formatHistoryTime(duration)}` : positionKnown && position > 0 && !duration ? `${formatHistoryTime(position)} / 时长未知` : "暂无有效播放进度";
+      const progress = $("tvHistoryProgress");
+      progress.hidden = !progressKnown;
+      progress.firstElementChild.style.width = progress.hidden ? "0%" : position / duration * 100 + "%";
     }
 
     function tvBrowseColumnButton(id) {
@@ -94,13 +144,13 @@
     }
 
     function tvBrowsePosition() {
-      const ui = tvBrowseState(), key = secondaryFilterKey(ui.column, secondaryFilterState(ui.column));
+      const ui = tvBrowseState(), key = tvBrowseQueryKey();
       return ui.positions[key] || (ui.positions[key] = { key: "", index: 0, scrollLeft: 0 });
     }
 
     function tvBrowseSavePosition() {
       const rail = $("tvBrowseRail");
-      if (!rail || rail.dataset.queryKey !== secondaryFilterKey(tvBrowseState().column, secondaryFilterState(tvBrowseState().column))) return;
+      if (!rail || rail.dataset.queryKey !== tvBrowseQueryKey()) return;
       const position = tvBrowsePosition();
       position.scrollLeft = Math.max(0, rail.scrollLeft || 0);
       const card = document.activeElement && document.activeElement.closest("#tvBrowseRail .card");
@@ -110,7 +160,7 @@
     function tvBrowsePosterTarget() {
       const rail = $("tvBrowseRail"), position = tvBrowsePosition();
       const cards = rail ? Array.from(rail.querySelectorAll(".card")) : [];
-      return cards.find((card) => card.dataset.mediaKey === position.key) || cards[Math.min(position.index, cards.length - 1)] || tvBrowseColumnButton(tvBrowseState().column);
+      return cards.find((card) => card.dataset.mediaKey === position.key) || cards[Math.min(position.index, cards.length - 1)] || (tvBrowseState().view === "history" ? $("tvFunction-history") : tvBrowseColumnButton(tvBrowseState().column));
     }
 
     function tvBrowseFocusIntent(focus) {
@@ -122,20 +172,22 @@
       const ui = tvBrowseState(), intent = ui.focusIntent;
       if (!intent || !tvBrowseActive() || isSidebarOpen() || focusScopeRoot() !== document) return;
       if (intent.epoch !== homeFocusUserEpoch()) { ui.focusIntent = null; return; }
-      const query = secondaryActiveQuery(ui.column);
+      const query = ui.view === "history" ? state.recent : secondaryActiveQuery(ui.column);
       const position = tvBrowsePosition();
       if (query && query.loaded && query.hasMore && !query.error && !query.retryableError && position.index >= query.items.length) {
         if (!query.loading) loadSecondaryPage(ui.column, query, query.page + 1).catch(() => {});
         return;
       }
       const saved = intent.focus;
-      const target = saved && saved.type === "id" ? $(saved.key) : tvBrowsePosterTarget();
+      const requested = saved && saved.type === "id" ? $(saved.key) : null;
+      const target = requested && isVisibleFocusable(requested) ? requested : tvBrowsePosterTarget();
       if (!target || !isVisibleFocusable(target)) return;
       focusRemoteTarget(target);
       state.remoteInitialFocused = true;
       // A loading column is an interim cold-start target, not a completed
       // media restore. The existing user epoch cancels this intent on input.
-      if (target.closest("#tvBrowseRail") || saved && saved.type === "id" || query && query.loaded && (ui.column !== "recommendation" || state.hot.ready)) ui.focusIntent = null;
+      if ((ui.view !== "history" || query.loaded && !query.loading)
+        && (target.closest("#tvBrowseRail") || saved && saved.type === "id" || query && query.loaded && (ui.view === "history" || ui.column !== "recommendation" || state.hot.ready))) ui.focusIntent = null;
     }
 
     function tvBrowseSelectColumn(id, options) {
@@ -145,7 +197,7 @@
       if (ui.column !== id && recentManageRuntime().deleting) return false;
       if (ui.column !== id) resetRecentManageState();
       if (ui.filterOpen) clearTvPanelHistoryEntry("filters", "#tv-filters");
-      ui.column = id;
+      ui.view = "home"; ui.column = id;
       ui.filterOpen = false;
       ui.previewKey = "";
       if (!opts.keepConfirm) ui.confirm = null;
@@ -164,7 +216,7 @@
 
     function tvBrowseOpenFilters() {
       const ui = tvBrowseState();
-      if (!tvBrowseActive() || !secondaryFilterGroups(ui.column, secondaryCatalogBaseItems(ui.column)).length) return false;
+      if (!tvBrowseActive() || ui.view === "history" || !secondaryFilterGroups(ui.column, secondaryCatalogBaseItems(ui.column)).length) return false;
       ui.filterOpen = true;
       renderTvBrowseFilters();
       syncTvBrowseVisibility();
@@ -237,14 +289,17 @@
       root.hidden = !tvBrowseActive();
       if (!tvBrowseActive()) { tvBrowseCancelLogo(); ui.enterHeld = false; ui.confirm = null; }
       root.classList.toggle("filter-open", ui.filterOpen);
+      root.classList.toggle("history-open", ui.view === "history");
+      if (tvBrowseActive() && ui.view === "history" && uiSnapshotRoute() === "home" && !isConnectionPanelOpen()
+        && (!location.hash || location.hash === "#tv-history")) ensureTvPanelHistoryEntry("tvHistory", "#tv-history");
       $("tvBrowseFunctions").hidden = ui.filterOpen;
       $("tvBrowseRecentTools").hidden = ui.filterOpen;
       $("tvBrowseInfo").hidden = ui.filterOpen;
       $("tvBrowseFilters").hidden = !ui.filterOpen;
       // Visibility reserves the column row so filter toggles never move the rail.
-      $("tvBrowseColumns").setAttribute("aria-hidden", String(ui.filterOpen));
+      $("tvBrowseColumns").setAttribute("aria-hidden", String(ui.filterOpen || ui.view === "history"));
       if (tvBrowseActive() && ui.filterOpen && location.hash !== "#detail" && uiSnapshotRoute() === "home") ensureTvPanelHistoryEntry("filters", "#tv-filters");
-      root.querySelectorAll("#tvBrowseColumns button").forEach((button) => button.setAttribute("tabindex", ui.filterOpen ? "-1" : "0"));
+      root.querySelectorAll("#tvBrowseColumns button").forEach((button) => button.setAttribute("tabindex", ui.filterOpen || ui.view === "history" ? "-1" : "0"));
       document.documentElement.classList.toggle("tv-browse-active", tvBrowseActive());
     }
 
@@ -307,7 +362,7 @@
       else window.addEventListener("resize", layoutTvBrowse);
       if (window.visualViewport) window.visualViewport.addEventListener("resize", layoutTvBrowse);
       const controls = $("recentManageControls");
-      if (controls) $("tvBrowseFunctions").appendChild(controls);
+      if (controls) $("tvBrowseRecentTools").appendChild(controls);
       const columns = $("tvBrowseColumns");
       tvBrowseColumns().forEach((entry) => {
         const button = document.createElement("button");
@@ -323,7 +378,7 @@
         columns.appendChild(button);
       });
       const actions = [
-        ["search", "搜索", openSearchPage], ["live", "直播", openLiveHome], ["settings", "设置", openSettingHome]
+        ["search", "搜索", openSearchPage], ["live", "直播", openLiveHome], ["history", "历史", tvBrowseOpenHistory], ["settings", "设置", openSettingHome]
       ];
       actions.forEach(([id, label, action]) => {
         const button = document.createElement("button");
@@ -353,10 +408,11 @@
       }, true);
       $("tvBrowseRetry").addEventListener("click", () => {
         const id = ui.column, query = secondaryActiveQuery(id);
-        if (id === "recent") { loadRecentList({ refresh: true }).catch(() => {}); return; }
+        if (ui.view === "history") { loadRecentList({ refresh: true }).catch(() => {}); return; }
         if (id === "recommendation") { forceRefreshNostrRanking().catch(() => {}); return; }
         if (query && !query.loading) loadSecondaryPage(id, query, query.failedPage || query.page + 1 || 1).catch(() => {});
       });
+      $("tvHistoryContinue").addEventListener("click", () => tvBrowseContinueHistory());
       $("tvBrowseRail").addEventListener("scroll", () => { tvBrowseSavePosition(); scheduleUiSnapshotSave(); }, { passive: true });
     }
 
@@ -365,20 +421,18 @@
       initTvBrowse();
       syncTvBrowseVisibility();
       const ui = tvBrowseState(), rail = $("tvBrowseRail");
-      tvBrowseResolveStartup();
-      const query = secondaryGetQuery(ui.column);
+      const historyView = ui.view === "history";
+      const query = historyView ? { key: tvBrowseQueryKey(), items: state.recent.items || [], loaded: state.recent.loaded, loading: state.recent.loading, error: state.recent.error } : secondaryGetQuery(ui.column);
       // Finite sources can change independently of the catalog page loader.
-      if (ui.column === "recommendation") {
+      if (!historyView && ui.column === "recommendation") {
         const pool = recommendationPoolItems();
         query.renderedCount = Math.max(18, Number(query.renderedCount || 0));
         query.items = pool.slice(0, query.renderedCount);
         query.hasMore = query.renderedCount < pool.length;
         query.loaded = !!state.hot.ready; query.loading = !state.hot.ready; query.page = Math.ceil(query.renderedCount / query.batchSize);
-      } else if (ui.column === "recent") {
-        query.items = uniqueRecentWatchingMedia(state.recent.items || []); query.loaded = !!state.recent.loaded; query.loading = !!state.recent.loading; query.error = state.recent.error || "";
       }
-      const items = (ui.column === "recommendation" || ui.column === "recent"
-        ? filterBlocked(query.items || []) : secondaryFilterItems(ui.column, query.items || [])).filter((item) => ui.column === "recent" || hasPoster(item));
+      const items = (historyView ? query.items : ui.column === "recommendation"
+        ? filterBlocked(query.items || []) : secondaryFilterItems(ui.column, query.items || [])).filter((item) => historyView || hasPoster(item));
       const keys = items.map((item, index) => mediaRenderKey(item, index)), oldKeys = rail.__renderKeys || [];
       const queryChanged = rail.dataset.queryKey !== query.key;
       const prefix = !queryChanged && oldKeys.length <= keys.length && oldKeys.every((key, index) => key === keys[index]);
@@ -386,7 +440,7 @@
       if (!prefix) { rail.replaceChildren(); oldKeys.length = 0; }
       if (queryChanged) { rail.dataset.queryKey = query.key; rail.scrollLeft = tvBrowsePosition().scrollLeft; }
       for (let index = oldKeys.length; index < items.length; index += 1) {
-        const item = items[index], card = mediaCard(item, index, { home: true, homeLazy: index > 7, weeklyHome: ui.column === "now-playing" });
+        const item = items[index], card = mediaCard(item, index, { home: true, homeLazy: index > 7, weeklyHome: !historyView && ui.column === "now-playing", activate: historyView ? tvBrowseContinueHistory : null });
         card.addEventListener("focus", () => {
           const position = tvBrowsePosition(); position.key = card.dataset.mediaKey; position.index = index;
           tvBrowsePreview(card.__mediaItem);
@@ -396,6 +450,7 @@
         rail.appendChild(card);
       }
       rail.__renderKeys = keys;
+      Array.from(rail.children).forEach((card, index) => { card.__mediaItem = items[index]; });
       syncTvBrowseVisibility();
       if (queryChanged) rail.scrollLeft = tvBrowsePosition().scrollLeft;
       $("tvBrowseColumns").querySelectorAll("button").forEach((button) => {
@@ -411,21 +466,27 @@
       layoutTvBrowse();
       if (ui.filterOpen) renderTvBrowseFilters();
       const position = tvBrowsePosition();
-      const selected = items.find((item) => mediaDomKey(item) === position.key) || items[Math.min(position.index, items.length - 1)];
+      const selected = items.find((item) => mediaDomKey(item) === position.key) || items[historyView ? 0 : Math.min(position.index, items.length - 1)];
+      if (historyView) { position.key = selected ? mediaDomKey(selected) : ""; position.index = selected ? items.indexOf(selected) : 0; }
       if (selected) tvBrowsePreview(selected);
       else tvBrowseClearPreview();
+      if (historyView && !selected) {
+        ui.backdropUrl = "";
+        [$("tvBrowseBackdrop"), $("tvBrowseBackdropNext")].forEach((layer) => { layer.style.backgroundImage = ""; layer.classList.remove("visible"); });
+        if (document.activeElement === $("tvHistoryContinue")) focusRemoteTarget(tvBrowsePosterTarget());
+      }
       observeHomeImages(rail); observeTvCardEnrichment(rail); observeMovieCardEnrichment(rail);
       if (focused && !prefix && focusScopeRoot() === document && !isSidebarOpen()) {
         const target = Array.from(rail.children).find((card) => card.dataset.mediaKey === focused) || (ui.filterOpen ? Array.from(rail.children).find(isVisibleFocusable) || tvBrowseFilterTarget() : tvBrowsePosterTarget());
         if (target) focusRemoteTarget(target);
       }
       tvBrowseTryFocus();
-      if (!query.loaded && !query.loading && !query.error && !["recommendation", "recent"].includes(ui.column)) loadSecondaryPage(ui.column, query, 1).catch(() => {});
+      if (!historyView && !query.loaded && !query.loading && !query.error && ui.column !== "recommendation") loadSecondaryPage(ui.column, query, 1).catch(() => {});
     }
 
     function tvBrowseMaybeLoadMore(index) {
       const ui = tvBrowseState(), query = secondaryActiveQuery(ui.column);
-      if (!query || query.loading || query.error || query.retryableError || !query.hasMore || index < query.items.length - 5) return false;
+      if (ui.view === "history" || !query || query.loading || query.error || query.retryableError || !query.hasMore || index < query.items.length - 5) return false;
       loadSecondaryPage(ui.column, query, query.page + 1).catch(() => {});
       return true;
     }
@@ -437,13 +498,13 @@
       $("tvBrowseTitle").textContent = ""; $("tvBrowseMeta").textContent = "";
       $("tvBrowseOverview").textContent = ""; $("tvBrowseUpdate").textContent = "";
       $("tvBrowseLogo").hidden = true; $("tvBrowseTitle").hidden = false;
+      $("tvHistoryResume").hidden = true;
       // Keep the last decoded backdrop until a valid replacement is ready.
     }
 
     function tvBrowseCancelLogo() {
       const ui = tvBrowseState();
       cancelArtTitle($("tvBrowseLogo"));
-      clearTimeout(ui.previewDetailTimer); ui.previewDetailTimer = 0;
     }
 
     function tvBrowseRenderLogo(item, detail) {
@@ -454,25 +515,42 @@
       renderArtTitle(item, detail, $("tvBrowseLogo"), $("tvBrowseTitle"), null, () => tvBrowseActive() && ui.logoKey === key);
     }
 
-    function tvBrowseEnsurePreviewDetail(item, detail) {
-      const ui = tvBrowseState();
+    function tvBrowsePrepareLogo(item, foreground) {
+      const ui = tvBrowseState(), session = tvBrowseQueryKey();
       const type = String(item.mediaType || item.media_type || "").toLowerCase();
-      const id = String(item.tmdbId || item.id || "");
-      const key = type === "movie" ? movieDetailCacheKey(item) : type === "tv" ? tvDetailCacheKey(item) : "";
-      const matched = detail && String(detail.id || detail.tmdbId || "") === id;
-      if (matched || !/^(movie|tv)$/.test(type) || !/^\d+$/.test(id) || Number(id) <= 0 || ui.previewDetailRequestKey === key) return;
-      clearTimeout(ui.previewDetailTimer);
-      // Coalesce rapid poster movement; only the settled preview joins the existing detail cache/budget.
-      ui.previewDetailTimer = setTimeout(() => {
-        ui.previewDetailTimer = 0;
-        if (!tvBrowseActive() || ui.logoKey !== key) return;
-        ui.previewDetailRequestKey = key;
-        const request = (url, timeout) => homeEnrichmentRequest(url, timeout, type + ":" + id);
-        const shared = type === "movie" ? requestMovieDetailShared : requestTvDetailShared;
-        shared(item, request).then((loaded) => {
-          if (tvBrowseActive() && ui.logoKey === key && String(loaded && loaded.id || "") === id) tvBrowsePreview(item);
-        }).catch(() => {});
-      }, 180);
+      const id = movieDetailCacheId(item), key = type + ":" + id;
+      if (!/^(movie|tv)$/.test(type) || !id) return Promise.resolve(false);
+      const runtime = type === "movie" ? state.movieDetail : state.tvDetail;
+      const cached = type === "movie" ? movieDetailCacheValue(item) : tvDetailCacheValue(item);
+      const asset = artLogoResource(item, cached);
+      if (asset) prepareArtLogo(asset);
+      if (cached) return prepareArtLogo(asset);
+      const entry = runtime.cache[key];
+      if (entry && entry.logoMetadataFailedAt && Date.now() - entry.logoMetadataFailedAt < 60000) return Promise.resolve(false);
+      if (foreground) { ui.previewDetailRequestKey = key; promoteHomeBudgetRequests(key, "foreground", "focus"); }
+      const shared = type === "movie" ? requestMovieDetailShared : requestTvDetailShared;
+      return shared(item, (url, timeout) => scheduleHomeBudgetRequest(foreground ? "foreground" : "enrichment", () => {
+        if (foreground && (!tvBrowseActive() || tvBrowseQueryKey() !== session || ui.logoKey !== key)) {
+          const stale = new Error("Stale artwork preview"); stale.staleArtwork = true; throw stale;
+        }
+        if (!foreground) {
+          const cards = Array.from($("tvBrowseRail").children), at = cards.findIndex((card) => mediaDomKey(card.__mediaItem) === ui.previewKey);
+          if (!tvBrowseActive() || tvBrowseQueryKey() !== session || !cards.slice(Math.max(0, at - 1), at + 2).some((card) => mediaDomKey(card.__mediaItem) === mediaDomKey(item))) {
+            const stale = new Error("Stale artwork candidate"); stale.staleArtwork = true; throw stale;
+          }
+        }
+        return requestJson(url, timeout);
+      }, key)).then((detail) => {
+        if (!tvBrowseActive() || tvBrowseQueryKey() !== session || String(detail && detail.id || "") !== id) return false;
+        const ready = prepareArtLogo(artLogoResource(item, detail));
+        const current = Array.from($("tvBrowseRail").children).find((card) => mediaDomKey(card.__mediaItem) === mediaDomKey(item));
+        if (foreground && ui.logoKey === key && ui.previewKey === mediaDomKey(item)) tvBrowsePreview(current ? current.__mediaItem : item);
+        return ready;
+      }).catch((error) => { const failed = runtime.cache[key]; if (failed && !error.staleArtwork) failed.logoMetadataFailedAt = Date.now(); return false; });
+    }
+
+    function tvBrowseEnsurePreviewDetail(item, detail) {
+      if (!detail) tvBrowsePrepareLogo(item, true);
     }
 
     function tvBrowsePreview(item) {
@@ -485,10 +563,11 @@
       const genres = homeHeroPresentationGenres(item, detail);
       const rating = Number(detail && detail.vote_average || item.voteAverage || item.vote_average || 0);
       $("tvBrowseMeta").textContent = [year, genres.join(" · "), rating > 0 ? rating.toFixed(1) + " 分" : ""].filter(Boolean).join("  /  ");
-      $("tvBrowseUpdate").textContent = item.weeklyUpdateText || homeHeroPresentationStatus(item, detail) || "";
+      $("tvBrowseUpdate").textContent = homeHeroPresentationStatus(item, detail) || "";
+      tvBrowseRenderContinue(item);
       const desc = String(item.description || item.desc || "").trim();
       const labelOnly = item.source === "tmdb" && desc === (item.listTitle || "搜索") + " · " + (item.title || "");
-      $("tvBrowseOverview").textContent = homeHeroPresentationOverview(item, detail) || (labelOnly ? "" : desc);
+      $("tvBrowseOverview").textContent = homeHeroPresentationOverview(item, detail) || (labelOnly || ui.view === "history" ? "" : desc);
       tvBrowseRenderLogo(item, detail);
       tvBrowseEnsurePreviewDetail(item, detail);
       tvBrowsePrepareAdjacentLogos(item);
@@ -516,15 +595,24 @@
 
     function tvBrowsePrepareAdjacentLogos(item) {
       const cards = Array.from($("tvBrowseRail").children), index = cards.findIndex((card) => mediaDomKey(card.__mediaItem) === mediaDomKey(item));
-      // Only known artwork for two neighbours; no speculative detail requests.
+      // Two neighbours only; shared typed metadata and image promises.
       [index - 1, index + 1].forEach((at) => {
         const adjacent = cards[at] && cards[at].__mediaItem;
-        if (adjacent) prepareArtLogo(artLogoResource(adjacent, null));
+        if (adjacent) tvBrowsePrepareLogo(adjacent, false);
       });
     }
 
     function tvBrowseDirectionalTarget(key, active) {
       const ui = tvBrowseState();
+      if (ui.view === "history" && !recentManageRuntime().active) {
+        const cards = Array.from($("tvBrowseRail").children).filter(isVisibleFocusable);
+        if (active === $("tvHistoryContinue")) return key === "ArrowDown" ? tvBrowsePosterTarget() : key === "ArrowUp" ? (isVisibleFocusable($("recentManageBtn")) ? $("recentManageBtn") : $("tvFunction-history")) : active;
+        if (active && active.closest("#tvBrowseRail")) {
+          if (key === "ArrowUp") return isVisibleFocusable($("tvHistoryContinue")) ? $("tvHistoryContinue") : $("tvFunction-history");
+          if (key === "ArrowDown") return active;
+          return cards[Math.max(0, Math.min(cards.length - 1, cards.indexOf(active) + (key === "ArrowRight" ? 1 : -1)))] || active;
+        }
+      }
       if (ui.filterOpen && !(active && active.closest("#tvBrowseRail"))) {
         const rows = Array.from($("tvBrowseFilters").querySelectorAll(".secondary-filter-row"));
         const row = active && active.closest(".secondary-filter-row");
@@ -552,13 +640,27 @@
       if (host === rail && ui.filterOpen) return key === "ArrowUp" ? tvBrowseFilterTarget() : active;
       if (host === rail) return key === "ArrowDown" && !$("tvBrowseRetry").hidden ? $("tvBrowseRetry") : tvBrowseColumnButton(ui.column);
       if (host === columns) return key === "ArrowDown" ? tvBrowsePosterTarget() : $("tvFunction-search");
-      return tvBrowseColumnButton(ui.column);
+      if (ui.view === "history") {
+        if (host === functions && key === "ArrowDown" && isVisibleFocusable($("recentManageBtn"))) return $("recentManageBtn");
+        if (host === $("tvBrowseRecentTools") && key === "ArrowUp") return $("tvFunction-history");
+        return isVisibleFocusable($("tvHistoryContinue")) ? $("tvHistoryContinue") : tvBrowsePosterTarget();
+      }
+      return ui.view === "history" ? tvBrowsePosterTarget() : tvBrowseColumnButton(ui.column);
     }
 
     function handleTvBrowseKey(event, key, active) {
       const scope = focusScopeRoot();
       if (!tvBrowseActive() || isSidebarOpen() || scope !== document || isConnectionPanelOpen()) return false;
       const column = active && active.closest("#tvBrowseColumns button");
+      const ui = tvBrowseState(), historyCard = active && active.closest("#tvBrowseRail .card");
+      if (key === "Enter" && ui.view === "history" && !recentManageRuntime().active && (historyCard || active === $("tvHistoryContinue"))) {
+        event.preventDefault(); event.stopPropagation();
+        if (!event.repeat && !ui.enterHeld) {
+          ui.enterHeld = true; ui.suppressClickUntil = Date.now() + 200;
+          tvBrowseContinueHistory(historyCard && historyCard.__mediaItem, active);
+        }
+        return true;
+      }
       if (key === "Enter" && !event.repeat) {
         markHomeUserNavigation();
         if (!column) tvBrowseState().suppressClickUntil = 0;
@@ -580,21 +682,22 @@
     function tvBrowseSnapshot() {
       tvBrowseSavePosition();
       const ui = tvBrowseState();
-      return { column: ui.column, positions: JSON.parse(JSON.stringify(ui.positions)), filterOpen: ui.filterOpen, filterFocusGroup: ui.filterFocusGroup || "", filters: JSON.parse(JSON.stringify(state.homeV14.secondaryFilters || {})) };
+      return { view: ui.view, historyReturnFocus: ui.historyReturnFocus, column: ui.column, positions: JSON.parse(JSON.stringify(ui.positions)), filterOpen: ui.filterOpen, filterFocusGroup: ui.filterFocusGroup || "", filters: JSON.parse(JSON.stringify(state.homeV14.secondaryFilters || {})) };
     }
 
     function restoreTvBrowseSnapshot(saved, legacyColumn) {
       const ui = tvBrowseState(), value = saved || {};
       const id = value.column || legacyColumn || "recommendation";
-      ui.startupEpoch = null;
+      ui.view = value.view === "history" ? "history" : "home";
+      ui.historyReturnFocus = value.historyReturnFocus || null;
       ui.column = tvBrowseColumns().some((entry) => entry.listId === id) ? id : "recommendation";
       ui.positions = value.positions && typeof value.positions === "object" ? value.positions : {};
       if (value.filters && typeof value.filters === "object") state.homeV14.secondaryFilters = value.filters;
-      ui.filterOpen = !!value.filterOpen && secondaryFilterGroups(ui.column, secondaryCatalogBaseItems(ui.column)).length > 0; ui.filterFocusGroup = value.filterFocusGroup || ""; ui.confirm = null; ui.previewKey = "";
+      ui.filterOpen = ui.view !== "history" && !!value.filterOpen && secondaryFilterGroups(ui.column, secondaryCatalogBaseItems(ui.column)).length > 0; ui.filterFocusGroup = value.filterFocusGroup || ""; ui.confirm = null; ui.previewKey = "";
     }
 
     function renderCatalogQuery(id) {
       if (tvBrowseActive()) {
-        if (tvBrowseState().column === id) renderTvBrowse();
+        if (tvBrowseState().column === id || id === "recent" && tvBrowseState().view === "history") renderTvBrowse();
       } else if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) renderSecondaryCatalog();
     }

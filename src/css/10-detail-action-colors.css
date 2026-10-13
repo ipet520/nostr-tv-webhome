@@ -1,5 +1,7 @@
 
     /* 详情页三个操作按钮只收口颜色，不改变尺寸、间距或焦点几何。 */
+    html.tv-mode #tvHistoryContinue,
+    html.tv-preview #tvHistoryContinue,
     html.tv-mode #detailSheet.detail-large > .actions > #detailContinueBtn,
     html.tv-mode #detailSheet.detail-large > .actions > #detailSearchBtn,
     html.tv-mode #detailSheet.detail-large > .actions > #panSearchBtn,
@@ -14,6 +16,8 @@
       backdrop-filter: blur(14px) saturate(1.4) !important;
     }
 
+    html.tv-mode #tvHistoryContinue:focus,
+    html.tv-preview #tvHistoryContinue:focus,
     html.tv-mode #detailSheet.detail-large > .actions > #detailContinueBtn:focus,
     html.tv-mode #detailSheet.detail-large > .actions > #detailSearchBtn:focus,
     html.tv-mode #detailSheet.detail-large > .actions > #panSearchBtn:focus,

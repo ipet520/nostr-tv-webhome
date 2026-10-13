@@ -15,7 +15,7 @@ const hook = `window.testBrowse = { state, renderAll, renderTvBrowse, tvBrowseSt
  tvBrowseSelectColumn, tvBrowseSnapshot, restoreTvBrowseSnapshot, rememberHomeReturn, restoreHomeReturn,
  buildUiSnapshot, restoreUiSnapshot, openSidebar, closeSidebar, openSearchPage, closeSearchPage,
  bindActions, installRemoteKeys, secondaryActiveQuery, syncBrowseDevicePresentation, handleWebHomeResume, boot,
- tvBrowsePreview, publishHomeWeeklySnapshot, enterRecentManageMode, exitRecentManageMode,
+ tvBrowseOpenHistory, tvBrowsePreview, publishHomeWeeklySnapshot, enterRecentManageMode, exitRecentManageMode,
  openDetail, closeDetail, sdk, loadRecentList, tvBrowseBeginStartup, homeFocusUserEpoch, storeMovieDetailCache, storeTvDetailCache, updateMovieReleaseStatusCards, requestMovieDetailShared, homeEnrichmentRequest, bestDetailLogo, tvBrowseClearPreview, focusRemoteTarget, artLogoResource, prepareArtLogo, renderDetailTitleLogo };
  window.testBrowse.setup = () => {
    syncBrowseDevicePresentation(); bindActions(); installRemoteKeys();
@@ -315,19 +315,19 @@ try {
       testBrowse.setup(); testBrowse.state.recent.loaded = false; testBrowse.state.recent.items = [];
       const historyResult = new Promise((resolve, reject) => { window.resolveHistory = resolve; window.rejectHistory = reject; });
       window.fm = Object.assign({}, testBrowse.sdk(), { history: () => historyResult });
-      testBrowse.tvBrowseBeginStartup(testBrowse.homeFocusUserEpoch());
+      testBrowse.tvBrowseBeginStartup(testBrowse.homeFocusUserEpoch()); testBrowse.loadRecentList();
     });
     await initial.waitForFunction(() => window.resolveHistory);
-    assert.equal(await initial.evaluate(() => testBrowse.tvBrowseState().column), 'recent', 'pending is not empty');
+    assert.equal(await initial.evaluate(() => testBrowse.tvBrowseState().column), 'recommendation', 'history never owns startup');
     if (mode === 'user') { await focus(initial, '#tvColumn-movie'); await press(initial, 'Enter'); }
     await initial.evaluate(mode => {
       if (mode === 'failure') rejectHistory(new Error('history fixture failed'));
       else resolveHistory(mode === 'records' || mode === 'user' ? [{ key: 'fixture@@@1', vodName: '有效最近观看', vodPic: '/poster.jpg', vodId: '1', createTime: Date.now() }] : []);
     }, mode);
     await initial.waitForFunction(() => !testBrowse.state.recent.loading);
-    assert.equal(await initial.evaluate(() => testBrowse.tvBrowseState().column), mode === 'records' || mode === 'failure' ? 'recent' : mode === 'user' ? 'movie' : 'recommendation');
+    assert.equal(await initial.evaluate(() => testBrowse.tvBrowseState().column), mode === 'user' ? 'movie' : 'recommendation');
     if (mode === 'records') assert.equal(await initial.evaluate(() => document.activeElement.closest('#tvBrowseRail')?.id), 'tvBrowseRail');
-    if (mode === 'failure') assert.equal(await initial.locator('#tvBrowseRetry').isVisible(), true);
+    if (mode === 'failure') assert.equal(await initial.locator('#tvBrowseRetry').isVisible(), false, 'history failure does not replace recommendation');
     if (mode === 'user') assert.equal(await active(initial), 'tvColumn-movie');
     await initial.close();
   }
@@ -338,7 +338,7 @@ try {
   const coldUserKey = await active(cold);
   await cold.evaluate(async () => { releaseIdentity(); await bootTask; }); await cold.waitForTimeout(300);
   assert.equal(await active(cold), coldUserKey, 'actual boot completion never steals user navigation focus');
-  await cold.evaluate(() => testBrowse.tvBrowseSelectColumn('recent'));
+  await cold.evaluate(() => testBrowse.tvBrowseOpenHistory());
   await cold.locator('#recentManageBtn').click();
   assert.equal(await cold.locator('#recentManageActions').isVisible(), true, 'boot binds shared history controls before first render');
   await cold.close();
@@ -354,9 +354,9 @@ try {
   await press(tv, "ArrowUp"); assert.equal(await active(tv), "tvColumn-recommendation");
   await press(tv, "ArrowUp"); assert.equal(await active(tv), "tvFunction-search");
   const functions = await tv.locator('#tvBrowseFunctions button').evaluateAll((buttons) => buttons.map(b => ({id:b.id, label:b.getAttribute('aria-label') || b.textContent.trim()})));
-  assert.deepEqual(functions.map(b=>b.label), ['搜索','直播','设置','基础设置']);
+  assert.deepEqual(functions.map(b=>b.label), ['搜索','直播','历史','设置','基础设置']);
   assert.equal(await tv.locator('#connectionToggle').innerText(), '');
-  for (const id of ['tvFunction-live','tvFunction-settings','connectionToggle']) {
+  for (const id of ['tvFunction-live','tvFunction-history','tvFunction-settings','connectionToggle']) {
     await press(tv, 'ArrowRight'); assert.equal(await active(tv), id);
   }
   await tv.waitForTimeout(250);
@@ -426,7 +426,7 @@ try {
   await tv.evaluate(() => testBrowse.handleWebHomeResume({ force: true })); await tv.waitForTimeout(100);
   assert.equal(await active(tv), 'tvColumn-movie', 'user navigation cancels a stale Native focus return');
   await focus(tv, '#tvFunction-settings'); await press(tv, 'Enter'); assert.equal(await tv.evaluate(() => settingCalls), 1);
-  assert.equal(await tv.locator('#tvFunction-history,#tvFunction-keep,#tvFunction-menu').count(), 0);
+  assert.equal(await tv.locator('#tvFunction-keep,#tvFunction-menu').count(), 0);
   assert.equal(await tv.locator('#tvFunction-search').innerText(), '搜索');
   assert.equal(await tv.locator('#tvFunction-search svg').count(), 1);
   await tv.evaluate(() => { delete window.fm; });
@@ -443,7 +443,7 @@ try {
   await tv.evaluate(() => testBrowse.closeSearchPage()); await tv.waitForTimeout(50);
   assert.equal(await active(tv), "tvFunction-search");
   assert.equal(await tv.evaluate(() => testBrowse.tvBrowseState().column), "movie");
-  await tv.evaluate(() => { testBrowse.state.recent.loaded = true; testBrowse.state.recent.items = [{ source: 'history', recentWatching: true, title: '无海报历史', mediaType: 'movie', tmdbId: 123, nativeHistoryKey: 'history-123' }]; testBrowse.tvBrowseSelectColumn('recent'); });
+  await tv.evaluate(() => { testBrowse.state.recent.loaded = true; testBrowse.state.recent.items = [{ source: 'history', recentWatching: true, title: '无海报历史', mediaType: 'movie', tmdbId: 123, nativeHistoryKey: 'history-123' }]; testBrowse.tvBrowseOpenHistory(); });
   assert.equal(await tv.locator('#tvBrowseRail .recent-watching-card').count(), 1, "history without poster remains accessible");
   await tv.locator('#recentManageBtn').click();
   assert.equal(await tv.locator('#recentManageActions').isVisible(), true);

@@ -1195,7 +1195,18 @@
     html.tv-browse-active .tv-browse.filter-open .tv-browse-columns { visibility: hidden; pointer-events: none; }
     html.tv-browse-active .tv-browse-columns::-webkit-scrollbar, html.tv-browse-active .tv-browse-rail::-webkit-scrollbar { display: none; }
     html.tv-browse-active .tv-browse-column { flex: 0 0 auto; padding: var(--tv-column-pad-y,8px) var(--tv-column-pad-x,18px); font-size: var(--tv-column-font); }
-    html.tv-browse-active .tv-browse-column[aria-pressed="false"]:not(:focus) { background: rgba(40,40,40,.1); }
+    html.tv-browse-active .tv-browse-column[aria-pressed="false"]:not(:focus) { background: rgba(40,40,40,.18); }
+    html.tv-browse-active .history-open .tv-browse-columns { visibility: hidden; pointer-events: none; }
+    html.tv-browse-active .history-open .card-meta { display: none; }
+    html.tv-browse-active .tv-history-resume { grid-row: 2; margin: 0 var(--tv-gutter); display: flex; align-items: center; gap: var(--tv-column-gap); z-index: 3; min-width: 0; }
+    html.tv-browse-active #tvHistoryContinue { border-radius: 999px; height: var(--tv-control-height); min-height: 0; padding: 0 28px; font-size: var(--tv-meta-font); flex: 0 0 auto; }
+    html.tv-browse-active #tvHistoryContinue > .icon { fill: #35E07A; stroke: none; }
+    html.tv-browse-active .tv-history-progress-info { min-width: 0; width: min(38vw,560px); font-size: var(--tv-meta-font); color: rgba(255,255,255,.9); }
+    html.tv-browse-active .tv-history-progress-label { display: flex; gap: var(--tv-gap); justify-content: space-between; margin-bottom: 5px; }
+    html.tv-browse-active #tvHistoryEpisode { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    html.tv-browse-active #tvHistoryTime { flex: 0 0 auto; }
+    html.tv-browse-active .tv-history-progress { height: 3px; border-radius: 2px; background: rgba(255,255,255,.45); overflow: hidden; }
+    html.tv-browse-active .tv-history-progress > span { display: block; height: 100%; background: #D95763; }
     html.tv-browse-active .tv-browse-posters { grid-row: 3; min-height: 0; z-index: 3; }
     html.tv-browse-active .tv-browse-rail { display: flex; align-items: flex-start; gap: var(--tv-card-gap,1.4vw); overflow-x: auto; overflow-y: hidden; height: 100%; padding: var(--tv-focus-space) var(--tv-gutter); box-sizing: border-box; scrollbar-width: none; }
     /* One measured height budget determines both dimensions at 2:3.

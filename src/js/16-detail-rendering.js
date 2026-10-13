@@ -438,14 +438,7 @@
     }
 
     function detailLargeEpisodeLabel(detail) {
-      const total = Number(detail && detail.number_of_episodes || 0);
-      const aired = Math.max(Number(detail && detail.last_episode_to_air && detail.last_episode_to_air.episode_number || 0), airedEpisodeFromSeason(detail));
-      const status = detailStatus(detail && detail.status || "");
-      if (total && (status === "已完结" || aired >= total)) return `${total}集全`;
-      if (aired && total) return `${aired}/${total}集`;
-      if (aired) return `更新至${aired}集`;
-      if (total) return `${total}集`;
-      return "";
+      return tvEpisodeStatusLabel(detail);
     }
 
     function airedEpisodeFromSeason(detail) {
@@ -464,8 +457,8 @@
       const map = {
         "Returning Series": "更新中",
         "Ended": "已完结",
-        "Canceled": "已取消",
-        "Cancelled": "已取消",
+        "Canceled": "已停播",
+        "Cancelled": "已停播",
         "In Production": "制作中",
         "Planned": "计划中",
         "Released": "已上映",
@@ -485,14 +478,32 @@
       const lastSeason = Number(last && last.season_number || 0);
       const lastEpisode = Number(last && last.episode_number || 0);
       const status = String(detail.status || "").trim();
-      const ended = status === "Ended" || detailStatus(status) === "已完结";
-      if (ended && total > 0) return `全 ${total} 集`;
+      const ended = status === "Ended";
+      const canceled = status === "Canceled" || status === "Cancelled";
+      if (ended) return ["已完结", seasonCount > 0 ? `${seasonCount}季` : "", total > 0 ? `全 ${total} 集` : ""].filter(Boolean).join(" · ");
+      if (canceled) return ["已停播", lastSeason > 0 && lastEpisode > 0 ? `已播 S${String(lastSeason).padStart(2, "0")}E${String(lastEpisode).padStart(2, "0")}` : ""].filter(Boolean).join(" · ");
       if (seasonCount > 1) {
-        if (lastSeason > 0 && lastEpisode > 0) return `更新至 S${String(lastSeason).padStart(2, "0")}E${String(lastEpisode).padStart(2, "0")}`;
+        if (lastSeason > 0 && lastEpisode > 0) return `${status === "Returning Series" ? "更新至 " : "已播 "}S${String(lastSeason).padStart(2, "0")}E${String(lastEpisode).padStart(2, "0")}`;
         return "";
       }
-      if (lastEpisode > 0) return `更新至 ${lastEpisode} 集`;
+      if (lastEpisode > 0) return `${status === "Returning Series" ? "更新至" : "已播"} ${lastEpisode} 集`;
       return "";
+    }
+
+    // One presentation authority; discovery keeps its original weekly window.
+    function tvPresentationStatus(item, detail) {
+      const id = tvDetailCacheId(item);
+      const matched = detail && id && String(detail.id || detail.tmdbId || "") === id
+        && (!detail.media_type || detail.media_type === "tv") ? detail : null;
+      const variety = normalizeLegacyCategoryId(item && (item.listId || item.categoryId || item.category)) === "variety";
+      if (variety) return String(item.weeklyUpdateText || "") || varietyEpisodeStatusLabel(matched);
+      if (!matched) return String(item && item.weeklyUpdateText || "");
+      const label = tvEpisodeStatusLabel(matched);
+      if (matched.status !== "Returning Series") return label;
+      const next = matched.next_episode_to_air;
+      const date = latestDateOnly(next && next.air_date);
+      const episode = homeHeroPresentationEpisodeLabel(next);
+      return [label, date && date >= weeklyShanghaiToday() && episode ? `${episode} · ${weeklyDateLabel(date)}播出` : ""].filter(Boolean).join(" · ");
     }
 
     function varietyEpisodeStatusLabel(detail) {

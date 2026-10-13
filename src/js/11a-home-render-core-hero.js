@@ -705,23 +705,7 @@
         const release = releaseDate ? `${weeklyDateLabel(releaseDate)}上映` : "";
         return [runtime, release].filter(Boolean).join(" · ");
       }
-      const weekly = String(item.weeklyUpdateText || "").trim();
-      if (weekly && weekly !== "本周更新") return weekly;
-      const last = detail && detail.last_episode_to_air || item.weeklyLastEpisode;
-      const next = detail && detail.next_episode_to_air || item.weeklyNextEpisode;
-      const lastDate = latestDateOnly(last && last.air_date);
-      const nextDate = latestDateOnly(next && next.air_date);
-      const lastLabel = homeHeroPresentationEpisodeLabel(last);
-      if (lastLabel || lastDate) {
-        const dateLabel = lastDate === weeklyShanghaiToday() ? "今天更新" : lastDate ? `${weeklyDateLabel(lastDate)}更新` : "";
-        return [`更新至${lastLabel || "最新一集"}`, dateLabel].filter(Boolean).join(" · ");
-      }
-      const nextLabel = homeHeroPresentationEpisodeLabel(next);
-      if (nextLabel || nextDate) {
-        const dateLabel = nextDate === weeklyShanghaiToday() ? "今天更新" : nextDate ? `${weeklyWeekdayLabel(nextDate)}更新` : "";
-        return [nextLabel || "下一集", dateLabel].filter(Boolean).join(" · ");
-      }
-      return weekly;
+      return tvPresentationStatus(item, detail);
     }
 
     function setHomeHeroOptionalText(node, value) {

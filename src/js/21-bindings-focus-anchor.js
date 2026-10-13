@@ -533,6 +533,11 @@
           if (event.stopImmediatePropagation) event.stopImmediatePropagation();
           return;
         }
+        if (tvBrowseActive() && tvBrowseState().view === "history" && tvBrowseCloseHistory()) {
+          event.preventDefault(); event.stopPropagation();
+          if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+          return;
+        }
         if (handleSecondaryBackKey(event)) return;
         if (handleSearchBackKey(event)) return;
       }, true);
