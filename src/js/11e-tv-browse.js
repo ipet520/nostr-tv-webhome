@@ -263,7 +263,7 @@
       const signature = ui.column + secondaryFilterSchemaSignature(groups);
       if (host.dataset.schema !== signature) {
         host.dataset.schema = signature;
-        host.innerHTML = groups.map((group) => `<div class="secondary-filter-row" data-group="${escapeAttr(group.key)}"><span class="secondary-filter-label">${escapeHtml(group.label)}</span><div class="secondary-filter-options">${group.options.map((option) => `<button type="button" class="focusable tv-browse-control tv-browse-pill secondary-filter-option" data-group="${escapeAttr(group.key)}" data-value="${escapeAttr(option.value)}">${escapeHtml(option.label)}</button>`).join("")}</div></div>`).join("") + '<p id="tvBrowseFilterOverview" class="tv-browse-filter-overview" hidden></p>';
+        host.innerHTML = groups.map((group) => `<div class="secondary-filter-row" data-group="${escapeAttr(group.key)}"><span class="secondary-filter-label">${escapeHtml(group.label)}</span><div class="secondary-filter-options">${group.options.map((option) => `<button type="button" class="focusable tv-browse-control tv-browse-pill secondary-filter-option" data-group="${escapeAttr(group.key)}" data-value="${escapeAttr(option.value)}">${escapeHtml(option.label)}</button>`).join("")}</div></div>`).join("");
         host.querySelectorAll("button").forEach((button) => button.addEventListener("click", () => {
           tvBrowseSavePosition();
           const current = secondaryFilterState(ui.column);
@@ -329,21 +329,21 @@
       const px = (name, value) => set(name, value + "px");
       const gap = clamp(4, height * .01, 12), infoGap = clamp(2, height * .004, 5);
       const top = clamp(8, height * .03, 32);
-      const bottom = Math.max(clamp(8, height * .02, 24), parseFloat(getComputedStyle(root).getPropertyValue("--fm-safe-bottom")) || 0);
-      const railGap = clamp(2, height * .002, 3);
+      const foreground = root.querySelector(".tv-browse-foreground");
       const captionFont = clamp(13, height * 21 / 1080, 21), metaFont = clamp(13, height * 22 / 1080, 22);
       const overviewFont = clamp(14, height * 24 / 1080, 24), titleFont = clamp(24, height * .05, 54);
-      px("visible-height", height); px("safe-top", top); px("safe-bottom", bottom);
+      px("visible-height", height); px("safe-top", top);
       px("gap", gap); px("info-gap", infoGap); px("caption-font", captionFont);
-      px("rail-gap", railGap);
       px("meta-font", metaFont); px("overview-font", overviewFont); px("title-font", titleFont);
+      px("filter-height", clamp(28, height * 34 / 1080, 36));
       px("control-height", clamp(36, height * .045, 50)); px("control-icon", clamp(21, height * .025, 28));
       px("column-font", clamp(16, height * 24 / 1080, 24));
       const feedback = root.querySelector(".tv-browse-feedback");
       // Empty feedback does not own a grid row or its preceding gap. Visible
       // status, retry and selection hints retain their measured space.
       feedback.hidden = !Array.from(feedback.children).some((child) => !child.hidden && child.textContent.trim());
-      const caption = Array.from(rail.children).reduce((max, card) => Math.max(max, card.querySelector(".card-body").offsetHeight), captionFont * 1.2 + 13);
+      // A single title line has the same footprint in every browse mode.
+      const caption = Math.max(15, captionFont * 1.2) + 13;
       let core;
       let poster, focusSpace, railSlot, upper, compact;
       // Two bounded profiles coordinate the entire screen; neither depends on
@@ -355,7 +355,6 @@
         px("column-pad-y", compact ? 4 : 8); px("column-pad-x", clamp(10, height * 12 / 1080, 12));
         px("column-gap", clamp(10, height * 12 / 1080, 12)); px("function-gap", compact ? 6 : clamp(8, rect.width * .008, 16));
         px("resume-gap", compact ? 12 : 18);
-        px("column-space", compact ? 0 : gap);
         px("card-gap", clamp(12, rect.width * .014, 28));
         const minWidth = compact ? 96 : Math.max(96, captionFont * 6 + 16);
         poster = Math.max(minWidth * 1.5, height * .33);
@@ -363,7 +362,12 @@
         // Rail padding consumes these same edges; do not scale the slot again.
         focusSpace = Math.ceil((poster + caption) * .02) + 2;
         railSlot = Math.ceil(poster + caption) + focusSpace * 2;
-        upper = height - top - bottom - $("tvBrowseColumns").offsetHeight - railSlot - railGap - gap
+        // Project the real 1.04-scaled title edge into the visible viewport.
+        // CSS resolves system safe-area insets on this one foreground.
+        const titleEdge = railSlot - focusSpace - (poster + caption) * 1.02 + 6 * 1.04;
+        px("safe-bottom", Math.max(2, Math.max(8, height * .019) - titleEdge));
+        const bottom = parseFloat(getComputedStyle(foreground).paddingBottom);
+        upper = height - top - bottom - Math.max($("tvBrowseColumns").offsetHeight, $("tvHistoryResume").offsetHeight) - railSlot - gap
           - (feedback.hidden ? 0 : feedback.offsetHeight + gap);
         if (upper >= height * .15 + core + overviewFont * 4.5 || compact) break;
       }
@@ -374,13 +378,12 @@
       set("overview-display", lines ? "-webkit-box" : "none");
       px("poster-height", poster); px("poster-width", poster * 2 / 3);
       px("focus-space", focusSpace); px("rail-slot", railSlot);
-      // The filter host spans the fixed upper rows. Its synopsis consumes only
-      // spare space after all four reachable rows, never the poster budget.
-      const filters = $("tvBrowseFilters");
+      // Filters occupy the flexible upper row; synopsis owns its bottom row.
+      // Neither can resize the fixed poster row or the reserved navigation row.
+      const filters = $("tvBrowseFilters"), upperHost = root.querySelector(".tv-browse-upper");
       const used = Array.from(filters.querySelectorAll(".secondary-filter-row")).reduce((sum, row) =>
-        sum + row.offsetHeight + parseFloat(getComputedStyle(row).marginBottom), 0);
-      const filterStyle = getComputedStyle(filters);
-      const spare = filters.clientHeight - used - parseFloat(filterStyle.paddingTop) - parseFloat(filterStyle.paddingBottom) - gap - railGap;
+        sum + row.offsetHeight + parseFloat(getComputedStyle(row).marginBottom), 4);
+      const spare = upperHost.clientHeight - used - gap;
       set("filter-overview-lines", String(height < 450 ? 0 : clamp(0, Math.floor(spare / (overviewFont * 1.5)), height >= 720 ? 3 : 2)));
       syncTvBrowseFilterOverview();
     }

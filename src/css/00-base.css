@@ -1841,8 +1841,8 @@
       position: relative;
     }
 
-    /* TV 端：logo 绝对定位，不占文档流；加载完成后平滑上移至标题上方 */
-    #detailSheet.detail-large .detail-logo-wrap {
+    /* Desktop large-detail artwork retains its legacy above-title presentation. */
+    html:not(.tv-mode) #detailSheet.detail-large .detail-logo-wrap {
       position: absolute;
       top: 0;
       left: 0;
@@ -1851,16 +1851,16 @@
       transition: top .35s ease;
     }
 
-    #detailSheet.detail-large .detail-logo-wrap.logo-ready {
+    html:not(.tv-mode) #detailSheet.detail-large .detail-logo-wrap.logo-ready {
       top: -82px;
     }
 
-    #detailSheet.detail-large .detail-logo-img {
+    html:not(.tv-mode) #detailSheet.detail-large .detail-logo-img {
       max-height: 72px;
     }
 
     /* 为 logo 预留固定视觉空间，排版不因 logo 加载而跳动 */
-    #detailSheet.detail-large .detail-title-row {
+    html:not(.tv-mode) #detailSheet.detail-large .detail-title-row {
       gap: 20px;
       align-items: baseline;
       margin: 82px 0 22px;
@@ -1876,30 +1876,27 @@
     html.tv-mode #detailSheet.detail-large .detail-spacer {
       display: none !important;
     }
-    /* TV title and artwork share one reserved slot in the wrapping title row.
-       Rating is a separate flex item, outside the artwork's paint bounds. */
-    html.tv-mode #detailSheet.detail-large .detail-title-slot {
-      position: relative; flex: 0 0 75%; min-width: 0; min-height: 96px;
-    }
-    html.tv-mode #detailSheet.detail-large .detail-logo-wrap,
-    html.tv-mode #detailSheet.detail-large .detail-logo-wrap.logo-ready {
-      position: absolute;
-      top: 0;
-      left: 0;
-      height: 96px;
-      width: 100%; max-width: 100%;
-      margin: 0;
-      align-items: center;
-      transition: none;
-    }
-    /* 3) 取消为绝对定位 logo 预留的 82px 顶部空间，信息块紧贴顶部内边距起排 */
+    /* TV title uses the displayed content's natural width. Rating wraps as
+       a sibling; hidden fallback text never reserves artwork width. */
     html.tv-mode #detailSheet.detail-large .detail-title-row {
-      margin-top: 0; min-height: 96px; align-items: center;
+      gap: 16px; margin: 0 0 22px; min-height: 96px; align-items: center;
     }
-    html.tv-mode #detailSheet.detail-large .detail-title-row h2 { margin: 0; min-height: 96px; display: flex; align-items: center; }
-    html.tv-mode #detailSheet.detail-large .detail-title-slot h2 { overflow-wrap: anywhere; }
+    html.tv-mode #detailSheet.detail-large .detail-title-slot {
+      flex: 0 1 auto; min-width: 0; max-width: 100%; min-height: 96px;
+    }
+    html.tv-mode #detailSheet.detail-large .detail-logo-wrap {
+      position: static; height: 96px; max-width: min(50vw,570px);
+      margin: 0; align-items: center; transition: none;
+    }
+    html.tv-mode #detailSheet.detail-large .detail-logo-img {
+      flex: 0 0 auto; max-height: 96px; max-width: 100%; transition: opacity 180ms ease;
+    }
+    html.tv-mode #detailSheet.detail-large .detail-title-slot h2 {
+      margin: 0; min-height: 96px; overflow-wrap: anywhere;
+      display: flex; align-items: center;
+    }
+    html.tv-mode #detailSheet.detail-large .detail-title-slot h2[hidden] { display: none; }
     html.tv-mode #detailSheet.detail-large #detailTitleMeta { flex: 0 0 auto; max-width: 100%; }
-    html.tv-mode #detailSheet.detail-large .detail-logo-img { max-height: 96px; transition: opacity 180ms ease; }
     /* 4) 信息标签（年份/类型/时长/状态）改为胶囊型（仅 TV，圆角矩形 → 全圆角） */
     html.tv-mode #detailSheet.detail-large .meta-pill {
       border-radius: 999px;

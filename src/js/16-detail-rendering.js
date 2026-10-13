@@ -109,6 +109,7 @@
       const key = String(item.mediaType || item.media_type || "") + ":" + movieDetailCacheId(item);
       if (img.__artTitle && img.__artTitle.key === key && img.__artTitle.asset === asset && img.__artTitle.valid()) { img.alt = title.textContent || item.title || ""; return; }
       const previous = img.__artTitle && img.__artTitle.key === key ? img.__artTitle : null;
+      const flowTitle = !!(wrap && wrap.parentElement.classList.contains("detail-title-slot"));
       cancelArtTitle(img);
       const run = { key, asset, timer: 0, valid, deadline: previous ? previous.deadline : Date.now() + 150, fallbackShown: !!(previous && previous.fallbackShown) }; img.__artTitle = run;
       const current = () => img.__artTitle === run && valid();
@@ -120,7 +121,7 @@
       const show = () => {
         if (!current()) return;
         clearTimeout(run.timer); img.src = asset.url; img.alt = title.textContent || item.title || "";
-        img.hidden = false; img.classList.add("loaded"); title.hidden = false; title.style.visibility = "hidden";
+        img.hidden = false; img.classList.add("loaded"); title.hidden = flowTitle; title.style.visibility = flowTitle ? "" : "hidden";
         if (wrap) { wrap.style.display = "flex"; wrap.classList.add("logo-ready"); }
         img.onerror = () => { asset.ready = false; asset.failed = true; fallback(); };
       };
@@ -146,7 +147,7 @@
       const logoImgEl = $("detailLogoImg");
       if (logoWrap) { logoWrap.style.display = "none"; logoWrap.classList.remove("logo-ready"); }
       if (logoImgEl) { logoImgEl.hidden = false; logoImgEl.removeAttribute("src"); logoImgEl.classList.remove("loaded"); }
-      if ($("detailTitle")) $("detailTitle").style.display = "";
+      if ($("detailTitle")) { $("detailTitle").hidden = false; $("detailTitle").style.display = ""; }
       $("detailTitle").textContent = item.title;
       $("detailTitle").style.visibility = "";
       if (isTvLikeDevice()) renderDetailTitleLogo(item, null, item.title);
@@ -631,6 +632,7 @@
           row.parentElement.insertBefore(wrap, row);
           row.insertBefore(title, slot); slot.remove();
         }
+        title.hidden = false; title.style.visibility = "";
         return renderMobileDetailTitleLogo(item, detail, canonicalTitle);
       }
       if (!slot) {

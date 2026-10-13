@@ -40,7 +40,7 @@ const hook = `window.testBrowse = { renderDetailBase, renderDetailTitleMeta, sec
 `;
 const html = output.replace(/boot\(\)\.catch\(function\(e\) \{[\s\S]*?\n    \}\);/, hook);
 assert.notEqual(html, output);
-const baselineOutput=execFileSync('git',['show','70ac0793249107ffd4c9b26e34c60b34ae04bee9:index.html'],{encoding:'utf8',maxBuffer:4*1024*1024});
+const baselineOutput=execFileSync('git',['show','c921b7687e62d048d823e6dc39b9b254895f50e9:index.html'],{encoding:'utf8',maxBuffer:4*1024*1024});
 const baselineHtml=baselineOutput.replace(/boot\(\)\.catch\(function\(e\) \{[\s\S]*?\n    \}\);/,hook);
 const browser = await playwright.chromium.launch({ headless: true, ...(process.env.WEBHOME_BROWSER_EXECUTABLE ? { executablePath: process.env.WEBHOME_BROWSER_EXECUTABLE } : { channel: process.env.WEBHOME_BROWSER_CHANNEL || "chrome" }) });
 const errors = []; const geometryResults=[];
@@ -79,7 +79,7 @@ const results=[];
 async function geometry(p){return p.evaluate(()=>{
  const rect=e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom};};
  const title=document.querySelector('#detailTitle'),img=document.querySelector('#detailLogoImg'),score=document.querySelector('#detailTitleMeta'),row=title.closest('.detail-title-row');
- return {logo:rect(img),title:rect(title),score:rect(score),row:rect(row),actions:rect(document.querySelector('#detailSheet > .actions')),titleVisible:getComputedStyle(title).visibility==='visible',logoVisible:!img.hidden&&getComputedStyle(document.querySelector('#detailLogoWrap')).display!=='none',scoreText:score.textContent,ratio:img.naturalWidth/img.naturalHeight,slot:!!row.querySelector('.detail-title-slot')};
+ return {logo:rect(img),title:rect(title),score:rect(score),row:rect(row),actions:rect(document.querySelector('#detailSheet > .actions')),titleVisible:!title.hidden&&getComputedStyle(title).display!=='none'&&getComputedStyle(title).visibility==='visible',logoVisible:!img.hidden&&getComputedStyle(document.querySelector('#detailLogoWrap')).display!=='none',scoreText:score.textContent,ratio:img.naturalWidth/img.naturalHeight,slot:!!row.querySelector('.detail-title-slot')};
  });}
 async function setup(p,id,title,score,asset){await p.evaluate(({id,title,score,asset})=>{
  const item={tmdbId:id,id,mediaType:'movie',title,source:'tmdb',pic:'/poster.jpg'};if(asset)item.logo=asset;
@@ -90,13 +90,13 @@ async function setup(p,id,title,score,asset){await p.evaluate(({id,title,score,a
 const overlaps=(a,b)=>a.x<b.right&&b.x<a.right&&a.y<b.bottom&&b.y<a.bottom;
 try{
  for(const viewport of [{width:1920,height:1080},{width:1280,height:720},{width:960,height:540},{width:1728,height:894},{width:2048,height:930},{width:1280,height:400}]){
-  for(const [kind,w,h,title,score]of [['wide',1200,140,'短片',8.6],['tall',140,900,'窄艺术标题',8.6],['long',1200,140,'这是很长很长的电影文字标题以及带冒号：中文和 English Subtitle 2026',8.6],['no-score',600,180,'无评分影片',0]]){
+  for(const [kind,w,h,title,score]of [['wide',1200,140,'侠探杰克',8.6],['tall',140,900,'窄艺术标题',8.6],['long',1200,140,'这是很长很长的电影文字标题以及带冒号：中文和 English Subtitle 2026',8.6],['no-score',600,180,'无评分影片',0]]){
    const before=await pageAt(true,viewport,true,true),after=await pageAt(true,viewport);await after.waitForTimeout(150);await before.waitForTimeout(150);
    const asset='/layout-'+kind+'.png';
    for(const page of [before,after])await page.route('**'+asset,async r=>{await new Promise(resolve=>setTimeout(resolve,250));await r.fulfill({contentType:'image/svg+xml',body:`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="100%" height="100%" fill="gold"/><text x="10" y="80" fill="#333" font-size="64">ART TITLE</text></svg>`});});
    await setup(before,71000+results.length,title,score,asset);await setup(after,71000+results.length,title,score,asset);
    const pending=await geometry(after);await after.waitForFunction(()=>!document.querySelector('#detailLogoImg').hidden&&document.querySelector('#detailLogoImg').naturalWidth>0);await before.waitForFunction(()=>!document.querySelector('#detailLogoImg').hidden&&document.querySelector('#detailLogoImg').naturalWidth>0);await after.waitForTimeout(220);
-   const old=await geometry(before),now=await geometry(after);assert.equal(now.slot,true);assert.equal(now.titleVisible,false);assert.equal(now.logoVisible,true);assert.ok(!overlaps(now.logo,now.score),'art and rating have separate paint bounds');assert.ok(now.row.bottom<=now.actions.y+.1);assert.deepEqual(now.actions,pending.actions,'delayed art does not move detail actions');assert.ok(Math.abs(now.logo.width/now.logo.height-w/h)<.02,JSON.stringify({kind,w,h,now}));assert.ok(now.logo.height<=96.1);if(score)assert.ok(now.scoreText.includes('8.6'));else assert.equal(now.scoreText,'');
+   const old=await geometry(before),now=await geometry(after);assert.equal(now.slot,true);assert.equal(now.titleVisible,false);assert.equal(now.logoVisible,true);assert.ok(!overlaps(now.logo,now.score),'art and rating have separate paint bounds');assert.ok(now.row.bottom<=now.actions.y+.1);if(kind!=='long'&&now.score.y<now.logo.bottom)assert.deepEqual(now.actions,pending.actions,'inline short artwork retains the title row');else assert.ok(now.actions.y>=now.row.bottom,'natural wrapping stays ahead of actions');assert.ok(now.score.y>=now.logo.bottom||Math.abs(now.score.x-now.logo.right-16)<.2,'rating sits beside natural artwork width or wraps');assert.ok(Math.abs(now.logo.width/now.logo.height-w/h)<.02,JSON.stringify({kind,w,h,now}));assert.ok(now.logo.height<=96.1);if(score)assert.ok(now.scoreText.includes('8.6'));else assert.equal(now.scoreText,'');
    results.push({viewport,kind,before:old,pending,after:now});
    if(process.env.WEBHOME_VISUAL_DIR&&['wide','long'].includes(kind))for(const [page,version]of [[before,'before'],[after,'after']])await page.screenshot({path:join(process.env.WEBHOME_VISUAL_DIR,`${viewport.width}x${viewport.height}-detail-${kind}-${version}.png`)});
    if(kind==='wide'){

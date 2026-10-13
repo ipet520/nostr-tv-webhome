@@ -2070,8 +2070,8 @@
       position: relative;
     }
 
-    /* TV 端：logo 绝对定位，不占文档流；加载完成后平滑上移至标题上方 */
-    #detailSheet.detail-large .detail-logo-wrap {
+    /* Desktop large-detail artwork retains its legacy above-title presentation. */
+    html:not(.tv-mode) #detailSheet.detail-large .detail-logo-wrap {
       position: absolute;
       top: 0;
       left: 0;
@@ -2080,16 +2080,16 @@
       transition: top .35s ease;
     }
 
-    #detailSheet.detail-large .detail-logo-wrap.logo-ready {
+    html:not(.tv-mode) #detailSheet.detail-large .detail-logo-wrap.logo-ready {
       top: -82px;
     }
 
-    #detailSheet.detail-large .detail-logo-img {
+    html:not(.tv-mode) #detailSheet.detail-large .detail-logo-img {
       max-height: 72px;
     }
 
     /* 为 logo 预留固定视觉空间，排版不因 logo 加载而跳动 */
-    #detailSheet.detail-large .detail-title-row {
+    html:not(.tv-mode) #detailSheet.detail-large .detail-title-row {
       gap: 20px;
       align-items: baseline;
       margin: 82px 0 22px;
@@ -2105,30 +2105,27 @@
     html.tv-mode #detailSheet.detail-large .detail-spacer {
       display: none !important;
     }
-    /* TV title and artwork share one reserved slot in the wrapping title row.
-       Rating is a separate flex item, outside the artwork's paint bounds. */
-    html.tv-mode #detailSheet.detail-large .detail-title-slot {
-      position: relative; flex: 0 0 75%; min-width: 0; min-height: 96px;
-    }
-    html.tv-mode #detailSheet.detail-large .detail-logo-wrap,
-    html.tv-mode #detailSheet.detail-large .detail-logo-wrap.logo-ready {
-      position: absolute;
-      top: 0;
-      left: 0;
-      height: 96px;
-      width: 100%; max-width: 100%;
-      margin: 0;
-      align-items: center;
-      transition: none;
-    }
-    /* 3) 取消为绝对定位 logo 预留的 82px 顶部空间，信息块紧贴顶部内边距起排 */
+    /* TV title uses the displayed content's natural width. Rating wraps as
+       a sibling; hidden fallback text never reserves artwork width. */
     html.tv-mode #detailSheet.detail-large .detail-title-row {
-      margin-top: 0; min-height: 96px; align-items: center;
+      gap: 16px; margin: 0 0 22px; min-height: 96px; align-items: center;
     }
-    html.tv-mode #detailSheet.detail-large .detail-title-row h2 { margin: 0; min-height: 96px; display: flex; align-items: center; }
-    html.tv-mode #detailSheet.detail-large .detail-title-slot h2 { overflow-wrap: anywhere; }
+    html.tv-mode #detailSheet.detail-large .detail-title-slot {
+      flex: 0 1 auto; min-width: 0; max-width: 100%; min-height: 96px;
+    }
+    html.tv-mode #detailSheet.detail-large .detail-logo-wrap {
+      position: static; height: 96px; max-width: min(50vw,570px);
+      margin: 0; align-items: center; transition: none;
+    }
+    html.tv-mode #detailSheet.detail-large .detail-logo-img {
+      flex: 0 0 auto; max-height: 96px; max-width: 100%; transition: opacity 180ms ease;
+    }
+    html.tv-mode #detailSheet.detail-large .detail-title-slot h2 {
+      margin: 0; min-height: 96px; overflow-wrap: anywhere;
+      display: flex; align-items: center;
+    }
+    html.tv-mode #detailSheet.detail-large .detail-title-slot h2[hidden] { display: none; }
     html.tv-mode #detailSheet.detail-large #detailTitleMeta { flex: 0 0 auto; max-width: 100%; }
-    html.tv-mode #detailSheet.detail-large .detail-logo-img { max-height: 96px; transition: opacity 180ms ease; }
     /* 4) 信息标签（年份/类型/时长/状态）改为胶囊型（仅 TV，圆角矩形 → 全圆角） */
     html.tv-mode #detailSheet.detail-large .meta-pill {
       border-radius: 999px;
@@ -6021,14 +6018,14 @@
 
     .secondary-filter-row::-webkit-scrollbar { display: none; }
 
-    html.tv-mode .secondary-filter-row,
-    html.tv-preview .secondary-filter-row {
+    html.tv-mode .secondary-catalog-filters .secondary-filter-row,
+    html.tv-preview .secondary-catalog-filters .secondary-filter-row {
       padding-inline-end: 24px;
       scroll-padding-inline-end: 24px;
     }
 
-    html.tv-mode .secondary-filter-options::after,
-    html.tv-preview .secondary-filter-options::after {
+    html.tv-mode .secondary-catalog-filters .secondary-filter-options::after,
+    html.tv-preview .secondary-catalog-filters .secondary-filter-options::after {
       content: "";
       flex: 0 0 24px;
       width: 24px;
@@ -6992,15 +6989,14 @@
     html.tv-browse-active #home.home-root { margin: 0; padding: 0; width: 100%; max-width: none; height: var(--fm-web-height, 100vh); min-height: 0; overflow: hidden; }
     html.tv-browse-active #infiniteSentinel { display: none; }
     .tv-browse[hidden], .tv-browse [hidden] { display: none !important; }
-    html.tv-browse-active .tv-browse { position: relative; width: 100%; height: 100%; overflow: hidden; background: #101419; color: #fff; --tv-gutter: 4vw; --tv-gap: 8px; --tv-info-gap: 4px; --tv-safe-top: 16px; --tv-safe-bottom: 20px; --tv-control-height: 36px; --tv-control-icon: 21px; --tv-caption-font: 14px; --tv-meta-font: 14px; --tv-overview-font: 16px; --tv-column-font: 19px; --tv-logo-height: 72px; --tv-title-font: 36px; --tv-poster-width: 140px; --tv-poster-height: 210px; --tv-rail-slot: 260px; --tv-focus-space: 6px; }
-    html.tv-browse-active .tv-browse-foreground { position: relative; display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: minmax(0,1fr) auto var(--tv-rail-slot); gap: 0; height: var(--tv-visible-height,100%); padding: var(--tv-safe-top) 0 var(--tv-safe-bottom); }
+    html.tv-browse-active .tv-browse { position: relative; width: 100%; height: 100%; overflow: hidden; background: #101419; color: #fff; --tv-nav-accent: #35E07A; --tv-state-line: 18px; --tv-text-protection: 0 1px 2px rgba(0,0,0,.95), 0 0 5px rgba(0,0,0,.6); --tv-gutter: 4vw; --tv-gap: 8px; --tv-info-gap: 4px; --tv-safe-top: 16px; --tv-safe-bottom: 20px; --tv-control-height: 36px; --tv-filter-height: 28px; --tv-control-icon: 21px; --tv-caption-font: 14px; --tv-meta-font: 14px; --tv-overview-font: 16px; --tv-column-font: 19px; --tv-logo-height: 72px; --tv-title-font: 36px; --tv-poster-width: 140px; --tv-poster-height: 210px; --tv-rail-slot: 260px; --tv-focus-space: 6px; }
+    html.tv-browse-active .tv-browse-foreground { position: relative; display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: minmax(0,1fr) auto var(--tv-rail-slot); gap: 0; height: var(--tv-visible-height,100%); padding: var(--tv-safe-top) 0 max(var(--tv-safe-bottom),env(safe-area-inset-bottom,0px)); }
     html.tv-browse-active .tv-browse-foreground > * { grid-column: 1; }
-    html.tv-browse-active .tv-browse-upper { grid-row: 1; display: grid; grid-template-columns: minmax(0,1fr) auto; grid-template-rows: auto minmax(0,1fr); gap: var(--tv-gap); margin: 0 var(--tv-gutter) var(--tv-gap); min-height: 0; }
+    html.tv-browse-active .tv-browse-upper { grid-row: 1; display: grid; grid-template-columns: minmax(0,1fr) auto; grid-template-rows: minmax(0,1fr); gap: var(--tv-gap); margin: 0 var(--tv-gutter) var(--tv-gap); min-height: 0; }
     html.tv-browse-active .tv-browse-backdrop { position: absolute; inset: 0; background-size: cover; background-position: center; opacity: 0; transition: opacity 240ms ease; pointer-events: none; }
     html.tv-browse-active .tv-browse-backdrop.visible { opacity: 1; }
     html.tv-browse-active .tv-browse-shade { position: absolute; inset: 0; background: linear-gradient(90deg,rgba(8,12,18,.58),rgba(8,12,18,.22) 34%,transparent 65%),linear-gradient(0deg,rgba(8,12,18,.58),rgba(8,12,18,.16) 25%,transparent 42%); pointer-events: none; }
     /* Browse selection and remote focus have separate roles. Detail actions are independent. */
-    html.tv-browse-active .tv-browse { --tv-nav-accent: #35E07A; --tv-state-line: 18px; --tv-text-protection: 0 1px 2px rgba(0,0,0,.95), 0 0 5px rgba(0,0,0,.6); }
     html.tv-browse-active .tv-browse-control,
     html.tv-browse-active #tvBrowseFunctions #connectionToggle {
       background: transparent; border: 1px solid transparent; color: rgba(255,255,255,.94);
@@ -7013,12 +7009,9 @@
     html.tv-browse-active .tv-browse-pill[aria-pressed="true"]::after,
     html.tv-browse-active .tv-browse-functions button:not(.tv-browse-search):focus::after {
       content: ""; position: absolute; left: 50%; bottom: 2px; width: var(--tv-state-line); height: 2px;
-      transform: translateX(-50%); border-radius: 2px; background: #fff;
+      transform: translateX(-50%); border-radius: 2px; background: var(--tv-nav-accent);
       box-shadow: 0 1px 3px rgba(0,0,0,.85); pointer-events: none;
     }
-    html.tv-browse-active .tv-browse-columns .tv-browse-pill[aria-pressed="true"]::after,
-    html.tv-browse-active .tv-browse-filters .tv-browse-pill[aria-pressed="true"]::after,
-    html.tv-browse-active .tv-browse-functions button:not(.tv-browse-search):focus::after { background: var(--tv-nav-accent); }
     html.tv-browse-active .tv-browse .tv-browse-pill:focus {
       background: rgba(255,255,255,.55); color: #17212b; text-shadow: none;
       box-shadow: inset 0 0 0 1px rgba(0,0,0,.25); outline: none;
@@ -7034,7 +7027,7 @@
     html.tv-browse-active .tv-browse-functions .tv-browse-search { width: clamp(140px,9.6vw,190px); border-radius: calc(var(--tv-control-height) / 2); justify-content: space-between; background: rgba(0,0,0,.12); border-color: rgba(255,255,255,.25); }
     html.tv-browse-active .tv-browse-search .icon { width: var(--tv-control-icon); height: var(--tv-control-icon); }
     html.tv-browse-active .tv-browse-functions .tv-browse-search:focus > .icon { stroke: var(--tv-nav-accent); }
-    html.tv-browse-active .tv-browse-info { grid-column: 1; grid-row: 1 / 3; align-self: start; padding-top: var(--tv-info-offset,0px); min-width: 0; max-width: 47vw; z-index: 2; text-shadow: var(--tv-text-protection); }
+    html.tv-browse-active .tv-browse-info { grid-column: 1; grid-row: 1; align-self: start; padding-top: var(--tv-info-offset,0px); min-width: 0; max-width: 47vw; z-index: 2; text-shadow: var(--tv-text-protection); }
     html.tv-browse-active .tv-browse-title { height: var(--tv-logo-height); position: relative; margin-bottom: var(--tv-info-gap); }
     html.tv-browse-active .tv-browse-info h1 { position: absolute; inset: 0; margin: 0; font-size: var(--tv-title-font); line-height: 1.1; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--tv-title-lines,2); overflow: hidden; }
     html.tv-browse-active .tv-browse-logo { position: absolute; top: 0; left: 0; width: auto; height: auto; max-width: min(38vw,100%); max-height: 100%; object-fit: contain; object-position: left center; animation: tv-title-reveal 180ms ease; }
@@ -7044,16 +7037,14 @@
     html.tv-browse-active #tvBrowseMeta:empty, html.tv-browse-active #tvBrowseUpdate:empty, html.tv-browse-active #tvBrowseOverview:empty { display: none; }
     html.tv-browse-active #tvBrowseUpdate { color: #b8dfcc; }
     html.tv-browse-active #tvBrowseOverview { margin: var(--tv-info-gap) 0 0; font-size: var(--tv-overview-font); line-height: 1.5; display: var(--tv-overview-display,-webkit-box); -webkit-line-clamp: var(--tv-overview-lines,3); -webkit-box-orient: vertical; overflow: hidden; }
-    html.tv-browse-active .tv-browse-columns { grid-row: 2; min-width: 0; margin: 0 var(--tv-gutter) var(--tv-rail-gap,2px); display: flex; gap: var(--tv-column-gap,18px); overflow-x: auto; white-space: nowrap; padding: var(--tv-column-space,8px) 0; scrollbar-width: none; z-index: 3; }
+    html.tv-browse-active .tv-browse-columns { grid-row: 2; min-width: 0; margin: 0 var(--tv-gutter); display: flex; gap: var(--tv-column-gap,18px); overflow-x: auto; white-space: nowrap; padding: 0; scrollbar-width: none; z-index: 3; }
     /* Preserve the measured column row while filters hide it; posters do not jump. */
     html.tv-browse-active .tv-browse.filter-open .tv-browse-columns { visibility: hidden; pointer-events: none; }
     html.tv-browse-active .tv-browse-columns::-webkit-scrollbar, html.tv-browse-active .tv-browse-rail::-webkit-scrollbar { display: none; }
     html.tv-browse-active .tv-browse-column { flex: 0 0 auto; padding: var(--tv-column-pad-y,8px) var(--tv-column-pad-x,18px); font-size: var(--tv-column-font); }
     html.tv-browse-active .tv-browse-column[aria-pressed="false"]:not(:focus) { background: rgba(40,40,40,.18); }
     html.tv-browse-active .history-open .tv-browse-columns { visibility: hidden; pointer-events: none; }
-    html.tv-browse-active .history-open .tv-browse-recent-tools { grid-row: 1; }
-    html.tv-browse-active .history-open .card-meta { display: none; }
-    html.tv-browse-active .tv-history-resume { grid-row: 2; margin: 0 var(--tv-gutter) var(--tv-rail-gap,2px); display: flex; align-items: center; gap: var(--tv-resume-gap,18px); z-index: 3; min-width: 0; }
+    html.tv-browse-active .tv-history-resume { grid-row: 2; margin: 0 var(--tv-gutter); display: flex; align-items: center; gap: var(--tv-resume-gap,18px); z-index: 3; min-width: 0; }
     html.tv-browse-active #tvHistoryContinue { border-radius: 999px; height: var(--tv-control-height); min-height: 0; padding: 0 28px; font-size: var(--tv-meta-font); flex: 0 0 auto; }
     html.tv-browse-active #tvHistoryContinue > .icon { fill: #35E07A; stroke: none; }
     html.tv-browse-active .tv-history-progress-info { min-width: 0; width: clamp(220px,16vw,320px); font-size: var(--tv-meta-font); color: rgba(255,255,255,.9); }
@@ -7073,30 +7064,29 @@
     html.tv-browse-active .tv-browse-rail .card:focus { transform: scale(1.04); }
     html.tv-browse-active .tv-browse-rail .card:focus .poster-wrap::after { content: ""; position: absolute; inset: 0; border: 2px solid rgba(255,255,255,.9); border-radius: inherit; box-sizing: border-box; pointer-events: none; z-index: 4; }
     html.tv-browse-active .tv-browse-rail .card-title { width: 100%; max-width: 100%; min-width: 0; font-size: var(--tv-caption-font); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    html.tv-browse-active .tv-browse-rail .card-meta { width: 100%; max-width: 100%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    html.tv-browse-active .tv-browse-rail .card-meta { display: none; }
     html.tv-browse-active .tv-browse-rail .weekly-air-status { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
     html.tv-browse-active .tv-browse-feedback { grid-row: 4; min-height: 20px; margin: var(--tv-gap) var(--tv-gutter) 0; display: flex; align-items: center; gap: var(--tv-gap); z-index: 4; font-size: 14px; }
     html.tv-browse-active .tv-browse-filters {
-      grid-column: 1; grid-row: 1 / 3; min-height: 0; margin: 0 var(--tv-gutter); overflow: auto;
-      padding: 3px 2vw; border: 0; box-shadow: none; background: transparent; z-index: 4;
-      --tv-filter-font: var(--tv-caption-font); --tv-filter-height: var(--tv-control-height);
+      grid-column: 1 / -1; grid-row: 1; min-height: 0; margin: 0; overflow: auto;
+      padding: 2px 2vw; border: 0; box-shadow: none; background: transparent; z-index: 4;
+      --tv-filter-font: var(--tv-caption-font);
     }
     html.tv-browse-active .tv-browse-filters .secondary-filter-row {
-      display: flex; align-items: center; gap: 14px; margin: 0 0 clamp(3px,.4vh,5px); padding: 0;
+      display: flex; align-items: center; gap: 14px; margin: 0 0 3px; padding: 0;
       min-height: 0; overflow: visible;
     }
     html.tv-browse-active .tv-browse-filters .secondary-filter-row:last-of-type { margin-bottom: 0; }
-    html.tv-browse-active .tv-browse-filter-overview { margin: var(--tv-gap) 0 0; max-width: min(60vw,900px); color: #d8dee8; font-size: var(--tv-overview-font); line-height: 1.5; text-shadow: var(--tv-text-protection); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--tv-filter-overview-lines,0); overflow: hidden; }
+    html.tv-browse-active .tv-browse-filter-overview { grid-column: 1; grid-row: 1 / 3; align-self: end; min-height: 0; margin: 0 var(--tv-gutter) var(--tv-info-gap); max-width: min(60vw,900px); color: #d8dee8; font-size: var(--tv-overview-font); line-height: 1.5; text-shadow: var(--tv-text-protection); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--tv-filter-overview-lines,0); overflow: hidden; }
     html.tv-browse-active .tv-browse-filters .secondary-filter-label {
       flex: 0 0 clamp(58px,4.5vw,86px); height: var(--tv-filter-height); display: flex; align-items: center;
       font-size: var(--tv-filter-font); font-weight: 500; line-height: 1.2; color: rgba(255,255,255,.85); text-shadow: var(--tv-text-protection);
     }
     html.tv-browse-active .tv-browse-filters .secondary-filter-options {
       display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0;
-      overflow-x: auto; overflow-y: hidden; padding: 3px; scrollbar-width: none;
+      overflow-x: auto; overflow-y: hidden; padding: 2px; scrollbar-width: none;
     }
     html.tv-browse-active .tv-browse-filters .secondary-filter-options::-webkit-scrollbar { display: none; }
-    html.tv-browse-active .tv-browse-filters .secondary-filter-options::after { content: none; }
     html.tv-browse-active .tv-browse-filters button {
       flex: 0 0 auto; box-sizing: border-box; height: var(--tv-filter-height); min-height: 0;
       padding: 0 12px; font-size: var(--tv-filter-font); line-height: 1.2;
@@ -7105,7 +7095,7 @@
     html.tv-browse-active #tvBrowseFunctions #connectionToggle { display: flex; align-items: center; justify-content: center; width: var(--tv-control-height); min-width: 0; min-height: 0; height: var(--tv-control-height); gap: 0; padding: 0; border-radius: 8px; }
     html.tv-browse-active #tvBrowseFunctions .connection-title, html.tv-browse-active #tvBrowseFunctions .connection-arrow { display: none; }
     html.tv-browse-active #tvBrowseFunctions .dot { width: var(--tv-control-icon); height: var(--tv-control-icon); flex: 0 0 var(--tv-control-icon); margin: 0; }
-    html.tv-browse-active .tv-browse-recent-tools { grid-column: 2; grid-row: 2; justify-self: end; align-self: start; z-index: 3; }
+    html.tv-browse-active .tv-browse-recent-tools { grid-column: 2; grid-row: 1; justify-self: end; align-self: start; z-index: 3; }
 </style>
   <style id="tv-diagnostic-v1">
     html.tv-mode .tv-diagnostic {
@@ -7654,7 +7644,7 @@
 
     </template>
     <div id="mobileHomeMount"></div>
-    <section id="tvBrowse" class="tv-browse" hidden aria-label="影视浏览">
+    <section id="tvBrowse" class="tv-browse" data-layout-revision="unified-r11" hidden aria-label="影视浏览">
       <div id="tvBrowseBackdrop" class="tv-browse-backdrop"></div>
       <div id="tvBrowseBackdropNext" class="tv-browse-backdrop"></div>
       <div class="tv-browse-shade"></div>
@@ -7667,13 +7657,14 @@
         <h1 id="tvBrowseTitle"></h1></div><div class="tv-browse-core"><div id="tvBrowseMeta"></div>
         <div id="tvBrowseUpdate"></div></div><p id="tvBrowseOverview"></p>
       </div>
+      <div id="tvBrowseFilters" class="tv-browse-filters" role="dialog" aria-modal="true" aria-label="栏目筛选" hidden></div>
       </div>
+      <p id="tvBrowseFilterOverview" class="tv-browse-filter-overview" hidden></p>
       <nav id="tvBrowseColumns" class="tv-browse-columns" aria-label="栏目"></nav>
       <div id="tvHistoryResume" class="tv-history-resume" hidden>
         <button id="tvHistoryContinue" class="btn focusable" type="button"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3L21 12L6 21Z"></path></svg><span>继续观看</span></button>
         <div class="tv-history-progress-info"><div class="tv-history-progress-label"><span id="tvHistoryEpisode"></span><span id="tvHistoryTime"></span></div><div id="tvHistoryProgress" class="tv-history-progress" aria-hidden="true" hidden><span></span></div></div>
       </div>
-      <div id="tvBrowseFilters" class="tv-browse-filters" role="dialog" aria-modal="true" aria-label="栏目筛选" hidden></div>
       <div class="tv-browse-posters"><div id="tvBrowseRail" class="rail tv-browse-rail"></div></div>
       <div class="tv-browse-feedback"><span id="tvBrowseStatus" role="status"></span><span id="tvBrowseBlockHint" class="home-block-select-hint" hidden></span><button id="tvBrowseRetry" class="focusable" type="button" hidden>重试</button></div>
       </div>
@@ -28586,7 +28577,7 @@ utils.encode = function encode(arr, enc) {
       const signature = ui.column + secondaryFilterSchemaSignature(groups);
       if (host.dataset.schema !== signature) {
         host.dataset.schema = signature;
-        host.innerHTML = groups.map((group) => `<div class="secondary-filter-row" data-group="${escapeAttr(group.key)}"><span class="secondary-filter-label">${escapeHtml(group.label)}</span><div class="secondary-filter-options">${group.options.map((option) => `<button type="button" class="focusable tv-browse-control tv-browse-pill secondary-filter-option" data-group="${escapeAttr(group.key)}" data-value="${escapeAttr(option.value)}">${escapeHtml(option.label)}</button>`).join("")}</div></div>`).join("") + '<p id="tvBrowseFilterOverview" class="tv-browse-filter-overview" hidden></p>';
+        host.innerHTML = groups.map((group) => `<div class="secondary-filter-row" data-group="${escapeAttr(group.key)}"><span class="secondary-filter-label">${escapeHtml(group.label)}</span><div class="secondary-filter-options">${group.options.map((option) => `<button type="button" class="focusable tv-browse-control tv-browse-pill secondary-filter-option" data-group="${escapeAttr(group.key)}" data-value="${escapeAttr(option.value)}">${escapeHtml(option.label)}</button>`).join("")}</div></div>`).join("");
         host.querySelectorAll("button").forEach((button) => button.addEventListener("click", () => {
           tvBrowseSavePosition();
           const current = secondaryFilterState(ui.column);
@@ -28652,21 +28643,21 @@ utils.encode = function encode(arr, enc) {
       const px = (name, value) => set(name, value + "px");
       const gap = clamp(4, height * .01, 12), infoGap = clamp(2, height * .004, 5);
       const top = clamp(8, height * .03, 32);
-      const bottom = Math.max(clamp(8, height * .02, 24), parseFloat(getComputedStyle(root).getPropertyValue("--fm-safe-bottom")) || 0);
-      const railGap = clamp(2, height * .002, 3);
+      const foreground = root.querySelector(".tv-browse-foreground");
       const captionFont = clamp(13, height * 21 / 1080, 21), metaFont = clamp(13, height * 22 / 1080, 22);
       const overviewFont = clamp(14, height * 24 / 1080, 24), titleFont = clamp(24, height * .05, 54);
-      px("visible-height", height); px("safe-top", top); px("safe-bottom", bottom);
+      px("visible-height", height); px("safe-top", top);
       px("gap", gap); px("info-gap", infoGap); px("caption-font", captionFont);
-      px("rail-gap", railGap);
       px("meta-font", metaFont); px("overview-font", overviewFont); px("title-font", titleFont);
+      px("filter-height", clamp(28, height * 34 / 1080, 36));
       px("control-height", clamp(36, height * .045, 50)); px("control-icon", clamp(21, height * .025, 28));
       px("column-font", clamp(16, height * 24 / 1080, 24));
       const feedback = root.querySelector(".tv-browse-feedback");
       // Empty feedback does not own a grid row or its preceding gap. Visible
       // status, retry and selection hints retain their measured space.
       feedback.hidden = !Array.from(feedback.children).some((child) => !child.hidden && child.textContent.trim());
-      const caption = Array.from(rail.children).reduce((max, card) => Math.max(max, card.querySelector(".card-body").offsetHeight), captionFont * 1.2 + 13);
+      // A single title line has the same footprint in every browse mode.
+      const caption = Math.max(15, captionFont * 1.2) + 13;
       let core;
       let poster, focusSpace, railSlot, upper, compact;
       // Two bounded profiles coordinate the entire screen; neither depends on
@@ -28678,7 +28669,6 @@ utils.encode = function encode(arr, enc) {
         px("column-pad-y", compact ? 4 : 8); px("column-pad-x", clamp(10, height * 12 / 1080, 12));
         px("column-gap", clamp(10, height * 12 / 1080, 12)); px("function-gap", compact ? 6 : clamp(8, rect.width * .008, 16));
         px("resume-gap", compact ? 12 : 18);
-        px("column-space", compact ? 0 : gap);
         px("card-gap", clamp(12, rect.width * .014, 28));
         const minWidth = compact ? 96 : Math.max(96, captionFont * 6 + 16);
         poster = Math.max(minWidth * 1.5, height * .33);
@@ -28686,7 +28676,12 @@ utils.encode = function encode(arr, enc) {
         // Rail padding consumes these same edges; do not scale the slot again.
         focusSpace = Math.ceil((poster + caption) * .02) + 2;
         railSlot = Math.ceil(poster + caption) + focusSpace * 2;
-        upper = height - top - bottom - $("tvBrowseColumns").offsetHeight - railSlot - railGap - gap
+        // Project the real 1.04-scaled title edge into the visible viewport.
+        // CSS resolves system safe-area insets on this one foreground.
+        const titleEdge = railSlot - focusSpace - (poster + caption) * 1.02 + 6 * 1.04;
+        px("safe-bottom", Math.max(2, Math.max(8, height * .019) - titleEdge));
+        const bottom = parseFloat(getComputedStyle(foreground).paddingBottom);
+        upper = height - top - bottom - Math.max($("tvBrowseColumns").offsetHeight, $("tvHistoryResume").offsetHeight) - railSlot - gap
           - (feedback.hidden ? 0 : feedback.offsetHeight + gap);
         if (upper >= height * .15 + core + overviewFont * 4.5 || compact) break;
       }
@@ -28697,13 +28692,12 @@ utils.encode = function encode(arr, enc) {
       set("overview-display", lines ? "-webkit-box" : "none");
       px("poster-height", poster); px("poster-width", poster * 2 / 3);
       px("focus-space", focusSpace); px("rail-slot", railSlot);
-      // The filter host spans the fixed upper rows. Its synopsis consumes only
-      // spare space after all four reachable rows, never the poster budget.
-      const filters = $("tvBrowseFilters");
+      // Filters occupy the flexible upper row; synopsis owns its bottom row.
+      // Neither can resize the fixed poster row or the reserved navigation row.
+      const filters = $("tvBrowseFilters"), upperHost = root.querySelector(".tv-browse-upper");
       const used = Array.from(filters.querySelectorAll(".secondary-filter-row")).reduce((sum, row) =>
-        sum + row.offsetHeight + parseFloat(getComputedStyle(row).marginBottom), 0);
-      const filterStyle = getComputedStyle(filters);
-      const spare = filters.clientHeight - used - parseFloat(filterStyle.paddingTop) - parseFloat(filterStyle.paddingBottom) - gap - railGap;
+        sum + row.offsetHeight + parseFloat(getComputedStyle(row).marginBottom), 4);
+      const spare = upperHost.clientHeight - used - gap;
       set("filter-overview-lines", String(height < 450 ? 0 : clamp(0, Math.floor(spare / (overviewFont * 1.5)), height >= 720 ? 3 : 2)));
       syncTvBrowseFilterOverview();
     }
@@ -33364,6 +33358,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const key = String(item.mediaType || item.media_type || "") + ":" + movieDetailCacheId(item);
       if (img.__artTitle && img.__artTitle.key === key && img.__artTitle.asset === asset && img.__artTitle.valid()) { img.alt = title.textContent || item.title || ""; return; }
       const previous = img.__artTitle && img.__artTitle.key === key ? img.__artTitle : null;
+      const flowTitle = !!(wrap && wrap.parentElement.classList.contains("detail-title-slot"));
       cancelArtTitle(img);
       const run = { key, asset, timer: 0, valid, deadline: previous ? previous.deadline : Date.now() + 150, fallbackShown: !!(previous && previous.fallbackShown) }; img.__artTitle = run;
       const current = () => img.__artTitle === run && valid();
@@ -33375,7 +33370,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const show = () => {
         if (!current()) return;
         clearTimeout(run.timer); img.src = asset.url; img.alt = title.textContent || item.title || "";
-        img.hidden = false; img.classList.add("loaded"); title.hidden = false; title.style.visibility = "hidden";
+        img.hidden = false; img.classList.add("loaded"); title.hidden = flowTitle; title.style.visibility = flowTitle ? "" : "hidden";
         if (wrap) { wrap.style.display = "flex"; wrap.classList.add("logo-ready"); }
         img.onerror = () => { asset.ready = false; asset.failed = true; fallback(); };
       };
@@ -33401,7 +33396,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const logoImgEl = $("detailLogoImg");
       if (logoWrap) { logoWrap.style.display = "none"; logoWrap.classList.remove("logo-ready"); }
       if (logoImgEl) { logoImgEl.hidden = false; logoImgEl.removeAttribute("src"); logoImgEl.classList.remove("loaded"); }
-      if ($("detailTitle")) $("detailTitle").style.display = "";
+      if ($("detailTitle")) { $("detailTitle").hidden = false; $("detailTitle").style.display = ""; }
       $("detailTitle").textContent = item.title;
       $("detailTitle").style.visibility = "";
       if (isTvLikeDevice()) renderDetailTitleLogo(item, null, item.title);
@@ -33886,6 +33881,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
           row.parentElement.insertBefore(wrap, row);
           row.insertBefore(title, slot); slot.remove();
         }
+        title.hidden = false; title.style.visibility = "";
         return renderMobileDetailTitleLogo(item, detail, canonicalTitle);
       }
       if (!slot) {

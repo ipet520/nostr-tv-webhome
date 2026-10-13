@@ -81,16 +81,16 @@ const green='rgb(53, 224, 122)';const measured=[];
 async function snapshot(p,selector) {
  return p.locator(selector).evaluate(e=>{const s=getComputedStyle(e),a=getComputedStyle(e,'::after');const props=['backgroundColor','color','fontSize','fontWeight','border','borderRadius','boxShadow','outline','padding','width','height','transform','filter'];
  const style=n=>Object.fromEntries(props.map(k=>[k,getComputedStyle(n)[k]]));
- return {column:e.classList.contains('tv-browse-column'),style:style(e),line:{content:a.content,width:a.width,height:a.height,left:a.left,bottom:a.bottom,transform:a.transform,shadow:a.boxShadow,color:a.backgroundColor},icons:Array.from(e.querySelectorAll('svg,.dot')).map(n=>({style:style(n),stroke:getComputedStyle(n).stroke,fill:getComputedStyle(n).fill})),rect:e.getBoundingClientRect().toJSON()};});
+ return {filter:!!e.closest('#tvBrowseFilters'),column:e.classList.contains('tv-browse-column'),style:style(e),line:{content:a.content,width:a.width,height:a.height,left:a.left,bottom:a.bottom,transform:a.transform,shadow:a.boxShadow,color:a.backgroundColor},icons:Array.from(e.querySelectorAll('svg,.dot')).map(n=>({style:style(n),stroke:getComputedStyle(n).stroke,fill:getComputedStyle(n).fill})),rect:e.getBoundingClientRect().toJSON()};});
 }
 function preserved(before,after,{line=false,search=false}={}) {
  // Round 9 deliberately changes column typography/geometry and the shared
  // vertical budget. Compare protected skin and control sizes here; the layout
  // test separately measures and validates the intended positional changes.
- const column=after.column;assert.equal(column,before.column);
- const stableStyle=s=>Object.fromEntries(Object.entries(s).filter(([k])=>!column || !['fontSize','padding','width','height'].includes(k)));
+ const column=after.column,filter=after.filter;assert.equal(column,before.column);assert.equal(filter,before.filter);
+ const stableStyle=s=>Object.fromEntries(Object.entries(s).filter(([k])=>(!column || !['fontSize','padding','width','height'].includes(k))&&(!filter||k!=='height')));
  assert.deepEqual(stableStyle(after.style),stableStyle(before.style));
- if(!column)for(const k of ['x','width','height'])assert.equal(after.rect[k],before.rect[k]);
+ if(!column)for(const k of filter?['width']:['x','width','height'])assert.equal(after.rect[k],before.rect[k]);
  assert.deepEqual({...after.line,left:column?before.line.left:after.line.left,color:line?before.line.color:after.line.color},before.line);
  if(column&&after.line.content==='""')assert.ok(Math.abs(parseFloat(after.line.left)-after.rect.width/2)<1.1,'line stays centered in the compact button');
  assert.deepEqual(after.icons.map(i=>({...i,stroke:search?before.icons[0].stroke:i.stroke})),before.icons);
