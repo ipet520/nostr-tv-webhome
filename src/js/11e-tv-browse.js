@@ -649,8 +649,9 @@
       tvBrowseRenderLogo(item, detail);
       tvBrowseEnsurePreviewDetail(item, detail);
       tvBrowsePrepareAdjacentLogos(item);
-      const source = item.landscape || item.backdrop || item.backdrop_path || detail && detail.backdrop_path || item.image || item.pic;
-      const url = displayImage(source, { size: item.landscape || item.backdrop || item.backdrop_path ? "w1280" : "w780" });
+      const backdrop = item.landscape || item.backdrop || item.backdrop_path || detail && detail.backdrop_path;
+      const source = backdrop || item.image || item.pic;
+      const url = displayImage(source, { size: backdrop ? "w1280" : "w780" });
       if (ui.previewKey === key && (url === ui.backdropUrl || ui.pendingImage && ui.pendingImage.src === url)) return;
       ui.previewKey = key;
       const token = ++ui.backdropToken;
