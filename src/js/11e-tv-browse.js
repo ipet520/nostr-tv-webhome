@@ -241,7 +241,8 @@
       $("tvBrowseRecentTools").hidden = ui.filterOpen;
       $("tvBrowseInfo").hidden = ui.filterOpen;
       $("tvBrowseFilters").hidden = !ui.filterOpen;
-      $("tvBrowseColumns").hidden = ui.filterOpen;
+      // Visibility reserves the column row so filter toggles never move the rail.
+      $("tvBrowseColumns").setAttribute("aria-hidden", String(ui.filterOpen));
       if (tvBrowseActive() && ui.filterOpen && location.hash !== "#detail" && uiSnapshotRoute() === "home") ensureTvPanelHistoryEntry("filters", "#tv-filters");
       root.querySelectorAll("#tvBrowseColumns button").forEach((button) => button.setAttribute("tabindex", ui.filterOpen ? "-1" : "0"));
       document.documentElement.classList.toggle("tv-browse-active", tvBrowseActive());

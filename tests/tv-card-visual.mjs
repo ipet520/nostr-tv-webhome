@@ -13,7 +13,7 @@ const { output } = renderIndex();
 validateRenderedArtifact(output);
 // Exercise actual source, including its event handlers, with deterministic
 // business fixtures. Exporting lexical functions is confined to this test HTML.
-const hook = `window.testBrowse = { state, tvBrowseSelectColumn, syncBrowseDevicePresentation,
+const hook = `window.testBrowse = { state, mediaCard, tvBrowseSelectColumn, syncBrowseDevicePresentation,
  tvBrowseBeginStartup, homeFocusUserEpoch };
  window.testBrowse.setup = () => {
    syncBrowseDevicePresentation(); bindActions(); installRemoteKeys();
@@ -31,7 +31,7 @@ const hook = `window.testBrowse = { state, tvBrowseSelectColumn, syncBrowseDevic
 const html = output.replace(/boot\(\)\.catch\(function\(e\) \{[\s\S]*?\n    \}\);/, hook);
 assert.notEqual(html, output);
 const currentCss=readFileSync(new URL('../src/css/05-home-tv.css',import.meta.url),'utf8');
-const baselineCss=execFileSync('git',['show','6b029a86e69b5a2ac04c4e2a3aa3021bd56e2653:src/css/05-home-tv.css'],{encoding:'utf8'});
+const baselineCss=execFileSync('git',['show','c2f75d21db712f39a09abf377d0e42e92ec359c2:src/css/05-home-tv.css'],{encoding:'utf8'});
 const baselineHtml=html.replace(currentCss,baselineCss);
 assert.notEqual(baselineHtml,html,'baseline fixture uses the actual pre-refinement CSS');
 const browser = await playwright.chromium.launch({ headless: true, ...(process.env.WEBHOME_BROWSER_EXECUTABLE ? { executablePath: process.env.WEBHOME_BROWSER_EXECUTABLE } : { channel: process.env.WEBHOME_BROWSER_CHANNEL || "chrome" }) });
@@ -77,16 +77,30 @@ try {
     const column=document.querySelector('#tvColumn-movie'),normal=document.querySelector('#tvColumn-documentary'),focused=document.querySelector('#tvColumn-tv');
     const line=getComputedStyle(column,'::after');
     const card=document.querySelector('#tvBrowseRail .card'),title=card.querySelector('.card-title');
-    return {column:style(column),normal:style(normal),focused:style(focused),line:[line.width,line.height,line.backgroundColor],card:style(card),poster:style(card.querySelector('.poster-wrap')),title:style(title),body:style(card.querySelector('.card-body')),rating:style(card.querySelector('.rating-badge'))};
+    const rect=el=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom,yRatio:r.y/innerHeight,bottomRatio:r.bottom/innerHeight};};
+    const rail=card.parentElement,poster=card.querySelector('.poster-wrap'),cols=document.querySelector('#tvBrowseColumns');
+    const frame=getComputedStyle(poster,'::after');
+    return {column:style(column),normal:style(normal),focused:style(focused),line:[line.width,line.height,line.backgroundColor],card:style(card),poster:style(poster),title:style(title),body:style(card.querySelector('.card-body')),rating:style(card.querySelector('.rating-badge')),
+     frame:{content:frame.content,border:frame.border,borderRadius:frame.borderRadius,inset:frame.inset,pointerEvents:frame.pointerEvents},
+     layout:{info:rect(document.querySelector('#tvBrowseInfo')),columns:rect(cols),firstColumn:rect(cols.firstElementChild),rail:rect(rail),card:rect(card),poster:rect(poster),image:rect(card.querySelector('img')),title:rect(title),gap:poster.getBoundingClientRect().top-cols.getBoundingClientRect().bottom,bottomSpace:innerHeight-title.getBoundingClientRect().bottom,railGap:getComputedStyle(rail).gap},
+     viewport:{width:innerWidth,height:innerHeight,dpr:devicePixelRatio,visual:{width:visualViewport.width,height:visualViewport.height,scale:visualViewport.scale},media:{landscape:matchMedia('(orientation:landscape)').matches,min901:matchMedia('(min-width:901px)').matches,coarse:matchMedia('(pointer:coarse)').matches,dvh:CSS.supports('height','100dvh')}}};
    }));
   }
   return values;
  };
  const screenshots=process.env.WEBHOME_VISUAL_DIR;
  if(screenshots) mkdirSync(screenshots,{recursive:true});
- for (const viewport of [{width:1920,height:1080},{width:1280,height:720},{width:960,height:540}]) {
+ for (const viewport of [{width:1920,height:1080},{width:1280,height:720},{width:960,height:540},{width:1366,height:768},{width:1728,height:894},{width:1408,height:640}]) {
   const p=await pageAt(true,viewport); await p.waitForTimeout(300);
-  await p.evaluate(()=>{const q=testBrowse.seed('movie',3);q.hasMore=false;q.items[0].title='短标题';q.items[1].title='这是一个需要截断省略的很长很长的影片标题';testBrowse.tvBrowseSelectColumn('movie');document.querySelector('#tvColumn-movie').focus();});
+  await p.evaluate(()=>{
+   const q=testBrowse.seed('movie',3);q.hasMore=false;q.items[0].title='短标题';q.items[1].title='这是一个需要截断省略的很长很长的影片标题';testBrowse.tvBrowseSelectColumn('movie');
+   // Exercise the real mediaCard fallback without changing catalog eligibility.
+   const third=document.querySelectorAll('#tvBrowseRail .card')[2];
+   third.replaceWith(testBrowse.mediaCard({...third.__mediaItem,pic:''},2,{home:true}));
+   document.querySelector('#tvColumn-movie').focus();
+  });
+  assert.equal(await p.locator('#tvBrowseRail .card').count(),3);
+  assert.ok((await p.locator('#tvBrowseRail .card img').nth(2).getAttribute('src')).startsWith('data:image/gif'));
   const inspect=()=>p.locator('#tvBrowseRail .card').first().evaluate(card=>{
    const style=el=>{const s=getComputedStyle(el);return {align:s.textAlign,outline:s.outline,shadow:s.boxShadow,border:s.borderTop,background:s.backgroundColor,width:s.width,padding:s.padding,overflow:s.overflow,whiteSpace:s.whiteSpace,ellipsis:s.textOverflow,transform:s.transform};};
    return {active:document.activeElement.className,card:style(card),poster:style(card.querySelector('.poster-wrap')),body:style(card.querySelector('.card-body')),title:style(card.querySelector('.card-title'))};
@@ -100,7 +114,12 @@ try {
    await card.focus();await p.waitForTimeout(160);
    const offset=await card.evaluate(el=>{const a=el.getBoundingClientRect(),b=el.querySelector('.card-title').getBoundingClientRect();return Math.abs((a.left+a.right-b.left-b.right)/2);});
    assert.ok(offset<.1,'title box remains centered on its card');
+   assert.equal(await card.locator('[tabindex],button,a,input').count(),0,'the card remains the sole focus node');
+   assert.equal(await card.locator('.poster-wrap').evaluate(el=>getComputedStyle(el).borderRadius),'6px');
   }
+  await p.locator('#tvBrowseRail .card').first().focus();
+  for(let move=0;move<12;move++) await p.keyboard.press(move%2?'ArrowLeft':'ArrowRight');
+  assert.equal(await p.locator('#tvBrowseRail .poster-wrap').evaluateAll(els=>els.filter(el=>getComputedStyle(el,'::after').content==='""').length),1,'rapid focus changes leave exactly one poster frame');
   const ref=await pageAt(true,viewport,true,true);await ref.waitForTimeout(300);
   await ref.evaluate(()=>{const q=testBrowse.seed('movie',3);q.hasMore=false;testBrowse.tvBrowseSelectColumn('movie');});
   const before=await capture(ref),after=await capture(p);
@@ -108,10 +127,22 @@ try {
    assert.deepEqual(after[i].column,before[i].column,'selected column style unchanged');
    if(i===1) assert.deepEqual(after[i].focused,before[i].focused,'focused capsule unchanged');
    assert.deepEqual(after[i].line,before[i].line);assert.deepEqual(after[i].line.slice(0,2),['18px','2px']);
-   for(const region of ['poster','title','body','rating']) assert.deepEqual(after[i][region],before[i][region],region+' geometry and styles unchanged apart from alignment');
-   for(const key of ['width','height','padding','transform']) assert.equal(after[i].card[key],before[i].card[key]);
+   for(const region of ['title','body','rating']) assert.deepEqual(after[i][region],before[i][region],region+' styles unchanged');
+   for(const key of ['width','padding','transform']) assert.equal(after[i].card[key],before[i].card[key]);
+   assert.equal(after[i].poster.height,before[i].poster.height,'poster height unchanged');
+   assert.ok(Math.abs(parseFloat(after[i].poster.width)-parseFloat(after[i].card.width))<.1,'poster has no legacy overscan');
+   assert.equal(after[i].poster.borderRadius,after[i].card.borderRadius);
+   const a=after[i].layout,b=before[i].layout;
+   assert.ok(Math.abs(a.firstColumn.x-a.info.x)<.1);assert.equal(a.columns.y,b.columns.y);
+   assert.equal(a.railGap,b.railGap);assert.ok(a.gap<b.gap,'rail moves closer to columns');
+   assert.ok(a.poster.y>=a.rail.y && a.title.bottom<a.rail.bottom && a.card.bottom<a.rail.bottom,'focus remains within the rail clipping bounds');
+   assert.ok(a.title.y>a.poster.bottom && a.card.bottom<viewport.height && a.info.bottom<a.columns.y);
+   assert.deepEqual(a.image,a.poster,'image fills the independently rounded poster');
+   assert.equal(after[i].frame.content,i===2?'""':'none');
+   if(i===2) {assert.equal(after[i].frame.border,'2px solid rgba(255, 255, 255, 0.9)');assert.equal(after[i].frame.borderRadius,after[i].poster.borderRadius);assert.equal(after[i].frame.inset,'0px');assert.equal(after[i].frame.pointerEvents,'none');}
    assert.equal(after[i].normal.backgroundColor,'rgba(40, 40, 40, 0.1)');assert.equal(after[i].normal.boxShadow,'none');
   }
+  console.log(JSON.stringify({viewport:after[2].viewport,before:before[2].layout,after:after[2].layout}));
   await ref.close();
   for(const shade of ['#dedede','#151515']) {
    await p.evaluate(color=>document.querySelectorAll('.tv-browse-backdrop').forEach(el=>el.style.backgroundImage=`linear-gradient(${color},${color})`),shade);
@@ -120,10 +151,27 @@ try {
     if(screenshots) await p.screenshot({path:join(screenshots,`${viewport.width}-${shade==='#dedede'?'bright':'dark'}-${name}.png`)});
    }
   }
-  await focus(p,'#tvColumn-movie');await press(p,'Enter');await press(p,'Enter');
+  await focus(p,'#tvColumn-movie');
+  const railBefore=await p.locator('#tvBrowseRail').boundingBox();await press(p,'Enter');await press(p,'Enter');
   assert.equal(await p.locator('#tvBrowseColumns').isVisible(),false);
   assert.equal(await p.locator('#tvBrowseColumns button[tabindex="0"]').count(),0);
+  assert.deepEqual(await p.locator('#tvBrowseRail').boundingBox(),railBefore,'filter visibility preserves the rail layout');
+  await press(p,'ArrowDown');await press(p,'ArrowDown');await press(p,'ArrowDown');await press(p,'ArrowDown');
+  assert.equal(await p.evaluate(()=>document.activeElement.closest('#tvBrowseRail')!==null),true);
+  await press(p,'ArrowUp');assert.equal(await p.evaluate(()=>document.activeElement.closest('#tvBrowseFilters')!==null),true);
   await press(p,'Escape');assert.equal(await p.locator('#tvBrowseColumns').isVisible(),true);
+  assert.deepEqual(await p.locator('#tvBrowseRail').boundingBox(),railBefore);
+  await p.evaluate(()=>document.documentElement.style.setProperty('--fm-web-height',(innerHeight*.84)+'px'));
+  await p.locator('#tvBrowseRail .card').first().focus();await p.waitForTimeout(350);
+  const shortHost=await p.evaluate(()=>{
+   const card=document.querySelector('#tvBrowseRail .card'),poster=card.querySelector('.poster-wrap'),title=card.querySelector('.card-title');
+   const c=card.getBoundingClientRect(),r=card.parentElement.getBoundingClientRect(),t=title.getBoundingClientRect(),p=poster.getBoundingClientRect();
+   return {cardBottom:c.bottom,railBottom:r.bottom,posterTop:p.top,railTop:r.top,titleBottom:t.bottom,titleHeight:t.height,rootBottom:document.querySelector('#tvBrowse').getBoundingClientRect().bottom,pageOverflow:document.documentElement.scrollHeight>innerHeight+1};
+  });
+  assert.ok(shortHost.cardBottom<shortHost.railBottom && shortHost.titleBottom<shortHost.rootBottom && shortHost.posterTop>shortHost.railTop);
+  assert.equal(shortHost.pageOverflow,false);
+  assert.ok(Math.abs(shortHost.titleHeight-after[2].layout.title.height)<.1,'short host preserves title font and line height');
+  console.log('SHORT_HOST_LAYOUT '+JSON.stringify({viewport,...shortHost}));
   console.log(`TV_CARD_COLUMN_VISUAL ${viewport.width}x${viewport.height} = PASS`);
   await p.close();
  }

@@ -1142,7 +1142,7 @@
     html.tv-browse-active #home.home-root { margin: 0; padding: 0; width: 100%; max-width: none; height: var(--fm-web-height, 100vh); min-height: 0; overflow: hidden; }
     html.tv-browse-active #infiniteSentinel { display: none; }
     .tv-browse[hidden], .tv-browse [hidden] { display: none !important; }
-    html.tv-browse-active .tv-browse { position: relative; width: 100%; height: 100%; overflow: hidden; background: #101419; color: #fff; --tv-gutter: 4vw; --tv-control-height: clamp(36px,4.5vh,50px); --tv-control-icon: clamp(21px,2.5vh,28px); }
+    html.tv-browse-active .tv-browse { position: relative; display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: 48% auto minmax(0,1fr); width: 100%; height: 100%; overflow: hidden; background: #101419; color: #fff; --tv-gutter: 4vw; --tv-control-height: clamp(36px,4.5vh,50px); --tv-control-icon: clamp(21px,2.5vh,28px); }
     html.tv-browse-active .tv-browse-backdrop { position: absolute; inset: 0; background-size: cover; background-position: center; opacity: 0; transition: opacity 240ms ease; pointer-events: none; }
     html.tv-browse-active .tv-browse-backdrop.visible { opacity: 1; }
     html.tv-browse-active .tv-browse-shade { position: absolute; inset: 0; background: linear-gradient(90deg,rgba(8,12,18,.58),rgba(8,12,18,.22) 34%,transparent 65%),linear-gradient(0deg,rgba(8,12,18,.58),rgba(8,12,18,.16) 25%,transparent 42%); pointer-events: none; }
@@ -1186,16 +1186,22 @@
     html.tv-browse-active #tvBrowseMeta, html.tv-browse-active #tvBrowseUpdate { font-size: clamp(13px,1.15vw,22px); margin: .8vh 0; color: #d8dee8; }
     html.tv-browse-active #tvBrowseUpdate { color: #b8dfcc; }
     html.tv-browse-active #tvBrowseOverview { margin: 1.2vh 0 0; font-size: clamp(14px,1.25vw,24px); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-    html.tv-browse-active .tv-browse-columns { position: absolute; top: 48%; left: var(--tv-gutter); right: var(--tv-gutter); display: flex; gap: 18px; overflow-x: auto; white-space: nowrap; padding: 12px 5px; scrollbar-width: none; z-index: 3; }
+    html.tv-browse-active .tv-browse-columns { grid-row: 2; min-width: 0; margin: 0 var(--tv-gutter); display: flex; gap: 18px; overflow-x: auto; white-space: nowrap; padding: 12px 0; scrollbar-width: none; z-index: 3; }
+    /* Preserve the measured column row while filters hide it; posters do not jump. */
+    html.tv-browse-active .tv-browse.filter-open .tv-browse-columns { visibility: hidden; pointer-events: none; }
     html.tv-browse-active .tv-browse-columns::-webkit-scrollbar, html.tv-browse-active .tv-browse-rail::-webkit-scrollbar { display: none; }
     html.tv-browse-active .tv-browse-column { flex: 0 0 auto; padding: 8px 18px; font-size: clamp(16px,1.5vw,29px); }
     html.tv-browse-active .tv-browse-column[aria-pressed="false"]:not(:focus) { background: rgba(40,40,40,.1); }
-    html.tv-browse-active .tv-browse-posters { position: absolute; left: 0; right: 0; bottom: 4vh; height: 34vh; z-index: 3; }
+    html.tv-browse-active .tv-browse-posters { grid-row: 3; min-height: 0; margin-bottom: 4vh; z-index: 3; }
     html.tv-browse-active .tv-browse-rail { display: flex; align-items: flex-start; gap: 1.4vw; overflow-x: auto; overflow-y: hidden; height: 100%; padding: 1.5vh var(--tv-gutter) 1vh; box-sizing: border-box; scrollbar-width: none; }
-    html.tv-browse-active .tv-browse-rail .card { flex: 0 0 10.6vw; width: 10.6vw; min-width: 0; max-width: none; transform-origin: center center; }
-    html.tv-browse-active .tv-browse-rail .poster-wrap { aspect-ratio: 2 / 3; height: 25.8vh; }
+    /* Keep the normal poster size, but reserve focus scale within the actual
+       rail height when WebView's available height is smaller than window vh. */
+    html.tv-browse-active .tv-browse-rail .card { flex: 0 0 10.6vw; display: flex; flex-direction: column; width: 10.6vw; min-width: 0; max-width: none; max-height: calc(100% / 1.04); overflow: visible; transform-origin: center center; }
+    html.tv-browse-active .tv-browse-rail .poster-wrap { flex: 0 1 auto; min-height: 0; width: 100%; max-width: 100%; margin: 0; aspect-ratio: 2 / 3; height: 25.8vh; border-radius: inherit; overflow: hidden; }
+    html.tv-browse-active .tv-browse-rail .card-body { flex: 0 0 auto; }
     html.tv-browse-active .tv-browse-rail .card img { width: 100%; height: 100%; object-fit: cover; }
     html.tv-browse-active .tv-browse-rail .card:focus { transform: scale(1.04); }
+    html.tv-browse-active .tv-browse-rail .card:focus .poster-wrap::after { content: ""; position: absolute; inset: 0; border: 2px solid rgba(255,255,255,.9); border-radius: inherit; box-sizing: border-box; pointer-events: none; z-index: 4; }
     html.tv-browse-active .tv-browse-rail .card-title { font-size: clamp(13px,1.1vw,21px); text-align: center; }
     html.tv-browse-active .tv-browse-feedback { position: absolute; bottom: .5vh; left: var(--tv-gutter); right: var(--tv-gutter); display: flex; align-items: center; gap: 20px; z-index: 4; font-size: 14px; }
     html.tv-browse-active .tv-browse-filters {
