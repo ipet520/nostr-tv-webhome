@@ -623,8 +623,20 @@
     }
 
     function renderDetailTitleLogo(item, detail, canonicalTitle) {
-      if (!isTvLikeDevice()) return renderMobileDetailTitleLogo(item, detail, canonicalTitle);
       const title = $("detailTitle");
+      const row = title.closest(".detail-title-row"), wrap = $("detailLogoWrap");
+      let slot = row.querySelector(".detail-title-slot");
+      if (!isTvLikeDevice()) {
+        if (slot) {
+          row.parentElement.insertBefore(wrap, row);
+          row.insertBefore(title, slot); slot.remove();
+        }
+        return renderMobileDetailTitleLogo(item, detail, canonicalTitle);
+      }
+      if (!slot) {
+        slot = document.createElement("div"); slot.className = "detail-title-slot";
+        row.insertBefore(slot, title); slot.appendChild(wrap); slot.appendChild(title);
+      }
       title.textContent = canonicalTitle || detailCanonicalTitle(item, detail);
       title.style.display = "";
       renderArtTitle(item, detail, $("detailLogoImg"), title, $("detailLogoWrap"), () => state.selected === item && $("detailSheet").classList.contains("active"));

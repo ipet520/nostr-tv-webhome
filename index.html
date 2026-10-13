@@ -2105,14 +2105,18 @@
     html.tv-mode #detailSheet.detail-large .detail-spacer {
       display: none !important;
     }
-    /* TV artwork occupies the reserved title slot; metadata and actions never shift. */
+    /* TV title and artwork share one reserved slot in the wrapping title row.
+       Rating is a separate flex item, outside the artwork's paint bounds. */
+    html.tv-mode #detailSheet.detail-large .detail-title-slot {
+      position: relative; flex: 0 0 75%; min-width: 0; min-height: 96px;
+    }
     html.tv-mode #detailSheet.detail-large .detail-logo-wrap,
     html.tv-mode #detailSheet.detail-large .detail-logo-wrap.logo-ready {
       position: absolute;
       top: 0;
       left: 0;
       height: 96px;
-      max-width: min(50vw, 75%);
+      width: 100%; max-width: 100%;
       margin: 0;
       align-items: center;
       transition: none;
@@ -2122,6 +2126,8 @@
       margin-top: 0; min-height: 96px; align-items: center;
     }
     html.tv-mode #detailSheet.detail-large .detail-title-row h2 { margin: 0; min-height: 96px; display: flex; align-items: center; }
+    html.tv-mode #detailSheet.detail-large .detail-title-slot h2 { overflow-wrap: anywhere; }
+    html.tv-mode #detailSheet.detail-large #detailTitleMeta { flex: 0 0 auto; max-width: 100%; }
     html.tv-mode #detailSheet.detail-large .detail-logo-img { max-height: 96px; transition: opacity 180ms ease; }
     /* 4) 信息标签（年份/类型/时长/状态）改为胶囊型（仅 TV，圆角矩形 → 全圆角） */
     html.tv-mode #detailSheet.detail-large .meta-pill {
@@ -6987,9 +6993,9 @@
     html.tv-browse-active #infiniteSentinel { display: none; }
     .tv-browse[hidden], .tv-browse [hidden] { display: none !important; }
     html.tv-browse-active .tv-browse { position: relative; width: 100%; height: 100%; overflow: hidden; background: #101419; color: #fff; --tv-gutter: 4vw; --tv-gap: 8px; --tv-info-gap: 4px; --tv-safe-top: 16px; --tv-safe-bottom: 20px; --tv-control-height: 36px; --tv-control-icon: 21px; --tv-caption-font: 14px; --tv-meta-font: 14px; --tv-overview-font: 16px; --tv-column-font: 19px; --tv-logo-height: 72px; --tv-title-font: 36px; --tv-poster-width: 140px; --tv-poster-height: 210px; --tv-rail-slot: 260px; --tv-focus-space: 6px; }
-    html.tv-browse-active .tv-browse-foreground { position: relative; display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: minmax(0,1fr) auto var(--tv-rail-slot); gap: var(--tv-gap); height: var(--tv-visible-height,100%); padding: var(--tv-safe-top) 0 var(--tv-safe-bottom); }
+    html.tv-browse-active .tv-browse-foreground { position: relative; display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: minmax(0,1fr) auto var(--tv-rail-slot); gap: 0; height: var(--tv-visible-height,100%); padding: var(--tv-safe-top) 0 var(--tv-safe-bottom); }
     html.tv-browse-active .tv-browse-foreground > * { grid-column: 1; }
-    html.tv-browse-active .tv-browse-upper { grid-row: 1; display: grid; grid-template-columns: minmax(0,1fr) auto; grid-template-rows: auto minmax(0,1fr); gap: var(--tv-gap); margin: 0 var(--tv-gutter); min-height: 0; }
+    html.tv-browse-active .tv-browse-upper { grid-row: 1; display: grid; grid-template-columns: minmax(0,1fr) auto; grid-template-rows: auto minmax(0,1fr); gap: var(--tv-gap); margin: 0 var(--tv-gutter) var(--tv-gap); min-height: 0; }
     html.tv-browse-active .tv-browse-backdrop { position: absolute; inset: 0; background-size: cover; background-position: center; opacity: 0; transition: opacity 240ms ease; pointer-events: none; }
     html.tv-browse-active .tv-browse-backdrop.visible { opacity: 1; }
     html.tv-browse-active .tv-browse-shade { position: absolute; inset: 0; background: linear-gradient(90deg,rgba(8,12,18,.58),rgba(8,12,18,.22) 34%,transparent 65%),linear-gradient(0deg,rgba(8,12,18,.58),rgba(8,12,18,.16) 25%,transparent 42%); pointer-events: none; }
@@ -7011,6 +7017,7 @@
       box-shadow: 0 1px 3px rgba(0,0,0,.85); pointer-events: none;
     }
     html.tv-browse-active .tv-browse-columns .tv-browse-pill[aria-pressed="true"]::after,
+    html.tv-browse-active .tv-browse-filters .tv-browse-pill[aria-pressed="true"]::after,
     html.tv-browse-active .tv-browse-functions button:not(.tv-browse-search):focus::after { background: var(--tv-nav-accent); }
     html.tv-browse-active .tv-browse .tv-browse-pill:focus {
       background: rgba(255,255,255,.55); color: #17212b; text-shadow: none;
@@ -7037,7 +7044,7 @@
     html.tv-browse-active #tvBrowseMeta:empty, html.tv-browse-active #tvBrowseUpdate:empty, html.tv-browse-active #tvBrowseOverview:empty { display: none; }
     html.tv-browse-active #tvBrowseUpdate { color: #b8dfcc; }
     html.tv-browse-active #tvBrowseOverview { margin: var(--tv-info-gap) 0 0; font-size: var(--tv-overview-font); line-height: 1.5; display: var(--tv-overview-display,-webkit-box); -webkit-line-clamp: var(--tv-overview-lines,3); -webkit-box-orient: vertical; overflow: hidden; }
-    html.tv-browse-active .tv-browse-columns { grid-row: 2; min-width: 0; margin: 0 var(--tv-gutter); display: flex; gap: var(--tv-column-gap,18px); overflow-x: auto; white-space: nowrap; padding: var(--tv-column-space,8px) 0; scrollbar-width: none; z-index: 3; }
+    html.tv-browse-active .tv-browse-columns { grid-row: 2; min-width: 0; margin: 0 var(--tv-gutter) var(--tv-rail-gap,2px); display: flex; gap: var(--tv-column-gap,18px); overflow-x: auto; white-space: nowrap; padding: var(--tv-column-space,8px) 0; scrollbar-width: none; z-index: 3; }
     /* Preserve the measured column row while filters hide it; posters do not jump. */
     html.tv-browse-active .tv-browse.filter-open .tv-browse-columns { visibility: hidden; pointer-events: none; }
     html.tv-browse-active .tv-browse-columns::-webkit-scrollbar, html.tv-browse-active .tv-browse-rail::-webkit-scrollbar { display: none; }
@@ -7046,7 +7053,7 @@
     html.tv-browse-active .history-open .tv-browse-columns { visibility: hidden; pointer-events: none; }
     html.tv-browse-active .history-open .tv-browse-recent-tools { grid-row: 1; }
     html.tv-browse-active .history-open .card-meta { display: none; }
-    html.tv-browse-active .tv-history-resume { grid-row: 2; margin: 0 var(--tv-gutter); display: flex; align-items: center; gap: var(--tv-resume-gap,18px); z-index: 3; min-width: 0; }
+    html.tv-browse-active .tv-history-resume { grid-row: 2; margin: 0 var(--tv-gutter) var(--tv-rail-gap,2px); display: flex; align-items: center; gap: var(--tv-resume-gap,18px); z-index: 3; min-width: 0; }
     html.tv-browse-active #tvHistoryContinue { border-radius: 999px; height: var(--tv-control-height); min-height: 0; padding: 0 28px; font-size: var(--tv-meta-font); flex: 0 0 auto; }
     html.tv-browse-active #tvHistoryContinue > .icon { fill: #35E07A; stroke: none; }
     html.tv-browse-active .tv-history-progress-info { min-width: 0; width: clamp(220px,16vw,320px); font-size: var(--tv-meta-font); color: rgba(255,255,255,.9); }
@@ -7061,23 +7068,25 @@
        No flex shrink may compress the image independently of its width. */
     html.tv-browse-active .tv-browse-rail .card { flex: 0 0 var(--tv-poster-width,17.2vh); display: flex; flex-direction: column; width: var(--tv-poster-width,17.2vh); min-width: 0; max-width: none; overflow: visible; transform-origin: center center; }
     html.tv-browse-active .tv-browse-rail .poster-wrap { flex: 0 0 auto; width: 100%; max-width: 100%; margin: 0; aspect-ratio: 2 / 3; height: var(--tv-poster-height,25.8vh); border-radius: inherit; overflow: hidden; }
-    html.tv-browse-active .tv-browse-rail .card-body { flex: 0 0 auto; padding: 6px 8px; }
+    html.tv-browse-active .tv-browse-rail .card-body { flex: 0 0 auto; width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; padding: 6px 8px; }
     html.tv-browse-active .tv-browse-rail .card img { width: 100%; height: 100%; object-fit: cover; }
     html.tv-browse-active .tv-browse-rail .card:focus { transform: scale(1.04); }
     html.tv-browse-active .tv-browse-rail .card:focus .poster-wrap::after { content: ""; position: absolute; inset: 0; border: 2px solid rgba(255,255,255,.9); border-radius: inherit; box-sizing: border-box; pointer-events: none; z-index: 4; }
-    html.tv-browse-active .tv-browse-rail .card-title { font-size: var(--tv-caption-font); text-align: center; }
+    html.tv-browse-active .tv-browse-rail .card-title { width: 100%; max-width: 100%; min-width: 0; font-size: var(--tv-caption-font); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    html.tv-browse-active .tv-browse-rail .card-meta { width: 100%; max-width: 100%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     html.tv-browse-active .tv-browse-rail .weekly-air-status { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
-    html.tv-browse-active .tv-browse-feedback { grid-row: 4; min-height: 20px; margin: 0 var(--tv-gutter); display: flex; align-items: center; gap: var(--tv-gap); z-index: 4; font-size: 14px; }
+    html.tv-browse-active .tv-browse-feedback { grid-row: 4; min-height: 20px; margin: var(--tv-gap) var(--tv-gutter) 0; display: flex; align-items: center; gap: var(--tv-gap); z-index: 4; font-size: 14px; }
     html.tv-browse-active .tv-browse-filters {
       grid-column: 1; grid-row: 1 / 3; min-height: 0; margin: 0 var(--tv-gutter); overflow: auto;
-      padding: var(--tv-gap) 2vw; border: 0; box-shadow: none; background: transparent; z-index: 4;
+      padding: 3px 2vw; border: 0; box-shadow: none; background: transparent; z-index: 4;
       --tv-filter-font: var(--tv-caption-font); --tv-filter-height: var(--tv-control-height);
     }
     html.tv-browse-active .tv-browse-filters .secondary-filter-row {
-      display: flex; align-items: center; gap: 14px; margin: 0 0 clamp(6px,.8vh,9px); padding: 0;
+      display: flex; align-items: center; gap: 14px; margin: 0 0 clamp(3px,.4vh,5px); padding: 0;
       min-height: 0; overflow: visible;
     }
-    html.tv-browse-active .tv-browse-filters .secondary-filter-row:last-child { margin-bottom: 0; }
+    html.tv-browse-active .tv-browse-filters .secondary-filter-row:last-of-type { margin-bottom: 0; }
+    html.tv-browse-active .tv-browse-filter-overview { margin: var(--tv-gap) 0 0; max-width: min(60vw,900px); color: #d8dee8; font-size: var(--tv-overview-font); line-height: 1.5; text-shadow: var(--tv-text-protection); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--tv-filter-overview-lines,0); overflow: hidden; }
     html.tv-browse-active .tv-browse-filters .secondary-filter-label {
       flex: 0 0 clamp(58px,4.5vw,86px); height: var(--tv-filter-height); display: flex; align-items: center;
       font-size: var(--tv-filter-font); font-weight: 500; line-height: 1.2; color: rgba(255,255,255,.85); text-shadow: var(--tv-text-protection);
@@ -28538,6 +28547,7 @@ utils.encode = function encode(arr, enc) {
       ui.filterOpen = true;
       renderTvBrowseFilters();
       syncTvBrowseVisibility();
+      layoutTvBrowse();
       const host = $("tvBrowseFilters");
       focusRemoteTarget(tvBrowseFilterTarget() || host.querySelector("button"));
       return true;
@@ -28576,7 +28586,7 @@ utils.encode = function encode(arr, enc) {
       const signature = ui.column + secondaryFilterSchemaSignature(groups);
       if (host.dataset.schema !== signature) {
         host.dataset.schema = signature;
-        host.innerHTML = groups.map((group) => `<div class="secondary-filter-row" data-group="${escapeAttr(group.key)}"><span class="secondary-filter-label">${escapeHtml(group.label)}</span><div class="secondary-filter-options">${group.options.map((option) => `<button type="button" class="focusable tv-browse-control tv-browse-pill secondary-filter-option" data-group="${escapeAttr(group.key)}" data-value="${escapeAttr(option.value)}">${escapeHtml(option.label)}</button>`).join("")}</div></div>`).join("");
+        host.innerHTML = groups.map((group) => `<div class="secondary-filter-row" data-group="${escapeAttr(group.key)}"><span class="secondary-filter-label">${escapeHtml(group.label)}</span><div class="secondary-filter-options">${group.options.map((option) => `<button type="button" class="focusable tv-browse-control tv-browse-pill secondary-filter-option" data-group="${escapeAttr(group.key)}" data-value="${escapeAttr(option.value)}">${escapeHtml(option.label)}</button>`).join("")}</div></div>`).join("") + '<p id="tvBrowseFilterOverview" class="tv-browse-filter-overview" hidden></p>';
         host.querySelectorAll("button").forEach((button) => button.addEventListener("click", () => {
           tvBrowseSavePosition();
           const current = secondaryFilterState(ui.column);
@@ -28599,6 +28609,14 @@ utils.encode = function encode(arr, enc) {
         button.classList.toggle("selected", selected);
         button.setAttribute("aria-pressed", String(selected));
       });
+    }
+
+    function syncTvBrowseFilterOverview() {
+      const overview = $("tvBrowseFilterOverview");
+      if (!overview) return;
+      overview.textContent = $("tvBrowseOverview").textContent;
+      overview.hidden = !tvBrowseState().filterOpen || !overview.textContent.trim()
+        || Number($("tvBrowse").style.getPropertyValue("--tv-filter-overview-lines")) < 1;
     }
 
     function syncTvBrowseVisibility() {
@@ -28634,11 +28652,13 @@ utils.encode = function encode(arr, enc) {
       const px = (name, value) => set(name, value + "px");
       const gap = clamp(4, height * .01, 12), infoGap = clamp(2, height * .004, 5);
       const top = clamp(8, height * .03, 32);
-      const bottom = Math.max(clamp(12, height * .04, 44), parseFloat(getComputedStyle(root).getPropertyValue("--fm-safe-bottom")) || 0);
+      const bottom = Math.max(clamp(8, height * .02, 24), parseFloat(getComputedStyle(root).getPropertyValue("--fm-safe-bottom")) || 0);
+      const railGap = clamp(2, height * .002, 3);
       const captionFont = clamp(13, height * 21 / 1080, 21), metaFont = clamp(13, height * 22 / 1080, 22);
       const overviewFont = clamp(14, height * 24 / 1080, 24), titleFont = clamp(24, height * .05, 54);
       px("visible-height", height); px("safe-top", top); px("safe-bottom", bottom);
       px("gap", gap); px("info-gap", infoGap); px("caption-font", captionFont);
+      px("rail-gap", railGap);
       px("meta-font", metaFont); px("overview-font", overviewFont); px("title-font", titleFont);
       px("control-height", clamp(36, height * .045, 50)); px("control-icon", clamp(21, height * .025, 28));
       px("column-font", clamp(16, height * 24 / 1080, 24));
@@ -28666,7 +28686,8 @@ utils.encode = function encode(arr, enc) {
         // Rail padding consumes these same edges; do not scale the slot again.
         focusSpace = Math.ceil((poster + caption) * .02) + 2;
         railSlot = Math.ceil(poster + caption) + focusSpace * 2;
-        upper = height - top - bottom - $("tvBrowseColumns").offsetHeight - railSlot - gap * (feedback.hidden ? 2 : 3) - feedback.offsetHeight;
+        upper = height - top - bottom - $("tvBrowseColumns").offsetHeight - railSlot - railGap - gap
+          - (feedback.hidden ? 0 : feedback.offsetHeight + gap);
         if (upper >= height * .15 + core + overviewFont * 4.5 || compact) break;
       }
       const logoHeight = Math.min(height * (compact ? .11 : .15), Math.max(titleFont * 1.1, upper - core));
@@ -28676,6 +28697,15 @@ utils.encode = function encode(arr, enc) {
       set("overview-display", lines ? "-webkit-box" : "none");
       px("poster-height", poster); px("poster-width", poster * 2 / 3);
       px("focus-space", focusSpace); px("rail-slot", railSlot);
+      // The filter host spans the fixed upper rows. Its synopsis consumes only
+      // spare space after all four reachable rows, never the poster budget.
+      const filters = $("tvBrowseFilters");
+      const used = Array.from(filters.querySelectorAll(".secondary-filter-row")).reduce((sum, row) =>
+        sum + row.offsetHeight + parseFloat(getComputedStyle(row).marginBottom), 0);
+      const filterStyle = getComputedStyle(filters);
+      const spare = filters.clientHeight - used - parseFloat(filterStyle.paddingTop) - parseFloat(filterStyle.paddingBottom) - gap - railGap;
+      set("filter-overview-lines", String(height < 450 ? 0 : clamp(0, Math.floor(spare / (overviewFont * 1.5)), height >= 720 ? 3 : 2)));
+      syncTvBrowseFilterOverview();
     }
 
     function initTvBrowse() {
@@ -28798,8 +28828,8 @@ utils.encode = function encode(arr, enc) {
       const status = query.error || query.retryableError || (query.loading && !items.length ? "加载中…" : !items.length ? "暂无内容" : "");
       $("tvBrowseStatus").textContent = status;
       $("tvBrowseRetry").hidden = !(query.error || query.retryableError || !items.length && query.loaded);
-      layoutTvBrowse();
       if (ui.filterOpen) renderTvBrowseFilters();
+      layoutTvBrowse();
       const position = tvBrowsePosition();
       const selected = items.find((item) => mediaDomKey(item) === position.key) || items[historyView ? 0 : Math.min(position.index, items.length - 1)];
       if (historyView) { position.key = selected ? mediaDomKey(selected) : ""; position.index = selected ? items.indexOf(selected) : 0; }
@@ -28832,6 +28862,7 @@ utils.encode = function encode(arr, enc) {
       if (ui.pendingImage) { ui.pendingImage.onload = ui.pendingImage.onerror = null; ui.pendingImage.src = ""; ui.pendingImage = null; }
       $("tvBrowseTitle").textContent = ""; $("tvBrowseMeta").textContent = "";
       $("tvBrowseOverview").textContent = ""; $("tvBrowseUpdate").textContent = "";
+      syncTvBrowseFilterOverview();
       $("tvBrowseLogo").hidden = true; $("tvBrowseTitle").hidden = false;
       $("tvHistoryResume").hidden = true;
       // Keep the last decoded backdrop until a valid replacement is ready.
@@ -28903,6 +28934,7 @@ utils.encode = function encode(arr, enc) {
       const desc = String(item.description || item.desc || "").trim();
       const labelOnly = item.source === "tmdb" && desc === (item.listTitle || "搜索") + " · " + (item.title || "");
       $("tvBrowseOverview").textContent = homeHeroPresentationOverview(item, detail) || (labelOnly || ui.view === "history" ? "" : desc);
+      syncTvBrowseFilterOverview();
       tvBrowseRenderLogo(item, detail);
       tvBrowseEnsurePreviewDetail(item, detail);
       tvBrowsePrepareAdjacentLogos(item);
@@ -33846,8 +33878,20 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     }
 
     function renderDetailTitleLogo(item, detail, canonicalTitle) {
-      if (!isTvLikeDevice()) return renderMobileDetailTitleLogo(item, detail, canonicalTitle);
       const title = $("detailTitle");
+      const row = title.closest(".detail-title-row"), wrap = $("detailLogoWrap");
+      let slot = row.querySelector(".detail-title-slot");
+      if (!isTvLikeDevice()) {
+        if (slot) {
+          row.parentElement.insertBefore(wrap, row);
+          row.insertBefore(title, slot); slot.remove();
+        }
+        return renderMobileDetailTitleLogo(item, detail, canonicalTitle);
+      }
+      if (!slot) {
+        slot = document.createElement("div"); slot.className = "detail-title-slot";
+        row.insertBefore(slot, title); slot.appendChild(wrap); slot.appendChild(title);
+      }
       title.textContent = canonicalTitle || detailCanonicalTitle(item, detail);
       title.style.display = "";
       renderArtTitle(item, detail, $("detailLogoImg"), title, $("detailLogoWrap"), () => state.selected === item && $("detailSheet").classList.contains("active"));

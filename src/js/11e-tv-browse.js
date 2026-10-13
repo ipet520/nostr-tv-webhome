@@ -224,6 +224,7 @@
       ui.filterOpen = true;
       renderTvBrowseFilters();
       syncTvBrowseVisibility();
+      layoutTvBrowse();
       const host = $("tvBrowseFilters");
       focusRemoteTarget(tvBrowseFilterTarget() || host.querySelector("button"));
       return true;
@@ -262,7 +263,7 @@
       const signature = ui.column + secondaryFilterSchemaSignature(groups);
       if (host.dataset.schema !== signature) {
         host.dataset.schema = signature;
-        host.innerHTML = groups.map((group) => `<div class="secondary-filter-row" data-group="${escapeAttr(group.key)}"><span class="secondary-filter-label">${escapeHtml(group.label)}</span><div class="secondary-filter-options">${group.options.map((option) => `<button type="button" class="focusable tv-browse-control tv-browse-pill secondary-filter-option" data-group="${escapeAttr(group.key)}" data-value="${escapeAttr(option.value)}">${escapeHtml(option.label)}</button>`).join("")}</div></div>`).join("");
+        host.innerHTML = groups.map((group) => `<div class="secondary-filter-row" data-group="${escapeAttr(group.key)}"><span class="secondary-filter-label">${escapeHtml(group.label)}</span><div class="secondary-filter-options">${group.options.map((option) => `<button type="button" class="focusable tv-browse-control tv-browse-pill secondary-filter-option" data-group="${escapeAttr(group.key)}" data-value="${escapeAttr(option.value)}">${escapeHtml(option.label)}</button>`).join("")}</div></div>`).join("") + '<p id="tvBrowseFilterOverview" class="tv-browse-filter-overview" hidden></p>';
         host.querySelectorAll("button").forEach((button) => button.addEventListener("click", () => {
           tvBrowseSavePosition();
           const current = secondaryFilterState(ui.column);
@@ -285,6 +286,14 @@
         button.classList.toggle("selected", selected);
         button.setAttribute("aria-pressed", String(selected));
       });
+    }
+
+    function syncTvBrowseFilterOverview() {
+      const overview = $("tvBrowseFilterOverview");
+      if (!overview) return;
+      overview.textContent = $("tvBrowseOverview").textContent;
+      overview.hidden = !tvBrowseState().filterOpen || !overview.textContent.trim()
+        || Number($("tvBrowse").style.getPropertyValue("--tv-filter-overview-lines")) < 1;
     }
 
     function syncTvBrowseVisibility() {
@@ -320,11 +329,13 @@
       const px = (name, value) => set(name, value + "px");
       const gap = clamp(4, height * .01, 12), infoGap = clamp(2, height * .004, 5);
       const top = clamp(8, height * .03, 32);
-      const bottom = Math.max(clamp(12, height * .04, 44), parseFloat(getComputedStyle(root).getPropertyValue("--fm-safe-bottom")) || 0);
+      const bottom = Math.max(clamp(8, height * .02, 24), parseFloat(getComputedStyle(root).getPropertyValue("--fm-safe-bottom")) || 0);
+      const railGap = clamp(2, height * .002, 3);
       const captionFont = clamp(13, height * 21 / 1080, 21), metaFont = clamp(13, height * 22 / 1080, 22);
       const overviewFont = clamp(14, height * 24 / 1080, 24), titleFont = clamp(24, height * .05, 54);
       px("visible-height", height); px("safe-top", top); px("safe-bottom", bottom);
       px("gap", gap); px("info-gap", infoGap); px("caption-font", captionFont);
+      px("rail-gap", railGap);
       px("meta-font", metaFont); px("overview-font", overviewFont); px("title-font", titleFont);
       px("control-height", clamp(36, height * .045, 50)); px("control-icon", clamp(21, height * .025, 28));
       px("column-font", clamp(16, height * 24 / 1080, 24));
@@ -352,7 +363,8 @@
         // Rail padding consumes these same edges; do not scale the slot again.
         focusSpace = Math.ceil((poster + caption) * .02) + 2;
         railSlot = Math.ceil(poster + caption) + focusSpace * 2;
-        upper = height - top - bottom - $("tvBrowseColumns").offsetHeight - railSlot - gap * (feedback.hidden ? 2 : 3) - feedback.offsetHeight;
+        upper = height - top - bottom - $("tvBrowseColumns").offsetHeight - railSlot - railGap - gap
+          - (feedback.hidden ? 0 : feedback.offsetHeight + gap);
         if (upper >= height * .15 + core + overviewFont * 4.5 || compact) break;
       }
       const logoHeight = Math.min(height * (compact ? .11 : .15), Math.max(titleFont * 1.1, upper - core));
@@ -362,6 +374,15 @@
       set("overview-display", lines ? "-webkit-box" : "none");
       px("poster-height", poster); px("poster-width", poster * 2 / 3);
       px("focus-space", focusSpace); px("rail-slot", railSlot);
+      // The filter host spans the fixed upper rows. Its synopsis consumes only
+      // spare space after all four reachable rows, never the poster budget.
+      const filters = $("tvBrowseFilters");
+      const used = Array.from(filters.querySelectorAll(".secondary-filter-row")).reduce((sum, row) =>
+        sum + row.offsetHeight + parseFloat(getComputedStyle(row).marginBottom), 0);
+      const filterStyle = getComputedStyle(filters);
+      const spare = filters.clientHeight - used - parseFloat(filterStyle.paddingTop) - parseFloat(filterStyle.paddingBottom) - gap - railGap;
+      set("filter-overview-lines", String(height < 450 ? 0 : clamp(0, Math.floor(spare / (overviewFont * 1.5)), height >= 720 ? 3 : 2)));
+      syncTvBrowseFilterOverview();
     }
 
     function initTvBrowse() {
@@ -484,8 +505,8 @@
       const status = query.error || query.retryableError || (query.loading && !items.length ? "加载中…" : !items.length ? "暂无内容" : "");
       $("tvBrowseStatus").textContent = status;
       $("tvBrowseRetry").hidden = !(query.error || query.retryableError || !items.length && query.loaded);
-      layoutTvBrowse();
       if (ui.filterOpen) renderTvBrowseFilters();
+      layoutTvBrowse();
       const position = tvBrowsePosition();
       const selected = items.find((item) => mediaDomKey(item) === position.key) || items[historyView ? 0 : Math.min(position.index, items.length - 1)];
       if (historyView) { position.key = selected ? mediaDomKey(selected) : ""; position.index = selected ? items.indexOf(selected) : 0; }
@@ -518,6 +539,7 @@
       if (ui.pendingImage) { ui.pendingImage.onload = ui.pendingImage.onerror = null; ui.pendingImage.src = ""; ui.pendingImage = null; }
       $("tvBrowseTitle").textContent = ""; $("tvBrowseMeta").textContent = "";
       $("tvBrowseOverview").textContent = ""; $("tvBrowseUpdate").textContent = "";
+      syncTvBrowseFilterOverview();
       $("tvBrowseLogo").hidden = true; $("tvBrowseTitle").hidden = false;
       $("tvHistoryResume").hidden = true;
       // Keep the last decoded backdrop until a valid replacement is ready.
@@ -589,6 +611,7 @@
       const desc = String(item.description || item.desc || "").trim();
       const labelOnly = item.source === "tmdb" && desc === (item.listTitle || "搜索") + " · " + (item.title || "");
       $("tvBrowseOverview").textContent = homeHeroPresentationOverview(item, detail) || (labelOnly || ui.view === "history" ? "" : desc);
+      syncTvBrowseFilterOverview();
       tvBrowseRenderLogo(item, detail);
       tvBrowseEnsurePreviewDetail(item, detail);
       tvBrowsePrepareAdjacentLogos(item);

@@ -122,10 +122,10 @@ async function checkView(viewport) {
   assert.deepEqual(await p.locator('#tvFunction-search circle,#tvFunction-search path').evaluateAll(ns=>ns.map(n=>getComputedStyle(n).stroke)),[green,green]);
   if(process.env.WEBHOME_VISUAL_DIR)await p.screenshot({path:join(process.env.WEBHOME_VISUAL_DIR,`search-${viewport.width}-${shade.slice(1)}.png`)});
  }
- // Filter focus/selection remains white and uses its original capsule.
+ // Round 10 selected filter lines join the scoped green accent; capsule remains unchanged.
  for(const page of [p,ref]){await page.locator('#tvColumn-movie').focus();await press(page,'Enter');await press(page,'Enter');}
- const filter='#tvBrowseFilters button[aria-pressed="true"]';preserved(await snapshot(ref,filter+' >> nth=0'),await snapshot(p,filter+' >> nth=0'));
- assert.equal((await snapshot(p,filter+' >> nth=0')).line.color,'rgb(255, 255, 255)');
+ const filter='#tvBrowseFilters button[aria-pressed="true"]';preserved(await snapshot(ref,filter+' >> nth=0'),await snapshot(p,filter+' >> nth=0'),{line:true});
+ assert.equal((await snapshot(p,filter+' >> nth=0')).line.color,green);
  for(const page of [p,ref])await press(page,'Escape');
  await openFixtureHistory(p);await openFixtureHistory(ref);
  assert.equal(await p.locator('#tvBrowseFunctions').isVisible(),false);assert.equal(await p.locator('#tvBrowseFunctions button[tabindex="0"]').count(),0);
