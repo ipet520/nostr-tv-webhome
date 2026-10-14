@@ -84,7 +84,7 @@ async function historyPage(count=3) {
     window.historyEnvelope=()=>({version:1,mode:'independent',legacy:historyFixture.map(i=>({...i})),records:historyFixture.map(i=>{
       const parts=i.key.split('@@@');
       const ref={version:1,kind:'ITEM',cid:Number(parts[2]),historyKey:i.key,siteKey:parts[0],vodId:parts[1],mediaType:i.mediaType,tmdbId:i.tmdbId,seasonNumber:-1,updatedAt:i.createTime,scopeToken:'fixture'};
-      return {...i,historyRecordRef:ref,canResume:true,canDelete:true,deleteScope:'ITEM',sourceLabel:parts[0]};
+      return {...i,historyRecordRef:ref,canPlayExact:true,canResume:i.position>0&&i.duration>0,canDelete:true,deleteScope:'ITEM',sourceLabel:parts[0]};
     })});
     const original=testBrowse.sdk();window.fm=Object.assign({},original,{
       history:async(options)=>{historyReads++;return options&&options.mode==='independent'?historyEnvelope():historyFixture.map(i=>({...i}));},
@@ -156,13 +156,24 @@ async function checks() {
   await ok('STATION_RETURN_REFRESH_DOES_NOT_WAIT_FOR_CONFIG',returnPage);
   returnPage=await historyPage();
   assert.equal(await returnPage.locator('#tvHistoryTime').textContent(),'0:08 / 1:40');
+  const historyProgressPageToken=await returnPage.evaluate(()=>{window.__historyProgressPageToken='same-document';return window.__historyProgressPageToken;});
+  const beforeHistoryCommitReads=await returnPage.evaluate(()=>historyReads);
   await returnPage.evaluate(()=>{
-    setTimeout(()=>{historyFixture[0].position=45000;},900);
     localStorage.setItem('fm_pan_playing','1');
     window.dispatchEvent(new Event('fmpause'));window.dispatchEvent(new Event('fmresume'));
   });
-  await returnPage.waitForFunction(()=>document.querySelector('#tvHistoryTime').textContent==='0:45 / 1:40',null,{timeout:5500});
-  await ok('PLAYER_RETURN_REFRESHES_LATE_NATIVE_HISTORY_PROGRESS_WITHOUT_RELOAD',returnPage);
+  await returnPage.waitForFunction(reads=>historyReads>reads&&!testBrowse.state.recent.loading, beforeHistoryCommitReads);
+  assert.equal(await returnPage.locator('#tvHistoryTime').textContent(),'0:08 / 1:40','resume read may occur before Native History commits');
+  await returnPage.evaluate(()=>{
+    historyFixture[0].position=45000;
+    window.dispatchEvent(new CustomEvent('fmhistorychange',{detail:{version:1}}));
+  });
+  await returnPage.waitForFunction(()=>document.querySelector('#tvHistoryTime').textContent==='0:45 / 1:40');
+  assert.equal(await returnPage.locator('#tvHistoryProgress > span').evaluate(e=>e.style.width),'45%');
+  assert.equal(await returnPage.locator('#tvHistoryEpisode').textContent(),'历史记录1');
+  assert.ok(await returnPage.evaluate(()=>historyReads)>beforeHistoryCommitReads);
+  assert.equal(await returnPage.evaluate(()=>window.__historyProgressPageToken),historyProgressPageToken,'history refresh must not reload HTML');
+  await ok('NATIVE_HISTORY_COMMIT_EVENT_REFRESHES_TV_PROGRESS_WITHOUT_RELOAD',returnPage);
   returnPage=await historyPage();
   await returnPage.evaluate(()=>{window.fm.vod=(...args)=>{vodCalls.push(args);return new Promise(resolve=>window.pendingVodReply=resolve);};});
   await returnPage.locator('#tvHistoryContinue').focus();
@@ -226,10 +237,20 @@ async function checks() {
         if(tv) {
           const b=await p.locator('#tvBrowseRail .card').evaluateAll(cs=>cs.findIndex(c=>c.__mediaItem.historyRecordRef.siteKey==='B'));
           await p.locator('#tvBrowseRail .card').nth(b).focus();
-          if(!fixture.independent.records.find(r=>r.tmdbId===99).canResume) {
+          const recordB=fixture.independent.records.find(r=>r.tmdbId===99);
+          if(!recordB.canPlayExact) {
             assert.equal(await p.locator('#tvHistoryContinue').isEnabled(),false);
             await p.locator('#tvBrowseRail .card').nth(b).click();await waitWindow(p);
-            assert.equal((await counts(p)).vod,0,'non-resumable B must not play A or start ordinary VOD');
+            assert.equal((await counts(p)).vod,0,'non-playable B must not play A or start ordinary VOD');
+          } else if(!recordB.canResume) {
+            assert.equal(await p.locator('#tvHistoryContinue').isEnabled(),true,'valid exact identity can start without a resume point');
+            const beforeVods=(await counts(p)).vod;
+            await p.locator('#tvBrowseRail .card').nth(b).click();await waitWindow(p);
+            assert.equal((await counts(p)).vod,beforeVods+1,'no-progress B should enter exact playback from its own record');
+            assert.equal(await p.evaluate(()=>vodCalls.at(-1)[1]),recordB.historyRecordRef.vodId);
+            assert.equal((await counts(p)).deleted,0);
+            await p.evaluate(()=>{window.dispatchEvent(new Event('fmpause'));window.dispatchEvent(new Event('fmresume'));});
+            await p.waitForFunction(()=>!localStorage.getItem('fm_pan_playing'));
           }
           await p.locator('#recentManageBtn').click();await p.locator('#tvBrowseRail .card').nth(b).click();
           assert.equal(await p.locator('#tvBrowseRail .recent-batch-selected').count(),1);

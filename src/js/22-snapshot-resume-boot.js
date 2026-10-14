@@ -535,14 +535,11 @@
       if (!restorePanPlaybackReturn({ skipRender: isPanPlaybackReturn })) restoreDetailReturn();
       if (restoreRecentNativeHome) restoreHomeReturn();
       updateBackTopButton();
-      const detailSheet = $("detailSheet");
-      scheduleHistorySettlement({
-        refreshTvHistory: tvBrowseActive() && tvBrowseState().view === "history"
-          && !(detailSheet && detailSheet.classList.contains("active"))
-      });
+      scheduleHistorySettlement();
       if (restoreRecentNativeHome) {
-        // The awaited refresh above rendered the new Recent list before the
-        // saved Home target was restored.  Do not start a competing sampler.
+        // Restore the saved Home target after its immediate list read. If the
+        // Native write is still in flight, fmhistorychange performs the
+        // authoritative post-commit refresh; do not start delayed list polling.
       } else if (isPlayerReturn) {
         if (!detailRearmed) await loadRecentList({ refresh: true, silent: true, reconcileDetail: false });
       } else {
@@ -841,6 +838,15 @@
       // Native resume is a fresh lifecycle event, not a duplicate timer tick.
       scheduleWebHomeResume({ force: true });
       loadInfo().catch(() => {});
+    });
+    window.addEventListener("fmhistorychange", (event) => {
+      const detail = event && event.detail;
+      if (!detail || detail.version !== 1 || !tvBrowseActive()) return;
+      const detailSheet = $("detailSheet");
+      if (detailSheet && detailSheet.classList.contains("active")) return;
+      // Native dispatches this only after its History write has committed.
+      // Re-read the Native source of truth instead of polling after resume.
+      loadRecentList({ refresh: true, silent: true, reconcileDetail: false }).catch(() => {});
     });
     window.addEventListener("fmpause", () => {
       releaseTvBrowseNativeInput();

@@ -125,7 +125,7 @@
       const ui = tvBrowseState(), position = tvBrowsePosition();
       // Resolve the live Native list on every activation; never play a deleted object.
       const target = (state.recent.items || []).find((entry) => mediaDomKey(entry) === (item ? mediaDomKey(item) : position.key));
-      if (ui.view !== "history" || !target || !detailContinueHistoryIsValid(target)
+      if (ui.view !== "history" || !target || !nativeHistoryRecordCanPlayExact(target)
         || !target.siteKey || !target.vodId) { toast("该记录暂不支持原生续播"); return Promise.resolve(false); }
       if (state.recent.nativeHandoff) return state.recent.nativeHandoff;
       if (localStorage.getItem("fm_pan_playing") === "1") return Promise.resolve(true);
@@ -146,7 +146,7 @@
       const duration = validHistoryMs(historyNestedValue(raw, ["duration", "durationMs", "duration_ms"]));
       const positionKnown = rawPosition !== "" && Number.isFinite(Number(rawPosition)) && Number(rawPosition) >= 0 && (position > 0 || Number(rawPosition) === 0);
       const progressKnown = positionKnown && duration > 0 && position <= duration;
-      $("tvHistoryContinue").disabled = !detailContinueHistoryIsValid(item) || !item.siteKey || !item.vodId || !item.historyCanResumeExact;
+      $("tvHistoryContinue").disabled = !nativeHistoryRecordCanPlayExact(item) || !item.siteKey || !item.vodId;
       const title = String(item.title || "").trim() || "作品名称不可用";
       const mediaType = String(item.mediaType || "").toLowerCase();
       const seasonNumber = item.seasonNumber, episodeNumber = item.episodeNumber;

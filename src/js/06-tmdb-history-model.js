@@ -627,6 +627,7 @@
         nativeHistoryRaw: history,
         historyRecordRef: historyRecordReference(history),
         historyCanResumeExact: !!(history && history.canResume === true),
+        historyCanPlayExact: !!(history && (typeof history.canPlayExact === "boolean" ? history.canPlayExact : history.canResume === true)),
         historyCanDeleteExact: !!(history && history.canDelete === true),
         historyCapabilityReason: String(history && history.capabilityReason || ""),
         historyDeleteScope: String(history && history.deleteScope || "ITEM"),
@@ -805,6 +806,11 @@
       return (kind === "PAN_NATIVE" || kind === "URL_NATIVE") && !!historyTitleValue(history);
     }
 
+    function nativeHistoryRecordCanPlayExact(history) {
+      return !!(history && history.source === "history" && historyRecordReference(history)
+        && history.historyCanPlayExact === true);
+    }
+
     function historyPlaybackPositionValue(history) {
       const values = [
         history && history.position,
@@ -845,12 +851,16 @@
     }
 
     function detailHasAuthoritativeNativeHistory(history) {
-      return !!(history
-        && history.source === "history"
-        && (history.nativeHistoryRaw && typeof history.nativeHistoryRaw === "object"
+      if (!history || history.source !== "history"
+        || !(history.nativeHistoryRaw && typeof history.nativeHistoryRaw === "object"
           || String(history.nativeHistoryKey || "").trim())
-        && historyCanContinuePlayback(history)
-        && historyPlaybackPositionValue(history) > 0);
+        || !historyCanContinuePlayback(history)) return false;
+      const position = historyPlaybackPositionValue(history);
+      const duration = validHistoryMs(historyNestedValue(history, ["duration", "durationMs", "duration_ms"]));
+      const native = history.nativeHistoryRaw && typeof history.nativeHistoryRaw === "object"
+        ? history.nativeHistoryRaw : history;
+      const capabilityAllowsResume = typeof native.canResume !== "boolean" || native.canResume;
+      return capabilityAllowsResume && position > 0 && duration > 0 && position <= duration;
     }
 
     function detailAuthoritativeNativeHistoryFor(item, candidate, options) {

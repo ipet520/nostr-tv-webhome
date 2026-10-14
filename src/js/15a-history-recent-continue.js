@@ -155,7 +155,7 @@
       localStorage.setItem("fm_pan_playing", "1");
       try {
         const ref = !opts.detail && historyRecordReference(item);
-        if (!opts.detail && (!ref || !item.historyCanResumeExact)) throw new Error(item.historyCapabilityReason || "当前 App 未提供可验证的精确历史续播，请使用原生历史页面");
+        if (!opts.detail && (!ref || !nativeHistoryRecordCanPlayExact(item))) throw new Error(item.historyCapabilityReason || "当前 App 未提供可验证的精确历史播放，请使用原生历史页面");
         await sdk().vod(nativeSiteKey, nativeVodId, item.title || context.title, item.pic || context.poster,
           ref ? { intent: "history_exact", historyRecordRef: ref } : undefined);
         await saveHistoryPlaybackContext(watchItem, context);

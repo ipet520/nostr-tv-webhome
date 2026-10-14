@@ -21383,6 +21383,7 @@ utils.encode = function encode(arr, enc) {
         nativeHistoryRaw: history,
         historyRecordRef: historyRecordReference(history),
         historyCanResumeExact: !!(history && history.canResume === true),
+        historyCanPlayExact: !!(history && (typeof history.canPlayExact === "boolean" ? history.canPlayExact : history.canResume === true)),
         historyCanDeleteExact: !!(history && history.canDelete === true),
         historyCapabilityReason: String(history && history.capabilityReason || ""),
         historyDeleteScope: String(history && history.deleteScope || "ITEM"),
@@ -21561,6 +21562,11 @@ utils.encode = function encode(arr, enc) {
       return (kind === "PAN_NATIVE" || kind === "URL_NATIVE") && !!historyTitleValue(history);
     }
 
+    function nativeHistoryRecordCanPlayExact(history) {
+      return !!(history && history.source === "history" && historyRecordReference(history)
+        && history.historyCanPlayExact === true);
+    }
+
     function historyPlaybackPositionValue(history) {
       const values = [
         history && history.position,
@@ -21601,12 +21607,16 @@ utils.encode = function encode(arr, enc) {
     }
 
     function detailHasAuthoritativeNativeHistory(history) {
-      return !!(history
-        && history.source === "history"
-        && (history.nativeHistoryRaw && typeof history.nativeHistoryRaw === "object"
+      if (!history || history.source !== "history"
+        || !(history.nativeHistoryRaw && typeof history.nativeHistoryRaw === "object"
           || String(history.nativeHistoryKey || "").trim())
-        && historyCanContinuePlayback(history)
-        && historyPlaybackPositionValue(history) > 0);
+        || !historyCanContinuePlayback(history)) return false;
+      const position = historyPlaybackPositionValue(history);
+      const duration = validHistoryMs(historyNestedValue(history, ["duration", "durationMs", "duration_ms"]));
+      const native = history.nativeHistoryRaw && typeof history.nativeHistoryRaw === "object"
+        ? history.nativeHistoryRaw : history;
+      const capabilityAllowsResume = typeof native.canResume !== "boolean" || native.canResume;
+      return capabilityAllowsResume && position > 0 && duration > 0 && position <= duration;
     }
 
     function detailAuthoritativeNativeHistoryFor(item, candidate, options) {
@@ -28009,7 +28019,7 @@ utils.encode = function encode(arr, enc) {
       const ui = tvBrowseState(), position = tvBrowsePosition();
       // Resolve the live Native list on every activation; never play a deleted object.
       const target = (state.recent.items || []).find((entry) => mediaDomKey(entry) === (item ? mediaDomKey(item) : position.key));
-      if (ui.view !== "history" || !target || !detailContinueHistoryIsValid(target)
+      if (ui.view !== "history" || !target || !nativeHistoryRecordCanPlayExact(target)
         || !target.siteKey || !target.vodId) { toast("该记录暂不支持原生续播"); return Promise.resolve(false); }
       if (state.recent.nativeHandoff) return state.recent.nativeHandoff;
       if (localStorage.getItem("fm_pan_playing") === "1") return Promise.resolve(true);
@@ -28030,7 +28040,7 @@ utils.encode = function encode(arr, enc) {
       const duration = validHistoryMs(historyNestedValue(raw, ["duration", "durationMs", "duration_ms"]));
       const positionKnown = rawPosition !== "" && Number.isFinite(Number(rawPosition)) && Number(rawPosition) >= 0 && (position > 0 || Number(rawPosition) === 0);
       const progressKnown = positionKnown && duration > 0 && position <= duration;
-      $("tvHistoryContinue").disabled = !detailContinueHistoryIsValid(item) || !item.siteKey || !item.vodId || !item.historyCanResumeExact;
+      $("tvHistoryContinue").disabled = !nativeHistoryRecordCanPlayExact(item) || !item.siteKey || !item.vodId;
       const title = String(item.title || "").trim() || "作品名称不可用";
       const mediaType = String(item.mediaType || "").toLowerCase();
       const seasonNumber = item.seasonNumber, episodeNumber = item.episodeNumber;
@@ -30717,7 +30727,7 @@ utils.encode = function encode(arr, enc) {
       localStorage.setItem("fm_pan_playing", "1");
       try {
         const ref = !opts.detail && historyRecordReference(item);
-        if (!opts.detail && (!ref || !item.historyCanResumeExact)) throw new Error(item.historyCapabilityReason || "当前 App 未提供可验证的精确历史续播，请使用原生历史页面");
+        if (!opts.detail && (!ref || !nativeHistoryRecordCanPlayExact(item))) throw new Error(item.historyCapabilityReason || "当前 App 未提供可验证的精确历史播放，请使用原生历史页面");
         await sdk().vod(nativeSiteKey, nativeVodId, item.title || context.title, item.pic || context.poster,
           ref ? { intent: "history_exact", historyRecordRef: ref } : undefined);
         await saveHistoryPlaybackContext(watchItem, context);
@@ -39569,18 +39579,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       }
     }
 
-    function scheduleHistorySettlement(options) {
-      const opts = options || {};
+    function scheduleHistorySettlement() {
       settleWatchFromHistory();
       [1200, 4000].forEach((delay) => setTimeout(() => {
         settleWatchFromHistory();
-        const detail = $("detailSheet");
-        if (opts.refreshTvHistory === true && tvBrowseActive() && tvBrowseState().view === "history"
-          && !(detail && detail.classList.contains("active"))) {
-          // Native progress may settle after the first resume read. Keep the
-          // visible TV History projection synchronized with the same Native list.
-          loadRecentList({ refresh: true, silent: true, reconcileDetail: false }).catch(() => {});
-        }
       }, delay));
     }
 
@@ -43233,14 +43235,11 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       if (!restorePanPlaybackReturn({ skipRender: isPanPlaybackReturn })) restoreDetailReturn();
       if (restoreRecentNativeHome) restoreHomeReturn();
       updateBackTopButton();
-      const detailSheet = $("detailSheet");
-      scheduleHistorySettlement({
-        refreshTvHistory: tvBrowseActive() && tvBrowseState().view === "history"
-          && !(detailSheet && detailSheet.classList.contains("active"))
-      });
+      scheduleHistorySettlement();
       if (restoreRecentNativeHome) {
-        // The awaited refresh above rendered the new Recent list before the
-        // saved Home target was restored.  Do not start a competing sampler.
+        // Restore the saved Home target after its immediate list read. If the
+        // Native write is still in flight, fmhistorychange performs the
+        // authoritative post-commit refresh; do not start delayed list polling.
       } else if (isPlayerReturn) {
         if (!detailRearmed) await loadRecentList({ refresh: true, silent: true, reconcileDetail: false });
       } else {
@@ -43539,6 +43538,15 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       // Native resume is a fresh lifecycle event, not a duplicate timer tick.
       scheduleWebHomeResume({ force: true });
       loadInfo().catch(() => {});
+    });
+    window.addEventListener("fmhistorychange", (event) => {
+      const detail = event && event.detail;
+      if (!detail || detail.version !== 1 || !tvBrowseActive()) return;
+      const detailSheet = $("detailSheet");
+      if (detailSheet && detailSheet.classList.contains("active")) return;
+      // Native dispatches this only after its History write has committed.
+      // Re-read the Native source of truth instead of polling after resume.
+      loadRecentList({ refresh: true, silent: true, reconcileDetail: false }).catch(() => {});
     });
     window.addEventListener("fmpause", () => {
       releaseTvBrowseNativeInput();
