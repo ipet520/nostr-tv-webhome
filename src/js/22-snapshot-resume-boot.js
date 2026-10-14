@@ -535,7 +535,11 @@
       if (!restorePanPlaybackReturn({ skipRender: isPanPlaybackReturn })) restoreDetailReturn();
       if (restoreRecentNativeHome) restoreHomeReturn();
       updateBackTopButton();
-      scheduleHistorySettlement();
+      const detailSheet = $("detailSheet");
+      scheduleHistorySettlement({
+        refreshTvHistory: tvBrowseActive() && tvBrowseState().view === "history"
+          && !(detailSheet && detailSheet.classList.contains("active"))
+      });
       if (restoreRecentNativeHome) {
         // The awaited refresh above rendered the new Recent list before the
         // saved Home target was restored.  Do not start a competing sampler.

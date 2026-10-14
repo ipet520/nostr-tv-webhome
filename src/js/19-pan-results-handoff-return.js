@@ -1776,10 +1776,19 @@
       }
     }
 
-    function scheduleHistorySettlement() {
+    function scheduleHistorySettlement(options) {
+      const opts = options || {};
       settleWatchFromHistory();
-      setTimeout(settleWatchFromHistory, 1200);
-      setTimeout(settleWatchFromHistory, 4000);
+      [1200, 4000].forEach((delay) => setTimeout(() => {
+        settleWatchFromHistory();
+        const detail = $("detailSheet");
+        if (opts.refreshTvHistory === true && tvBrowseActive() && tvBrowseState().view === "history"
+          && !(detail && detail.classList.contains("active"))) {
+          // Native progress may settle after the first resume read. Keep the
+          // visible TV History projection synchronized with the same Native list.
+          loadRecentList({ refresh: true, silent: true, reconcileDetail: false }).catch(() => {});
+        }
+      }, delay));
     }
 
     function findWatchHistory(item, list) {

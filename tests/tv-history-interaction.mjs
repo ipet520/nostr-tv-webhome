@@ -155,6 +155,15 @@ async function checks() {
   assert.ok(await returnPage.evaluate(()=>historyReads)>beforeResumeReads);
   await ok('STATION_RETURN_REFRESH_DOES_NOT_WAIT_FOR_CONFIG',returnPage);
   returnPage=await historyPage();
+  assert.equal(await returnPage.locator('#tvHistoryTime').textContent(),'0:08 / 1:40');
+  await returnPage.evaluate(()=>{
+    setTimeout(()=>{historyFixture[0].position=45000;},900);
+    localStorage.setItem('fm_pan_playing','1');
+    window.dispatchEvent(new Event('fmpause'));window.dispatchEvent(new Event('fmresume'));
+  });
+  await returnPage.waitForFunction(()=>document.querySelector('#tvHistoryTime').textContent==='0:45 / 1:40',null,{timeout:5500});
+  await ok('PLAYER_RETURN_REFRESHES_LATE_NATIVE_HISTORY_PROGRESS_WITHOUT_RELOAD',returnPage);
+  returnPage=await historyPage();
   await returnPage.evaluate(()=>{window.fm.vod=(...args)=>{vodCalls.push(args);return new Promise(resolve=>window.pendingVodReply=resolve);};});
   await returnPage.locator('#tvHistoryContinue').focus();
   await press(returnPage,'Enter');await returnPage.waitForFunction(()=>vodCalls.length===1);
