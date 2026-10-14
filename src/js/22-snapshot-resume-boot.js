@@ -137,6 +137,7 @@
         scrollY: Math.round(window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0),
         connectionOpen: !!($("connectionDock") && $("connectionDock").classList.contains("open")),
         selected: state.selected ? normalizeSnapshot(state.selected) : null,
+        detailSessionReturn: detailSessionSnapshot(),
         detailEpisodeTarget: state.detailEpisodeTarget || null,
         detailScrollTop: detail ? Math.round(detail.scrollTop || 0) : 0,
         detailReturn: state.detailReturn || null,
@@ -312,7 +313,8 @@
         openDetail(snapshot.selected, {
           restore: true,
           skipHistory: true,
-          playerReturnRestore: !!(snapshot.pan && snapshot.pan.playbackReturn),
+          playerReturnRestore: !!(snapshot.detailSessionReturn || snapshot.pan && snapshot.pan.playbackReturn),
+          detailSessionReturn: snapshot.detailSessionReturn || null,
           panSnapshot: snapshot.pan || null
         });
         restorePanSnapshot(snapshot.pan);
@@ -420,7 +422,8 @@
               openDetail(snapshot.selected, {
                 restore: true,
                 skipHistory: true,
-                playerReturnRestore: !!(snapshot.pan && snapshot.pan.playbackReturn),
+                playerReturnRestore: !!(snapshot.detailSessionReturn || snapshot.pan && snapshot.pan.playbackReturn),
+                detailSessionReturn: snapshot.detailSessionReturn || null,
                 panSnapshot: snapshot.pan || null
               });
               if (snapshot.pan) restorePanSnapshot(snapshot.pan);
@@ -489,67 +492,11 @@
     }
 
     async function rearmDetailPlaybackAfterPlayerReturn(options) {
-      const opts = options || {};
-      if (opts.playerReturn !== true || opts.manualPanPlaybackReturn === true) return false;
-      const detail = $("detailSheet");
-      if (!detail || !detail.classList.contains("active") || !state.selected) return false;
-      const item = state.selected;
-      const previousHistory = state.detailHistory
-        || state.detailPlayback && state.detailPlayback.history
-        || null;
-      const playbackReturn = state.pan && state.pan.playbackReturn;
+      const opts = options || {}, item = state.selected;
+      const sheet = $("detailSheet"), session = detailSessionFor(item);
+      if (opts.playerReturn !== true || state.detailClosing || !sheet || !sheet.classList.contains("active") || !session || !session.requestId) return false;
+      await restoreDetailSessionAfterPlayerReturn(item);
       await loadRecentList({ refresh: true, silent: true, reconcileDetail: false }).catch(() => {});
-      await Promise.all([
-        loadHistoryContextIndex(),
-        loadContinueIndex()
-      ]).catch(() => {});
-      if (state.selected !== item || !$("detailSheet") || !$("detailSheet").classList.contains("active")) return false;
-
-      const nativeHistory = findDetailContinueHistory(item);
-      const resource = detailContinueResourceContextFor(item, nativeHistory);
-      const nativeReady = detailContinueHistoryIsValid(nativeHistory);
-      const playbackReturnHistory = !nativeReady && resource && resource.source === "playback-return"
-        && detailContinueHistoryIsValid(previousHistory) ? previousHistory : null;
-      const effectiveHistory = nativeHistory || playbackReturnHistory;
-      const reusableResource = resource && !isPanHealthBad(resource.candidate) ? resource : null;
-
-      // REARM 只恢复动作和上下文；它不再把“播放器返回”解释成“重新搜源”。
-      cancelDetailPlaybackPreparation("player_return_rearm");
-      cancelPendingDirectPlay("player_return_rearm");
-      state.detailHistoryHandoff = null;
-      state.historyResume = null;
-      if (reusableResource && effectiveHistory) {
-        if (reusableResource.target) setDetailPlaybackTarget(item, reusableResource.target);
-        if (state.pan) {
-          state.pan.directReady = null;
-          state.pan.directFailure = null;
-        }
-        recordDetailPlaybackDecision("PLAYER_RETURN_PLAYBACK_DECISION", item, {
-          playbackReturnFound: !!playbackReturn,
-          continueContextFound: reusableResource.source === "continue-context",
-          lastPlayUrlFound: true,
-          nativeHistoryFound: !!nativeHistory,
-          nativeProgress: historyPlaybackPositionValue(effectiveHistory),
-          decision: "REARM_HISTORY_ONLY",
-          curatedStarted: false
-        });
-        return true;
-      }
-
-      const target = nativeHistory ? detailContinuePlaybackTargetFor(item, nativeHistory) : null;
-      if (target) setDetailPlaybackTarget(item, target);
-      else state.detailEpisodeTarget = null;
-      resetPanSearchState(false, { reason: "player_return_rearm_fallback", preserveHealth: true });
-      recordDetailPlaybackDecision("PLAYER_RETURN_PLAYBACK_DECISION", item, {
-        playbackReturnFound: !!playbackReturn,
-        continueContextFound: !!(resource && resource.contextFound),
-        lastPlayUrlFound: !!(resource && resource.target && resource.target.lastPlayUrl),
-        nativeHistoryFound: !!nativeHistory,
-        nativeProgress: nativeHistory ? historyPlaybackPositionValue(nativeHistory) : 0,
-        decision: "REARM_FALLBACK_PREPARE",
-        curatedStarted: true
-      });
-      prepareDetailPlayback(item, { reason: "player_return_rearm_fallback" }).catch(() => {});
       return true;
     }
 

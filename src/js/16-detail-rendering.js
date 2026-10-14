@@ -1,4 +1,11 @@
     function prepareDetailPlaybackForDetail(item, options) {
+      const session = detailSessionFor(item);
+      const generation = session && session.generation;
+      if (session && session.restoration) return session.restoration.then((restored) => {
+        session.restoration = null;
+        if (detailSessionFor(item) !== session || session.generation !== generation) return null;
+        return restored ? null : prepareDetailPlaybackForDetail(item, options);
+      });
       const opts = options || {};
       const canonicalStartedAt = Date.now();
       let canonicalPromise = Promise.resolve(item);
@@ -35,9 +42,12 @@
       else if (!sameSelected && !opts.restore) state.detailEpisodeTarget = null;
       if (!opts.restore && !detailWasActive) rememberHomeReturn(item, opts.returnTarget);
       state.selected = item;
+      beginDetailSession(item, opts);
+      $("detailSheet").classList.remove("sheet-closing");
+      state.detailClosing = false;
+      document.body.classList.remove("detail-closing");
       state.detail = null;
-      // 先按当前已知 Native History 同步按钮；真正的资源准备由
-      // prepareDetailPlayback 的 Continue gate 决定，避免有效续播先启动 Curated。
+      // 新详情会话的资源准备与持久化历史独立。
       syncDetailMode(item);
       if (!opts.keepPan) {
         resetPanSearchState(true, {
@@ -45,11 +55,9 @@
           preservePlaybackReturn: !!restorePlaybackReturn
         });
       }
-      // 资源准备与本地 Continue gate 共用同一个 detailPlayback run；
-      // gate 确认有历史线路时只进入 CONTINUE_READY，不启动任何搜索。
+      // 当前会话仍使用原 Curated/Direct 竞争和健康准入。
       prepareDetailPlaybackForDetail(item, {
         reason: "detail_open",
-        continueGate: true,
         playerReturnRestore: opts.playerReturnRestore === true
       }).catch(() => {});
       ensureSheetViewport($("detailSheet"));

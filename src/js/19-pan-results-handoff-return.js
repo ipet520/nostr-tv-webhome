@@ -965,6 +965,7 @@
       const selectedItem = state.selected;
       const episodeTarget = normalizePlaybackTarget(selectedItem, opts.episodeTarget || currentPlaybackTargetForItem(selectedItem));
       const payload = buildPanPlayPayload(item);
+      if (detailSessionFor(selectedItem)) return playDetailSessionCandidate(item, opts);
       if (!payload) {
         if (opts.handoffAction) updateDirectPlayStatus(opts.handoffAction.token, "FINAL_ERROR", DIRECT_PLAY_STATUS_TEXT.FINAL_ERROR, "invalid_payload");
         toast("播放资源无效，请重新选择资源");
@@ -1046,6 +1047,8 @@
     function closeDetail(fromPopState) {
       const sheet = $("detailSheet");
       if (!sheet) return;
+      const closingItem = state.selected;
+      endDetailSession("detail_closed");
       clearDirectPlayStatus(0, "route_leave");
       cancelPendingDirectPlay("detail_closed");
       cancelDetailPlaybackPreparation("detail_closed");
@@ -1090,6 +1093,7 @@
         ensureHomeHistoryEntry();
       }
       setTimeout(() => {
+        if (state.selected !== closingItem || detailSessionFor(state.selected)) return;
         state.detailClosing = false;
         document.body.classList.remove("detail-closing");
         sheet.classList.remove("active");
@@ -1345,7 +1349,7 @@
         if (saved.episodeTarget) state.detailEpisodeTarget = normalizePlaybackTarget(state.selected, saved.episodeTarget);
         const savedTarget = saved.targetId && $(saved.targetId);
         const target = isVisibleFocusable(savedTarget) ? savedTarget : detailPrimaryActionButton() || $("closeDetailBtn");
-        if (isTvLikeDevice() && isDetailPrimaryAction(target)) {
+        if (isTvLikeDevice() && isDetailPrimaryAction(target) && !detailSessionFor(state.selected)) {
           restoreDetailTopAnchor({ reason: "player_return", fromTarget: document.activeElement, target });
           return;
         }
@@ -1749,101 +1753,11 @@
       await settleWatchFromHistory();
     }
 
-    function retireDetailPreparedPlaybackAfterNativeSearch(item, marker, reason) {
-      if (!item || state.selected !== item || !marker) return false;
-      const itemKey = panSearchItemKey(item);
-      if (String(marker.itemKey || "") !== itemKey) return false;
-      const capturedRunToken = Number(marker.detailRunToken || 0) || 0;
-      const capturedRunItemKey = String(marker.detailRunItemKey || "").trim();
-      const run = state.detailPlayback && detailPlaybackIsCurrent(state.detailPlayback)
-        ? state.detailPlayback
-        : null;
-      const capturedRunMatches = !!(run && capturedRunToken
-        && capturedRunItemKey === itemKey
-        && String(run.itemKey || "") === capturedRunItemKey
-        && Number(run.token || 0) === capturedRunToken);
-      if (!capturedRunMatches) {
-        try {
-          console.debug("NATIVE_SEARCH_PREPARED_RETIRE_SKIPPED", JSON.stringify({
-            itemKey,
-            reason: reason || "native_search_history_changed",
-            capturedRunToken,
-            currentRunToken: Number(run && run.token || 0),
-            capturedRunItemKey,
-            currentRunItemKey: String(run && run.itemKey || "")
-          }));
-        } catch (e) {}
-        return false;
-      }
-      clearDirectPlayStatus(run.token, reason || "native_search_history_changed");
-      run.candidate = null;
-      run.continueResource = null;
-      run.playRequested = false;
-      run.handoffStarted = false;
-      cancelDetailPlaybackPreparation(reason || "native_search_history_changed");
-      if (state.detailHistoryHandoff && state.detailHistoryHandoff.item === item) state.detailHistoryHandoff = null;
-      state.historyResume = null;
-      state.detailEpisodeTarget = null;
-      if (state.pan && state.pan.directReady && state.pan.directReady.itemKey === itemKey) {
-        state.pan.directReady = null;
-      }
-      if (state.pan && state.pan.directFailure && state.pan.directFailure.itemKey === itemKey) {
-        state.pan.directFailure = null;
-      }
-      try {
-        console.debug("NATIVE_SEARCH_PREPARED_RETIRED", JSON.stringify({
-          itemKey,
-          reason: reason || "native_search_history_changed",
-          runToken: Number(run.token || 0),
-          capturedRunToken
-        }));
-      } catch (e) {}
-      return true;
-    }
-
     function reconcileDetailAfterNativeReturn(item, origin) {
-      const detail = $("detailSheet");
-      if (!detail || !detail.classList.contains("active") || !item || state.selected !== item) return false;
-      if (state.recent && state.recent.error) return false;
-      let marker = null;
-      let nativeSearchChangeReason = "";
-      if (origin === "native-search") {
-        marker = nativeSearchReturnMarkerFor();
-        if (!marker || marker.itemKey !== panSearchItemKey(item)) return false;
-      }
-      const winner = recentNativeHistoryWinnerFor(item);
-      const history = winner && detailHasAuthoritativeNativeHistory(winner)
-        && detailHistoryMatches(item, winner) ? winner : null;
-      if (origin === "native-search") {
-        const historyChanged = nativeSearchHistoryChanged(item, marker, history);
-        nativeSearchChangeReason = historyChanged ? nativeSearchHistoryChangeReason(item, marker, history) : "";
-        if (history) {
-          retireDetailPreparedPlaybackAfterNativeSearch(
-            item,
-            marker,
-            nativeSearchChangeReason || "native_search_authoritative_history"
-          );
-        }
-        try {
-          console.debug("NATIVE_SEARCH_HISTORY_CHANGED", JSON.stringify({
-            itemKey: panSearchItemKey(item),
-            changed: !!nativeSearchChangeReason,
-            reason: nativeSearchChangeReason || "unchanged"
-          }));
-        } catch (e) {}
-      }
-      syncDetailMode(item, history, { freshNative: true });
-      updateDetailContinueButton();
-      try {
-        console.debug("DETAIL_RETURN_RECONCILE", JSON.stringify({
-          itemKey: panSearchItemKey(item),
-          historyFound: !!history,
-          nativeProgress: history ? historyPlaybackPositionValue(history) : 0,
-          finalMode: history ? "CONTINUE" : "FIRST_PLAY",
-          historyChanged: !!nativeSearchChangeReason,
-          origin: origin || "native-return"
-        }));
-      } catch (e) {}
+      const detail = $("detailSheet"), session = detailSessionFor(item);
+      if (state.detailClosing || !detail || !detail.classList.contains("active") || !item || state.selected !== item || !session) return false;
+      if (origin !== "app-resume" && origin !== "native-search") restoreDetailSessionAfterPlayerReturn(item).catch(() => {});
+      syncDetailMode(item); updateDetailContinueButton();
       return true;
     }
 
