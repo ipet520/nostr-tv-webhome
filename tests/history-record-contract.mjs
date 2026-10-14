@@ -113,6 +113,33 @@ await test('E27 PUSH URL stays exact without fuzzy title conversion',async()=>{
  assert.equal(request.vodId,url);assert.equal(request.historyRecordRef.historyKey,native.rows[0].key);
  assert.equal(request.intent,'history_exact');
 });
+if(process.env.WEBHOME_MULTI_SOURCE_FIXTURE_PATH) await test('MULTI_SOURCE_NATIVE_CAPABILITY_TO_HTML_EXACT_HANDOFF',async()=>{
+ const records=JSON.parse(fs.readFileSync(process.env.WEBHOME_MULTI_SOURCE_FIXTURE_PATH,'utf8'));
+ assert.equal(records.length,3,'ordinary video, disk-share and PUSH video fixtures');
+ native.envelope={version:1,mode:'independent',records,legacy:records};
+ native.rows=records;
+ const items=c.normalizeHistoryList(await c.readNativeHistoryForUi());c.state.recent.items=items;assert.equal(items.length,3);
+ for(const item of items){
+  const rawRecord=records.find(row=>row.key===item.nativeHistoryKey);
+  assert.equal(item.historyCanResumeExact,true);assert.equal(item.historyCapabilityReason,'');
+  assert.equal(item.position,rawRecord.position);assert.equal(item.duration,rawRecord.duration);
+  const before=calls.filter(call=>call.method==='player.playVod').length;
+  await c.playNativeHistoryExact(item);
+  const request=calls.at(-1).payload;
+  assert.equal(request.intent,'history_exact');assert.equal(request.siteKey,'push_agent');
+  assert.equal(request.vodId,rawRecord.historyRecordRef.vodId);
+  assert.deepEqual(request.historyRecordRef,rawRecord.historyRecordRef);
+  assert.equal(calls.filter(call=>call.method==='player.playVod').length,before+1);
+  assert.equal(native.playing.key,rawRecord.key);assert.equal(native.playing.position,rawRecord.position);
+ }
+ const denied={...records[0],canResume:false,capabilityReason:'尚未建立有效续播点',position:0};
+ native.envelope={version:1,mode:'independent',records:[denied],legacy:[denied]};native.rows=[denied];
+ const item=c.normalizeHistoryList(await c.readNativeHistoryForUi())[0];assert.equal(item.historyCanResumeExact,false);
+ const before=calls.filter(call=>call.method==='player.playVod').length;
+ await assert.rejects(()=>c.playNativeHistoryExact(item),/有效续播点/);
+ assert.equal(calls.filter(call=>call.method==='player.playVod').length,before);
+ native.envelope=null;
+});
 if(process.env.WEBHOME_HISTORY_LOSS_FIXTURE_PATH) await test('LOSS_NATIVE_BRIDGE_FIXTURES_KEEP_TWO_WORKS_WITH_INDEPENDENT_CAPABILITIES',async()=>{
  const fixtures=JSON.parse(fs.readFileSync(process.env.WEBHOME_HISTORY_LOSS_FIXTURE_PATH,'utf8'));
  assert.equal(fixtures.length,9);
