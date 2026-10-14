@@ -125,9 +125,10 @@ async function historyChecks(viewport) {
   const p=await pageAt(true,viewport);await p.waitForTimeout(100);
   await p.route('**/tmdb/tv/77*',async route=>{const id=Number(new URL(route.request().url()).pathname.split('/').pop());await route.fulfill({contentType:'application/json',body:JSON.stringify({id,status:'Returning Series',number_of_seasons:2,last_episode_to_air:{season_number:2,episode_number:9},first_air_date:'2024-01-01',overview:'历史资料由匹配的 TMDB 详情补充；续播季集与进度仍来自原生记录。',genres:[{id:18,name:'剧情'}],backdrop_path:'/history-background.jpg',images:{logos:[]}})});});
   await p.evaluate(()=>{
-    window.historyFixture=[{key:'fixture@@@vod-1@@@1',vodName:'真实观看记录一',vodPic:'/poster.jpg',position:8000,duration:23000,episodeName:'原生记录第7集',createTime:Date.now(),tmdbId:771,mediaType:'tv'}, {key:'fixture@@@vod-2@@@1',vodName:'真实观看记录二',vodPic:'/poster2.jpg',position:16000,duration:100000,episodeName:'原生记录第12集',createTime:Date.now()-1000,tmdbId:772,mediaType:'tv'}];
+    window.historyFixture=[{key:'fixture@@@vod-1@@@1',vodName:'真实观看记录一',vodPic:'/poster.jpg',position:8000,duration:23000,episodeName:'来源线路名不得作为作品标题',tmdbSeasonNumber:2,tmdbEpisodeNumber:7,createTime:Date.now(),tmdbId:771,mediaType:'tv'}, {key:'fixture@@@vod-2@@@1',vodName:'真实观看记录二',vodPic:'/poster2.jpg',position:16000,duration:100000,episodeName:'来源线路名不得作为作品标题',createTime:Date.now()-1000,tmdbId:772,mediaType:'tv'}];
     window.vodCalls=[];window.nativeBacks=0;
-    window.fm=Object.assign({},testBrowse.sdk(),{history:async()=>historyFixture,vod:async(...args)=>{vodCalls.push(args);await new Promise(r=>setTimeout(r,120));},back:()=>{nativeBacks++;}});
+    // Resumable records use the independent contract; edgeChecks covers legacy reads.
+    window.fm=Object.assign({},testBrowse.sdk(),{history:async options=>options&&options.mode==='independent'?{version:1,mode:'independent',legacy:historyFixture,records:historyFixture.map(row=>({...row,canResume:true,canDelete:true,sourceLabel:'fixture',deleteScope:'ITEM',historyRecordRef:{version:1,kind:'ITEM',historyKey:row.key,cid:1,siteKey:'fixture',vodId:row.key.split('@@@')[1],mediaType:row.mediaType,tmdbId:row.tmdbId,seasonNumber:row.tmdbSeasonNumber??-1,updatedAt:row.createTime,scopeToken:'fixture'}}))}:historyFixture,vod:async(...args)=>{vodCalls.push(args);await new Promise(r=>setTimeout(r,120));},back:()=>{nativeBacks++;}});
     testBrowse.disableTracking();
     testBrowse.state.recent.loaded=false;testBrowse.state.recent.items=[];
   });
@@ -139,7 +140,7 @@ async function historyChecks(viewport) {
   assert.equal(await p.locator('#tvColumn-recent').count(),0);
   assert.equal(await p.locator('#tvBrowseColumns').isVisible(),false);
   assert.equal(await p.locator('#tvHistoryTime').textContent(),'0:08 / 0:23');
-  assert.equal(await p.locator('#tvHistoryEpisode').textContent(),'原生记录第7集');
+  assert.equal(await p.locator('#tvHistoryEpisode').textContent(),'真实观看记录一 · 第 2 季 · 第 7 集');
   const progress=await p.locator('#tvHistoryProgress').evaluate(e=>({height:e.getBoundingClientRect().height,bg:getComputedStyle(e).backgroundColor,played:getComputedStyle(e.firstElementChild).backgroundColor,width:e.firstElementChild.getBoundingClientRect().width/e.getBoundingClientRect().width,tab:e.tabIndex}));
   assert.equal(progress.height,3);assert.equal(progress.bg,'rgba(255, 255, 255, 0.45)');assert.equal(progress.played,'rgb(217, 87, 99)');assert.ok(Math.abs(progress.width-8/23)<.002);assert.equal(progress.tab,-1);
   await p.locator('#tvBrowseRail .card').first().focus();await press(p,'ArrowUp');assert.equal(await active(p),'tvHistoryContinue');
@@ -155,7 +156,7 @@ async function historyChecks(viewport) {
   assert.equal(await p.evaluate(()=>vodCalls[0][0]),'fixture');assert.equal(await p.evaluate(()=>vodCalls[0][1]),'vod-1');assert.equal(await p.locator('#detailSheet.active').count(),0);
   await p.evaluate(()=>{localStorage.removeItem('fm_pan_playing');testBrowse.restoreHomeReturn();});
   assert.equal(await p.evaluate(()=>testBrowse.tvBrowseState().view),'history','native return restores history snapshot');
-  await p.locator('#tvBrowseRail .card').nth(1).focus();assert.equal(await p.locator('#tvHistoryTime').textContent(),'0:16 / 1:40');
+  await p.locator('#tvBrowseRail .card').nth(1).focus();assert.equal(await p.locator('#tvHistoryEpisode').textContent(),'真实观看记录二');assert.equal(await p.locator('#tvHistoryTime').textContent(),'0:16 / 1:40');
   await p.locator('#tvHistoryContinue').click();await p.waitForTimeout(180);assert.equal(await p.evaluate(()=>vodCalls[1][1]),'vod-2');
   await p.evaluate(()=>{localStorage.removeItem('fm_pan_playing');historyFixture=historyFixture.slice(0,1);});await p.evaluate(()=>testBrowse.loadRecentList({refresh:true,silent:true}));
   assert.equal(await p.locator('#tvBrowseRail .card').count(),1);assert.equal(await p.locator('#tvHistoryTime').textContent(),'0:08 / 0:23');

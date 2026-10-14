@@ -28099,10 +28099,15 @@ utils.encode = function encode(arr, enc) {
       const positionKnown = rawPosition !== "" && Number.isFinite(Number(rawPosition)) && Number(rawPosition) >= 0 && (position > 0 || Number(rawPosition) === 0);
       const progressKnown = positionKnown && duration > 0 && position <= duration;
       $("tvHistoryContinue").disabled = !detailContinueHistoryIsValid(item) || !item.siteKey || !item.vodId || !item.historyCanResumeExact;
-      const episode = String(historyNestedValue(raw, ["episodeTitle", "episodeName", "episode_title"]) || item.badge || item.title || "");
-      const ref = historyRecordReference(item);
-      $("tvHistoryEpisode").textContent = ref ? [item.historySourceLabel,
-        ref.seasonNumber >= 0 && ref.mediaType === "tv" ? "第 " + ref.seasonNumber + " 季" : "", episode].filter(Boolean).join(" · ") : episode;
+      const title = String(item.title || "").trim() || "作品名称不可用";
+      const mediaType = String(item.mediaType || "").toLowerCase();
+      const seasonNumber = item.seasonNumber, episodeNumber = item.episodeNumber;
+      const episodeLabels = [];
+      if (mediaType === "tv") {
+        if (Number.isInteger(seasonNumber) && seasonNumber >= 0) episodeLabels.push("第 " + seasonNumber + " 季");
+        if (Number.isInteger(episodeNumber) && episodeNumber > 0) episodeLabels.push("第 " + episodeNumber + " 集");
+      }
+      $("tvHistoryEpisode").textContent = [title].concat(episodeLabels).join(" · ");
       $("tvHistoryTime").textContent = progressKnown ? `${formatHistoryTime(position)} / ${formatHistoryTime(duration)}` : positionKnown && position > 0 && !duration ? `${formatHistoryTime(position)} / 时长未知` : "暂无有效播放进度";
       const progress = $("tvHistoryProgress");
       progress.hidden = !progressKnown;

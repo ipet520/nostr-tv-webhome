@@ -119,6 +119,35 @@ async function counts(p){return p.evaluate(()=>({vod:vodCalls.length,deleted:del
 async function ok(name,p){results.push(name);console.log(name+' = PASS');await p.close();}
 
 async function checks() {
+  const titlePage=await historyPage(4);
+  await titlePage.evaluate(async()=>{
+    const cases=[
+      {vodName:'电影名称',mediaType:'movie',tmdbSeasonNumber:3,tmdbEpisodeNumber:9,position:14000,duration:100000},
+      {vodName:'电视剧名称',mediaType:'tv',tmdbSeasonNumber:2,tmdbEpisodeNumber:7,position:25000,duration:120000},
+      {vodName:'未标集数剧集',mediaType:'tv',position:30000,duration:200000},
+      {vodName:'无进度作品',mediaType:'movie',position:0,duration:0}
+    ];
+    historyFixture=historyFixture.map((row,index)=>({...row,...cases[index],episodeName:'热播 · APP · HD中字',vodRemarks:'蓝光线路'}));
+    await testBrowse.loadRecentList({refresh:true,silent:true});
+  });
+  const titleCases=[
+    ['电影名称','电影名称','0:14 / 1:40',14],
+    ['电视剧名称','电视剧名称 · 第 2 季 · 第 7 集','0:25 / 2:00',25/120*100],
+    ['未标集数剧集','未标集数剧集','0:30 / 3:20',15],
+    ['无进度作品','无进度作品','暂无有效播放进度',0]
+  ];
+  for(let index=0;index<titleCases.length;index++) {
+    const [cardTitle,label,time,percent]=titleCases[index];
+    await titlePage.locator('#tvBrowseRail .card').nth(index).focus();
+    await titlePage.waitForFunction(label=>document.querySelector('#tvHistoryEpisode').textContent===label,label);
+    assert.equal(await titlePage.locator('#tvBrowseRail .card').nth(index).locator('.card-title').textContent(),cardTitle);
+    assert.equal(await titlePage.locator('#tvHistoryTime').textContent(),time);
+    const selected=await titlePage.evaluate(()=>({key:document.activeElement.dataset.mediaKey,preview:testBrowse.tvBrowseState().previewKey,percent:parseFloat(document.querySelector('#tvHistoryProgress').firstElementChild.style.width),hidden:document.querySelector('#tvHistoryProgress').hidden}));
+    assert.equal(selected.preview,selected.key);assert.ok(Math.abs(selected.percent-percent)<.001);assert.equal(selected.hidden,index===3);
+  }
+  await titlePage.evaluate(()=>testBrowse.tvBrowsePreview({...document.activeElement.__mediaItem,title:' ',mediaType:'tv',seasonNumber:null,episodeNumber:''}));
+  assert.equal(await titlePage.locator('#tvHistoryEpisode').textContent(),'作品名称不可用');
+  await ok('HISTORY_WORK_TITLE_SEASON_EPISODE_NO_PROGRESS_AND_SELECTION_SYNC',titlePage);
   if(process.env.WEBHOME_HISTORY_LOSS_FIXTURE_PATH) {
     const fixtures=JSON.parse(readFileSync(process.env.WEBHOME_HISTORY_LOSS_FIXTURE_PATH,'utf8'));
     assert.equal(fixtures.length,9);
@@ -238,7 +267,7 @@ async function checks() {
   assert.ok((await counts(p)).armed);assert.equal((await counts(p)).pending,0);await waitWindow(p);assert.equal((await counts(p)).vod,0);assert.equal((await counts(p)).deleted,0);
   await press(p,'Enter');await p.waitForFunction(()=>historyFixture.length===2&&!testBrowse.state.recent.loading&&document.querySelectorAll('#tvBrowseRail .card').length===2);
   await p.waitForTimeout(250);assert.equal((await counts(p)).vod,0);assert.equal((await counts(p)).deleted,1);
-  assert.ok((await p.locator('#tvBrowseTitle').textContent()).includes('2'));assert.match(await p.locator('#tvHistoryEpisode').textContent(),/^fixture · Native episode 2$/);
+  assert.ok((await p.locator('#tvBrowseTitle').textContent()).includes('2'));assert.equal(await p.locator('#tvHistoryEpisode').textContent(),'历史记录2');
   assert.equal(await p.evaluate(()=>document.activeElement.dataset.mediaKey),await p.locator('#tvBrowseRail .card').first().getAttribute('data-media-key'));
   await ok('DOUBLE_PRESS_CANCELS_PLAY_THIRD_CONFIRMS_SINGLE_DELETE',p);
 
