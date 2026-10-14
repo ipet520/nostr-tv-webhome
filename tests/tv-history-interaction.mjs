@@ -119,6 +119,53 @@ async function counts(p){return p.evaluate(()=>({vod:vodCalls.length,deleted:del
 async function ok(name,p){results.push(name);console.log(name+' = PASS');await p.close();}
 
 async function checks() {
+  let returnPage=await historyPage();
+  for(let cycle=1;cycle<=3;cycle++) {
+    await returnPage.locator('#tvHistoryContinue').focus();
+    await returnPage.evaluate(()=>document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,bubbles:true})));
+    await returnPage.waitForFunction(cycle=>vodCalls.length===cycle,cycle);
+    assert.equal(await returnPage.evaluate(()=>localStorage.getItem('fm_pan_playing')),'1');
+    await returnPage.evaluate(()=>{window.dispatchEvent(new Event('fmpause'));window.dispatchEvent(new Event('fmresume'));});
+    await returnPage.waitForFunction(()=>!localStorage.getItem('fm_pan_playing')&&!testBrowse.state.recent.nativeHandoff&&!testBrowse.tvBrowseState().enterHeld,null,{timeout:2500});
+    await returnPage.waitForTimeout(2250);
+  }
+  assert.equal((await counts(returnPage)).vod,3);
+  await ok('THREE_NATIVE_HISTORY_ROUNDTRIPS_WITHOUT_KEYUP_OR_RELOAD',returnPage);
+  returnPage=await historyPage();
+  for(let cycle=1;cycle<=3;cycle++) {
+    await returnPage.locator('#tvBrowseRail .card').first().focus();
+    await returnPage.evaluate(()=>document.activeElement.click());
+    await returnPage.waitForFunction(cycle=>vodCalls.length===cycle,cycle);
+    const reads=await returnPage.evaluate(()=>historyReads);
+    await returnPage.evaluate(()=>{window.dispatchEvent(new Event('fmpause'));window.dispatchEvent(new Event('fmresume'));});
+    await returnPage.waitForFunction(reads=>historyReads>reads&&!localStorage.getItem('fm_pan_playing'),reads);
+    await returnPage.waitForTimeout(2250);
+  }
+  await ok('THREE_HISTORY_POSTER_CLICK_RETURN_CYCLES_WITH_LIVE_HISTORY_REFRESH',returnPage);
+  returnPage=await historyPage();
+  const beforeResumeReads=await returnPage.evaluate(()=>historyReads);
+  await returnPage.evaluate(()=>{
+    window.fm.config=()=>new Promise(()=>{});
+    historyFixture.push({...historyFixture[0],key:'fixture@@@new-station-record@@@1',vodName:'站源新增历史',tmdbId:7999});
+    window.dispatchEvent(new Event('fmpause'));window.dispatchEvent(new Event('fmresume'));
+  });
+  try { await returnPage.waitForFunction(()=>testBrowse.state.recent.items.some(i=>i.title==='站源新增历史'),null,{timeout:2500}); }
+  catch(error) { console.log('RETURN_REFRESH_DIAG',await returnPage.evaluate(()=>({reads:historyReads,items:testBrowse.state.recent.items.map(i=>({key:i.nativeHistoryKey,title:i.title})),loading:testBrowse.state.recent.loading,error:testBrowse.state.recent.error,resume:testBrowse.state.resume,config:testBrowse.state.config,view:testBrowse.tvBrowseState().view})));throw error; }
+  await returnPage.waitForFunction(()=>Array.from(document.querySelectorAll('#tvBrowseRail .card-title')).some(e=>e.textContent==='站源新增历史'));
+  assert.ok(await returnPage.evaluate(()=>historyReads)>beforeResumeReads);
+  await ok('STATION_RETURN_REFRESH_DOES_NOT_WAIT_FOR_CONFIG',returnPage);
+  returnPage=await historyPage();
+  await returnPage.evaluate(()=>{window.fm.vod=(...args)=>{vodCalls.push(args);return new Promise(resolve=>window.pendingVodReply=resolve);};});
+  await returnPage.locator('#tvHistoryContinue').focus();
+  await press(returnPage,'Enter');await returnPage.waitForFunction(()=>vodCalls.length===1);
+  await returnPage.evaluate(()=>{testBrowse.tvBrowseContinueHistory();});
+  assert.equal((await counts(returnPage)).vod,1,'pending SDK handoff still blocks duplicate playback');
+  await returnPage.evaluate(()=>{window.dispatchEvent(new Event('fmpause'));window.dispatchEvent(new Event('fmresume'));});
+  await returnPage.waitForFunction(()=>!testBrowse.state.recent.nativeHandoff&&!localStorage.getItem('fm_pan_playing'));
+  await returnPage.waitForTimeout(2200);
+  await returnPage.locator('#tvHistoryContinue').focus();await press(returnPage,'Enter');
+  await returnPage.waitForFunction(()=>vodCalls.length===2);
+  await ok('NATIVE_RETURN_RELEASES_SUSPENDED_REPLY_WITHOUT_REMOVING_HANDOFF_GUARD',returnPage);
   const titlePage=await historyPage(4);
   await titlePage.evaluate(async()=>{
     const cases=[

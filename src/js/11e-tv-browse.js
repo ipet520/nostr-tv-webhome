@@ -60,6 +60,21 @@
       });
     }
 
+    function releaseTvBrowseNativeInput() {
+      const ui = state.tvBrowse;
+      if (!ui) return;
+      ui.enterHeld = false; ui.confirm = null;
+      ui.suppressClickUntil = Date.now() + 120;
+      if (ui.view === "history") cancelRecentDeleteArm();
+    }
+
+    function completeTvBrowseNativeReturn() {
+      releaseTvBrowseNativeInput();
+      // A resumed Native activity ends the handoff even if its SDK reply was
+      // suspended with the WebView. The old finally is identity guarded.
+      if (state.recent) state.recent.nativeHandoff = null;
+    }
+
     function tvBrowseBeginStartup(epoch) {
       const ui = tvBrowseState();
       if (!tvBrowseActive() || homeFocusUserEpoch() !== epoch) return;

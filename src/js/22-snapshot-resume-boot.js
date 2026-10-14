@@ -514,7 +514,13 @@
       lockViewportWidth();
       fitConnectionPanel();
       renderConnection();
-      if (isPlayerReturn) await settlePlayerReturnHistory();
+      if (isPlayerReturn) {
+        // Home history refresh must not wait for optional watch/stat settlement.
+        // Keep the existing detail-session return ordering.
+        if (tvBrowseActive() && !($("detailSheet") && $("detailSheet").classList.contains("active"))) {
+          settlePlayerReturnHistory().catch(() => {});
+        } else await settlePlayerReturnHistory();
+      }
       let detailRearmed = false;
       if (isPlayerReturn && !isPanPlaybackReturn && opts.nativeSearchReturn !== true) {
         detailRearmed = await rearmDetailPlaybackAfterPlayerReturn({ playerReturn: true });
@@ -793,6 +799,7 @@
       stopWatchTracking(true);
     });
     window.addEventListener("pageshow", () => {
+      completeTvBrowseNativeReturn();
       const panWasPlaying = localStorage.getItem("fm_pan_playing") === "1";
       if (panWasPlaying) {
         clearDirectPlayStatus(0, "player_return");
@@ -816,6 +823,7 @@
         .catch(() => {});
     });
     window.addEventListener("fmresume", () => {
+      completeTvBrowseNativeReturn();
       const panWasPlaying = localStorage.getItem("fm_pan_playing") === "1";
       if (panWasPlaying) {
         clearDirectPlayStatus(0, "player_return");
@@ -826,9 +834,14 @@
         loadInfo().catch(() => {});
         return;
       }
-      loadInfo().finally(() => scheduleWebHomeResume());
+      // Native resume is a fresh lifecycle event, not a duplicate timer tick.
+      scheduleWebHomeResume({ force: true });
+      loadInfo().catch(() => {});
     });
-    window.addEventListener("fmpause", saveUiSnapshotNow);
+    window.addEventListener("fmpause", () => {
+      releaseTvBrowseNativeInput();
+      saveUiSnapshotNow();
+    });
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") {
         clearDirectPlayStatusOnNativeTakeover("visibility_hidden");
@@ -837,6 +850,7 @@
         pauseDetailCoverCarousel();
       }
       if (document.visibilityState === "visible") {
+        completeTvBrowseNativeReturn();
         restartDetailCoverCarousel();
         updateDetailCoverControls();
         syncDetailCoverFrame($("detailImage"));
