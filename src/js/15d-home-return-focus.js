@@ -64,7 +64,9 @@
     }
 
     function findHomeReturnMediaTarget(saved, focus) {
-      const key = focus.key || saved.mediaKey || "";
+      let key = focus.key || saved.mediaKey || "";
+      const historyItem = historyRecordFocusItem(state.recent.items || [], key);
+      if (historyItem) key = mediaDomKey(historyItem);
       const section = focus.sectionId ? document.getElementById(focus.sectionId) : null;
       const sectionGrid = section && section.querySelector(".home-rail,.media-grid");
       const returnGrid = focus.gridId === "searchHotRail" ? $("searchHotRail") : sectionGrid;

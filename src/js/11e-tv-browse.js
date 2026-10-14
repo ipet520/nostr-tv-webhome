@@ -131,8 +131,11 @@
       const duration = validHistoryMs(historyNestedValue(raw, ["duration", "durationMs", "duration_ms"]));
       const positionKnown = rawPosition !== "" && Number.isFinite(Number(rawPosition)) && Number(rawPosition) >= 0 && (position > 0 || Number(rawPosition) === 0);
       const progressKnown = positionKnown && duration > 0 && position <= duration;
-      $("tvHistoryContinue").disabled = !detailContinueHistoryIsValid(item) || !item.siteKey || !item.vodId;
-      $("tvHistoryEpisode").textContent = String(historyNestedValue(raw, ["episodeTitle", "episodeName", "episode_title"]) || item.badge || item.title || "");
+      $("tvHistoryContinue").disabled = !detailContinueHistoryIsValid(item) || !item.siteKey || !item.vodId || !item.historyCanResumeExact;
+      const episode = String(historyNestedValue(raw, ["episodeTitle", "episodeName", "episode_title"]) || item.badge || item.title || "");
+      const ref = historyRecordReference(item);
+      $("tvHistoryEpisode").textContent = ref ? [item.historySourceLabel,
+        ref.seasonNumber >= 0 && ref.mediaType === "tv" ? "第 " + ref.seasonNumber + " 季" : "", episode].filter(Boolean).join(" · ") : episode;
       $("tvHistoryTime").textContent = progressKnown ? `${formatHistoryTime(position)} / ${formatHistoryTime(duration)}` : positionKnown && position > 0 && !duration ? `${formatHistoryTime(position)} / 时长未知` : "暂无有效播放进度";
       const progress = $("tvHistoryProgress");
       progress.hidden = !progressKnown;
@@ -537,7 +540,8 @@
       if (ui.filterOpen) renderTvBrowseFilters();
       layoutTvBrowse();
       const position = tvBrowsePosition();
-      const selected = items.find((item) => mediaDomKey(item) === position.key) || items[historyView ? 0 : Math.min(position.index, items.length - 1)];
+      const selected = (historyView ? historyRecordFocusItem(items, position.key)
+        : items.find((item) => mediaDomKey(item) === position.key)) || items[Math.min(position.index, items.length - 1)];
       if (historyView) { position.key = selected ? mediaDomKey(selected) : ""; position.index = selected ? items.indexOf(selected) : 0; }
       if (selected) tvBrowsePreview(selected);
       else tvBrowseClearPreview();

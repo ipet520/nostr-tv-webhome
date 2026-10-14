@@ -81,8 +81,22 @@ async function historyPage(count=3) {
   const p=await pageAt(true);await p.evaluate(count=>{
     testBrowse.disableTracking(); window.vodCalls=[];window.deleteCalls=[];window.historyReads=0;window.deleteFailure=false;window.nativeBacks=0;
     window.historyFixture=Array.from({length:count},(_,i)=>({key:`fixture@@@vod-${i+1}@@@1`,vodName:'历史记录'+(i+1),vodPic:'/poster.jpg',position:8000+i*1000,duration:100000,episodeName:'Native episode '+(i+1),createTime:Date.now()-i*1000,mediaType:'movie',tmdbId:7000+i}));
+    window.historyEnvelope=()=>({version:1,mode:'independent',legacy:historyFixture.map(i=>({...i})),records:historyFixture.map(i=>{
+      const parts=i.key.split('@@@');
+      const ref={version:1,kind:'ITEM',cid:Number(parts[2]),historyKey:i.key,siteKey:parts[0],vodId:parts[1],mediaType:i.mediaType,tmdbId:i.tmdbId,seasonNumber:-1,updatedAt:i.createTime,scopeToken:'fixture'};
+      return {...i,historyRecordRef:ref,canResume:true,canDelete:true,deleteScope:'ITEM',sourceLabel:parts[0]};
+    })});
     const original=testBrowse.sdk();window.fm=Object.assign({},original,{
-      history:async()=>{historyReads++;return historyFixture.map(i=>({...i}));},
+      history:async(options)=>{historyReads++;return options&&options.mode==='independent'?historyEnvelope():historyFixture.map(i=>({...i}));},
+      historyDelete:async({refs})=>{
+        const results=refs.map(ref=>{
+          deleteCalls.push({...ref});
+          const id=JSON.stringify([1,ref.kind,ref.cid,ref.historyKey,'',0,-1]);
+          if(deleteFailure)return {displayId:id,status:'FAILED',message:'delete fixture failed'};
+          const before=historyFixture.length;historyFixture=historyFixture.filter(i=>i.key!==ref.historyKey);
+          return {displayId:id,status:before>historyFixture.length?'DELETED':'NOT_FOUND'};
+        });return {version:1,results,readback:historyEnvelope()};
+      },
       device:async()=>({ip:'http://fixture.local:9978'}),
       req:async(url,options)=>{
         if(url.endsWith('/api/playback/progress/delete')) {
@@ -189,7 +203,7 @@ async function checks() {
   assert.ok((await counts(p)).armed);assert.equal((await counts(p)).pending,0);await waitWindow(p);assert.equal((await counts(p)).vod,0);assert.equal((await counts(p)).deleted,0);
   await press(p,'Enter');await p.waitForFunction(()=>historyFixture.length===2&&!testBrowse.state.recent.loading&&document.querySelectorAll('#tvBrowseRail .card').length===2);
   await p.waitForTimeout(250);assert.equal((await counts(p)).vod,0);assert.equal((await counts(p)).deleted,1);
-  assert.ok((await p.locator('#tvBrowseTitle').textContent()).includes('2'));assert.equal(await p.locator('#tvHistoryEpisode').textContent(),'Native episode 2');
+  assert.ok((await p.locator('#tvBrowseTitle').textContent()).includes('2'));assert.match(await p.locator('#tvHistoryEpisode').textContent(),/^fixture · Native episode 2$/);
   assert.equal(await p.evaluate(()=>document.activeElement.dataset.mediaKey),await p.locator('#tvBrowseRail .card').first().getAttribute('data-media-key'));
   await ok('DOUBLE_PRESS_CANCELS_PLAY_THIRD_CONFIRMS_SINGLE_DELETE',p);
 
@@ -197,6 +211,21 @@ async function checks() {
   await p.locator('#tvBrowseRail .card').first().focus();await press(p,'Enter');await press(p,'ArrowRight');await press(p,'Enter');await waitWindow(p);
   assert.equal((await counts(p)).deleted,0);assert.equal((await counts(p)).armed,'');assert.equal(await p.evaluate(()=>vodCalls[0][1]),'vod-2');
   await ok('DIFFERENT_NATIVE_IDENTITIES_NEVER_DOUBLE_DELETE',p);
+
+  p=await historyPage();await p.evaluate(()=>{historyFixture[1].tmdbId=historyFixture[0].tmdbId;return testBrowse.loadRecentList({refresh:true,silent:true});});
+  await p.locator('#recentManageBtn').click();await p.locator('#tvBrowseRail .card').nth(1).click();
+  assert.equal(await p.locator('#tvBrowseRail .recent-batch-selected').count(),1,'same-work routes have separate selection identities');
+  assert.equal(await p.evaluate(()=>Object.keys(testBrowse.state.recentManage.selectedKeys).length),1);
+  await p.locator('#recentManageDelete').click();await p.locator('#recentManageDelete').click();
+  await p.waitForFunction(()=>!testBrowse.state.recentManage.deleting&&historyFixture.length===2);
+  assert.deepEqual(await p.evaluate(()=>historyFixture.map(i=>i.key)),['fixture@@@vod-1@@@1','fixture@@@vod-3@@@1']);
+  assert.equal(await p.locator('#tvBrowseRail .card').count(),2);await ok('SAME_WORK_SELECT_B_DELETE_B_PRESERVES_A',p);
+
+  p=await historyPage(120);const readsBefore=await p.evaluate(()=>historyReads);
+  const switchStart=Date.now();for(let i=0;i<8;i++)await press(p,'ArrowRight');
+  assert.equal(await p.evaluate(()=>historyReads),readsBefore,'poster focus does not reread the native database');
+  console.log('MANY_HISTORY_FOCUS_8_STEPS_ELAPSED_MS = '+(Date.now()-switchStart));
+  await ok('LARGE_HISTORY_DPAD_DOES_NOT_REREAD_NATIVE',p);
 
   p=await historyPage();await press(p,'Enter');await p.keyboard.down('Enter');await waitWindow(p);assert.equal((await counts(p)).vod,0,'second valid keydown prevents first single from escaping while held');await p.keyboard.up('Enter');assert.ok((await counts(p)).armed);await press(p,'ArrowRight');assert.equal((await counts(p)).armed,'');await ok('SECOND_PRESS_HELD_ACROSS_WINDOW_NEVER_STARTS_PLAY',p);
 

@@ -154,7 +154,10 @@
       // visibilitychange/pageshow/fmresume 恢复时读到此标记，保持当前页面不重置
       localStorage.setItem("fm_pan_playing", "1");
       try {
-        await sdk().vod(nativeSiteKey, nativeVodId, item.title || context.title, item.pic || context.poster);
+        const ref = !opts.detail && historyRecordReference(item);
+        if (!opts.detail && (!ref || !item.historyCanResumeExact)) throw new Error(item.historyCapabilityReason || "当前 App 未提供可验证的精确历史续播，请使用原生历史页面");
+        await sdk().vod(nativeSiteKey, nativeVodId, item.title || context.title, item.pic || context.poster,
+          ref ? { intent: "history_exact", historyRecordRef: ref } : undefined);
         await saveHistoryPlaybackContext(watchItem, context);
         startWatchTracking(watchItem, context, nativeIdentity);
         return true;
@@ -424,8 +427,11 @@
       if (!mediaType && /(?:^|[\s:_-])(tv|series|show|电视剧|剧集)(?:$|[\s:_-])/i.test(typeText)) mediaType = "tv";
       if (!mediaType && /(?:^|[\s:_-])(movie|film|电影)(?:$|[\s:_-])/i.test(typeText)) mediaType = "movie";
       const marker = historyEpisodeMarker(history);
-      const seasonNumber = Math.max(0, Number(historyNestedValue(history, ["seasonNumber", "season_number", "season"])) || marker.seasonNumber || Number(hint && hint.seasonNumber) || 0);
-      const episodeNumber = Math.max(0, Number(historyNestedValue(history, ["episodeNumber", "episode_number", "episode"])) || marker.episodeNumber || Number(hint && hint.episodeNumber) || 0);
+      const rawSeason = historyNestedValue(history, ["tmdbSeasonNumber", "seasonNumber", "season_number", "season"]);
+      let seasonNumber = rawSeason !== "" && Number.isFinite(Number(rawSeason)) ? Number(rawSeason)
+        : marker.seasonNumber || Number(hint && hint.seasonNumber) || -1;
+      const episodeNumber = Math.max(0, Number(historyNestedValue(history, ["tmdbEpisodeNumber", "episodeNumber", "episode_number", "episode"])) || marker.episodeNumber || Number(hint && hint.episodeNumber) || 0);
+      if (history && history.tmdbSeasonNumber === 0 && Number(history.tmdbEpisodeNumber || 0) <= 0) seasonNumber = -1;
       const resourceId = String(historyNestedValue(history, ["resourceId", "resource_id", "resourceID"]) || hint && hint.resourceId || "").trim();
       const panFileId = String(historyNestedValue(history, ["panFileId", "pan_file_id", "fileId", "file_id"]) || hint && (hint.panFileId || hint.fileId) || "").trim();
       const panFileName = String(historyNestedValue(history, ["panFileName", "pan_file_name", "fileName", "file_name", "filename"]) || hint && (hint.panFileName || hint.fileName) || "").trim();
@@ -448,6 +454,8 @@
       );
       return {
         siteKey: parts.siteKey,
+        flag: String(historyNestedValue(history, ["vodFlag", "flag"]) || ""),
+        sourceBindingKey: String(historyNestedValue(history, ["sourceBindingKey"]) || ""),
         vodId: parts.vodId,
         cid: parts.cid,
         title,
@@ -460,7 +468,7 @@
         tmdbId,
         seasonNumber,
         episodeNumber,
-        episodeTitle: String(historyNestedValue(history, ["episodeTitle", "episode_title"]) || hint && hint.episodeTitle || "").trim(),
+        episodeTitle: String(historyNestedValue(history, ["episodeTitle", "episode_title", "episodeName", "vodRemarks"]) || hint && hint.episodeTitle || "").trim(),
         sourceType: String(historyNestedValue(history, ["sourceType", "source_type", "playType", "play_type", "kind", "type", "source"]) || hint && hint.sourceType || "").trim(),
         panProvider,
         panPassword,
@@ -694,6 +702,7 @@
       const opts = options || {};
       const entry = buildContinueIndexEntry(item, playbackTarget, panItem, Date.now());
       if (!entry) return false;
+      entry.historyRecordRef = historyRecordReference(item);
       try {
         await loadContinueIndex();
         const key = entry.mediaKey;
@@ -753,7 +762,8 @@
         resourceId: String(panItem && (panItem.resourceId || panItem.resource_id) || "").trim(),
         lastPlayUrl,
         item: normalizeSnapshot(item),
-        playbackTarget: target || null
+        playbackTarget: target || null,
+        historyRecordRef: historyRecordReference(item)
       };
       try {
         await loadHistoryContextIndex();

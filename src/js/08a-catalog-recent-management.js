@@ -43,11 +43,15 @@
             try { console.debug("RECENT_LOAD_START", run.id); } catch (e) {}
             let error = null;
             let normalized = null;
+            let detailItems = null;
+            let referenceVersion = 0;
             try {
               await loadHistoryContextIndex();
               if (!state.watch || !state.watch.item) await loadPendingWatch();
-              const list = await sdk().history();
+              const list = await readNativeHistoryForUi();
               normalized = normalizeHistoryList(list);
+              detailItems = normalizeHistoryList(list && list.version === 1 ? list.legacy || [] : list);
+              referenceVersion = list && list.version === 1 ? 1 : 0;
               normalized.forEach((item) => recordRecentNativeKeyFlow("RECENT_NATIVE_KEY_AT_LOAD", item));
               normalized.forEach((item) => { item.recentWatching = true; });
             } catch (e) {
@@ -61,6 +65,8 @@
                 if (!runSilent) setStatus("tmdb", "最近观看读取失败");
               } else {
                 recent.items = normalized || [];
+                recent.detailItems = detailItems || [];
+                recent.referenceVersion = referenceVersion;
                 recent.loaded = true;
                 recent.error = "";
                 recent.refreshedAt = Date.now();
@@ -514,7 +520,7 @@
         const item = tvHistoryPressItem(card);
         return item ? nativeHistoryDeleteIdentityKey(item) : "";
       }
-      return recentWatchingMediaKey(card && card.__mediaItem);
+      return recentHistoryItemKey(card && card.__mediaItem);
     }
 
     function clearRecentSinglePressPending() {
@@ -549,7 +555,8 @@
       recentDelete.armedKey = key;
       recentDelete.armedCard = card;
       card.classList.add("recent-delete-armed");
-      toast("再次按 OK 删除，按方向键取消");
+      toast(card.__mediaItem && card.__mediaItem.historyDeleteScope === "SEASON"
+        ? "再次按 OK 删除该季度共享进度，按方向键取消" : "再次按 OK 删除这条记录，按方向键取消");
       return true;
     }
 
@@ -707,7 +714,7 @@
       const source = recentState.loaded === true
         ? recentItems
         : query && Array.isArray(query.items) ? query.items : [];
-      return uniqueRecentWatchingMedia(source);
+      return uniqueHistoryRecords(source);
     }
 
     function recentManageCard(card) {
@@ -726,7 +733,7 @@
 
     function recentManageSelectedItems() {
       const selected = recentManageRuntime().selectedKeys || {};
-      return recentManageItems().filter((item) => !!selected[recentWatchingMediaKey(item)]).map((item) => Object.assign({}, item));
+      return recentManageItems().filter((item) => !!selected[recentHistoryItemKey(item)]).map((item) => Object.assign({}, item));
     }
 
     function cancelRecentManageDeleteArm() {
@@ -741,7 +748,7 @@
       const manage = recentManageRuntime();
       if (!grid) return;
       Array.from(grid.querySelectorAll(".recent-watching-card")).forEach((card) => {
-        const key = recentWatchingMediaKey(card.__mediaItem);
+        const key = recentHistoryItemKey(card.__mediaItem);
         const selected = !!(manage.active && key && manage.selectedKeys[key]);
         card.classList.toggle("recent-batch-selected", selected);
         if (manage.active) card.setAttribute("aria-pressed", selected ? "true" : "false");
@@ -764,7 +771,7 @@
       const items = onRecent ? recentManageItems() : [];
       const availableKeys = {};
       items.forEach((item) => {
-        const key = recentWatchingMediaKey(item);
+        const key = recentHistoryItemKey(item);
         if (key) availableKeys[key] = true;
       });
       Object.keys(manage.selectedKeys).forEach((key) => {
@@ -846,7 +853,7 @@
     function toggleRecentManageSelection(card) {
       const manage = recentManageRuntime();
       const item = card && card.__mediaItem;
-      const key = recentWatchingMediaKey(item);
+      const key = recentHistoryItemKey(item);
       if (!recentManageCard(card) || !key) return false;
       if (manage.deleting) return true;
       cancelRecentManageDeleteArm();
@@ -867,7 +874,7 @@
       else {
         manage.selectedKeys = {};
         items.forEach((item) => {
-          const key = recentWatchingMediaKey(item);
+          const key = recentHistoryItemKey(item);
           if (key) manage.selectedKeys[key] = true;
         });
       }

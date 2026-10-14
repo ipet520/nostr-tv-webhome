@@ -1501,19 +1501,19 @@
       check("RECENT_SECONDARY_DELETE_NEXT_KEY_AUTHORITY",
         recentDelete6.targetKey === "7"
           && recentDelete7.targetKey === "8"
-          && recentDeleteSource.includes("nextKey")
+          && sourceOf(recentSecondaryDeleteFocusTarget).includes("plan.nextKey")
           && recentDeleteSource.includes("recentSecondaryDeleteFocusTarget"),
         "secondary single-delete restores the surviving next media key", "RUNTIME_MOCK");
       check("RECENT_SECONDARY_DELETE_PREVIOUS_KEY_FALLBACK",
         recentDelete8.targetKey === "7"
           && recentDelete8.plan.nextKey === ""
           && recentDelete8.plan.previousKey === "7"
-          && recentDeleteSource.includes("previousKey"),
+          && sourceOf(recentSecondaryDeleteFocusTarget).includes("plan.previousKey"),
         "the previous surviving media key is used when no next key remains", "RUNTIME_MOCK");
       check("RECENT_SECONDARY_DELETE_REORDER_RESILIENT",
         recentDeleteReordered.targetKey === "7"
           && recentDeleteReordered.plan.nextKey === "7"
-          && recentDeleteSource.includes("recentWatchingMediaKey"),
+          && sourceOf(recentSecondaryDeleteFocusTarget).includes("recentHistoryItemKey"),
         "delete focus follows media identity after a refreshed order change", "RUNTIME_MOCK");
       check("RECENT_SECONDARY_DELETE_STALE_RESTORE_CANCELLED",
         recentDeleteSource.includes("cancelSecondaryMediaFocusRestore")
@@ -1532,7 +1532,7 @@
         "Home Recent retains its existing index fallback outside Secondary", "STATIC_HOOK");
       check("RECENT_BATCH_DELETE_UNCHANGED",
         recentDeleteBatchSource.includes("recentManageRuntime")
-          && recentDeleteBatchSource.includes("deleteNativeHistoryViaLocalApi")
+          && recentDeleteBatchSource.includes("deleteHistoryRecords")
           && !recentDeleteBatchSource.includes("recentSecondaryDeleteFocusPlan"),
         "batch Recent deletion remains outside the single-card focus path", "STATIC_HOOK");
 

@@ -565,6 +565,8 @@
     }
 
     function historyStableKey(history, parts, index) {
+      const ref = historyRecordReference(history);
+      if (ref) return historyRecordDisplayId(ref);
       const keyParts = parts || historyKeyParts(history);
       if (keyParts.key && !/^@+$/.test(keyParts.key)) return keyParts.key;
       if (keyParts.siteKey && keyParts.vodId) return keyParts.siteKey + "@@@" + keyParts.vodId;
@@ -623,6 +625,12 @@
         id: "history:" + stableKey.replace(/[\r\n]+/g, " "),
         source: "history",
         nativeHistoryRaw: history,
+        historyRecordRef: historyRecordReference(history),
+        historyCanResumeExact: !!(history && history.canResume === true),
+        historyCanDeleteExact: !!(history && history.canDelete === true),
+        historyCapabilityReason: String(history && history.capabilityReason || ""),
+        historyDeleteScope: String(history && history.deleteScope || "ITEM"),
+        historySourceLabel: String(history && history.sourceLabel || parts.siteKey || ""),
         nativeHistoryKey: parts.key,
         nativeCid: parts.cid,
         nativeSiteKey: parts.siteKey,
@@ -663,6 +671,8 @@
         seasonNumber: context.seasonNumber,
         episodeNumber: context.episodeNumber,
         episodeTitle: context.episodeTitle,
+        flag: context.flag || "",
+        sourceBindingKey: context.sourceBindingKey || "",
         backdrop: context.backdrop,
         sourceType: context.sourceType,
         panProvider: context.panProvider,
@@ -714,6 +724,9 @@
     }
 
     function normalizeHistoryList(list) {
+      if (list && list.version === 1 && list.mode === "independent" && Array.isArray(list.records)) {
+        list = list.records.filter((item) => historyRecordReference(item));
+      }
       const seen = new Set();
       const entries = (Array.isArray(list) ? list : [])
         .map((history, index) => ({ history, index }))
@@ -844,7 +857,7 @@
       if (!item || !candidate) return null;
       if (options && options.freshNative && detailHasAuthoritativeNativeHistory(candidate) && detailHistoryMatches(item, candidate)) return candidate;
       const candidateIdentity = nativeHistoryDeleteIdentityKey(candidate);
-      return (state.recent.items || []).find((history) => {
+      return (state.recent.detailItems || state.recent.items || []).find((history) => {
         if (!detailHasAuthoritativeNativeHistory(history) || !detailHistoryMatches(item, history)) return false;
         if (history === candidate) return true;
         return !!candidateIdentity && nativeHistoryDeleteIdentityKey(history) === candidateIdentity;
@@ -856,7 +869,7 @@
     }
 
     function recentNativeHistoryWinnerFor(item, list) {
-      const source = Array.isArray(list) ? list : (state.recent.items || []);
+      const source = Array.isArray(list) ? list : (state.recent.detailItems || state.recent.items || []);
       const mediaKey = recentWatchingMediaKey(item);
       let candidates = mediaKey
         ? source.filter((history) => history && recentWatchingMediaKey(history) === mediaKey)

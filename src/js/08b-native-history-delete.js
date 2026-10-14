@@ -1,9 +1,92 @@
-    function nativeHistoryDeleteCandidates(item, mediaKey, sourceItems) {
-      const nativeItems = Array.isArray(sourceItems)
-        ? sourceItems
-        : state.recent && Array.isArray(state.recent.items) ? state.recent.items : [];
-      if (!nativeItems.length || !mediaKey) return [];
-      return nativeItems.filter((nativeItem) => recentWatchingMediaKey(nativeItem) === mediaKey);
+    function historyRecordReference(item) {
+      const ref = item && item.historyRecordRef;
+      if (!ref || ref.version !== 1 || !["ITEM", "SEASON"].includes(ref.kind)
+        || typeof ref.historyKey !== "string" || !ref.historyKey || !Number.isInteger(ref.cid) || ref.cid < 0
+        || !ref.siteKey || !ref.vodId) return null;
+      if (ref.kind === "SEASON" && (ref.mediaType !== "tv" || !(ref.tmdbId > 0)
+        || !Number.isInteger(ref.seasonNumber) || ref.seasonNumber < 0)) return null;
+      return Object.assign({}, ref);
+    }
+
+    function historyRecordDisplayId(ref) {
+      return JSON.stringify([1, ref.kind, ref.cid, ref.historyKey,
+        ref.kind === "SEASON" ? ref.mediaType : "", ref.kind === "SEASON" ? ref.tmdbId : 0,
+        ref.kind === "SEASON" ? ref.seasonNumber : -1]).replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
+    }
+
+    function recentHistoryItemKey(item) {
+      const ref = historyRecordReference(item);
+      return ref ? historyRecordDisplayId(ref) : String(item && (item.historyStableKey || item.nativeHistoryKey || item.historyKey || item.id) || "");
+    }
+
+    function uniqueHistoryRecords(items) {
+      const seen = new Set();
+      return (items || []).filter((item) => {
+        const key = recentHistoryItemKey(item);
+        if (!key || seen.has(key)) return false;
+        seen.add(key); return true;
+      });
+    }
+
+    function historyRecordFocusItem(items, key) {
+      const exact = (items || []).find((item) => mediaDomKey(item) === key);
+      if (exact) return exact;
+      if (typeof key !== "string" || !key.startsWith("history:[")) return null;
+      let tuple; try { tuple = JSON.parse(key.slice(8)); } catch (error) { return null; }
+      if (!Array.isArray(tuple) || tuple[0] !== 1 || !["ITEM", "SEASON"].includes(tuple[1])) return null;
+      return (items || []).find((item) => {
+        const ref = historyRecordReference(item);
+        return ref && ref.cid === tuple[2] && ref.historyKey === tuple[3]
+          && (tuple[1] === "ITEM" || ref.mediaType === tuple[4] && ref.tmdbId === tuple[5] && ref.seasonNumber === tuple[6]);
+      }) || null;
+    }
+
+    async function readNativeHistoryForUi() {
+      const value = await sdk().history({ mode: "independent", version: 1 });
+      return value && value.version === 1 && value.mode === "independent" && Array.isArray(value.records)
+        ? value : Array.isArray(value) ? value : [];
+    }
+
+    async function deleteHistoryRecords(items) {
+      const frozen = uniqueHistoryRecords(items).map((item) => ({ item, ref: historyRecordReference(item), key: recentHistoryItemKey(item) }));
+      const results = [];
+      const supported = frozen.filter((entry) => {
+        const allowed = entry.ref && entry.item.historyCanDeleteExact && state.recent.referenceVersion === 1 && typeof sdk().historyDelete === "function";
+        if (!allowed) results.push({ displayId: entry.key, status: "UNSUPPORTED", message: entry.item.historyCapabilityReason || "当前 App 不支持精确删除此记录" });
+        return allowed;
+      });
+      if (supported.length) {
+        const response = await sdk().historyDelete({ version: 1, refs: supported.map((entry) => entry.ref) });
+        if (!response || response.version !== 1 || !Array.isArray(response.results)
+          || !response.readback || response.readback.version !== 1 || !Array.isArray(response.readback.records)) throw new Error("原生删除结果无法验证");
+        const present = new Set(normalizeHistoryList(response.readback).map(recentHistoryItemKey));
+        supported.forEach((entry) => {
+          const result = response.results.find((item) => item.displayId === entry.key);
+          if (!result || !["DELETED", "NOT_FOUND", "FAILED", "UNSUPPORTED"].includes(result.status)) {
+            results.push({ displayId: entry.key, status: "FAILED", message: "原生删除结果缺失" }); return;
+          }
+          results.push(present.has(entry.key) && ["DELETED", "NOT_FOUND"].includes(result.status)
+            ? { displayId: entry.key, status: "FAILED", message: "原生回读仍存在该记录" } : result);
+        });
+        state.recent.items = normalizeHistoryList(response.readback);
+        state.recent.detailItems = normalizeHistoryList(response.readback.legacy || []);
+        state.recent.loaded = true; state.recent.refreshedAt = Date.now();
+        // An in-flight older list must not resurrect deleted cards.
+        if (state.recent.activeRun) state.recent.activeRun.invalidated = true;
+        const successful = new Set(results.filter((result) => result.status === "DELETED" || result.status === "NOT_FOUND").map((result) => result.displayId));
+        for (const storeName of ["historyContexts", "continueIndex"]) {
+          const store = state[storeName];
+          if (!store || !store.loaded || !Array.isArray(store.entries)) continue;
+          const next = store.entries.filter((entry) => !successful.has(recentHistoryItemKey(entry)));
+          if (next.length !== store.entries.length) {
+            try {
+              await (storeName === "historyContexts" ? persistHistoryContextEntries(next) : persistContinueIndexEntries(next));
+              store.entries = next;
+            } catch (error) { toast("原生历史已处理，但资源上下文清理失败"); }
+          }
+        }
+      }
+      return results;
     }
 
     function nativeHistoryHttpOrigin(value) {
@@ -183,111 +266,9 @@
       return diag;
     }
 
-    async function deleteNativeHistoryViaLocalApi(history) {
-      const requestContext = await nativeHistoryLocalRequestContext("/api/playback/progress/delete");
-      if (!requestContext || typeof requestContext.request !== "function") {
-        return { ok: false, status: 0, reason: requestContext && requestContext.error || "REQUEST_UNAVAILABLE", message: requestContext && requestContext.message || "" };
-      }
-      const request = requestContext.request;
-      const endpoint = requestContext.endpoint;
-      const parts = historyKeyParts(history);
-      const context = historyPlaybackContext(history) || {};
-      const historyKey = String(history && (history.nativeHistoryKey || history.historyKey || history.key) || parts.key || "").trim();
-      const siteKey = String(history && history.siteKey || parts.siteKey || context.siteKey || "").trim();
-      const vodId = String(history && history.vodId || parts.vodId || context.vodId || "").trim();
-      const cid = String(history && history.cid != null && String(history.cid).trim() ? history.cid : parts.cid || context.cid || "").trim();
-      const payload = {};
-      if (historyKey) payload.historyKey = historyKey;
-      if (siteKey) payload.siteKey = siteKey;
-      if (vodId) payload.vodId = vodId;
-      if (cid) payload.cid = /^\d+$/.test(cid) ? Number(cid) : cid;
-      if (!payload.historyKey && (!payload.siteKey || !payload.vodId)) {
-        return { ok: false, status: 0, reason: "NATIVE_HISTORY_KEY_UNAVAILABLE" };
-      }
-      let response;
-      try {
-        response = await request(endpoint, {
-          method: "POST",
-          responseType: "json",
-          timeout: 24,
-          headers: { "Content-Type": "application/json; charset=utf-8" },
-          body: JSON.stringify(payload)
-        });
-      } catch (e) {
-        const message = String(e && e.message || e || "");
-        recordNativeHistoryDeleteDiag(payload, 0, { message }, { message }, endpoint);
-        return { ok: false, status: 0, reason: "REQUEST_FAILED", endpoint, payload, message: String(e && e.message || e || "") };
-      }
-      const rawResponse = nativeHistoryDeleteRawResponse(response);
-      const data = nativeHistoryDeleteBody(response);
-      const status = Number(response && (response.status || response.code) || 0);
-      const apiCode = Number(data && data.code);
-      const effectiveStatus = status || (apiCode >= 100 ? apiCode : 0);
-      const result = { ok: false, status: effectiveStatus, endpoint, payload, data };
-      recordNativeHistoryDeleteDiag(payload, effectiveStatus, data, rawResponse, endpoint);
-      if (effectiveStatus === 404 || apiCode === 404) {
-        result.reason = "ENDPOINT_NOT_FOUND";
-        return result;
-      }
-      if (effectiveStatus === 403 || apiCode === 403) {
-        result.reason = "FORBIDDEN";
-        result.message = String(data && (data.message || data.error) || "本机 API 修改未开启");
-        return result;
-      }
-      if (response && response.error) {
-        result.reason = "REQUEST_ERROR";
-        result.message = String(response.error);
-        return result;
-      }
-      if (response && response.ok === false || effectiveStatus >= 400) {
-        result.reason = "HTTP_ERROR";
-        result.message = String(data && (data.message || data.error) || "HTTP " + effectiveStatus);
-        return result;
-      }
-      const items = Array.isArray(data && data.items) ? data.items : [];
-      const deleted = Number(data && data.deleted || 0);
-      const skipped = Number(data && data.skipped || 0);
-      const failed = Number(data && data.failed || 0);
-      const singleAction = String(data && data.action || "").toLowerCase();
-      const singleAffected = Number(data && data.affected || 0);
-      const singleSuccess = data && data.success === true && singleAction === "deleted" && singleAffected > 0;
-      const singleFailure = data && data.success === false || singleAction === "skipped" || singleAction === "failed";
-      const hasFailedItem = items.some((item) => String(item && item.action || "").toLowerCase() === "failed");
-      const hasSkippedItem = items.some((item) => String(item && item.action || "").toLowerCase() === "skipped");
-      const hasDeletedItem = items.some((item) => String(item && item.action || "").toLowerCase() === "deleted" && Number(item && item.affected || 0) > 0);
-      const confirmed = !singleFailure && !hasFailedItem && failed <= 0
-        && !hasSkippedItem && skipped <= 0
-        && (deleted > 0 || hasDeletedItem || singleSuccess);
-      if (!confirmed) {
-        result.reason = singleFailure || hasFailedItem || failed > 0 ? "DELETE_FAILED" : hasSkippedItem || skipped > 0 ? "DELETE_SKIPPED" : "DELETE_NOT_CONFIRMED";
-        const firstItem = items[0] && typeof items[0] === "object" ? items[0] : {};
-        const message = String(firstItem.message || data && (data.message || data.error) || "");
-        result.message = message || ("原生历史删除未确认｜HTTP:" + effectiveStatus + "｜BODY:" + nativeHistoryDeleteDiagnosticText(rawResponse));
-        return result;
-      }
-      result.ok = true;
-      result.reason = "DELETED";
-      return result;
-    }
-
-    function nativeHistoryDeleteFailureText(result) {
-      const item = result || {};
-      if (item.reason === "FORBIDDEN") return "原生历史删除受 App 设置限制：" + (item.message || "本机 API 修改未开启");
-      if (item.reason === "ENDPOINT_NOT_FOUND") return "当前 App 未提供原生历史删除接口";
-      if (item.reason === "LOCAL_API_ADDRESS_UNAVAILABLE" || item.reason === "REQUEST_UNAVAILABLE") return "当前 App 未暴露可用的原生历史删除接口";
-      if (["DELETE_FAILED", "DELETE_SKIPPED", "DELETE_NOT_CONFIRMED"].includes(item.reason) && item.message) return item.message;
-      return "最近观看删除失败" + (item.message ? "：" + item.message : "");
-    }
-
-    async function readFreshNativeHistoryItemsForDeletion() {
-      const list = await sdk().history();
-      const rawItems = (Array.isArray(list) ? list : [])
-        .map((history, index) => ({ history, index }))
-        .filter((entry) => entry.history && typeof entry.history === "object");
-      return rawItems.map((entry) => normalizeHistoryItem(entry.history, entry.index));
-    }
-
     function nativeHistoryDeleteIdentityKey(item) {
+      const ref = historyRecordReference(item);
+      if (ref) return historyRecordDisplayId(ref);
       const raw = item && item.nativeHistoryRaw && typeof item.nativeHistoryRaw === "object"
         ? item.nativeHistoryRaw
         : item || {};
@@ -298,134 +279,5 @@
       const vodId = String(raw.vodId || item && (item.nativeVodId || item.vodId) || parts.vodId || "").trim();
       const cid = String(raw.cid != null ? raw.cid : item && item.nativeCid != null ? item.nativeCid : parts.cid || "").trim();
       return "identity:" + siteKey + "\u001f" + vodId + "\u001f" + cid;
-    }
-
-    function uniqueNativeHistoryDeleteCandidates(items) {
-      const seen = new Set();
-      return (Array.isArray(items) ? items : []).filter((item) => {
-        const identity = nativeHistoryDeleteIdentityKey(item);
-        if (!identity || seen.has(identity)) return false;
-        seen.add(identity);
-        return true;
-      });
-    }
-
-    function freezeNativeHistoryDeleteIdentity(item) {
-      const raw = item && item.nativeHistoryRaw && typeof item.nativeHistoryRaw === "object"
-        ? item.nativeHistoryRaw
-        : item || {};
-      const parts = historyKeyParts(raw);
-      const historyKey = String(raw.key || raw.historyKey || item && (item.nativeHistoryKey || item.historyKey) || parts.key || "").trim();
-      const siteKey = String(raw.siteKey || raw.site || item && (item.nativeSiteKey || item.siteKey) || parts.siteKey || "").trim();
-      const vodId = String(raw.vodId || raw.videoId || item && (item.nativeVodId || item.vodId) || parts.vodId || "").trim();
-      const cid = String(raw.cid != null
-        ? raw.cid
-        : item && item.nativeCid != null
-          ? item.nativeCid
-          : parts.cid || "").trim();
-      return Object.freeze({
-        identityKey: nativeHistoryDeleteIdentityKey(item),
-        nativeHistoryRaw: Object.assign({}, raw),
-        key: historyKey,
-        historyKey,
-        nativeHistoryKey: historyKey,
-        cid,
-        nativeCid: cid,
-        siteKey,
-        nativeSiteKey: siteKey,
-        vodId,
-        nativeVodId: vodId
-      });
-    }
-
-    function nativeHistoryDeleteFrozenPresent(snapshot, frozenIdentities) {
-      const frozen = Array.isArray(frozenIdentities) ? frozenIdentities : [];
-      const present = new Set((Array.isArray(snapshot) ? snapshot : [])
-        .map((item) => nativeHistoryDeleteIdentityKey(item))
-        .filter(Boolean));
-      return frozen.filter((identity) => identity && present.has(identity.identityKey));
-    }
-
-    async function deleteNativeHistoryMediaGroupVerified(item, mediaKey) {
-      const maxRounds = 3;
-      const retryDelay = 220;
-      let memberCountBefore = 0;
-      let lastMessage = "";
-      let frozenNativeIdentities = null;
-      for (let round = 0; round < maxRounds; round++) {
-        let snapshot;
-        try {
-          snapshot = await readFreshNativeHistoryItemsForDeletion();
-        } catch (e) {
-          return {
-            ok: false,
-            reason: "HISTORY_READ_FAILED",
-            message: String(e && e.message || e || "最近观看刷新失败"),
-            rounds: round + 1,
-            memberCountBefore,
-            frozenNativeIdentities: frozenNativeIdentities || []
-          };
-        }
-        if (!frozenNativeIdentities) {
-          const groupedCandidates = uniqueNativeHistoryDeleteCandidates(nativeHistoryDeleteCandidates(item, mediaKey, snapshot));
-          frozenNativeIdentities = groupedCandidates.map(freezeNativeHistoryDeleteIdentity);
-          memberCountBefore = frozenNativeIdentities.length;
-        }
-        const candidates = nativeHistoryDeleteFrozenPresent(snapshot, frozenNativeIdentities);
-        if (!frozenNativeIdentities.length || !candidates.length) {
-          return { ok: true, rounds: round + 1, memberCountBefore, remaining: 0, frozenNativeIdentities };
-        }
-        for (const nativeIdentity of candidates) {
-          const result = await deleteNativeHistoryViaLocalApi(nativeIdentity);
-          if (!result.ok) {
-            return {
-              ok: false,
-              reason: result.reason || "DELETE_FAILED",
-              message: result.message || "",
-              rounds: round + 1,
-              memberCountBefore,
-              remaining: candidates.length,
-              frozenNativeIdentities
-            };
-          }
-          lastMessage = String(result.message || lastMessage || "");
-        }
-        await new Promise((resolve) => setTimeout(resolve, retryDelay));
-        let verification;
-        try {
-          verification = await readFreshNativeHistoryItemsForDeletion();
-        } catch (e) {
-          return {
-            ok: false,
-            reason: "HISTORY_READ_FAILED",
-            message: String(e && e.message || e || "最近观看刷新失败"),
-            rounds: round + 1,
-            memberCountBefore,
-            frozenNativeIdentities
-          };
-        }
-        const remaining = nativeHistoryDeleteFrozenPresent(verification, frozenNativeIdentities);
-        if (!remaining.length) {
-          return { ok: true, rounds: round + 1, memberCountBefore, remaining: 0, frozenNativeIdentities };
-        }
-        if (round === maxRounds - 1) {
-          return {
-            ok: false,
-            reason: "DELETE_NOT_CONFIRMED",
-            message: lastMessage || "原生历史删除未确认",
-            rounds: maxRounds,
-            memberCountBefore,
-            remaining: remaining.length,
-            frozenNativeIdentities
-          };
-        }
-      }
-      return {
-        ok: false,
-        reason: "DELETE_NOT_CONFIRMED",
-        message: "原生历史删除未确认",
-        memberCountBefore,
-        frozenNativeIdentities: frozenNativeIdentities || []
-      };
     }
 

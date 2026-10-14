@@ -449,6 +449,12 @@
         button.dataset.searchQuery = searchQuery;
       }
       button.__mediaItem = item;
+      if (item.historyRecordRef) {
+        button.setAttribute("aria-label", [item.title, item.historySourceLabel,
+          item.mediaType === "tv" && item.seasonNumber >= 0 ? "第 " + item.seasonNumber + " 季" : "",
+          item.historyCapabilityReason].filter(Boolean).join(" · "));
+        button.title = button.getAttribute("aria-label");
+      }
       button.__weeklyHome = weeklyHome;
       if (home && tvEpisodeCard) {
         const baseCardRenderAt = Date.now();
