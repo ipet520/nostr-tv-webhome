@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -18,7 +18,7 @@ const hook = `window.testBrowse = { state, renderAll, renderTvBrowse, tvBrowseSt
  buildUiSnapshot, restoreUiSnapshot, openSidebar, closeSidebar, openSearchPage, closeSearchPage,
  bindActions, installRemoteKeys, secondaryActiveQuery, syncBrowseDevicePresentation, handleWebHomeResume, boot,
  RECENT_DOUBLE_PRESS_WINDOW_MS, cancelRecentDeleteArm, isVisibleFocusable, tvHistoryPressItem, tvPresentationStatus, homeHeroPresentationStatus, tvEpisodeStatusLabel, normalizeHistoryList, tvBrowseCloseHistory, tvBrowseContinueHistory, tvBrowseQueryKey, tvBrowseOpenHistory, tvBrowsePreview, publishHomeWeeklySnapshot, enterRecentManageMode, exitRecentManageMode,
- openDetail, closeDetail, sdk, loadRecentList, tvBrowseBeginStartup, homeFocusUserEpoch, storeMovieDetailCache, storeTvDetailCache, updateMovieReleaseStatusCards, requestMovieDetailShared, homeEnrichmentRequest, bestDetailLogo, tvBrowseClearPreview, focusRemoteTarget, artLogoResource, prepareArtLogo, renderDetailTitleLogo };
+ openDetail, closeDetail, sdk, loadRecentList, renderHomeRecent, tvBrowseBeginStartup, homeFocusUserEpoch, storeMovieDetailCache, storeTvDetailCache, updateMovieReleaseStatusCards, requestMovieDetailShared, homeEnrichmentRequest, bestDetailLogo, tvBrowseClearPreview, focusRemoteTarget, artLogoResource, prepareArtLogo, renderDetailTitleLogo };
  window.testBrowse.disableTracking = () => { rememberWatchIntent = () => {}; startWatchTracking = () => {}; saveHistoryPlaybackContext = async () => {}; };
  window.testBrowse.setup = () => {
    syncBrowseDevicePresentation(); bindActions(); installRemoteKeys();
@@ -119,6 +119,41 @@ async function counts(p){return p.evaluate(()=>({vod:vodCalls.length,deleted:del
 async function ok(name,p){results.push(name);console.log(name+' = PASS');await p.close();}
 
 async function checks() {
+  if(process.env.WEBHOME_HISTORY_LOSS_FIXTURE_PATH) {
+    const fixtures=JSON.parse(readFileSync(process.env.WEBHOME_HISTORY_LOSS_FIXTURE_PATH,'utf8'));
+    assert.equal(fixtures.length,9);
+    for(const tv of [true,false]) {
+      const p=tv?await historyPage():await pageAt(false);
+      for(const fixture of fixtures) {
+        const measured=await p.evaluate(async({fixture,tv})=>{
+          window.fm=Object.assign({},testBrowse.sdk(),{history:async()=>fixture.independent});
+          await testBrowse.loadRecentList({refresh:true,silent:true});
+          if(!tv)testBrowse.renderHomeRecent();
+          const selector=tv?'#tvBrowseRail .recent-watching-card':'#homeRecentRail .recent-watching-card';
+          return {normalized:testBrowse.normalizeHistoryList(fixture.independent).length,
+            state:testBrowse.state.recent.items.length,
+            keys:testBrowse.state.recent.items.map(i=>i.id),
+            dom:Array.from(document.querySelectorAll(selector)).map(e=>e.dataset.mediaKey)};
+        },{fixture,tv});
+        assert.equal(measured.normalized,2);assert.equal(measured.state,2);assert.equal(measured.dom.length,2);
+        assert.equal(new Set(measured.keys).size,2);assert.deepEqual(measured.dom.sort(),measured.keys.sort());
+        console.log('LOSS_PIPELINE '+JSON.stringify({layer:'ACTUAL_NATIVE_FIXTURE_TO_CHROMIUM',tv,case:fixture.case,dao:2,legacy:fixture.legacy.length,independent:fixture.independent.records.length,...measured,keys:undefined,dom:undefined}));
+        if(tv) {
+          const b=await p.locator('#tvBrowseRail .card').evaluateAll(cs=>cs.findIndex(c=>c.__mediaItem.historyRecordRef.siteKey==='B'));
+          await p.locator('#tvBrowseRail .card').nth(b).focus();
+          if(!fixture.independent.records.find(r=>r.tmdbId===99).canResume) {
+            assert.equal(await p.locator('#tvHistoryContinue').isEnabled(),false);
+            await p.locator('#tvBrowseRail .card').nth(b).click();await waitWindow(p);
+            assert.equal((await counts(p)).vod,0,'non-resumable B must not play A or start ordinary VOD');
+          }
+          await p.locator('#recentManageBtn').click();await p.locator('#tvBrowseRail .card').nth(b).click();
+          assert.equal(await p.locator('#tvBrowseRail .recent-batch-selected').count(),1);
+          await p.locator('#recentManageCancel').click();
+        }
+      }
+      await ok(tv?'LOSS_TWO_WORKS_TV_DOM_AND_CAPABILITY_ISOLATION':'LOSS_TWO_WORKS_MOBILE_DOM',p);
+    }
+  }
   // Leanback HomeActivity consumes confirm and dispatches activeElement.click()
   // on release. No DOM keydown/keyup accompanies this Native activation.
   const nativeConfirm = async p => { await p.evaluate(()=>document.activeElement.click()); await p.waitForTimeout(45); };

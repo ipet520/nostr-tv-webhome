@@ -15,10 +15,10 @@ const native={rows:[],legacy:false,permission:true,failKey:'',playing:null};
 const raw=(site,extra={})=>({key:site+'@@@vod@@@7',cid:7,vodName:'Example',vodPic:'/poster.jpg',mediaType:'movie',tmdbId:42,position:50_000,duration:500_000,createTime:1000,...extra});
 const refOf=row=>({version:1,kind:row.kind||'ITEM',historyKey:row.key,cid:row.cid,siteKey:row.key.split('@@@')[0],vodId:row.key.split('@@@')[1],mediaType:row.mediaType,tmdbId:row.tmdbId,seasonNumber:row.tmdbSeasonNumber??-1,updatedAt:row.createTime,scopeToken:'fixture-'+row.createTime});
 const id=ref=>JSON.stringify([1,ref.kind,ref.cid,ref.historyKey,ref.kind==='SEASON'?ref.mediaType:'',ref.kind==='SEASON'?ref.tmdbId:0,ref.kind==='SEASON'?ref.seasonNumber:-1]);
-const read=()=>native.legacy?native.rows.map(row=>({...row})):{version:1,mode:'independent',records:native.rows.map(row=>({...row,historyRecordRef:refOf(row),canResume:row.cid===7,canDelete:true,sourceLabel:row.key.split('@@@')[0],deleteScope:row.kind||'ITEM'})),legacy:native.rows.filter(row=>row.cid===7&&!row.kind).map(row=>({...row}))};
+const read=()=>native.legacy?native.rows.map(row=>({...row})):{version:1,mode:'independent',records:native.rows.map(row=>({...row,historyRecordRef:refOf(row),canResume:row.cid===7&&row.position>0&&row.duration>0,canDelete:true,sourceLabel:row.key.split('@@@')[0],deleteScope:row.kind||'ITEM'})),legacy:native.rows.filter(row=>row.cid===7&&!row.kind).map(row=>({...row}))};
 async function invoke(method,payload){
  calls.push({method,payload:JSON.parse(JSON.stringify(payload))});
- if(method==='app.history')return payload.mode==='independent'?read():native.rows.map(row=>({...row}));
+ if(method==='app.history')return native.envelope || (payload.mode==='independent'?read():native.rows.map(row=>({...row})));
  if(method==='player.playVod'){
    const ref=payload.historyRecordRef;
    if(payload.intent!=='history_exact')return {};
@@ -112,5 +112,36 @@ await test('E27 PUSH URL stays exact without fuzzy title conversion',async()=>{
  await c.playNativeHistoryExact(item);const request=calls.at(-1).payload;
  assert.equal(request.vodId,url);assert.equal(request.historyRecordRef.historyKey,native.rows[0].key);
  assert.equal(request.intent,'history_exact');
+});
+if(process.env.WEBHOME_HISTORY_LOSS_FIXTURE_PATH) await test('LOSS_NATIVE_BRIDGE_FIXTURES_KEEP_TWO_WORKS_WITH_INDEPENDENT_CAPABILITIES',async()=>{
+ const fixtures=JSON.parse(fs.readFileSync(process.env.WEBHOME_HISTORY_LOSS_FIXTURE_PATH,'utf8'));
+ assert.equal(fixtures.length,9);
+ for(const fixture of fixtures) {
+   native.envelope=fixture.independent;
+   const response=await c.readNativeHistoryForUi();
+   const items=c.normalizeHistoryList(response);c.state.recent.items=items;
+   assert.equal(fixture.legacy.length,2);assert.equal(response.records.length,2);assert.equal(items.length,2);
+   assert.equal(new Set(items.map(c.recentHistoryItemKey)).size,2);
+   assert.equal(c.recentManageItems().length,2);
+   const b=items.find(i=>i.historyRecordRef.siteKey==='B');assert.ok(b);
+   assert.equal(b.historyCanResumeExact,response.records.find(r=>r.tmdbId===99).canResume);
+   if(!b.historyCanResumeExact) {
+     const before=calls.length;await assert.rejects(c.playNativeHistoryExact(b));assert.equal(calls.length,before);
+   }
+   const legacy=c.normalizeHistoryList(fixture.legacy);assert.equal(legacy.length,2);
+ }
+ const noMetadata=JSON.parse(JSON.stringify(fixtures[0].independent));
+ const b=noMetadata.records.find(r=>r.tmdbId===99);delete b.tmdbId;delete b.mediaType;delete b.duration;delete b.position;
+ b.historyRecordRef.tmdbId=0;b.historyRecordRef.mediaType='';
+ assert.equal(c.normalizeHistoryList(noMetadata).length,2,'missing metadata and progress do not remove a valid native identity');
+ native.envelope=null;
+});
+await test('LOSS_MISSING_PROGRESS_DOES_NOT_HIDE_DIFFERENT_WORK_OR_ALLOW_PLAYBACK',async()=>{
+ for(const fields of [{position:0,duration:500_000},{position:0,duration:0},{position:undefined,duration:undefined}]) {
+   native.rows=[raw('A'),raw('B',{vodName:'Other work',tmdbId:0,mediaType:'',...fields})];
+   const items=load();assert.equal(items.length,2);assert.equal(new Set(items.map(c.recentHistoryItemKey)).size,2);
+   const b=items.find(i=>i.siteKey==='B');assert.equal(b.historyCanResumeExact,false);
+   const before=calls.length;await assert.rejects(c.playNativeHistoryExact(b));assert.equal(calls.length,before);
+ }
 });
 console.log(JSON.stringify({layer:'HTML_WITH_ACTUAL_APP_SDK_EXPRESSIONS_AND_ISOLATED_NATIVE_TRANSPORT',results},null,2));
