@@ -11,7 +11,7 @@ const expressions={vod:java.match(/playVod:(\(siteKey,vodId,title,pic,options\)=
  history:java.match(/history:(\(options\)=>[^\n]+)/)[1].trim().replace(/,$/,''),
  historyDelete:java.match(/historyDelete:(\(options\)=>[^\n]+)/)[1].trim().replace(/,$/,'')};
 const calls=[];
-const native={rows:[],legacy:false,permission:true,failKey:'',playFailure:false,playing:null};
+const native={rows:[],legacy:false,permission:true,failKey:'',playFailure:false,playing:null,historyQueue:null,envelope:null};
 const localStore=new Map();
 const raw=(site,extra={})=>({key:site+'@@@vod@@@7',cid:7,vodName:'Example',vodPic:'/poster.jpg',mediaType:'movie',tmdbId:42,position:50_000,duration:500_000,createTime:1000,...extra});
 const refOf=row=>({version:1,kind:row.kind||'ITEM',historyKey:row.key,cid:row.cid,siteKey:row.key.split('@@@')[0],vodId:row.key.split('@@@')[1],mediaType:row.mediaType,tmdbId:row.tmdbId,seasonNumber:row.tmdbSeasonNumber??-1,updatedAt:row.createTime,scopeToken:'fixture-'+row.createTime});
@@ -19,7 +19,10 @@ const id=ref=>JSON.stringify([1,ref.kind,ref.cid,ref.historyKey,ref.kind==='SEAS
 const read=()=>native.legacy?native.rows.map(row=>({...row})):{version:1,mode:'independent',records:native.rows.map(row=>({...row,historyRecordRef:refOf(row),canPlayExact:row.cid===7&&row.exactAllowed!==false,canResume:row.cid===7&&row.position>0&&row.duration>0,canDelete:true,sourceLabel:row.key.split('@@@')[0],deleteScope:row.kind||'ITEM'})),legacy:native.rows.filter(row=>row.cid===7&&!row.kind).map(row=>({...row}))};
 async function invoke(method,payload){
  calls.push({method,payload:JSON.parse(JSON.stringify(payload))});
- if(method==='app.history')return native.envelope || (payload.mode==='independent'?read():native.rows.map(row=>({...row})));
+ if(method==='app.history'){
+   if(native.historyQueue)return new Promise(resolve=>native.historyQueue.push(resolve));
+   return native.envelope || (payload.mode==='independent'?read():native.rows.map(row=>({...row})));
+ }
  if(method==='player.playVod'){
    const ref=payload.historyRecordRef;
    if(payload.intent!=='history_exact')return {};
@@ -39,10 +42,12 @@ async function invoke(method,payload){
  throw Error('Unexpected SDK method '+method);
 }
 const c=vm.createContext({console:{debug(){},info(){}},URL,Math,Date,Set,Map,invoke,
- state:{recent:{items:[],loaded:true,referenceVersion:1},historyContexts:{loaded:true,entries:[]},continueIndex:{loaded:true,entries:[]}},
+ state:{activeList:'all',recent:{items:[],loaded:true,referenceVersion:1,loading:false,loadingPromise:null,refreshedAt:0,runSeq:0,activeRun:null,pendingRefresh:false,pendingRefreshSilent:true,pendingRefreshReconcileDetail:true,nativeHistoryRevision:0,nativeHistoryCommittedRevision:0,nativeKeyFlow:{}},historyContexts:{loaded:true,entries:[]},continueIndex:{loaded:true,entries:[]},watch:{item:{}}},
  document:{activeElement:null},localStorage:{setItem(key,value){localStore.set(key,String(value));},removeItem(key){localStore.delete(key);}},
  normalizeTitle:s=>String(s||'').trim().toLowerCase(),resolvePanProviderForHistory:()=>'',isTvDiagnosticEnabled:()=>false,
  secondaryActiveQuery:()=>null,panSearchItemKey:i=>i.mediaType+':'+i.tmdbId,toast(){},
+ $:()=>null,renderHome(){},renderCatalogQuery(){},renderActiveGrid(){},setStatus(){},recordRecentNativeKeyFlow(){},
+ loadPendingWatch:async()=>null,
  rememberHomeReturn(){},rememberDetailReturn(){},saveUiSnapshotNow(){},rememberWatchIntent(){},startWatchTracking(){},
  playbackOriginForNativeIdentity:()=> 'native-vod'
 });
@@ -53,6 +58,11 @@ vm.runInContext('const contractSdk={vod:'+expressions.vod+',history:'+expression
 const results=[];
 async function test(name,fn){await fn();results.push(name);console.log(name+' = PASS');}
 function load(){c.state.recent.items=c.normalizeHistoryList(read());return c.state.recent.items;}
+const resumeSource=source('22-snapshot-resume-boot.js');
+const historyEventListener=resumeSource.match(/window\.addEventListener\("fmhistorychange", (\(event\) => \{[\s\S]*?\n    \})\);/);
+assert.ok(historyEventListener,'the production versioned Native History event listener is extractable');
+const handleHistoryChange=vm.runInContext(historyEventListener[1],c);
+async function waitFor(check){for(let i=0;i<100;i++){if(check())return;await new Promise(resolve=>setTimeout(resolve,0));}assert.ok(check(),'async fixture timed out');}
 await test('native history commit event is bridged and TV progress polling is removed',async()=>{
  const activity=fs.readFileSync(new URL('../../app/app/src/leanback/java/com/fongmi/android/tv/ui/activity/HomeActivity.java',import.meta.url),'utf8');
  const resume=source('22-snapshot-resume-boot.js');
@@ -64,14 +74,71 @@ await test('native history commit event is bridged and TV progress polling is re
  assert.ok(settlement);assert.doesNotMatch(settlement[0],/loadRecentList/);
  const listener=resume.match(/window\.addEventListener\("fmhistorychange", (\(event\) => \{[\s\S]*?\n    \})\);/);
  assert.ok(listener,'the versioned Native History listener is extractable');
- const refreshCalls=[], pageState={active:true,detail:false};
+ const refreshCalls=[], pageState={active:true,detail:false};let revision=0;
  const eventContext=vm.createContext({tvBrowseActive:()=>pageState.active,
+   markNativeHistoryChanged:()=>++revision,
+   console:{debug(){}},
    $:()=>pageState.detail?{classList:{contains:()=>true}}:null,
    loadRecentList:options=>{refreshCalls.push(options);return Promise.resolve();}});
  const handleHistoryChange=vm.runInContext(listener[1],eventContext);
- handleHistoryChange({detail:{version:2}});assert.equal(refreshCalls.length,0);
+ handleHistoryChange({detail:{version:2}});assert.equal(refreshCalls.length,0);assert.equal(revision,0);
  handleHistoryChange({detail:{version:1}});assert.deepEqual(JSON.parse(JSON.stringify(refreshCalls[0])),{refresh:true,silent:true,reconcileDetail:false});
- pageState.detail=true;handleHistoryChange({detail:{version:1}});assert.equal(refreshCalls.length,1);
+ pageState.detail=true;handleHistoryChange({detail:{version:1}});assert.equal(refreshCalls.length,1);assert.equal(revision,2);
+ pageState.detail=false;pageState.active=false;handleHistoryChange({detail:{version:1}});assert.equal(refreshCalls.length,1);assert.equal(revision,3);
+});
+await test('out-of-order Native reads preserve the committed progress and order',async()=>{
+ native.legacy=false;native.envelope=null;native.historyQueue=[];
+ native.rows=[raw('A',{position:10_000,duration:1_000_000,createTime:1000}),raw('B',{position:20_000,duration:1_000_000,createTime:2000})];
+ c.state.activeList='all';c.state.recent.items=load();c.state.recent.loaded=true;c.state.recent.nativeHistoryRevision=0;c.state.recent.nativeHistoryCommittedRevision=0;
+ c.tvBrowseActive=()=>true;
+ const stale=read();const pending=c.loadRecentList({refresh:true,silent:true,reconcileDetail:false});
+ await waitFor(()=>native.historyQueue.length===1);
+ native.rows[0]=Object.assign({},native.rows[0],{position:124000,createTime:3000});const fresh=read();
+ handleHistoryChange({detail:{version:1}});
+ assert.equal(c.state.recent.activeRun.invalidated,true);
+ native.historyQueue.shift()(stale);
+ await waitFor(()=>native.historyQueue.length===1);
+ native.historyQueue.shift()(fresh);
+ await pending;
+ assert.equal(c.state.recent.items.length,2);
+ assert.equal(c.state.recent.items[0].nativeHistoryKey,native.rows[0].key,'updated record becomes most recent');
+ assert.equal(c.state.recent.items[0].position,124000,'stale response never overwrites the committed progress');
+ assert.equal(c.state.recent.nativeHistoryCommittedRevision,c.state.recent.nativeHistoryRevision);
+});
+await test('inactive Native event remains pending until the next history read',async()=>{
+ native.historyQueue=null;native.envelope=null;c.tvBrowseActive=()=>false;
+ const readsBefore=calls.filter(call=>call.method==='app.history').length;
+ native.rows[1]=Object.assign({},native.rows[1],{position:456000,createTime:4000});
+ handleHistoryChange({detail:{version:1}});
+ assert.equal(c.nativeHistoryRefreshPending(),true);
+ assert.equal(calls.filter(call=>call.method==='app.history').length,readsBefore,'inactive page does not start an unrelated read');
+ c.tvBrowseActive=()=>true;
+ await c.loadRecentList({silent:true,reconcileDetail:false});
+ assert.equal(c.nativeHistoryRefreshPending(),false);
+ assert.equal(c.state.recent.items[0].nativeHistoryKey,native.rows[1].key);
+ assert.equal(c.state.recent.items[0].position,456000);
+ assert.equal(calls.filter(call=>call.method==='app.history').length,readsBefore+1,'pending revision forces a fresh read despite the normal Recent TTL');
+});
+await test('opening history during an older in-flight read queues a trailing Native refresh',async()=>{
+ native.envelope=null;native.historyQueue=[];c.tvBrowseActive=()=>false;
+ c.state.activeList='all';c.state.recent.items=load();c.state.recent.loaded=true;
+ c.state.recent.nativeHistoryRevision=0;c.state.recent.nativeHistoryCommittedRevision=0;
+ const stale=read();const pending=c.loadRecentList({refresh:true,silent:true,reconcileDetail:false});
+ await waitFor(()=>native.historyQueue.length===1);
+ native.rows[0]=Object.assign({},native.rows[0],{position:333000,createTime:5000});const fresh=read();
+ handleHistoryChange({detail:{version:1}});
+ assert.equal(c.nativeHistoryRefreshPending(),true);
+ c.tvBrowseActive=()=>true;
+ c.loadRecentList({silent:true,reconcileDetail:false});
+ assert.equal(c.state.recent.activeRun.invalidated,true,'the pre-event read cannot commit as the latest view-open result');
+ native.historyQueue.shift()(stale);
+ await waitFor(()=>native.historyQueue.length===1);
+ native.historyQueue.shift()(fresh);
+ await pending;
+ assert.equal(c.state.recent.items[0].position,333000);
+ assert.equal(c.state.recent.items[0].nativeHistoryKey,native.rows[0].key);
+ assert.equal(c.nativeHistoryRefreshPending(),false);
+ native.historyQueue=null;
 });
 await test('E01_E05 independent sources are not collapsed by HTML',()=>{native.rows=[raw('A'),raw('B',{createTime:2000})];assert.equal(load().length,2);});
 await test('E03_E11 same-key seasons differ and no-TMDB record stays keyed',()=>{

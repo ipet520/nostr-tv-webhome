@@ -2,11 +2,25 @@
       return !state.recent.loaded || Date.now() - Number(state.recent.refreshedAt || 0) > RECENT_UI_TTL_MS;
     }
 
+    function markNativeHistoryChanged() {
+      const recent = state.recent;
+      recent.nativeHistoryRevision = Math.max(0, Math.floor(Number(recent.nativeHistoryRevision) || 0)) + 1;
+      return recent.nativeHistoryRevision;
+    }
+
+    function nativeHistoryRefreshPending() {
+      const recent = state.recent;
+      return Math.max(0, Number(recent.nativeHistoryRevision) || 0)
+        > Math.max(0, Number(recent.nativeHistoryCommittedRevision) || 0);
+    }
+
     async function loadRecentList(options) {
       const opts = options || {};
       const recent = state.recent;
       if (recent.loading) {
-        if (opts.refresh) {
+        // A normal view-open read must also supersede an in-flight response
+        // when a Native invalidation was deferred while this view was hidden.
+        if (opts.refresh || nativeHistoryRefreshPending()) {
           const activeRun = recent.activeRun;
           if (activeRun && !activeRun.invalidated) {
             activeRun.invalidated = true;
@@ -24,7 +38,9 @@
         }
         return recent.loadingPromise || Promise.resolve();
       }
-      if (recent.loaded && !opts.refresh) return;
+      // A Native change can arrive while this view is inactive. Do not let a
+      // still-fresh UI TTL hide that invalidation when Recent is opened again.
+      if (recent.loaded && !opts.refresh && !nativeHistoryRefreshPending()) return;
       recent.loading = true;
       recent.error = "";
       if (state.activeList === "recent") renderActiveGrid();
@@ -34,7 +50,8 @@
         let trailing = false;
         try {
           while (true) {
-            const run = { id: ++recent.runSeq, invalidated: false, reconcileDetail: runReconcileDetail };
+            const run = { id: ++recent.runSeq, invalidated: false, reconcileDetail: runReconcileDetail,
+              nativeHistoryRevision: Math.max(0, Number(recent.nativeHistoryRevision) || 0) };
             recent.activeRun = run;
             if (trailing) {
               try { console.debug("RECENT_TRAILING_REFRESH_START", run.id); } catch (e) {}
@@ -70,9 +87,19 @@
                 recent.loaded = true;
                 recent.error = "";
                 recent.refreshedAt = Date.now();
+                recent.nativeHistoryCommittedRevision = Math.max(
+                  Math.max(0, Number(recent.nativeHistoryCommittedRevision) || 0),
+                  run.nativeHistoryRevision
+                );
                 if (!runSilent) setStatus("tmdb", "最近观看 " + recent.items.length + " 条");
               }
-              try { console.debug("RECENT_LOAD_COMMIT", run.id); } catch (e) {}
+              try { console.debug("RECENT_LOAD_COMMIT", JSON.stringify({
+                run: run.id,
+                count: error ? null : recent.items.length,
+                nativeRevision: run.nativeHistoryRevision,
+                committedRevision: recent.nativeHistoryCommittedRevision,
+                pendingNativeChange: nativeHistoryRefreshPending()
+              })); } catch (e) {}
               if (state.activeList === "recent") renderActiveGrid();
               if (state.activeList === "all") renderHome();
               if (run.reconcileDetail !== false

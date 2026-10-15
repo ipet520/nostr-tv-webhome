@@ -841,11 +841,22 @@
     });
     window.addEventListener("fmhistorychange", (event) => {
       const detail = event && event.detail;
-      if (!detail || detail.version !== 1 || !tvBrowseActive()) return;
+      if (!detail || detail.version !== 1) return;
+      const revision = markNativeHistoryChanged();
       const detailSheet = $("detailSheet");
-      if (detailSheet && detailSheet.classList.contains("active")) return;
+      const detailActive = !!(detailSheet && detailSheet.classList.contains("active"));
+      if (!tvBrowseActive() || detailActive) {
+        // Preserve the committed Native invalidation until a later read can
+        // consume it; the immediate player-return read may have raced ahead
+        // of the final History save.
+        try { console.debug("NATIVE_HISTORY_CHANGE_DEFERRED", JSON.stringify({
+          revision, tvBrowseActive: tvBrowseActive(), detailActive
+        })); } catch (e) {}
+        return;
+      }
       // Native dispatches this only after its History write has committed.
       // Re-read the Native source of truth instead of polling after resume.
+      try { console.debug("NATIVE_HISTORY_CHANGE_REFRESH", revision); } catch (e) {}
       loadRecentList({ refresh: true, silent: true, reconcileDetail: false }).catch(() => {});
     });
     window.addEventListener("fmpause", () => {

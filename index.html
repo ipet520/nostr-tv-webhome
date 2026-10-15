@@ -17177,7 +17177,7 @@ utils.encode = function encode(arr, enc) {
       activeList: "all",
       catalog: {},
       catalogPage: {},
-      recent: { items: [], loading: false, loadingPromise: null, loaded: false, error: "", refreshedAt: 0, diag: null, nativeItems: [], nativeLoaded: false, nativeLoading: false, nativeRefreshedAt: 0, nativeKeyFlow: {}, runSeq: 0, activeRun: null, pendingRefresh: false, pendingRefreshSilent: true, pendingRefreshReconcileDetail: true },
+      recent: { items: [], loading: false, loadingPromise: null, loaded: false, error: "", refreshedAt: 0, diag: null, nativeItems: [], nativeLoaded: false, nativeLoading: false, nativeRefreshedAt: 0, nativeKeyFlow: {}, nativeHistoryRevision: 0, nativeHistoryCommittedRevision: 0, runSeq: 0, activeRun: null, pendingRefresh: false, pendingRefreshSilent: true, pendingRefreshReconcileDetail: true },
       movieDetail: { cache: {}, cardTasks: {}, cardQueue: [], cardActive: 0, observer: null, scrollBound: false, scanTimer: 0 },
       tvDetail: { cache: {}, cardTasks: {}, cardQueue: [], cardActive: 0, observer: null, scrollBound: false, scanTimer: 0, generation: 0 },
       homeLatest: { items: [], loading: false, loaded: false, error: "", loadedAt: 0, lastRefreshAt: 0, requestSeq: 0, diag: null, promise: null, cacheChecked: false, cacheHydrated: false, cacheWeekStart: "", cacheSavedAt: 0, cacheItemCount: 0, cacheHydratedAt: 0, networkRefreshReason: "", networkRefreshSucceeded: false, refreshStartedAt: 0, networkRefreshStartedAt: 0, networkRefreshEndedAt: 0, firstRenderableAt: 0 },
@@ -22881,11 +22881,25 @@ utils.encode = function encode(arr, enc) {
       return !state.recent.loaded || Date.now() - Number(state.recent.refreshedAt || 0) > RECENT_UI_TTL_MS;
     }
 
+    function markNativeHistoryChanged() {
+      const recent = state.recent;
+      recent.nativeHistoryRevision = Math.max(0, Math.floor(Number(recent.nativeHistoryRevision) || 0)) + 1;
+      return recent.nativeHistoryRevision;
+    }
+
+    function nativeHistoryRefreshPending() {
+      const recent = state.recent;
+      return Math.max(0, Number(recent.nativeHistoryRevision) || 0)
+        > Math.max(0, Number(recent.nativeHistoryCommittedRevision) || 0);
+    }
+
     async function loadRecentList(options) {
       const opts = options || {};
       const recent = state.recent;
       if (recent.loading) {
-        if (opts.refresh) {
+        // A normal view-open read must also supersede an in-flight response
+        // when a Native invalidation was deferred while this view was hidden.
+        if (opts.refresh || nativeHistoryRefreshPending()) {
           const activeRun = recent.activeRun;
           if (activeRun && !activeRun.invalidated) {
             activeRun.invalidated = true;
@@ -22903,7 +22917,9 @@ utils.encode = function encode(arr, enc) {
         }
         return recent.loadingPromise || Promise.resolve();
       }
-      if (recent.loaded && !opts.refresh) return;
+      // A Native change can arrive while this view is inactive. Do not let a
+      // still-fresh UI TTL hide that invalidation when Recent is opened again.
+      if (recent.loaded && !opts.refresh && !nativeHistoryRefreshPending()) return;
       recent.loading = true;
       recent.error = "";
       if (state.activeList === "recent") renderActiveGrid();
@@ -22913,7 +22929,8 @@ utils.encode = function encode(arr, enc) {
         let trailing = false;
         try {
           while (true) {
-            const run = { id: ++recent.runSeq, invalidated: false, reconcileDetail: runReconcileDetail };
+            const run = { id: ++recent.runSeq, invalidated: false, reconcileDetail: runReconcileDetail,
+              nativeHistoryRevision: Math.max(0, Number(recent.nativeHistoryRevision) || 0) };
             recent.activeRun = run;
             if (trailing) {
               try { console.debug("RECENT_TRAILING_REFRESH_START", run.id); } catch (e) {}
@@ -22949,9 +22966,19 @@ utils.encode = function encode(arr, enc) {
                 recent.loaded = true;
                 recent.error = "";
                 recent.refreshedAt = Date.now();
+                recent.nativeHistoryCommittedRevision = Math.max(
+                  Math.max(0, Number(recent.nativeHistoryCommittedRevision) || 0),
+                  run.nativeHistoryRevision
+                );
                 if (!runSilent) setStatus("tmdb", "最近观看 " + recent.items.length + " 条");
               }
-              try { console.debug("RECENT_LOAD_COMMIT", run.id); } catch (e) {}
+              try { console.debug("RECENT_LOAD_COMMIT", JSON.stringify({
+                run: run.id,
+                count: error ? null : recent.items.length,
+                nativeRevision: run.nativeHistoryRevision,
+                committedRevision: recent.nativeHistoryCommittedRevision,
+                pendingNativeChange: nativeHistoryRefreshPending()
+              })); } catch (e) {}
               if (state.activeList === "recent") renderActiveGrid();
               if (state.activeList === "all") renderHome();
               if (run.reconcileDetail !== false
@@ -43541,11 +43568,22 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     });
     window.addEventListener("fmhistorychange", (event) => {
       const detail = event && event.detail;
-      if (!detail || detail.version !== 1 || !tvBrowseActive()) return;
+      if (!detail || detail.version !== 1) return;
+      const revision = markNativeHistoryChanged();
       const detailSheet = $("detailSheet");
-      if (detailSheet && detailSheet.classList.contains("active")) return;
+      const detailActive = !!(detailSheet && detailSheet.classList.contains("active"));
+      if (!tvBrowseActive() || detailActive) {
+        // Preserve the committed Native invalidation until a later read can
+        // consume it; the immediate player-return read may have raced ahead
+        // of the final History save.
+        try { console.debug("NATIVE_HISTORY_CHANGE_DEFERRED", JSON.stringify({
+          revision, tvBrowseActive: tvBrowseActive(), detailActive
+        })); } catch (e) {}
+        return;
+      }
       // Native dispatches this only after its History write has committed.
       // Re-read the Native source of truth instead of polling after resume.
+      try { console.debug("NATIVE_HISTORY_CHANGE_REFRESH", revision); } catch (e) {}
       loadRecentList({ refresh: true, silent: true, reconcileDetail: false }).catch(() => {});
     });
     window.addEventListener("fmpause", () => {

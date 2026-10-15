@@ -17,7 +17,7 @@ const hook = `window.testBrowse = { state, renderAll, renderTvBrowse, tvBrowseSt
  tvBrowseSelectColumn, tvBrowseSnapshot, restoreTvBrowseSnapshot, rememberHomeReturn, restoreHomeReturn,
  buildUiSnapshot, restoreUiSnapshot, openSidebar, closeSidebar, openSearchPage, closeSearchPage,
  bindActions, installRemoteKeys, secondaryActiveQuery, syncBrowseDevicePresentation, handleWebHomeResume, boot,
- RECENT_DOUBLE_PRESS_WINDOW_MS, cancelRecentDeleteArm, isVisibleFocusable, tvHistoryPressItem, tvPresentationStatus, homeHeroPresentationStatus, tvEpisodeStatusLabel, normalizeHistoryList, tvBrowseCloseHistory, tvBrowseContinueHistory, tvBrowseQueryKey, tvBrowseOpenHistory, tvBrowsePreview, publishHomeWeeklySnapshot, enterRecentManageMode, exitRecentManageMode,
+ RECENT_DOUBLE_PRESS_WINDOW_MS, cancelRecentDeleteArm, isVisibleFocusable, tvHistoryPressItem, tvPresentationStatus, homeHeroPresentationStatus, tvEpisodeStatusLabel, normalizeHistoryList, tvBrowseCloseHistory, tvBrowseContinueHistory, tvBrowseQueryKey, tvBrowseOpenHistory, tvBrowsePreview, publishHomeWeeklySnapshot, enterRecentManageMode, exitRecentManageMode, nativeHistoryRefreshPending,
  openDetail, closeDetail, sdk, loadRecentList, renderHomeRecent, tvBrowseBeginStartup, homeFocusUserEpoch, storeMovieDetailCache, storeTvDetailCache, updateMovieReleaseStatusCards, requestMovieDetailShared, homeEnrichmentRequest, bestDetailLogo, tvBrowseClearPreview, focusRemoteTarget, artLogoResource, prepareArtLogo, renderDetailTitleLogo };
  window.testBrowse.disableTracking = () => { rememberWatchIntent = () => {}; startWatchTracking = () => {}; saveHistoryPlaybackContext = async () => {}; };
  window.testBrowse.setup = () => {
@@ -423,6 +423,57 @@ async function checks() {
   p=await historyPage();await p.evaluate(()=>deleteFailure=true);await p.locator('#recentManageBtn').click();await p.locator('#recentManageSelectAll').click();await p.locator('#recentManageDelete').click();await p.locator('#recentManageDelete').click();
   await p.waitForFunction(()=>deleteCalls.length>0&&!testBrowse.state.recentManage.deleting);assert.equal(await p.locator('#tvBrowseRail .card').count(),3);assert.equal(await p.evaluate(()=>historyFixture.length),3);assert.equal((await counts(p)).vod,0);assert.match(await p.locator('#toast').textContent(),/删除失败/);
   await ok('BATCH_DELETE_FAILURE_PRESERVES_REAL_RECORDS',p);
+
+  p=await historyPage(3);
+  const readsBeforeDeferredChange=await p.evaluate(()=>historyReads);
+  await p.evaluate(()=>testBrowse.tvBrowseCloseHistory());
+  await p.evaluate(()=>{
+    testBrowse.state.activeList='recent';
+    historyFixture[2].position=123000;historyFixture[2].duration=1000000;historyFixture[2].createTime=Date.now()+5000;
+    window.dispatchEvent(new CustomEvent('fmhistorychange',{detail:{version:1}}));
+  });
+  assert.equal(await p.evaluate(()=>historyReads),readsBeforeDeferredChange,'an inactive view records invalidation without an immediate list read');
+  assert.equal(await p.evaluate(()=>testBrowse.nativeHistoryRefreshPending()),true,'an inactive Native event must remain pending');
+  await p.evaluate(()=>{testBrowse.state.activeList='all';testBrowse.tvBrowseOpenHistory();});
+  await p.waitForFunction(()=>!testBrowse.state.recent.loading&&document.querySelector('#tvBrowseRail .card .card-title').textContent==='历史记录3');
+  assert.equal(await p.evaluate(()=>testBrowse.nativeHistoryRefreshPending()),false,'successful list commit consumes the deferred revision');
+  const thirdCard=p.locator('#tvBrowseRail .card').first();
+  await thirdCard.focus();
+  await thirdCard.evaluate(card=>{window.retainedHistoryCard=card;});
+  await p.evaluate(()=>{
+    historyFixture[2].position=124000;
+    window.dispatchEvent(new CustomEvent('fmhistorychange',{detail:{version:1}}));
+  });
+  await p.waitForFunction(()=>document.querySelector('#tvHistoryTime').textContent==='2:04 / 16:40');
+  assert.equal(await p.evaluate(()=>document.querySelector('#tvBrowseRail .card')===window.retainedHistoryCard),true,'same identity/order can reuse its card while preview progress still updates');
+  assert.equal(await p.locator('#tvHistoryProgress > span').evaluate(e=>e.style.width),'12.4%');
+  await ok('DEFERRED_NATIVE_EVENT_REFRESHES_SORT_AND_REUSED_CARD_PROGRESS',p);
+
+  p=await historyPage(3);
+  await p.locator('#tvBrowseRail .card').nth(1).focus();
+  const reorderedFocusKey=await p.evaluate(()=>document.activeElement.dataset.mediaKey);
+  await p.evaluate(key=>{window.reorderedFocusKey=key;},reorderedFocusKey);
+  await p.evaluate(()=>{
+    window.historyReplies=[];
+    window.fm.history=()=>new Promise(resolve=>historyReplies.push(resolve));
+    window.staleRead=testBrowse.loadRecentList({refresh:true,silent:true});
+  });
+  await p.waitForFunction(()=>historyReplies.length===1);
+  await p.evaluate(()=>{
+    window.staleEnvelope=historyEnvelope();
+    historyFixture[1].position=222000;historyFixture[1].duration=1000000;historyFixture[1].createTime=Date.now()+6000;
+    window.freshEnvelope=historyEnvelope();
+    window.dispatchEvent(new CustomEvent('fmhistorychange',{detail:{version:1}}));
+    historyReplies[0](staleEnvelope);
+  });
+  await p.waitForFunction(()=>historyReplies.length===2,null,{timeout:5000});
+  await p.evaluate(()=>historyReplies[1](freshEnvelope));
+  await p.evaluate(async()=>{await staleRead;});
+  assert.equal(await p.evaluate(()=>testBrowse.state.recent.items[0].nativeHistoryKey),await p.evaluate(()=>historyFixture[1].key));
+  assert.equal(await p.evaluate(()=>testBrowse.state.recent.items[0].position),222000,'late pre-commit payload must not overwrite the fresh response');
+  assert.equal(await p.evaluate(()=>document.activeElement.dataset.mediaKey),reorderedFocusKey,'sorting updates retain focus on the same Native identity');
+  assert.equal(await p.evaluate(()=>testBrowse.nativeHistoryRefreshPending()),false);
+  await ok('OUT_OF_ORDER_NATIVE_READ_CANNOT_OVERWRITE_COMMITTED_HISTORY',p);
 }
 try {await checks();assert.deepEqual(errors,[]);console.log('HISTORY_INTERACTION_ACCEPTANCE = PASS; ANDROID_DEVICE = NOT_RUN');}
 finally {if(process.env.WEBHOME_VISUAL_DIR)writeFileSync(join(process.env.WEBHOME_VISUAL_DIR,'interaction-results.json'),JSON.stringify(results,null,2));await browser.close();}
