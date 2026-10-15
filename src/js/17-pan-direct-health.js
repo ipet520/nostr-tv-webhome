@@ -1079,20 +1079,6 @@
         }
         if (isRepeat) toast(`已换源 · ${panDiskName(pick.diskType)}`);
         // 播放开始前消费一次性请求，避免后续状态刷新重复触发播放。
-        if (action.detailPrimary && action.prepareOnly && action.playRequested) {
-          const detailRun = state.detailPlayback;
-          if (detailRun && detailPlaybackIsCurrent(detailRun) && detailRun.historyPromise) {
-            await detailRun.historyPromise.catch(() => null);
-            if (!panDirectPlayActionIsCurrent(action)) {
-              action.playRequested = false;
-              return;
-            }
-            action.history = detailRun.history || state.detailHistory || null;
-            action.episodeTarget = action.history
-              ? detailContinuePlaybackTargetFor(item, action.history)
-              : action.episodeTarget || currentPlaybackTargetForItem(item);
-          }
-        }
         // 最终同步坏源保护：不新增网络检查，只拒绝当前缓存已明确失效的候选。
         // 手动盘搜仍直接进入 playPanResult()，保留其警告后强制播放行为。
         if (isPanHealthBad(pick)) {

@@ -965,7 +965,6 @@
       const selectedItem = state.selected;
       const episodeTarget = normalizePlaybackTarget(selectedItem, opts.episodeTarget || currentPlaybackTargetForItem(selectedItem));
       const payload = buildPanPlayPayload(item);
-      if (detailSessionFor(selectedItem)) return playDetailSessionCandidate(item, opts);
       if (!payload) {
         if (opts.handoffAction) updateDirectPlayStatus(opts.handoffAction.token, "FINAL_ERROR", DIRECT_PLAY_STATUS_TEXT.FINAL_ERROR, "invalid_payload");
         toast("播放资源无效，请重新选择资源");
@@ -1048,7 +1047,6 @@
       const sheet = $("detailSheet");
       if (!sheet) return;
       const closingItem = state.selected;
-      endDetailSession("detail_closed");
       clearDirectPlayStatus(0, "route_leave");
       cancelPendingDirectPlay("detail_closed");
       cancelDetailPlaybackPreparation("detail_closed");
@@ -1093,7 +1091,7 @@
         ensureHomeHistoryEntry();
       }
       setTimeout(() => {
-        if (state.selected !== closingItem || detailSessionFor(state.selected)) return;
+        if (!state.detailClosing || state.selected !== closingItem) return;
         state.detailClosing = false;
         document.body.classList.remove("detail-closing");
         sheet.classList.remove("active");
@@ -1103,9 +1101,6 @@
         sheet.setAttribute("aria-hidden", "true");
         document.body.classList.remove("detail-active");
         state.detailReturn = null;
-        state.detailMode = "FIRST_PLAY";
-        state.detailModeItemKey = "";
-        state.detailHistory = null;
         if (heroBgEl) {
           heroBgEl.classList.remove("active", "closing");
           heroBgEl.style.backgroundImage = "none";
@@ -1349,7 +1344,7 @@
         if (saved.episodeTarget) state.detailEpisodeTarget = normalizePlaybackTarget(state.selected, saved.episodeTarget);
         const savedTarget = saved.targetId && $(saved.targetId);
         const target = isVisibleFocusable(savedTarget) ? savedTarget : detailPrimaryActionButton() || $("closeDetailBtn");
-        if (isTvLikeDevice() && isDetailPrimaryAction(target) && !detailSessionFor(state.selected)) {
+        if (isTvLikeDevice() && isDetailPrimaryAction(target)) {
           restoreDetailTopAnchor({ reason: "player_return", fromTarget: document.activeElement, target });
           return;
         }
@@ -1754,10 +1749,21 @@
     }
 
     function reconcileDetailAfterNativeReturn(item, origin) {
-      const detail = $("detailSheet"), session = detailSessionFor(item);
-      if (state.detailClosing || !detail || !detail.classList.contains("active") || !item || state.selected !== item || !session) return false;
-      if (origin !== "app-resume" && origin !== "native-search") restoreDetailSessionAfterPlayerReturn(item).catch(() => {});
-      syncDetailMode(item); updateDetailContinueButton();
+      const detail = $("detailSheet");
+      if (state.detailClosing || !detail || !detail.classList.contains("active") || !item || state.selected !== item) return false;
+      if (state.recent && state.recent.error) return false;
+      if (origin === "native-search") {
+        const marker = nativeSearchReturnMarkerFor();
+        if (!marker || marker.itemKey !== panSearchItemKey(item)) return false;
+        const winner = recentNativeHistoryWinnerFor(item);
+        const history = winner && detailHasAuthoritativeNativeHistory(winner) && detailHistoryMatches(item, winner) ? winner : null;
+        const changed = nativeSearchHistoryChanged(item, marker, history);
+        if (history && changed) {
+          retireDetailPreparedPlaybackAfterNativeSearch(item, marker,
+            nativeSearchHistoryChangeReason(item, marker, history) || "native_search_authoritative_history");
+        }
+      }
+      updateDetailContinueButton();
       return true;
     }
 

@@ -1,11 +1,4 @@
     function prepareDetailPlaybackForDetail(item, options) {
-      const session = detailSessionFor(item);
-      const generation = session && session.generation;
-      if (session && session.restoration) return session.restoration.then((restored) => {
-        session.restoration = null;
-        if (detailSessionFor(item) !== session || session.generation !== generation) return null;
-        return restored ? null : prepareDetailPlaybackForDetail(item, options);
-      });
       const opts = options || {};
       const canonicalStartedAt = Date.now();
       let canonicalPromise = Promise.resolve(item);
@@ -42,13 +35,11 @@
       else if (!sameSelected && !opts.restore) state.detailEpisodeTarget = null;
       if (!opts.restore && !detailWasActive) rememberHomeReturn(item, opts.returnTarget);
       state.selected = item;
-      beginDetailSession(item, opts);
       $("detailSheet").classList.remove("sheet-closing");
       state.detailClosing = false;
       document.body.classList.remove("detail-closing");
       state.detail = null;
-      // 新详情会话的资源准备与持久化历史独立。
-      syncDetailMode(item);
+      // 普通详情播放沿用 Native 的播放交接；历史续播只通过历史页的精确入口触发。
       if (!opts.keepPan) {
         resetPanSearchState(true, {
           reason: "detail_open",

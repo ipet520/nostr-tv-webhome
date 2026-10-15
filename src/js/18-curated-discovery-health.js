@@ -8,9 +8,7 @@
 
     function detailPlaybackIsCurrent(run) {
       return !!(run && state.detailPlayback === run && state.selected === run.item
-        && String(run.itemKey || "") === panSearchItemKey(state.selected)
-        && (!run.sessionId || detailSessionFor(run.item) && run.sessionId === state.detailSession.id
-          && run.sessionGeneration === state.detailSession.generation));
+        && String(run.itemKey || "") === panSearchItemKey(state.selected));
     }
 
     function curatedAbsoluteUrl(value, base) {

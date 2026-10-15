@@ -1280,7 +1280,6 @@
     function setDetailPlaybackTarget(item, context) {
       const target = normalizePlaybackTarget(item, context);
       state.detailEpisodeTarget = target;
-      detailSessionTargetChanged(item, target);
       scheduleUiSnapshotSave();
       return target;
     }

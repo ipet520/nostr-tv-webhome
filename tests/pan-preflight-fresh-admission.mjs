@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
 const source = readFileSync(new URL("../src/js/19-pan-results-handoff-return.js", import.meta.url), "utf8");
-const sessionSource = readFileSync(new URL("../src/js/07a-detail-session.js", import.meta.url), "utf8");
 const signature = "function panAutoHealthAdmission(item, freshHealth)";
 const start = source.indexOf(signature);
 assert.notEqual(start, -1, "panAutoHealthAdmission must remain the automatic health authority");
@@ -39,11 +38,11 @@ assert.equal(result.freshBad.reason, "FRESH_REJECTED");
 assert.equal(result.freshLocked.accepted, false);
 assert.equal(result.freshOk.accepted, true);
 assert.equal(result.cachedOk.accepted, true);
-assert.match(sessionSource, /panAutoHealthAdmission\(candidate, freshHealth\)/);
-assert.match(sessionSource, /\[panHealthKey\(candidate\)\]: preflight\.state/);
+assert.match(source, /freshPanPreflight\(item, context, \{ playback: true \}\)/);
+assert.match(source, /const result = pan\.play\(payload\)/);
 
 console.log("FRESH_BAD_OVERRIDES_CACHED_OK = PASS");
 console.log("FRESH_LOCKED_REJECTED = PASS");
 console.log("FRESH_OK_ACCEPTED = PASS");
 console.log("UNAVAILABLE_PREFLIGHT_USES_CACHED_POLICY = PASS");
-console.log("DETAIL_SESSION_PASSES_CURRENT_PREFLIGHT = PASS");
+console.log("DETAIL_CANDIDATE_USES_CURRENT_PREFLIGHT_AND_NATIVE_PAN_PLAY = PASS");

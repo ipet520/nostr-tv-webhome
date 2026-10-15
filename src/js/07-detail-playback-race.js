@@ -1,11 +1,3 @@
-    function syncDetailMode(item) {
-      const session = detailSessionFor(item);
-      state.detailMode = session && session.canResume ? "CONTINUE" : "FIRST_PLAY";
-      state.detailModeItemKey = item ? panSearchItemKey(item) : "";
-      state.detailHistory = session && session.nativeHistory || null;
-      return state.detailMode;
-    }
-
     function recordDetailPlaybackLifecycle(run, event, detail) {
       const session = Number(run && run.token || 0);
       if (!session) return;
@@ -72,13 +64,9 @@
       const button = $("detailContinueBtn");
       const candidate = run.candidate;
       run.handoffPromise = (async () => {
-        if (run.provider === "pan-direct" && run.historyPromise) {
-          await run.historyPromise.catch(() => null);
-          if (!detailPlaybackIsCurrent(run) || run.cancelled) return false;
-        }
         return run.provider === "curated"
           ? playPreparedDetailCandidate(item, candidate, button)
-          : playDetailDirectReadyCandidate(item, candidate, run.history || state.detailHistory, button);
+          : playDetailDirectReadyCandidate(item, candidate, null, button);
       })().catch(() => false).then((result) => {
         run.handoffDispatching = false;
         return result;
@@ -154,10 +142,6 @@
       run.provider = normalizedProvider;
       run.sourceId = String(info.sourceId || candidate.sourceId || run.sourceId || "");
       run.candidate = candidate;
-      const committedSession = detailSessionFor(run.item);
-      if (committedSession && run.sessionId === committedSession.id) {
-        committedSession.candidate = candidate; committedSession.phase = "READY";
-      }
       run.commitAt = Date.now();
       run.phase = "READY";
       run.raceActive = false;
@@ -330,8 +314,6 @@
         run.candidate = null;
         run.error = !mediaVerdict.accepted ? "automatic_media_rejected" : admission.state === "bad" ? "fresh_bad_candidate" : "health_unconfirmed_candidate";
         settleDetailPlayback(run, "NO_RESOURCE", run.error);
-        const session = detailSessionFor(item);
-        if (session) { session.phase = "FAILED"; session.candidate = null; }
         updateDetailContinueButton();
         return null;
       }
@@ -346,16 +328,9 @@
       run.playRequested = false;
       run.candidate = null;
       showDirectPlayStatus(run.token, "STARTING_PLAYER", "正在启动播放器…", "native_handoff_start");
-      if (!run.history && run.historyPromise) {
-        await run.historyPromise.catch(() => null);
-        if (!detailPlaybackIsCurrent(run)) return false;
-      }
-      const history = detailSessionFor(item) ? null : run.history || state.detailHistory;
-      const episodeTarget = history
-        ? detailContinuePlaybackTargetFor(item, history)
-        : currentPlaybackTargetForItem(item);
+      const episodeTarget = currentPlaybackTargetForItem(item);
       if (episodeTarget) setDetailPlaybackTarget(item, episodeTarget);
-      // 预检可能在等待 Native History 的期间晚到；handoff 前必须再读一次当前鲜活状态。
+      // 资源准备期间缓存状态可能变化；handoff 前必须再读一次当前健康状态。
       const handoffAdmission = panAutoHealthAdmission(candidate, {});
       const handoffMediaVerdict = automaticVideoCandidateVerdict(item, candidate);
       if (!handoffMediaVerdict.accepted) {
@@ -379,12 +354,10 @@
         return false;
       }
       if (button) rememberDetailReturn(button);
-      const dispatched = await playPanResult(candidate, {
+      await playPanResult(candidate, {
         prechecked: true,
-        episodeTarget,
-        historyResume: !!history
+        episodeTarget
       });
-      if (detailSessionFor(item) && dispatched !== true) return false;
       armDirectPlayStatusUiFallback(run.token);
       return true;
     }
@@ -392,8 +365,6 @@
     function prepareDetailPlayback(item, options) {
       const opts = options || {};
       const previous = state.detailPlayback || {};
-      const session = detailSessionFor(item);
-      if (session) { session.phase = "PREPARING"; session.canResume = false; session.nativeHistory = null; session.accepted = false; }
       cancelDetailPlaybackPreparation("new_detail_prepare");
       const canonicalStartedAt = Number(opts.canonicalStartedAt || Date.now());
       let canonicalPromise = opts.canonicalPromise;
@@ -409,8 +380,6 @@
         }
       }
       const run = {
-        sessionId: session && session.id || "",
-        sessionGeneration: session && session.generation || 0,
         seq: Number(previous.seq || 0) + 1,
         // 复用 Direct 状态使用的单调数字 token，保证诊断/状态提示不会被字符串 token 丢弃，
         // 也避免 curated 准备与后续 playBestQuark action 发生状态 ID 冲突。
@@ -497,12 +466,8 @@
           elapsedMs: Math.max(0, Date.now() - Number(run.canonicalStartedAt || Date.now())),
             canonicalDone: !!run.canonicalResolved
         });
-        const knownNativeHistory = state.detailMode === "CONTINUE"
-          && state.detailModeItemKey === panSearchItemKey(item)
-          && detailContinueHistoryIsValid(state.detailHistory)
-          && detailHistoryMatches(item, state.detailHistory);
         const unreleased = detailUnreleasedInfo(item);
-        if (unreleased.unreleased && !knownNativeHistory) {
+        if (unreleased.unreleased) {
           recordDetailPlaybackDecision("DETAIL_OPEN_PLAYBACK_DECISION", item, {
             continueContextFound: false,
             continueUrlFound: false,
@@ -527,7 +492,6 @@
           curatedStarted: true
         });
         showDirectPlayStatus(run.token, "BACKGROUND_PREPARING", DIRECT_PLAY_STATUS_TEXT.BACKGROUND_PREPARING, "detail_prepare_start");
-        run.historyPromise = Promise.resolve(null);
         run.raceActive = true;
         run.raceStartedAt = Date.now();
         run.phase = "PREPARING";
@@ -734,10 +698,9 @@
       const detailRun = state.detailPlayback && detailPlaybackIsCurrent(state.detailPlayback)
         && state.detailPlayback.item === item ? state.detailPlayback : null;
       if (detailRun && detailRun.handoffStarted) return false;
-      const effectiveHistory = detailSessionFor(item) ? null : history;
-      const episodeTarget = detailContinuePlaybackTargetFor(item, effectiveHistory);
+      const episodeTarget = detailContinuePlaybackTargetFor(item, history);
       if (episodeTarget) setDetailPlaybackTarget(item, episodeTarget);
-      if (effectiveHistory) {
+      if (history) {
         // Ready 已经确定了当前 Direct 资源；历史记录只补充季/集和进度上下文，
         // 不再进入会重新搜索或切换资源的旧续播分支。
         rememberDetailReturn(button);
@@ -757,37 +720,21 @@
         detailRun.playRequested = false;
       }
       recordDirectReadyEvent("DIRECT_READY_CONSUMED", item, candidate, "ready_click", admission.state, null);
-      const dispatched = await playPanResult(candidate, {
+      await playPanResult(candidate, {
         prechecked: true,
         episodeTarget,
-        historyResume: !!effectiveHistory
+        historyResume: !!history
       });
-      if (detailSessionFor(item) && dispatched !== true) return false;
       return true;
     }
 
     async function requestDetailPlayback(item) {
-      if (!item || state.selected !== item || !detailSessionFor(item)) return false;
-      const session = detailSessionFor(item);
-      if (session) {
-        if (session.restoration) await session.restoration;
-        if (detailSessionFor(item) !== session) return;
-        if (session.promise || ["ACCEPTED", "REQUESTED", "UNKNOWN", "RESTORING"].includes(session.phase)) return session.promise;
-        if (["FAILED", "RETURNED_NO_POINT"].includes(session.phase)) {
-          if (typeof sdk().detailSession !== "function") { toast("当前 App 不支持详情会话播放，请更新 App"); return false; }
-          return restartDetailSessionPreparation(session, session.target, "session_retry");
-        }
-        if (session.phase === "RETURNED" && session.candidate) {
-          return playDetailSessionCandidate(session.candidate, { prechecked: true });
-        }
-      }
+      if (!item || state.selected !== item) return false;
       if (canonicalResourceKey(item)) {
         try { await resolveCanonicalResourceTitle(item); } catch (e) {}
         if (state.selected !== item) return;
       }
       const button = $("detailContinueBtn");
-      if (state.detailModeItemKey !== panSearchItemKey(item)) syncDetailMode(item);
-      const history = null;
       const directOptions = { detailPrimary: true, suppressAutoPan: true };
       const racingDetailPlayback = state.detailPlayback && detailPlaybackIsCurrent(state.detailPlayback)
         && state.detailPlayback.item === item && state.detailPlayback.raceActive
@@ -806,10 +753,10 @@
       }
       const readyCandidate = detailDirectPlayCandidateFor(item);
       if (readyCandidate) {
-        playDetailDirectReadyCandidate(item, readyCandidate, history, button).catch(() => {});
+        playDetailDirectReadyCandidate(item, readyCandidate, null, button).catch(() => {});
         return;
       }
-      if (detailUnreleasedInfo(item).unreleased && !history) {
+      if (detailUnreleasedInfo(item).unreleased) {
         settleDetailUnreleased(item, "unreleased_manual_guard");
         updateDetailContinueButton();
         toast("尚未上映");
@@ -851,19 +798,7 @@
     }
 
     function detailContinuePlayStateFor(item) {
-      const session = detailSessionFor(item);
-      if (session && ["FAILED", "RETURNED_NO_POINT"].includes(session.phase)) return "failed";
-      if (session && ["RETURNED", "ACCEPTED"].includes(session.phase) && session.candidate) return "ready";
       if (!item) return "idle";
-      const itemKey = panSearchItemKey(item);
-      const history = state.detailMode === "CONTINUE"
-        && state.detailModeItemKey === itemKey
-        && detailContinueHistoryIsValid(state.detailHistory)
-        && detailHistoryMatches(item, state.detailHistory)
-        ? state.detailHistory
-        : null;
-      if (history) return "ready";
-
       const run = state.detailPlayback && detailPlaybackIsCurrent(state.detailPlayback)
         && state.detailPlayback.item === item ? state.detailPlayback : null;
       const racePreparing = !!(run && run.raceActive && !run.providerCommitted);
@@ -898,15 +833,12 @@
       const continueText = $("detailContinueText");
       const searchText = $("detailSearchText");
       if (!button) return;
-      if (state.selected && state.detailModeItemKey !== panSearchItemKey(state.selected)) syncDetailMode(state.selected);
-      const mode = state.detailMode === "CONTINUE" ? "CONTINUE" : "FIRST_PLAY";
-      const match = mode === "CONTINUE" ? state.detailHistory : null;
       const actions = button.closest(".actions");
-      button.__historyItem = match || null;
+      button.__historyItem = null;
       button.style.display = "";
       button.setAttribute("aria-hidden", "false");
-      if (continueText) continueText.textContent = match ? "续播" : "播放";
-      if (actions) actions.classList.toggle("has-continue", !!match);
+      if (continueText) continueText.textContent = "播放";
+      if (actions) actions.classList.remove("has-continue");
       const directReady = detailDirectPlayReadyFor(state.selected);
       // 文字由权威 Native History 决定；图标状态同样优先尊重有效历史，
       // 再反映当前详情生命周期中的可交接资源、准备中和终态失败。
@@ -915,7 +847,7 @@
       button.classList.toggle("is-ready", ready);
       button.dataset.ready = ready ? "true" : "false";
       button.dataset.playState = playState;
-      button.dataset.mode = mode;
+      button.dataset.mode = "FIRST_PLAY";
       button.dataset.directReady = directReady ? "true" : "false";
       if (searchText) searchText.textContent = "聚搜";
     }

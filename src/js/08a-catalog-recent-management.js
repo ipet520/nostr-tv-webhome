@@ -113,20 +113,6 @@
               })); } catch (e) {}
               if (state.activeList === "recent") renderActiveGrid();
               if (state.activeList === "all") renderHome();
-              if (run.reconcileDetail !== false
-                && !error
-                && $("detailSheet")
-                && $("detailSheet").classList.contains("active")
-                && state.selected) {
-                const winner = recentNativeHistoryWinnerFor(state.selected);
-                const history = winner
-                  && detailHasAuthoritativeNativeHistory(winner)
-                  && detailHistoryMatches(state.selected, winner)
-                  ? winner
-                  : null;
-                syncDetailMode(state.selected, history, { freshNative: true });
-                updateDetailContinueButton();
-              }
             }
             if (recent.activeRun === run) recent.activeRun = null;
             if (!recent.pendingRefresh) break;

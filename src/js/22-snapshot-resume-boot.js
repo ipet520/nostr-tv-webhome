@@ -137,7 +137,6 @@
         scrollY: Math.round(window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0),
         connectionOpen: !!($("connectionDock") && $("connectionDock").classList.contains("open")),
         selected: state.selected ? normalizeSnapshot(state.selected) : null,
-        detailSessionReturn: detailSessionSnapshot(),
         detailEpisodeTarget: state.detailEpisodeTarget || null,
         detailScrollTop: detail ? Math.round(detail.scrollTop || 0) : 0,
         detailReturn: state.detailReturn || null,
@@ -313,8 +312,7 @@
         openDetail(snapshot.selected, {
           restore: true,
           skipHistory: true,
-          playerReturnRestore: !!(snapshot.detailSessionReturn || snapshot.pan && snapshot.pan.playbackReturn),
-          detailSessionReturn: snapshot.detailSessionReturn || null,
+          playerReturnRestore: !!(snapshot.pan && snapshot.pan.playbackReturn),
           panSnapshot: snapshot.pan || null
         });
         restorePanSnapshot(snapshot.pan);
@@ -438,8 +436,7 @@
               openDetail(snapshot.selected, {
                 restore: true,
                 skipHistory: true,
-                playerReturnRestore: !!(snapshot.detailSessionReturn || snapshot.pan && snapshot.pan.playbackReturn),
-                detailSessionReturn: snapshot.detailSessionReturn || null,
+                playerReturnRestore: !!(snapshot.pan && snapshot.pan.playbackReturn),
                 panSnapshot: snapshot.pan || null
               });
               if (snapshot.pan) restorePanSnapshot(snapshot.pan);
@@ -520,10 +517,15 @@
 
     async function rearmDetailPlaybackAfterPlayerReturn(options) {
       const opts = options || {}, item = state.selected;
-      const sheet = $("detailSheet"), session = detailSessionFor(item);
-      if (opts.playerReturn !== true || state.detailClosing || !sheet || !sheet.classList.contains("active") || !session || !session.requestId) return false;
-      await restoreDetailSessionAfterPlayerReturn(item);
+      const sheet = $("detailSheet");
+      if (opts.playerReturn !== true || opts.manualPanPlaybackReturn === true || state.detailClosing
+        || !sheet || !sheet.classList.contains("active") || !item) return false;
       await loadRecentList({ refresh: true, silent: true, reconcileDetail: false }).catch(() => {});
+      if (state.selected !== item || state.detailClosing || !$("detailSheet") || !$("detailSheet").classList.contains("active")) return false;
+      prepareDetailPlaybackForDetail(item, {
+        reason: "player_return_rearm",
+        playerReturnRestore: true
+      }).catch(() => {});
       return true;
     }
 
@@ -543,7 +545,7 @@
       renderConnection();
       if (isPlayerReturn) {
         // Home history refresh must not wait for optional watch/stat settlement.
-        // Keep the existing detail-session return ordering.
+        // Refresh the Native-owned History before preparing the returned detail again.
         if (tvBrowseActive() && !($("detailSheet") && $("detailSheet").classList.contains("active"))) {
           settlePlayerReturnHistory().catch(() => {});
         } else await settlePlayerReturnHistory();
