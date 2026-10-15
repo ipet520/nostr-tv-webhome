@@ -1,4 +1,17 @@
     function secondaryFilterDefaults() { return { mediaType: "all", genre: "all", region: "all", year: "all", sort: "hot", lastFocused: {} }; }
+    function secondaryFilterSnapshot(filters) {
+      const value = Object.assign(secondaryFilterDefaults(), filters || {});
+      const sort = ["hot", "latest", "rating"].includes(String(value.sort || "")) ? String(value.sort) : "hot";
+      return {
+        mediaType: String(value.mediaType || "all"),
+        genre: String(value.genre || "all"),
+        region: String(value.region || "all"),
+        year: String(value.year || "all"),
+        sort,
+        lastFocused: {}
+      };
+    }
+    function secondaryDefaultQueryFilters() { return secondaryFilterSnapshot(secondaryFilterDefaults()); }
     function secondaryFilterState(id) {
       id = normalizeLegacyCategoryId(id);
       const home = state.homeV14;
@@ -109,6 +122,8 @@
     }
 
     const SECONDARY_FULL_CATALOG_IDS = new Set(["movie", "tv", "anime", "documentary", "variety"]);
+    const TV_SECONDARY_PRELOAD_IDS = ["movie", "tv", "anime", "variety", "documentary"];
+    const SECONDARY_QUERY_CACHE_TTL_MS = 30 * 60 * 1000;
     function secondaryFilterDefaultValue(key) { return key === "sort" ? "hot" : "all"; }
     function secondaryNormalizeFilterValues(id, groups) {
       const filters = secondaryFilterState(id);
@@ -135,11 +150,11 @@
       const sourceKind = id === "now-playing" ? "weekly-feed" : id === "recent" ? "local-history" : id === "recommendation" ? "recommendation-pool" : "tmdb";
       return JSON.stringify([id, sourceKind, filters.mediaType, filters.genre, filters.region, filters.year, filters.sort]);
     }
-    function secondaryGetQuery(id) {
+    function secondaryGetQuery(id, filterOverride) {
       id = normalizeLegacyCategoryId(id);
       const home = state.homeV14;
       home.secondaryQueries = home.secondaryQueries && typeof home.secondaryQueries === "object" ? home.secondaryQueries : {};
-      const filters = secondaryFilterState(id);
+      const filters = secondaryFilterSnapshot(filterOverride || secondaryFilterState(id));
       const key = secondaryFilterKey(id, filters);
       let query = home.secondaryQueries[key];
       const source = id === "now-playing" ? "weekly-feed" : id === "recent" ? "local-history" : id === "recommendation" ? "recommendation" : "tmdb";
@@ -153,6 +168,14 @@
           totalResults: 0,
           loading: false,
           loaded: false,
+          loadedAt: 0,
+          refreshFailedAt: 0,
+          dataVersion: 0,
+          filters,
+          requestClass: "",
+          requestReason: "",
+          pendingRequestKeys: [],
+          refreshing: false,
           hasMore: false,
           hasMoreLocal: false,
           items: [],
@@ -175,9 +198,19 @@
         };
       }
       query.source = source;
+      query.filters = filters;
+      if (!Array.isArray(query.pendingRequestKeys)) query.pendingRequestKeys = [];
       if (source === "recommendation" && !Array.isArray(query.poolItems)) query.poolItems = [];
       if (!isTvLikeDevice()) home.secondaryActiveQueryKey = key;
       return query;
+    }
+    function secondaryQueryNeedsRefresh(query, now) {
+      if (!query || !query.loaded) return true;
+      if (query.loading || query.error || query.retryableError) return false;
+      const loadedAt = Number(query.loadedAt || 0);
+      if (loadedAt <= 0) return false;
+      const age = Number(now || Date.now()) - loadedAt;
+      return age < 0 || age >= SECONDARY_QUERY_CACHE_TTL_MS;
     }
     function secondaryActiveQuery(id) {
       id = id ? normalizeLegacyCategoryId(id) : id;

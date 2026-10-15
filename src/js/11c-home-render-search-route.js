@@ -34,7 +34,11 @@
     }
 
     function scheduleHomeNostrRender() {
-      if (isTvLikeDevice()) { renderCatalogQuery("recommendation"); return; }
+      if (isTvLikeDevice()) {
+        renderCatalogQuery("recommendation");
+        if (typeof tvBrowseMaybePreloadCategories === "function") tvBrowseMaybePreloadCategories("tv-recommendation-ready");
+        return;
+      }
       if (homeUiRoute() !== "home" || !isHomeRouteActive()) {
         scheduleRender();
         return;

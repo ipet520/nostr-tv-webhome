@@ -527,7 +527,8 @@
         if (Date.now() < Number(state.blocked.suppressClickUntil || 0)) event.preventDefault();
       });
       button.addEventListener("click", (event) => {
-        if (recentWatching && consumeRecentWatchingClick(button, event)) return;
+        const liveItem = button.__mediaItem || item;
+        if (liveItem.recentWatching && consumeRecentWatchingClick(button, event)) return;
         if (Date.now() < Number(state.blocked.suppressClickUntil || 0)) return;
         if (state.blocked.selecting && blockableRecommendCard(button)) {
           toggleBlockedCard(button);
@@ -536,8 +537,8 @@
         if (button.dataset.searchResult === "1" && String(button.dataset.searchQuery || "").trim()) {
           recordSearchHistory(button.dataset.searchQuery);
         }
-        if (item.source === "history") openRecentItem(item, { returnTarget: button });
-        else openDetail(item, { returnTarget: button });
+        if (liveItem.source === "history") openRecentItem(liveItem, { returnTarget: button });
+        else openDetail(liveItem, { returnTarget: button });
       });
       return button;
     }

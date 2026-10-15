@@ -295,6 +295,8 @@
         secondaryPage: 1,
         secondaryQueries: {},
         secondaryActiveQueryKey: "",
+        tvSecondaryPreloadStarted: false,
+        tvRecommendationPresented: false,
         secondaryQueryPlan: null,
         secondaryFocusRestore: null,
         secondaryMediaFocusRestore: null,

@@ -841,6 +841,13 @@
       manage.selectedKeys = {};
       manage.deleting = false;
       updateRecentManageUi();
+      if (isTvLikeDevice() && tvBrowseActive() && tvBrowseState().view === "history") {
+        // updateRecentManageUi hides the focused Manage button. Move focus to
+        // the first usable replacement control (Select all, or Cancel when
+        // there are no records) as part of the same mode transition.
+        const target = tvBrowseHistoryToolsTarget();
+        if (target) focusRemoteTarget(target);
+      }
       return true;
     }
 

@@ -1220,6 +1220,8 @@
     html.tv-browse-active .tv-browse-rail .card-meta { display: none; }
     html.tv-browse-active .tv-browse-rail .weekly-air-status { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
     html.tv-browse-active .tv-browse-feedback { grid-row: 1; align-self: end; justify-self: end; min-height: 20px; max-width: 30vw; margin: 0 var(--tv-gutter) var(--tv-gap); display: flex; align-items: center; flex-wrap: wrap; gap: var(--tv-gap); z-index: 4; font-size: 14px; }
+    html.tv-browse-active .tv-browse.empty-history .tv-browse-feedback { grid-row: 1 / -1; align-self: stretch; justify-self: stretch; max-width: none; margin: 0; padding: 0 var(--tv-gutter); transform: translateY(calc((max(var(--tv-safe-bottom),env(safe-area-inset-bottom,0px)) - var(--tv-safe-top)) / 2)); justify-content: center; align-items: center; gap: calc(var(--tv-gap) * 2); text-align: center; pointer-events: none; }
+    html.tv-browse-active .tv-browse.empty-history .tv-browse-feedback > * { pointer-events: auto; }
     html.tv-browse-active .tv-browse-filters {
       grid-column: 1 / -1; grid-row: 1; min-height: 0; margin: 0; overflow: auto;
       padding: 2px 2vw; border: 0; box-shadow: none; background: transparent; z-index: 4;

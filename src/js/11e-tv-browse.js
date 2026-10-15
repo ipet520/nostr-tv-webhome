@@ -56,8 +56,47 @@
         column: "recommendation", view: "home", historyReturnFocus: null, positions: {}, filterOpen: false, filterFocusGroup: "",
         confirm: null, enterHeld: false, suppressClickUntil: 0,
         previewKey: "", backdropToken: 0, backdropSlot: 0, backdropUrl: "",
-        focusIntent: null, initialized: false
+        focusIntent: null, retryFocusIntent: null, railCache: {}, railCacheOrder: [], initialized: false
       });
+    }
+
+    function tvBrowseFocusLabel() {
+      const active = document.activeElement;
+      return active && (active.id || active.dataset && (active.dataset.mediaKey || active.dataset.column) || active.tagName || "") || "";
+    }
+
+    function recordTvBrowseDiagnostic(kind, details) {
+      if (!isTvDiagnosticEnabled()) return;
+      const ui = tvBrowseState();
+      ui.diagnostics = Array.isArray(ui.diagnostics) ? ui.diagnostics : [];
+      const event = Object.assign({ at: Date.now(), kind, view: ui.view, column: ui.column, focus: tvBrowseFocusLabel() }, details || {});
+      ui.diagnostics.push(event);
+      if (ui.diagnostics.length > 120) ui.diagnostics.splice(0, ui.diagnostics.length - 120);
+      try { console.debug("[Nostr TV][BROWSE_DIAG]", event); } catch (e) {}
+    }
+
+    function tvBrowseMaybePreloadCategories(reason) {
+      const ui = tvBrowseState(), home = state.homeV14;
+      if (!tvBrowseActive() || ui.view !== "home" || !home || !home.tvRecommendationPresented || !state.hot || !state.hot.ready) return false;
+      // This is a Leanback directory optimization. Mobile Home categories use
+      // their own feed/cache identity and remain on their existing scheduler.
+      if (!isNativeLeanbackClient() && state.deviceMode !== "leanback") return false;
+      if (home.tvSecondaryPreloadStarted) return false;
+      home.tvSecondaryPreloadStarted = true;
+      const queued = [];
+      TV_SECONDARY_PRELOAD_IDS.forEach((id) => {
+        const query = secondaryGetQuery(id, secondaryDefaultQueryFilters());
+        if (query.loading || query.loaded && !secondaryQueryNeedsRefresh(query)) return;
+        const refresh = !!(query.loaded && secondaryQueryNeedsRefresh(query));
+        const isVisibleQuery = ui.column === id && secondaryActiveQuery(id) === query;
+        queued.push({ listId: id, queryKey: query.key, requestSeq: Number(query.requestSeq || 0) + 1 });
+        loadSecondaryPage(id, query, 1, {
+          requestClass: isVisibleQuery ? "foreground" : "prefetch", refresh,
+          reason: isVisibleQuery ? "tv-category-focused" : reason || "tv-cold-start-preload"
+        }).catch(() => {});
+      });
+      recordTvBrowseDiagnostic("TV_CATEGORY_PRELOAD_SCHEDULED", { requestReason: reason || "tv-cold-start-preload", categories: queued });
+      return true;
     }
 
     function releaseTvBrowseNativeInput() {
@@ -79,6 +118,7 @@
       const ui = tvBrowseState();
       if (!tvBrowseActive() || homeFocusUserEpoch() !== epoch) return;
       ui.column = "recommendation"; ui.view = "home";
+      if (state.homeV14) state.homeV14.tvRecommendationPresented = true;
       renderTvBrowse(); tvBrowseFocusIntent();
     }
 
@@ -230,6 +270,8 @@
       ui.view = "home"; ui.column = id;
       ui.filterOpen = false;
       ui.previewKey = "";
+      const focusedQuery = secondaryActiveQuery(id);
+      if (focusedQuery && focusedQuery.loading) promoteSecondaryQueryRequests(focusedQuery, "category-focus");
       if (!opts.keepConfirm) ui.confirm = null;
       if (opts.afterPaint) {
         syncTvBrowseColumns();
@@ -482,9 +524,15 @@
       }, true);
       $("tvBrowseRetry").addEventListener("click", () => {
         const id = ui.column, query = secondaryActiveQuery(id);
-        if (ui.view === "history") { loadRecentList({ refresh: true }).catch(() => {}); return; }
+        if (ui.view === "history") {
+          if (state.recent.loading) return;
+          ui.retryFocusIntent = { epoch: homeFocusUserEpoch(), fallbackId: "" };
+          loadRecentList({ refresh: true }).catch(() => {}); return;
+        }
         if (id === "recommendation") { forceRefreshNostrRanking().catch(() => {}); return; }
-        if (query && !query.loading) loadSecondaryPage(id, query, query.failedPage || query.page + 1 || 1).catch(() => {});
+        if (query && !query.loading) loadSecondaryPage(id, query, query.failedPage || query.page + 1 || 1, {
+          refresh: !!(query.loaded && secondaryQueryNeedsRefresh(query)), reason: "tv-category-retry"
+        }).catch(() => {});
       });
       $("tvHistoryContinue").addEventListener("click", () => tvBrowseContinueHistory());
       $("tvBrowseRail").addEventListener("scroll", () => { tvBrowseSavePosition(); scheduleUiSnapshotSave(); }, { passive: true });
@@ -508,8 +556,11 @@
       initTvBrowse();
       syncTvBrowseVisibility();
       const ui = tvBrowseState(), rail = $("tvBrowseRail");
+      const focusBefore = tvBrowseFocusLabel();
       const historyView = ui.view === "history";
       const query = historyView ? { key: tvBrowseQueryKey(), items: state.recent.items || [], loaded: state.recent.loaded, loading: state.recent.loading, error: state.recent.error } : secondaryGetQuery(ui.column);
+      if (!historyView && ui.column !== "recommendation" && query.loading) promoteSecondaryQueryRequests(query, "category-focused-render");
+      $("tvBrowse").classList.toggle("empty-history", historyView && !(query.items || []).length);
       // Finite sources can change independently of the catalog page loader.
       if (!historyView && ui.column === "recommendation") {
         const pool = recommendationPoolItems();
@@ -521,31 +572,67 @@
       const items = (historyView ? query.items : ui.column === "recommendation"
         ? filterBlocked(query.items || []) : secondaryFilterItems(ui.column, query.items || [])).filter((item) => historyView || hasPoster(item));
       const queryChanged = rail.dataset.queryKey !== query.key;
-      const oldKeys = rail.__renderKeys || [];
+      const previousKey = rail.dataset.queryKey || "";
+      if (queryChanged && previousKey) {
+        ui.railCache = ui.railCache && typeof ui.railCache === "object" ? ui.railCache : {};
+        ui.railCacheOrder = Array.isArray(ui.railCacheOrder) ? ui.railCacheOrder : [];
+        ui.railCache[previousKey] = { keys: (rail.__renderKeys || []).slice(), nodes: Array.from(rail.children) };
+        ui.railCacheOrder = ui.railCacheOrder.filter((key) => key !== previousKey).concat(previousKey);
+        while (ui.railCacheOrder.length > 6) delete ui.railCache[ui.railCacheOrder.shift()];
+      }
+      const cachedRail = queryChanged && ui.railCache && ui.railCache[query.key] || null;
+      const oldNodes = queryChanged ? cachedRail && cachedRail.nodes || [] : Array.from(rail.children);
+      const oldKeys = queryChanged ? cachedRail && cachedRail.keys || [] : rail.__renderKeys || [];
       // Keep catalog data whole; materialize the visible batch and saved focus
       // first. Further cards append when DPAD approaches the current DOM end.
       const limit = historyView ? items.length : Math.max(18, tvBrowsePosition().index + 8,
         queryChanged ? 0 : oldKeys.length + (options && options.append ? 18 : 0));
       const keys = items.slice(0, limit).map((item, index) => mediaRenderKey(item, index));
-      const prefix = !queryChanged && oldKeys.length <= keys.length && oldKeys.every((key, index) => key === keys[index]);
       const focused = rail.contains(document.activeElement) ? document.activeElement.dataset.mediaKey : "";
-      const fragment = document.createDocumentFragment();
-      const start = prefix ? oldKeys.length : 0;
-      if (queryChanged) { rail.dataset.queryKey = query.key; rail.scrollLeft = tvBrowsePosition().scrollLeft; }
-      for (let index = start; index < keys.length; index += 1) {
-        const item = items[index], card = mediaCard(item, index, { home: true, history: historyView, homeLazy: index > 7, weeklyHome: !historyView && ui.column === "now-playing" });
-        card.addEventListener("focus", () => {
-          const position = tvBrowsePosition(); position.key = card.dataset.mediaKey; position.index = index;
-          tvBrowsePreview(card.__mediaItem);
-          tvBrowseMaybeLoadMore(index);
-          scheduleUiSnapshotSave();
-        });
-        fragment.appendChild(card);
+      const priorByKey = new Map();
+      oldNodes.forEach((card) => {
+        const key = card && card.__mediaItem && mediaDomKey(card.__mediaItem);
+        if (key) priorByKey.set(String(key), card);
+      });
+      let createdCards = 0, reusedCards = 0;
+      const nextNodes = keys.map((key, index) => {
+        const item = items[index], identity = String(mediaDomKey(item) || "");
+        const signature = tvBrowseCardSignature(item);
+        let card = identity && priorByKey.get(identity);
+        if (!card || card.__tvBrowseRenderSignature !== signature) {
+          card = mediaCard(item, index, { home: true, history: historyView, homeLazy: index > 7, weeklyHome: !historyView && ui.column === "now-playing" });
+          card.addEventListener("focus", () => {
+            const position = tvBrowsePosition(); position.key = card.dataset.mediaKey; position.index = Number(card.dataset.cardIndex || 0);
+            tvBrowsePreview(card.__mediaItem);
+            tvBrowseMaybeLoadMore(position.index);
+            scheduleUiSnapshotSave();
+          });
+          card.__tvBrowseRenderSignature = signature;
+          createdCards += 1;
+        } else {
+          reusedCards += 1;
+        }
+        card.dataset.cardIndex = String(index);
+        card.__mediaItem = item;
+        return card;
+      });
+      const sequenceUnchanged = !queryChanged && nextNodes.length === rail.children.length
+        && nextNodes.every((card, index) => card === rail.children[index]);
+      const railChanged = queryChanged || !sequenceUnchanged;
+      if (queryChanged) {
+        rail.dataset.queryKey = query.key;
+        rail.scrollLeft = tvBrowsePosition().scrollLeft;
       }
-      if (!prefix) rail.replaceChildren(fragment);
-      else if (fragment.childNodes.length) rail.appendChild(fragment);
+      if (railChanged) {
+        const fragment = document.createDocumentFragment();
+        nextNodes.forEach((card) => fragment.appendChild(card));
+        rail.replaceChildren(fragment);
+      }
+      if (queryChanged && ui.railCache) {
+        delete ui.railCache[query.key];
+        ui.railCacheOrder = (ui.railCacheOrder || []).filter((key) => key !== query.key);
+      }
       rail.__renderKeys = keys;
-      Array.from(rail.children).forEach((card, index) => { card.__mediaItem = items[index]; });
       const tracked = state.recentDelete && (state.recentDelete.armedCard || state.recentDelete.pendingCard || state.recentDelete.remotePressCard);
       if (historyView && tracked && (!tracked.isConnected || !recentWatchingPressKey(tracked))) cancelRecentDeleteArm();
       syncTvBrowseVisibility();
@@ -556,7 +643,17 @@
       $("tvBrowseBlockHint").hidden = !state.blocked.selecting;
       const status = query.error || query.retryableError || (query.loading && !items.length ? "加载中…" : !items.length ? "暂无内容" : "");
       $("tvBrowseStatus").textContent = status;
-      $("tvBrowseRetry").hidden = !(query.error || query.retryableError || !items.length && query.loaded);
+      const retry = $("tvBrowseRetry");
+      retry.hidden = !!query.loading || !(query.error || query.retryableError || !items.length && query.loaded);
+      if (document.activeElement === retry && retry.hidden) {
+        const fallback = historyView
+          ? tvBrowseHistoryToolsTarget() || Array.from($("tvBrowseFunctions").querySelectorAll("button")).find(isVisibleFocusable)
+          : tvBrowseColumnButton(ui.column);
+        if (fallback && isVisibleFocusable(fallback)) {
+          focusRemoteTarget(fallback);
+          if (ui.retryFocusIntent) ui.retryFocusIntent.fallbackId = fallback.id || "";
+        }
+      }
       if (ui.filterOpen) renderTvBrowseFilters();
       layoutTvBrowse();
       const position = tvBrowsePosition();
@@ -572,12 +669,48 @@
       }
       // observeHomeImages already registers TV episode enrichment.
       observeHomeImages(rail); observeMovieCardEnrichment(rail);
-      if (focused && !prefix && focusScopeRoot() === document && !isSidebarOpen()) {
+      if (focused && railChanged && focusScopeRoot() === document && !isSidebarOpen()) {
         const target = Array.from(rail.children).find((card) => card.dataset.mediaKey === focused) || (ui.filterOpen ? Array.from(rail.children).find(isVisibleFocusable) || tvBrowseFilterTarget() : tvBrowsePosterTarget());
         if (target) focusRemoteTarget(target);
       }
       tvBrowseTryFocus();
-      if (!historyView && !query.loaded && !query.loading && !query.error && ui.column !== "recommendation") loadSecondaryPage(ui.column, query, 1).catch(() => {});
+      if (historyView && ui.retryFocusIntent) {
+        const intent = ui.retryFocusIntent;
+        if (intent.epoch !== homeFocusUserEpoch()) ui.retryFocusIntent = null;
+        else if (intent.fallbackId && document.activeElement.id !== intent.fallbackId) ui.retryFocusIntent = null;
+        else if (!query.loading) {
+          if (items.length) {
+            const target = Array.from(rail.children).find(isVisibleFocusable);
+            if (target) focusRemoteTarget(target);
+            ui.retryFocusIntent = null;
+          } else if (query.loaded || query.error) ui.retryFocusIntent = null;
+        }
+      }
+      if (!historyView && ui.column !== "recommendation") {
+        if (query.loading) promoteSecondaryQueryRequests(query, "category-focused-render");
+        else if (query.loaded && secondaryQueryNeedsRefresh(query)) {
+          loadSecondaryPage(ui.column, query, 1, { refresh: true, reason: "tv-category-cache-expired" }).catch(() => {});
+        } else if (!query.loaded && !query.error) {
+          loadSecondaryPage(ui.column, query, 1, { reason: "tv-category-first-entry" }).catch(() => {});
+        }
+      }
+      if (!historyView && state.hot && state.hot.ready) tvBrowseMaybePreloadCategories("tv-recommendation-ready");
+      recordTvBrowseDiagnostic("TV_BROWSE_RENDER", {
+        queryKey: query.key, requestSeq: Number(query.requestSeq || 0), dataVersion: Number(query.dataVersion || 0),
+        itemCount: items.length, renderedCount: rail.children.length, renderReason: options && options.reason || (queryChanged ? "query-change" : "state-update"),
+        queryChanged, railChanged, createdCards, reusedCards, focusBefore, focusAfter: tvBrowseFocusLabel()
+      });
+    }
+
+    function tvBrowseCardSignature(item) {
+      let source;
+      try { source = JSON.stringify(item || {}); }
+      catch (e) { source = mediaRenderKey(item); }
+      const type = String(item && (item.mediaType || item.media_type) || "").toLowerCase();
+      let status = "";
+      if (type === "tv") status = tvPresentationStatus(item, tvDetailCacheValue(item) || item.tvDetail || item.weeklyDetail || item.heroDetail || null);
+      else if (type === "movie") status = movieReleaseStatusText(item, movieDetailCacheValue(item) || null);
+      return [source, isBlocked(item) ? "blocked" : "", status].join("\u001f");
     }
 
     function tvBrowseMaybeLoadMore(index) {
@@ -732,7 +865,9 @@
         return next.querySelector(".selected") || next.querySelector("button");
       }
       const rail = $("tvBrowseRail"), columns = $("tvBrowseColumns"), functions = $("tvBrowseFunctions");
-      if (active === $("tvBrowseRetry")) return key === "ArrowUp" ? tvBrowsePosterTarget() : active;
+      if (active === $("tvBrowseRetry")) return key === "ArrowUp"
+        ? tvBrowsePosterTarget()
+        : key === "ArrowDown" && ui.view === "history" ? tvBrowseHistoryToolsTarget() || active : active;
       let host = active && active.closest("#tvBrowseRail,#tvBrowseColumns,#tvBrowseFunctions,#tvBrowseRecentTools");
       if (!host) return tvBrowsePosterTarget();
       if (key === "ArrowLeft" || key === "ArrowRight") {
@@ -744,6 +879,14 @@
       if (host === rail) return key === "ArrowDown" && !$("tvBrowseRetry").hidden ? $("tvBrowseRetry") : tvBrowseColumnButton(ui.column);
       if (host === columns) return key === "ArrowDown" ? tvBrowsePosterTarget() : $("tvFunction-search");
       if (ui.view === "history") {
+        if (host === $("tvBrowseRecentTools") && key === "ArrowDown") {
+          const manageActive = recentManageRuntime().active;
+          const poster = tvBrowsePosterTarget();
+          if (manageActive && poster && poster.closest("#tvBrowseRail") && isVisibleFocusable(poster)) return poster;
+          if ((!poster || !poster.closest("#tvBrowseRail")) && !$("tvBrowseRetry").hidden && isVisibleFocusable($("tvBrowseRetry"))) return $("tvBrowseRetry");
+          if (!manageActive && isVisibleFocusable($("tvHistoryContinue"))) return $("tvHistoryContinue");
+          return poster && isVisibleFocusable(poster) ? poster : active;
+        }
         if (host === functions && key === "ArrowDown" && isVisibleFocusable($("recentManageBtn"))) return $("recentManageBtn");
         if (host === $("tvBrowseRecentTools") && key === "ArrowUp") return active;
         return isVisibleFocusable($("tvHistoryContinue")) ? $("tvHistoryContinue") : tvBrowsePosterTarget();

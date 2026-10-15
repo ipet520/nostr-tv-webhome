@@ -115,9 +115,35 @@
       return query;
     }
 
-    async function loadSecondaryPage(id, query, pageNumber) {
+    function secondaryQueryIsStored(query) {
+      const queries = state.homeV14 && state.homeV14.secondaryQueries;
+      return !!(query && queries && queries[query.key] === query);
+    }
+    function promoteSecondaryQueryRequests(query, reason) {
+      if (!isTvLikeDevice() || !query || !query.loading || query.requestClass !== "prefetch") return false;
+      let promoted = false;
+      (Array.isArray(query.pendingRequestKeys) ? query.pendingRequestKeys : []).forEach((key) => {
+        if (promoteHomeBudgetRequests(key, "foreground", reason || "category-focus")) promoted = true;
+      });
+      if (promoted) query.requestClass = "foreground";
+      if (typeof recordTvBrowseDiagnostic === "function") recordTvBrowseDiagnostic("TV_CATEGORY_REQUEST_PROMOTED", {
+        listId: query.listId, queryKey: query.key, requestSeq: query.requestSeq,
+        dataVersion: query.dataVersion, requestReason: reason || "category-focus", promoted
+      });
+      return promoted;
+    }
+    function secondaryQueryItemsSignature(items) {
+      try { return JSON.stringify(Array.isArray(items) ? items : []); }
+      catch (e) { return (items || []).map((item, index) => mediaRenderKey(item, index)).join("\n"); }
+    }
+    async function loadSecondaryPage(id, query, pageNumber, options) {
       id = normalizeLegacyCategoryId(id);
-      if (!query || query.listId !== id || query.loading) return query;
+      const opts = options || {};
+      if (!query || query.listId !== id) return query;
+      if (query.loading) {
+        if (opts.requestClass !== "prefetch") promoteSecondaryQueryRequests(query, opts.reason || "category-focus");
+        return query;
+      }
       const page = Math.max(1, Number(pageNumber || 1));
       if (id === "recent") {
         const items = state.recent && Array.isArray(state.recent.items) ? state.recent.items : [];
@@ -183,43 +209,78 @@
         return query;
       }
       if (page > 1 && !query.hasMore && !query.error) return query;
+      const refresh = opts.refresh === true;
+      const requestClass = isTvLikeDevice() && opts.requestClass === "prefetch" ? "prefetch" : "foreground";
+      if (refresh) {
+        query.sourceStates = (query.sourceStates || []).map((sourceState) => Object.assign({}, sourceState, {
+          page: 0, totalPages: 0, totalResults: 0, exhausted: false,
+          retryableError: "", terminalError: "", loading: false
+        }));
+        query.page = 0;
+        query.totalPages = 0;
+        query.totalResults = 0;
+      }
       query.loading = true;
+      query.refreshing = refresh;
+      query.requestClass = requestClass;
+      query.requestReason = String(opts.reason || (requestClass === "prefetch" ? "tv-category-preload" : "tv-category-foreground"));
       query.error = "";
       query.retryableError = "";
       query.failedPage = 0;
+      query.pendingRequestKeys = [];
       const requestSeq = ++query.requestSeq;
       renderCatalogQuery(id);
-      const filters = secondaryFilterState(id);
+      const filters = secondaryFilterSnapshot(query.filters || secondaryFilterState(id));
       const plan = buildSecondaryQueryPlan(id, filters, query);
       const pending = plan.sources.map((source, index) => ({ source, state: plan.sourceStates[index] }))
         .filter((entry) => entry.state && !entry.state.exhausted && !entry.state.terminalError);
       if (!pending.length) {
         query.items = uniqueMedia(query.items || []);
         query.loading = false;
+        query.refreshing = false;
+        query.requestClass = "";
         query.loaded = true;
+        if (!query.loadedAt) query.loadedAt = Date.now();
         query.hasMore = plan.sourceStates.some(secondaryTmdbSourceHasMore);
         secondaryUpdateTmdbMetrics(query, plan, query.hasMore);
-        state.homeV14.secondaryPage = query.page;
+        if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) state.homeV14.secondaryPage = query.page;
         renderCatalogQuery(id);
         return query;
       }
       pending.forEach((entry) => { entry.state.loading = true; });
-      const results = await Promise.all(pending.map(({ source, state: sourceState }) => {
+      const requests = pending.map(({ source, state: sourceState }) => {
         const requestPage = Math.max(1, Number(sourceState.page || 0) + 1);
+        const requestKey = query.key + ":" + sourceState.key + ":" + requestPage;
+        sourceState.requestPage = requestPage;
+        return { source, sourceState, requestPage, requestKey };
+      });
+      query.pendingRequestKeys = requests.map((entry) => entry.requestKey);
+      if (typeof recordTvBrowseDiagnostic === "function") recordTvBrowseDiagnostic("TV_CATEGORY_REQUEST_START", {
+        listId: id, queryKey: query.key, requestSeq, dataVersion: query.dataVersion,
+        page, requestClass, requestReason: query.requestReason, refresh,
+        requestKeys: query.pendingRequestKeys.slice()
+      });
+      const results = await Promise.all(requests.map(({ source, sourceState, requestPage, requestKey }) => {
         return Promise.resolve()
-          .then(() => isTvLikeDevice() ? homeRequestJson(tmdbUrl(source, requestPage), 18, "foreground", query.key + ":" + sourceState.key + ":" + requestPage) : requestJson(tmdbUrl(source, requestPage), 18))
+          .then(() => isTvLikeDevice() ? homeRequestJson(tmdbUrl(source, requestPage), 18, requestClass, requestKey) : requestJson(tmdbUrl(source, requestPage), 18))
           .then((body) => ({ source, sourceState, requestPage, body: body || {}, error: null }))
           .catch((error) => ({ source, sourceState, requestPage, body: null, error }));
       }));
-      if (query.requestSeq !== requestSeq || secondaryActiveQuery(id) !== query) {
-        if (query.requestSeq === requestSeq) query.loading = false;
+      results.forEach((result) => { result.sourceState.loading = false; });
+      if (query.requestSeq !== requestSeq || !secondaryQueryIsStored(query)) {
+        if (query.requestSeq === requestSeq) {
+          query.loading = false;
+          query.refreshing = false;
+          query.requestClass = "";
+          query.pendingRequestKeys = [];
+        }
         return query;
       }
+      query.pendingRequestKeys = [];
       const incoming = [];
       let goodCount = 0;
       results.forEach((result) => {
         const sourceState = result.sourceState;
-        sourceState.loading = false;
         if (result.error || !result.body) {
           const message = String(result.error && result.error.message || "加载失败");
           if (secondaryTmdbErrorIsTerminal(result.error)) {
@@ -249,27 +310,48 @@
       const hasPendingSource = plan.sourceStates.some(secondaryTmdbSourceHasMore);
       if (!goodCount && !hasRetryableSource) {
         query.loading = false;
-        query.loaded = query.page > 0;
+        query.refreshing = false;
+        query.requestClass = "";
+        query.loaded = query.loaded || query.page > 0;
+        if (refresh) query.refreshFailedAt = Date.now();
         query.error = "加载失败";
         query.retryableError = "";
         query.failedPage = page;
         query.hasMore = hasPendingSource;
         secondaryUpdateTmdbMetrics(query, plan, query.hasMore);
+        if (typeof recordTvBrowseDiagnostic === "function") recordTvBrowseDiagnostic("TV_CATEGORY_REQUEST_COMMIT", {
+          listId: id, queryKey: query.key, requestSeq, dataVersion: query.dataVersion,
+          itemCount: (query.items || []).length, goodCount, hasRetryableSource, error: query.error
+        });
         renderCatalogQuery(id);
         return query;
       }
-      query.items = uniqueMedia((query.items || []).concat(incoming));
+      const previousSignature = secondaryQueryItemsSignature(query.items);
+      const nextItems = uniqueMedia(refresh && goodCount === pending.length
+        ? incoming
+        : (query.items || []).concat(incoming));
+      const nextSignature = secondaryQueryItemsSignature(nextItems);
+      if (nextSignature !== previousSignature) query.dataVersion = Number(query.dataVersion || 0) + 1;
+      query.items = nextItems;
       query.page = Math.max(page, ...plan.sourceStates.map((sourceState) => Number(sourceState.page || 0)));
       query.totalPages = Math.max(page, ...plan.sourceStates.map((sourceState) => Number(sourceState.totalPages || 0)));
       const totals = plan.sourceStates.map((sourceState) => Number(sourceState.totalResults)).filter(Number.isFinite);
       query.totalResults = totals.length ? totals.reduce((sum, value) => sum + value, 0) : 0;
       query.loading = false;
+      query.refreshing = false;
+      query.requestClass = "";
       query.loaded = true;
+      query.loadedAt = Date.now();
+      query.refreshFailedAt = 0;
       query.hasMore = hasPendingSource;
       query.error = "";
       query.retryableError = hasRetryableSource ? "部分来源暂时不可用，可继续重试" : "";
       secondaryUpdateTmdbMetrics(query, plan, query.hasMore);
-      state.homeV14.secondaryPage = query.page;
+      if (homeUiRoute() === "secondary" && state.homeV14.secondaryListId === id) state.homeV14.secondaryPage = query.page;
+      if (typeof recordTvBrowseDiagnostic === "function") recordTvBrowseDiagnostic("TV_CATEGORY_REQUEST_COMMIT", {
+        listId: id, queryKey: query.key, requestSeq, dataVersion: query.dataVersion,
+        itemCount: query.items.length, goodCount, hasRetryableSource, refreshing: refresh
+      });
       renderCatalogQuery(id);
       observeInfiniteScroll();
       return query;
