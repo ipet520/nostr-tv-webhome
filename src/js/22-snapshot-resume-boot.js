@@ -899,10 +899,10 @@
       const revision = markNativeHistoryChanged();
       const detailSheet = $("detailSheet");
       const detailActive = !!(detailSheet && detailSheet.classList.contains("active"));
-      if (!tvBrowseActive() || detailActive) {
-        // Preserve the committed Native invalidation until a later read can
-        // consume it; the immediate player-return read may have raced ahead
-        // of the final History save.
+      if (!tvBrowseActive() && !detailActive) {
+        // Preserve the committed Native invalidation while Home is inactive;
+        // the next Home read will consume it. An active detail must refresh
+        // now so a player-return read that raced the save cannot stay stale.
         try { console.debug("NATIVE_HISTORY_CHANGE_DEFERRED", JSON.stringify({
           revision, tvBrowseActive: tvBrowseActive(), detailActive
         })); } catch (e) {}

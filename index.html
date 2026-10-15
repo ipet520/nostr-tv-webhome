@@ -22645,7 +22645,10 @@ utils.encode = function encode(arr, enc) {
               if (!state.watch || !state.watch.item) await loadPendingWatch();
               const list = await readNativeHistoryForUi();
               normalized = normalizeRecentWatchingItems(list);
-              detailItems = normalizeHistoryList(list && list.version === 1 ? list.legacy || [] : list);
+              // Detail continuation must use the versioned Native rows: legacy
+              // History rows do not carry the exact resource reference or the
+              // canResume capability required for a real history_exact handoff.
+              detailItems = normalizeHistoryList(list && list.version === 1 ? list.records || [] : list);
               referenceVersion = list && list.version === 1 ? 1 : 0;
               normalized.forEach((item) => recordRecentNativeKeyFlow("RECENT_NATIVE_KEY_AT_LOAD", item));
             } catch (e) {
@@ -43292,10 +43295,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       const revision = markNativeHistoryChanged();
       const detailSheet = $("detailSheet");
       const detailActive = !!(detailSheet && detailSheet.classList.contains("active"));
-      if (!tvBrowseActive() || detailActive) {
-        // Preserve the committed Native invalidation until a later read can
-        // consume it; the immediate player-return read may have raced ahead
-        // of the final History save.
+      if (!tvBrowseActive() && !detailActive) {
+        // Preserve the committed Native invalidation while Home is inactive;
+        // the next Home read will consume it. An active detail must refresh
+        // now so a player-return read that raced the save cannot stay stale.
         try { console.debug("NATIVE_HISTORY_CHANGE_DEFERRED", JSON.stringify({
           revision, tvBrowseActive: tvBrowseActive(), detailActive
         })); } catch (e) {}

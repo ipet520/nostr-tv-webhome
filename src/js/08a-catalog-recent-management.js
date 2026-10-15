@@ -68,7 +68,10 @@
               if (!state.watch || !state.watch.item) await loadPendingWatch();
               const list = await readNativeHistoryForUi();
               normalized = normalizeRecentWatchingItems(list);
-              detailItems = normalizeHistoryList(list && list.version === 1 ? list.legacy || [] : list);
+              // Detail continuation must use the versioned Native rows: legacy
+              // History rows do not carry the exact resource reference or the
+              // canResume capability required for a real history_exact handoff.
+              detailItems = normalizeHistoryList(list && list.version === 1 ? list.records || [] : list);
               referenceVersion = list && list.version === 1 ? 1 : 0;
               normalized.forEach((item) => recordRecentNativeKeyFlow("RECENT_NATIVE_KEY_AT_LOAD", item));
             } catch (e) {

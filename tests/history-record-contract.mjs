@@ -66,9 +66,20 @@ const handleHistoryChange=vm.runInContext(historyEventListener[1],c);
 async function waitFor(check){for(let i=0;i<100;i++){if(check())return;await new Promise(resolve=>setTimeout(resolve,0));}assert.ok(check(),'async fixture timed out');}
 await test('native history commit event is bridged and TV progress polling is removed',async()=>{
  const activity=fs.readFileSync(new URL('../../app/app/src/leanback/java/com/fongmi/android/tv/ui/activity/HomeActivity.java',import.meta.url),'utf8');
+ const mobileVod=fs.readFileSync(new URL('../../app/app/src/mobile/java/com/fongmi/android/tv/ui/fragment/VodFragment.java',import.meta.url),'utf8');
+ const mobileVideo=fs.readFileSync(new URL('../../app/app/src/mobile/java/com/fongmi/android/tv/ui/activity/VideoActivity.java',import.meta.url),'utf8');
+ const leanbackVideo=fs.readFileSync(new URL('../../app/app/src/leanback/java/com/fongmi/android/tv/ui/activity/VideoActivity.java',import.meta.url),'utf8');
  const resume=source('22-snapshot-resume-boot.js');
  const settlement=source('19-pan-results-handoff-return.js').match(/function scheduleHistorySettlement\(\)[\s\S]*?\n    function findWatchHistory/);
  assert.match(activity,/case HISTORY:[\s\S]*?getHistory\(\);\s*if \(mWeb != null\) mWeb\.dispatchHistoryChanged\(\);/);
+ assert.match(mobileVod,/case HISTORY:\s*if \(mWeb != null\) mWeb\.dispatchHistoryChanged\(\);\s*break;/);
+ for(const video of [mobileVideo,leanbackVideo]){
+  const save=video.match(/private void saveHistory\(boolean exit\) \{[\s\S]*?\n    \}/);
+  assert.ok(save,'native player exit save path is extractable');
+  assert.ok(save[0].indexOf('history.save()')>=0,'native History write is present');
+  assert.ok(save[0].indexOf('history.save()')<save[0].indexOf('RefreshEvent.history()'),
+   'the WebHome invalidation is posted after the Native History write');
+ }
  assert.match(java,/public void dispatchHistoryChanged\(\)[\s\S]*?dispatchLifecycle\("fmhistorychange", "\{version:1\}"\);/);
  assert.match(resume,/window\.addEventListener\("fmhistorychange", \(event\) =>/);
  assert.match(resume,/loadRecentList\(\{ refresh: true, silent: true, reconcileDetail: false \}\)\.catch\(\(\) => \{\}\);/);
@@ -84,8 +95,92 @@ await test('native history commit event is bridged and TV progress polling is re
  const handleHistoryChange=vm.runInContext(listener[1],eventContext);
  handleHistoryChange({detail:{version:2}});assert.equal(refreshCalls.length,0);assert.equal(revision,0);
  handleHistoryChange({detail:{version:1}});assert.deepEqual(JSON.parse(JSON.stringify(refreshCalls[0])),{refresh:true,silent:true,reconcileDetail:false});
- pageState.detail=true;handleHistoryChange({detail:{version:1}});assert.equal(refreshCalls.length,1);assert.equal(revision,2);
- pageState.detail=false;pageState.active=false;handleHistoryChange({detail:{version:1}});assert.equal(refreshCalls.length,1);assert.equal(revision,3);
+ pageState.detail=true;handleHistoryChange({detail:{version:1}});assert.equal(refreshCalls.length,2,'an active detail consumes the post-commit Native event');
+ assert.deepEqual(JSON.parse(JSON.stringify(refreshCalls[1])),{refresh:true,silent:true,reconcileDetail:false});assert.equal(revision,2);
+ pageState.detail=false;pageState.active=false;handleHistoryChange({detail:{version:1}});assert.equal(refreshCalls.length,2);assert.equal(revision,3);
+});
+await test('player return refreshes the committed exact Native record after a stale read and hands it off history_exact',async()=>{
+ native.legacy=false;native.envelope=null;native.historyFailureCount=0;native.historyQueue=[];
+ const sourceA=raw('A',{position:0,duration:500_000,createTime:2000,episodeUrl:'https://a.example/episode-4',vodFlag:'line-A',sourceBindingKey:'line-A#1',tmdbSeasonNumber:1,tmdbEpisodeNumber:4});
+ const sourceC=raw('C',{position:185_000,duration:500_000,createTime:1000,episodeUrl:'https://c.example/episode-3',vodFlag:'line-C',sourceBindingKey:'line-C#1',tmdbSeasonNumber:1,tmdbEpisodeNumber:3});
+ native.rows=[sourceA,sourceC];
+ c.state.activeList='all';c.state.recent.items=[];c.state.recent.detailItems=[];c.state.recent.loaded=true;c.state.recent.error='';
+ c.state.recent.loading=false;c.state.recent.loadingPromise=null;c.state.recent.pendingRefresh=false;
+ c.state.recent.pendingRefreshSilent=true;c.state.recent.pendingRefreshReconcileDetail=true;
+ c.state.recent.nativeHistoryRevision=0;c.state.recent.nativeHistoryCommittedRevision=0;
+ c.tvBrowseActive=()=>false;
+ const item={id:'tmdb:movie:42',source:'tmdb',tmdbId:'42',mediaType:'movie',title:'Example',aliases:['Example']};
+ c.state.selected=item;c.state.detailClosing=false;
+ const detailSheet={classList:{contains:name=>name==='active'}};
+ const classes={toggle(){},remove(){}};
+ const button={style:{},dataset:{},classList:classes,closest:()=>({classList:classes}),setAttribute(){}};
+ const continueText={textContent:''},searchText={textContent:''};
+ c.$=id=>({detailSheet,detailContinueBtn:button,detailContinueText:continueText,detailSearchText:searchText})[id]||null;
+ c.panSearchItemKey=value=>value.mediaType+':'+value.tmdbId;
+ c.detailPlaybackIsCurrent=run=>run===c.state.detailPlayback&&!run.cancelled;
+ c.detailDirectPlayReadyFor=()=>false;c.detailContinuePlayStateFor=()=> 'idle';c.clearDirectPlayStatus=()=>{};c.toast=()=>{};
+ const run={item,token:17,handoffStarted:true,playRequested:true,phase:'STARTING_PLAYER',candidate:{url:'https://a.example/episode-4'}};
+ c.state.detailPlayback=run;
+ c.state.detailPlayerReturn={itemKey:'movie:42',handoffStarted:true,startedAt:Date.now(),returnedAt:0};
+ const returnStart=resumeSource.indexOf('    async function rearmDetailPlaybackAfterPlayerReturn(options)');
+ const returnEnd=resumeSource.indexOf('\n    async function handleWebHomeResume',returnStart);
+ assert.ok(returnStart>=0&&returnEnd>returnStart,'the production player-return rearm function is extractable');
+ const rearm=vm.runInContext('('+resumeSource.slice(returnStart,returnEnd).trim()+')',c);
+ const returned=rearm({playerReturn:true});
+ await waitFor(()=>native.historyQueue.length===1);
+ const staleEnvelope=read();
+ // The player has already returned, but the first WebView History read sees
+ // A at zero while C has an older positive point. A must not borrow C's route.
+ native.historyQueue.shift()(staleEnvelope);
+ await returned;
+ assert.ok(c.state.detailPlayerReturn.returnedAt>0);
+ assert.equal(continueText.textContent,'播放','zero-progress current A row cannot borrow C history');
+ assert.equal(c.findDetailContinueHistory(item),null,'only the newest current-work route is eligible; older C cannot be reused');
+ assert.equal(c.state.recent.detailItems[0].historyRecordRef.siteKey,'A','detail lookup keeps the versioned Native reference, not legacy rows');
+
+ // A later in-flight read still contains the zero point. Native commits A's
+ // actual episode/progress, then posts the versioned fmhistorychange event.
+ const oldRead=c.loadRecentList({refresh:true,silent:true,reconcileDetail:false});
+ await waitFor(()=>native.historyQueue.length===1);
+ native.rows[0]=Object.assign({},native.rows[0],{position:124_000,duration:500_000,createTime:3000,
+  episodeUrl:'https://a.example/episode-4',vodFlag:'line-A',sourceBindingKey:'line-A#1',tmdbSeasonNumber:1,tmdbEpisodeNumber:4});
+ const committedEnvelope=read();
+ handleHistoryChange({detail:{version:1}});
+ assert.equal(c.state.recent.activeRun.invalidated,true,'the pre-commit response cannot overwrite the returned detail');
+ native.historyQueue.shift()(staleEnvelope);
+ await waitFor(()=>native.historyQueue.length===1);
+ native.historyQueue.shift()(committedEnvelope);
+ await oldRead;
+ assert.equal(c.state.recent.nativeHistoryCommittedRevision,c.state.recent.nativeHistoryRevision);
+ assert.equal(c.state.recent.detailItems[0].position,124_000);
+ assert.equal(c.state.recent.detailItems[0].siteKey,'A');
+ assert.equal(c.state.recent.detailItems[0].vodId,'vod');
+ assert.equal(c.state.recent.detailItems[0].episodeNumber,4);
+ assert.equal(continueText.textContent,'续播','post-commit Native refresh changes the button from play to resume');
+ assert.equal(button.dataset.mode,'CONTINUE');
+
+ // Clicking that state must dispatch the exact Native reference and preserve
+ // the actual A route, episode and saved position through the bridge payload.
+ const handoffSource=source('19-pan-results-handoff-return.js');
+ const markerStart=handoffSource.indexOf('    function markDetailPlayerHandoff(item) {');
+ const markerEnd=handoffSource.indexOf('\n    async function persistPlaybackBeforeNativeHandoff',markerStart);
+ assert.ok(markerStart>=0&&markerEnd>markerStart,'the production detail handoff marker is extractable');
+ vm.runInContext(handoffSource.slice(markerStart,markerEnd).trim(),c);
+ const clickErrors=[];c.toast=message=>clickErrors.push(String(message||''));
+ const handoffsBefore=calls.filter(call=>call.method==='player.playVod').length;
+ assert.equal(await c.requestDetailPlayback(item),true,clickErrors.join('; ')||'resume click should complete the Native exact handoff');
+ const handoffs=calls.filter(call=>call.method==='player.playVod');
+ assert.equal(handoffs.length,handoffsBefore+1,'one resume click performs exactly one Native handoff');
+ const handoff=handoffs.at(-1);
+ assert.equal(handoff.payload.intent,'history_exact');
+ assert.equal(handoff.payload.historyRecordRef.siteKey,'A');
+ assert.equal(handoff.payload.historyRecordRef.vodId,'vod');
+ assert.equal(native.playing.episodeUrl,'https://a.example/episode-4');
+ assert.equal(native.playing.position,124_000);
+ assert.equal(native.playing.sourceBindingKey,'line-A#1');
+ assert.equal(c.state.detailPlayerReturn.handoffStarted,true,'the exact return handoff is one-shot');
+ c.$=()=>null;c.state.selected=null;c.state.detailPlayerReturn=null;c.state.detailPlayback=null;
+ native.historyQueue=null;
 });
 await test('out-of-order Native reads preserve the committed progress and order',async()=>{
  native.legacy=false;native.envelope=null;native.historyQueue=[];
