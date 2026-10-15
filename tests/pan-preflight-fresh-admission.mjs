@@ -38,7 +38,7 @@ assert.equal(result.freshBad.reason, "FRESH_REJECTED");
 assert.equal(result.freshLocked.accepted, false);
 assert.equal(result.freshOk.accepted, true);
 assert.equal(result.cachedOk.accepted, true);
-assert.match(source, /freshPanPreflight\(item, context, \{ playback: true \}\)/);
+assert.match(source, /freshPanPreflight\(item, playbackContext, \{ playback: true \}\)/);
 assert.match(source, /const result = pan\.play\(payload\)/);
 
 console.log("FRESH_BAD_OVERRIDES_CACHED_OK = PASS");

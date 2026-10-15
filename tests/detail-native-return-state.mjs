@@ -34,7 +34,6 @@ function reconcileHarness({ historyChanged = true, capturedRunToken = 13 } = {})
     itemKey: "media-1",
     token: 13,
     candidate: { url: "https://current.example/play" },
-    continueResource: { id: "current-resource" },
     playRequested: true,
     handoffStarted: true,
     phase: "PAN_PLAY_CALLED"
@@ -45,8 +44,6 @@ function reconcileHarness({ historyChanged = true, capturedRunToken = 13 } = {})
     detailClosing: false,
     recent: { error: "" },
     detailPlayback: run,
-    detailHistoryHandoff: { item },
-    historyResume: { stale: true },
     detailEpisodeTarget: { stale: true },
     pan: {
       directReady: { itemKey: "media-1" },
@@ -91,7 +88,6 @@ function reconcileHarness({ historyChanged = true, capturedRunToken = 13 } = {})
   assert.equal(h.state.detailPlayback, null, "changed Native History retires only the captured prepared run");
   assert.equal(h.run.cancelled, true);
   assert.equal(h.run.candidate, null);
-  assert.equal(h.state.historyResume, null);
   assert.equal(h.state.detailEpisodeTarget, null);
   assert.equal(h.state.pan.directReady, null);
   assert.equal(h.state.pan.directFailure, null);
@@ -114,9 +110,16 @@ function reconcileHarness({ historyChanged = true, capturedRunToken = 13 } = {})
   assert.equal(h.calls.some(([name]) => name === "cancel-prepare"), false);
 }
 
-const updateButtonStart = playbackSource.indexOf("    function updateDetailContinueButton() {");
-assert.notEqual(updateButtonStart, -1, "missing updateDetailContinueButton function");
-const updateButtonSource = playbackSource.slice(updateButtonStart).trim();
+const returnedHistorySource = between(
+  playbackSource,
+  "    function detailReturnedNativeHistoryFor(item) {",
+  "\n    function updateDetailContinueButton"
+);
+const updateButtonSource = between(
+  playbackSource,
+  "    function updateDetailContinueButton() {",
+  "\n    }"
+) + "\n    }";
 const selectedItem = { title: "Current detail" };
 const classes = new Set();
 const actions = { classList: {
@@ -132,25 +135,35 @@ const button = {
 };
 const continueText = { textContent: "" };
 const searchText = { textContent: "" };
-let resumeHistory = { nativeHistoryKey: "history-a", canResume: true };
+let resumeHistory = { nativeHistoryKey: "history-a", exact: true };
 const currentCandidate = { url: "https://selected-source.example/current" };
-const state = { selected: selectedItem, detailPlayback: { candidate: currentCandidate } };
-const updateButton = new Function("$", "state", "findDetailContinueHistory", "detailDirectPlayReadyFor", "detailContinuePlayStateFor",
+const state = { selected: selectedItem, detailPlayback: { candidate: currentCandidate }, detailPlayerReturn: null, recent: { error: "" } };
+const returnedHistory = new Function("state", "panSearchItemKey", "findDetailContinueHistory", "nativeHistoryRecordCanPlayExact",
+  `return (${returnedHistorySource});`
+)(state, () => "media-1", () => resumeHistory, (history) => !!(history && history.exact
+  && Number(history.position == null ? 1 : history.position) > 0));
+const updateButton = new Function("$", "state", "detailReturnedNativeHistoryFor", "detailDirectPlayReadyFor", "detailContinuePlayStateFor",
   `return (${updateButtonSource});`
 )((id) => ({
   detailContinueBtn: button,
   detailContinueText: continueText,
   detailSearchText: searchText
-})[id], state, () => resumeHistory, () => false, () => "idle");
+})[id], state, () => returnedHistory(selectedItem), () => false, () => "idle");
 
 updateButton();
-assert.equal(continueText.textContent, "续播");
-assert.equal(button.dataset.mode, "CONTINUE");
-assert.equal(classes.has("has-continue"), true);
+assert.equal(continueText.textContent, "播放", "old Native History alone does not label a new detail entry as resume");
+assert.equal(button.dataset.mode, "FIRST_PLAY");
+assert.equal(classes.has("has-continue"), false);
 assert.equal(button.__historyItem, null, "Native History is not attached to the current resource action");
 assert.equal(state.detailPlayback.candidate, currentCandidate, "presentation update does not replace the selected resource");
 
-resumeHistory = null;
+state.detailPlayerReturn = { itemKey: "media-1", handoffStarted: false, returnedAt: Date.now() };
+updateButton();
+assert.equal(continueText.textContent, "续播", "an exact Native resume point is offered after returning to the same open detail");
+assert.equal(button.dataset.mode, "CONTINUE");
+assert.equal(classes.has("has-continue"), true);
+
+resumeHistory = { nativeHistoryKey: "history-a", exact: true, position: 0 };
 updateButton();
 assert.equal(continueText.textContent, "播放");
 assert.equal(button.dataset.mode, "FIRST_PLAY");
@@ -164,7 +177,26 @@ const requestSource = between(
 assert.match(requestSource, /detailPreparedCandidateFor\(item\)/);
 assert.match(requestSource, /playPreparedDetailCandidate\(item, prepared, button\)/);
 assert.doesNotMatch(requestSource, /findDetailContinueHistory|detailHistory|historyResume|detailMode/);
+assert.ok(requestSource.indexOf("playNativeHistoryExact(returnHistory") < requestSource.indexOf("detailPreparedCandidateFor(item)"),
+  "after a true player return, an executable exact history route wins before the prepared first-play resource");
 assert.match(playbackSource, /function handleDetailPrimaryAction\(\)\s*\{\s*return requestDetailPlayback\(state\.selected\);/);
+
+{
+  const item = { title: "Returned detail" };
+  const history = { source: "history", exact: true };
+  const marker = { itemKey: "media-1", handoffStarted: false, returnedAt: Date.now() };
+  const state = { selected: item, detailPlayerReturn: marker, detailPlayback: null };
+  const calls = [];
+  const request = new Function("$", "state", "detailReturnedNativeHistoryFor", "detailPlaybackIsCurrent", "playNativeHistoryExact", "updateDetailContinueButton", "toast", "panSearchItemKey",
+    `return (${requestSource});`
+  )(() => ({}), state, () => history, () => false, async (record, options) => {
+    calls.push([record, options.detail, options.button]);
+    return true;
+  }, () => {}, () => {}, () => "media-1");
+  assert.equal(await request(item), true);
+  assert.deepEqual(calls, [[history, true, {}]], "resume click performs the native exact-history handoff");
+  assert.equal(marker.handoffStarted, true, "the exact handoff is one-shot until the next return");
+}
 
 const rearmSource = between(
   resumeSource,
@@ -174,23 +206,21 @@ const rearmSource = between(
 assert.doesNotMatch(rearmSource, /prepareDetailPlaybackForDetail|prepareDetailPlayback\(/,
   "player return must not start another resource preparation");
 
-function returnHarness(run) {
+function returnHarness(run, hasHandoff = true) {
   const item = { title: "Returned detail" };
   if (run) run.item = item;
   const calls = [];
-  const state = { selected: item, detailClosing: false, detailPlayback: run || null };
+  const state = { selected: item, detailClosing: false, detailPlayback: run || null,
+    detailPlayerReturn: hasHandoff ? { itemKey: "media-1", handoffStarted: true, returnedAt: 0 } : null,
+    pan: { playbackReturn: null } };
   const sheet = { classList: { contains: () => true } };
   const scope = {
     state,
     $: () => sheet,
+    panSearchItemKey: () => "media-1",
     detailPlaybackIsCurrent: (candidate) => candidate === state.detailPlayback && !candidate.cancelled,
     loadRecentList: async (options) => calls.push(["load-recent", options]),
     clearDirectPlayStatus: (...args) => calls.push(["clear-status", ...args]),
-    cancelDetailPlaybackPreparation: (...args) => {
-      calls.push(["cancel-prepare", ...args]);
-      if (state.detailPlayback) state.detailPlayback.cancelled = true;
-      state.detailPlayback = null;
-    },
     updateDetailContinueButton: () => calls.push(["update-button"])
   };
   const fn = new Function(...Object.keys(scope), `return (${rearmSource});`)(...Object.values(scope));
@@ -198,13 +228,18 @@ function returnHarness(run) {
 }
 
 {
-  const run = { item: null, token: 4, handoffStarted: true, phase: "PAN_PLAY_CALLED" };
+  const candidate = { url: "https://current.example/play" };
+  const run = { item: null, token: 4, handoffStarted: true, phase: "STARTING_PLAYER", candidate };
   const h = returnHarness(run);
   assert.equal(await h.fn({ playerReturn: true }), true);
   assert.equal(h.calls.filter(([name]) => name === "load-recent").length, 1);
-  assert.equal(h.calls.filter(([name]) => name === "cancel-prepare").length, 1);
-  assert.deepEqual(h.calls.find(([name]) => name === "cancel-prepare"), ["cancel-prepare", "player_returned"]);
-  assert.equal(h.state.detailPlayback, null);
+  assert.equal(h.calls.some(([name]) => name === "cancel-prepare"), false);
+  assert.equal(h.state.detailPlayback, run);
+  assert.equal(run.candidate, candidate, "player return preserves the prepared resource");
+  assert.equal(run.handoffStarted, false);
+  assert.equal(run.phase, "READY");
+  assert.equal(h.state.detailPlayerReturn.handoffStarted, false);
+  assert.ok(h.state.detailPlayerReturn.returnedAt > 0);
   assert.equal(h.state.selected, h.item);
   assert.equal(h.calls.some(([name]) => name === "update-button"), true);
 }
@@ -214,18 +249,26 @@ function returnHarness(run) {
   const h = returnHarness(run);
   assert.equal(await h.fn({ playerReturn: true }), true);
   assert.equal(h.state.detailPlayback, run, "a still-current unhanded resource remains available");
-  assert.equal(h.calls.some(([name]) => name === "cancel-prepare"), false);
+  assert.equal(h.state.detailPlayerReturn.handoffStarted, false);
 }
 
 {
-  const h = returnHarness(null);
-  assert.equal(await h.fn({ playerReturn: false }), false);
+  const h = returnHarness(null, false);
+  assert.equal(await h.fn({ playerReturn: true }), false);
   assert.equal(h.calls.length, 0);
 }
 
 assert.match(detailSource, /if \(opts\.playerReturnRestore !== true\) \{\s*prepareDetailPlaybackForDetail\(item,\s*\{\s*reason: "detail_open"/,
   "a fresh detail open prepares resources, while a player-return restore does not auto-prepare");
 assert.match(detailSource, /reason: "detail_open"/);
+assert.match(detailSource, /state\.detailPlayerReturn = null/,
+  "a new detail entry clears prior player-return resume eligibility");
+assert.match(handoffSource, /state\.detailPlayerReturn = null/,
+  "exiting the detail clears player-return resume eligibility");
+assert.match(resumeSource, /detailPlayerReturn: state\.detailPlayerReturn \|\| null/,
+  "the current detail return marker survives WebView snapshot restoration");
+assert.match(handoffSource, /candidate: snapshotPanPlaybackCandidate\(item\)/,
+  "the already handed-off prepared resource is recoverable after WebView recreation");
 assert.match(recentSource, /recent\.items = normalized \|\| \[\];[\s\S]*?updateDetailContinueButton\(\);/,
   "the button presentation refreshes after a successful Native History list commit");
 assert.doesNotMatch(recentSource, /syncDetailMode\(/, "the removed Continue Gate stays removed");
@@ -234,3 +277,4 @@ console.log("NATIVE_SEARCH_PREPARED_RUN_ISOLATION = PASS");
 console.log("DETAIL_RESUME_STATUS_IS_PRESENTATION_ONLY = PASS");
 console.log("PLAYER_RETURN_DOES_NOT_AUTO_PREPARE = PASS");
 console.log("FRESH_DETAIL_ENTRY_PREPARES = PASS");
+console.log("RETURN_RESUMES_FINAL_NATIVE_HISTORY_EXACTLY = PASS");

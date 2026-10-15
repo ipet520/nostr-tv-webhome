@@ -288,10 +288,15 @@ await test('native fields map flag binding and distinguish unknown season from z
  assert.equal(item.seasonNumber,2);assert.equal(item.episodeNumber,7);assert.equal(c.historyPlaybackContext(item.nativeHistoryRaw).flag,'line2');
  assert.equal(c.normalizeHistoryItem(raw('A',{mediaType:'tv',tmdbSeasonNumber:0,tmdbEpisodeNumber:0}),0).seasonNumber,-1);
 });
-await test('source contracts keep no-option legacy read and detail default intent intact',()=>{
+await test('source contracts split fresh detail playback from explicit exact history',()=>{
  const bridge=fs.readFileSync(new URL('../../app/app/src/main/java/com/fongmi/android/tv/web/HomeWebBridge.java',import.meta.url),'utf8');
- assert.ok(bridge.includes('return App.gson().toJson(History.get());'));assert.ok(bridge.includes('History resume = findResumeHistory(playSiteKey, vodId);'));
- assert.ok(source('15a-history-recent-continue.js').includes('const ref = !opts.detail && historyRecordReference(item)'));
+ const recent=source('15a-history-recent-continue.js');
+ assert.ok(bridge.includes('return App.gson().toJson(History.get());'));
+ assert.ok(bridge.includes('VideoActivity.startFromWebHome'));
+ assert.ok(!bridge.includes('findResumeHistory(playSiteKey, vodId)'));
+ assert.ok(bridge.includes('VideoActivity.startHistoryExact'));
+ assert.ok(recent.includes('const ref = historyRecordReference(item)'));
+ assert.ok(recent.includes('{ intent: "history_exact", historyRecordRef: ref }'));
 });
 await test('E26 seasonal projection becomes current row without losing selected source focus',()=>{
  native.rows=[raw('A',{kind:'SEASON',mediaType:'tv',tmdbSeasonNumber:1,tmdbEpisodeNumber:3}),raw('B',{mediaType:'tv',tmdbSeasonNumber:1,tmdbEpisodeNumber:4})];
@@ -364,24 +369,24 @@ await test('LOSS_MISSING_PROGRESS_DOES_NOT_HIDE_WORK_AND_DOES_NOT_BLOCK_EXACT_ST
    native.rows=[raw('A'),raw('B',{vodName:'Other work',tmdbId:0,mediaType:'',...fields})];
    const items=load();assert.equal(items.length,2);assert.equal(new Set(items.map(c.recentHistoryItemKey)).size,2);
    const b=items.find(i=>i.siteKey==='B');assert.equal(b.historyCanResumeExact,false);assert.equal(b.historyCanPlayExact,true);
-   assert.equal(c.detailContinueHistoryIsValid(b),false,'detail resume still requires a valid progress point');
+   assert.equal(c.detailHasAuthoritativeNativeHistory(b),false,'detail resume still requires a valid progress point');
    const before=calls.length;await c.playNativeHistoryExact(b);assert.equal(calls.length,before+1);
    assert.equal(calls.at(-1).payload.historyRecordRef.historyKey,b.nativeHistoryKey);
    assert.equal(native.playing.key,b.nativeHistoryKey);
  }
 });
-await test('D_SESSION_NATIVE_RESUME_REQUIRES_A_VALID_PROGRESS_POINT_BUT_ZERO_POINT_HISTORY_REMAINS_PLAYABLE',()=>{
+await test('DETAIL_RETURN_REQUIRES_A_VALID_PROGRESS_POINT_BUT_ZERO_POINT_HISTORY_REMAINS_PLAYABLE',()=>{
  for(const row of [
    raw('A',{position:0,duration:500_000,canPlayExact:true,canResume:false}),
    raw('A',{position:50_000,duration:0,canPlayExact:true,canResume:false}),
    raw('A',{position:50_000,duration:undefined,canPlayExact:true,canResume:false})
  ]) {
    const item=c.normalizeHistoryItem({...row,historyRecordRef:refOf(row)},0);
-   assert.equal(c.detailContinueHistoryIsValid(item),false);
+   assert.equal(c.detailHasAuthoritativeNativeHistory(item),false);
    assert.equal(c.nativeHistoryRecordCanPlayExact(item),true,'exact history entry may still start from the top');
  }
  const valid=raw('A',{position:50_000,duration:500_000,canPlayExact:true,canResume:true});
  const item=c.normalizeHistoryItem({...valid,historyRecordRef:refOf(valid)},0);
- assert.equal(c.detailContinueHistoryIsValid(item),true,'valid progress remains eligible for session continuation');
+ assert.equal(c.detailHasAuthoritativeNativeHistory(item),true,'valid progress remains eligible for same-detail continuation');
 });
 console.log(JSON.stringify({layer:'HTML_WITH_ACTUAL_APP_SDK_EXPRESSIONS_AND_ISOLATED_NATIVE_TRANSPORT',results},null,2));

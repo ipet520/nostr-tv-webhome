@@ -138,6 +138,7 @@
         connectionOpen: !!($("connectionDock") && $("connectionDock").classList.contains("open")),
         selected: state.selected ? normalizeSnapshot(state.selected) : null,
         detailEpisodeTarget: state.detailEpisodeTarget || null,
+        detailPlayerReturn: state.detailPlayerReturn || null,
         detailScrollTop: detail ? Math.round(detail.scrollTop || 0) : 0,
         detailReturn: state.detailReturn || null,
         homeReturn: state.homeReturn || null,
@@ -262,6 +263,7 @@
     async function restoreUiSnapshot(snapshot) {
       if (!snapshot) return false;
       state.detailReturn = snapshot.detailReturn || null;
+      state.detailPlayerReturn = snapshot.detailPlayerReturn || null;
       state.detailEpisodeTarget = snapshot.detailEpisodeTarget && normalizePlaybackTarget(snapshot.selected || state.selected, snapshot.detailEpisodeTarget) || null;
       const savedHomeReturn = normalizeLegacySavedState(snapshot.homeReturn || null);
       if (snapshot.homeRailScroll && typeof snapshot.homeRailScroll === "object") {
@@ -312,7 +314,8 @@
         openDetail(snapshot.selected, {
           restore: true,
           skipHistory: true,
-          playerReturnRestore: !!(snapshot.pan && snapshot.pan.playbackReturn),
+          playerReturnRestore: !!(snapshot.detailPlayerReturn || snapshot.pan && snapshot.pan.playbackReturn),
+          detailPlayerReturn: snapshot.detailPlayerReturn || null,
           panSnapshot: snapshot.pan || null
         });
         restorePanSnapshot(snapshot.pan);
@@ -409,12 +412,6 @@
             if (returnOptions.nativeSearchReturn === true) {
               await handleWebHomeResume({ force: true, playerReturn: true, nativeSearchReturn: true });
               nativeSearchReturnHandled = true;
-            // 盘搜播放返回：panSearchBlock 已 active，直接走盘搜恢复，不重渲染整个 detail
-            } else if (state.pan.playbackReturn && $("panSearchBlock") && $("panSearchBlock").classList.contains("active")) {
-              restorePanPlaybackReturn({});
-              await settlePlayerReturnHistory();
-              await loadRecentList({ refresh: true, silent: true, reconcileDetail: false });
-              reconcileDetailAfterNativeReturn(state.selected, "pan-play");
             } else {
               await handleWebHomeResume({ force: true, playerReturn: true, nativeSearchReturn: false });
             }
@@ -431,12 +428,14 @@
             if (snapshot && snapshot.homeReturn) state.homeReturn = normalizeLegacySavedState(snapshot.homeReturn);
             if (snapshot && snapshot.selected && snapshot.route === "detail") {
               if (snapshot.detailReturn) state.detailReturn = snapshot.detailReturn;
+              state.detailPlayerReturn = snapshot.detailPlayerReturn || null;
               state.detailEpisodeTarget = snapshot.detailEpisodeTarget && normalizePlaybackTarget(snapshot.selected, snapshot.detailEpisodeTarget) || null;
               if (location.hash !== "#detail") history.replaceState({ sheet: "detail" }, "", "#detail");
               openDetail(snapshot.selected, {
                 restore: true,
                 skipHistory: true,
-                playerReturnRestore: !!(snapshot.pan && snapshot.pan.playbackReturn),
+                playerReturnRestore: !!(snapshot.detailPlayerReturn || snapshot.pan && snapshot.pan.playbackReturn),
+                detailPlayerReturn: snapshot.detailPlayerReturn || null,
                 panSnapshot: snapshot.pan || null
               });
               if (snapshot.pan) restorePanSnapshot(snapshot.pan);
@@ -522,14 +521,35 @@
         || !sheet || !sheet.classList.contains("active") || !item) return false;
       const run = state.detailPlayback && detailPlaybackIsCurrent(state.detailPlayback)
         && state.detailPlayback.item === item ? state.detailPlayback : null;
-      const handedOff = !!(run && (run.handoffStarted
+      const itemKey = panSearchItemKey(item);
+      let marker = state.detailPlayerReturn;
+      if (!marker || marker.itemKey !== itemKey) {
+        const hadPlayerReturn = !!(state.pan.playbackReturn || run && (run.handoffStarted
+          || ["STARTING_PLAYER", "PAN_PLAY_CALLED"].includes(String(run.phase || ""))));
+        if (!hadPlayerReturn) return false;
+        marker = state.detailPlayerReturn = { itemKey, handoffStarted: true, startedAt: Date.now(), returnedAt: 0 };
+      }
+      const handedOff = !!(marker.handoffStarted || run && (run.handoffStarted
         || ["STARTING_PLAYER", "PAN_PLAY_CALLED"].includes(String(run.phase || ""))));
       await loadRecentList({ refresh: true, silent: true, reconcileDetail: false }).catch(() => {});
       if (state.selected !== item || state.detailClosing || !$("detailSheet") || !$("detailSheet").classList.contains("active")) return false;
       if (handedOff && state.detailPlayback === run) {
         clearDirectPlayStatus(run.token, "player_returned");
-        cancelDetailPlaybackPreparation("player_returned");
+        run.handoffStarted = false;
+        run.playRequested = false;
+        if (run.candidate) {
+          run.active = false;
+          run.phase = "READY";
+          run.settledResult = "READY";
+          run.error = "";
+        } else {
+          run.phase = "IDLE";
+          run.settledResult = "";
+          run.error = "";
+        }
       }
+      marker.handoffStarted = false;
+      marker.returnedAt = Date.now();
       updateDetailContinueButton();
       return true;
     }
@@ -556,7 +576,7 @@
         } else await settlePlayerReturnHistory();
       }
       let detailRearmed = false;
-      if (isPlayerReturn && !isPanPlaybackReturn && opts.nativeSearchReturn !== true) {
+      if (isPlayerReturn && opts.nativeSearchReturn !== true) {
         detailRearmed = await rearmDetailPlaybackAfterPlayerReturn({ playerReturn: true });
       }
       if (restoreRecentNativeHome) await loadRecentList({ refresh: true, silent: true });

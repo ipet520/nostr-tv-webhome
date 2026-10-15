@@ -592,7 +592,7 @@
       if (!source) return false;
       recordRecentNativeKeyFlow("RECENT_NATIVE_KEY_AT_DETAIL", source);
       if (source.continueContext && source.historyContextEntry) {
-        if (openContinueWatchingContext(source, { returnTarget: card, autoResume: false })) return true;
+        if (openContinueWatchingContext(source, { returnTarget: card })) return true;
       }
       if (source.source === "history") {
         openRecentItem(source, { returnTarget: card });

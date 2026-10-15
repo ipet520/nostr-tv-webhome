@@ -1,63 +1,3 @@
-    function normalizedPanHistoryName(value) {
-      return String(value || "")
-        .toLowerCase()
-        .replace(/\.[a-z0-9]{1,8}(?=$|[\s._-])/gi, "")
-        .replace(/[\s._\-—–:：|/\\()[\]{}【】<>]+/g, "")
-        .trim();
-    }
-
-    function stablePanHistoryId(value) {
-      const text = String(value || "").trim();
-      return text && !historyUrlLike(text) ? text : "";
-    }
-
-    function panHistoryCandidateId(item) {
-      return stablePanHistoryId(item && (item.resourceId || item.resource_id || item.panFileId || item.pan_file_id || item.fileId || item.file_id));
-    }
-
-    function panHistoryCandidateName(item) {
-      return normalizedPanHistoryName(item && (item.fileName || item.file_name || item.filename || item.title || ""));
-    }
-
-    function panHistoryCandidateFitsTarget(item, target) {
-      if (!item || !target || target.mediaType !== "tv" || !target.episodeNumber) return true;
-      const season = Number(target.seasonNumber || 1);
-      const episode = Number(target.episodeNumber || 0);
-      if (panItemMatchesEpisode(item, season, episode) || panItemIsSeasonPack(item, season)) return true;
-      const title = String(item.title || item.fileName || "");
-      const seasonMarker = title.match(/S0*(\d+)(?![0-9])/i) || title.match(/第\s*0*(\d+)\s*季/);
-      if (seasonMarker && Number(seasonMarker[1]) !== season) return false;
-      if (/(?:S\s*0*\d+\s*E\s*0*\d+|\bE\s*0*\d+|第\s*0*\d+\s*集)/i.test(title)) return false;
-      return true;
-    }
-
-    function matchPanHistoryResource(historyOrTarget, results) {
-      const target = normalizePlaybackTarget(state.selected, historyOrTarget);
-      const list = (Array.isArray(results) ? results : []).filter(Boolean);
-      if (!target || !list.length) return null;
-      const targetId = stablePanHistoryId(target.resourceId || target.panFileId);
-      if (targetId) {
-        const exactId = list.find((item) => panHistoryCandidateId(item) === targetId);
-        if (exactId) return exactId;
-      }
-      const targetName = normalizedPanHistoryName(target.panFileName);
-      const targetProvider = normalizePanDiskType(target.panProvider || "");
-      if (targetName) {
-        const named = list.filter((item) => panHistoryCandidateName(item) === targetName && panHistoryCandidateFitsTarget(item, target));
-        const providerMatch = named.find((item) => !targetProvider || normalizePanDiskType(item.diskType) === targetProvider);
-        if (providerMatch) return providerMatch;
-        if (named.length === 1) return named[0];
-      }
-      const targetUrl = String(target.lastPlayUrl || "").trim();
-      if (targetUrl) {
-        const normalizedUrl = normalizePanUrl(targetUrl);
-        const urlMatch = list.find((item) => normalizePanUrl(item && (item.normalizedUrl || item.url) || "") === normalizedUrl
-          && panHistoryCandidateFitsTarget(item, target));
-        if (urlMatch) return urlMatch;
-      }
-      return null;
-    }
-
     function openPanHistoryItem(history, options) {
       const resolved = resolveHistoryMedia(history);
       if (!resolved) {
@@ -74,60 +14,11 @@
       const context = normalizePlaybackTarget(media, historyPlaybackContext(history));
       const opts = options || {};
       if (context) setDetailPlaybackTarget(media, context);
-      state.historyResume = {
-        history,
-        context,
-        mediaKey: mediaDomKey(media),
-        at: Date.now()
-      };
       openDetail(media, {
         returnTarget: opts.returnTarget || document.activeElement,
-        historyContext: context,
-        historyResume: true
+        historyContext: context
       });
       return true;
-    }
-
-    function buildDirectPanHistoryItem(target) {
-      if (!target) return null;
-      const url = String(target.lastPlayUrl || "").trim();
-      const provider = resolvePanProviderForHistory(target);
-      if (!url || !provider) return null;
-      return {
-        key: "history-direct|" + normalizePanUrl(url),
-        diskType: normalizePanDiskType(provider),
-        provider,
-        url,
-        normalizedUrl: url,
-        password: String(target.panPassword || "").trim(),
-        title: String(target.panTitle || target.panFileName || target.title || "盘搜资源").trim(),
-        fileName: String(target.panFileName || "").trim(),
-        fileId: String(target.panFileId || "").trim(),
-        resourceId: String(target.resourceId || "").trim()
-      };
-    }
-
-    async function resumePanHistoryFromSearch(item, target, preloadTask) {
-      if (!item || state.selected !== item) return false;
-      if (preloadTask && typeof preloadTask.then === "function") await preloadTask;
-      if (state.selected !== item) return false;
-      const waitUntil = Date.now() + 2600;
-      while (state.selected === item && Date.now() < waitUntil) {
-        const progress = state.pan.progress || {};
-        if ((state.pan.results || []).length || !progress.active) break;
-        await new Promise((resolve) => setTimeout(resolve, 140));
-      }
-      if (state.selected !== item) return false;
-      const match = matchPanHistoryResource(target, state.pan.results);
-      if (match) {
-        state.historyResume = null;
-        toast("正在恢复上次播放资源…");
-        await playPanResult(match, { episodeTarget: target, historyResume: true });
-        return true;
-      }
-      state.historyResume = null;
-      toast("上次播放资源暂不可用，可使用盘搜重新选择");
-      return false;
     }
 
     async function playNativeHistoryExact(item, options) {
@@ -148,21 +39,23 @@
       const watchItem = opts.watchItem || item;
       if (opts.detail) rememberDetailReturn(opts.button || $("detailContinueBtn"));
       else rememberHomeReturn(item, opts.returnTarget || document.activeElement, { origin: "recent_native_player" });
+      const detailPlayerReturn = opts.detail ? markDetailPlayerHandoff(state.selected) : null;
       saveUiSnapshotNow();
       rememberWatchIntent(watchItem, "view", context, nativeIdentity);
       // 用 localStorage 持久化标记，WebView 被挂起后 JS 内存会丢失
       // visibilitychange/pageshow/fmresume 恢复时读到此标记，保持当前页面不重置
       localStorage.setItem("fm_pan_playing", "1");
       try {
-        const ref = !opts.detail && historyRecordReference(item);
-        if (!opts.detail && (!ref || !nativeHistoryRecordCanPlayExact(item))) throw new Error(item.historyCapabilityReason || "当前 App 未提供可验证的精确历史播放，请使用原生历史页面");
+        const ref = historyRecordReference(item);
+        if (!ref || !nativeHistoryRecordCanPlayExact(item)) throw new Error(item.historyCapabilityReason || "当前 App 未提供可验证的精确历史播放，请使用原生历史页面");
         await sdk().vod(nativeSiteKey, nativeVodId, item.title || context.title, item.pic || context.poster,
-          ref ? { intent: "history_exact", historyRecordRef: ref } : undefined);
+          { intent: "history_exact", historyRecordRef: ref });
         await saveHistoryPlaybackContext(watchItem, context);
         startWatchTracking(watchItem, context, nativeIdentity);
         return true;
       } catch (e) {
         localStorage.removeItem("fm_pan_playing");
+        if (detailPlayerReturn && state.detailPlayerReturn === detailPlayerReturn) detailPlayerReturn.handoffStarted = false;
         throw e;
       }
     }
@@ -178,7 +71,7 @@
       const nativeSiteKey = String(item.siteKey || context.siteKey || "").trim();
       const nativeVodId = String(item.vodId || context.vodId || "").trim();
       if (item.continueContext) {
-        if (!openContinueWatchingContext(item, { returnTarget, autoResume: false })) toast("暂时无法恢复播放");
+        if (!openContinueWatchingContext(item, { returnTarget })) toast("暂时无法恢复播放");
         return;
       }
       // Native History owns the original site/vod identity.  When it is
@@ -1195,18 +1088,10 @@
           desc: item.desc || item.title || ""
         });
       const context = normalizePlaybackTarget(media, target);
-      state.historyResume = {
-        history: item,
-        context,
-        mediaKey: mediaDomKey(media),
-        autoResume: opts.autoResume === true,
-        at: Date.now()
-      };
       if (context) setDetailPlaybackTarget(media, context);
       openDetail(media, {
         returnTarget: opts.returnTarget || document.activeElement,
-        historyContext: context,
-        historyResume: true
+        historyContext: context
       });
       return true;
     }

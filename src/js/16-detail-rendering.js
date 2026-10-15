@@ -25,12 +25,22 @@
         clearDirectPlayStatus(0, "selected_change");
         cancelPendingDirectPlay("selected_change");
         cancelDetailPlaybackPreparation("selected_change");
-        state.detailHistoryHandoff = null;
+        state.detailPlayerReturn = null;
       }
       const restorePlaybackReturn = opts.playerReturnRestore === true
         && opts.panSnapshot && opts.panSnapshot.playbackReturn;
+      const restoreCurrentDetailReturn = opts.playerReturnRestore === true && opts.detailPlayerReturn;
       if (restorePlaybackReturn) state.pan.playbackReturn = opts.panSnapshot.playbackReturn;
-      if (!opts.historyResume && !opts.playerReturnRestore) state.historyResume = null;
+      if (restoreCurrentDetailReturn) state.detailPlayerReturn = opts.detailPlayerReturn;
+      else if (opts.playerReturnRestore === true && restorePlaybackReturn) {
+        state.detailPlayerReturn = {
+          itemKey: panSearchItemKey(item),
+          handoffStarted: true,
+          startedAt: Number(restorePlaybackReturn.at || Date.now()),
+          returnedAt: 0
+        };
+      }
+      else if (opts.playerReturnRestore !== true && !detailWasActive) state.detailPlayerReturn = null;
       if (opts.episodeTarget || opts.historyContext) setDetailPlaybackTarget(item, opts.episodeTarget || opts.historyContext);
       else if (!sameSelected && !opts.restore) state.detailEpisodeTarget = null;
       if (!opts.restore && !detailWasActive) rememberHomeReturn(item, opts.returnTarget);
@@ -42,8 +52,15 @@
       // 普通详情播放沿用 Native 的播放交接；历史续播只通过历史页的精确入口触发。
       if (!opts.keepPan) {
         resetPanSearchState(true, {
-          reason: "detail_open",
+          reason: opts.playerReturnRestore === true ? "player_return_restore" : "detail_open",
           preservePlaybackReturn: !!restorePlaybackReturn
+        });
+      }
+      if (restorePlaybackReturn && restorePlaybackReturn.candidate) {
+        restoreDetailPreparedCandidate(item, restorePlaybackReturn.candidate, {
+          episodeTarget: restorePlaybackReturn.episodeTarget,
+          provider: restorePlaybackReturn.panProvider,
+          sourceId: restorePlaybackReturn.key
         });
       }
       // 当前会话仍使用原 Curated/Direct 竞争和健康准入。

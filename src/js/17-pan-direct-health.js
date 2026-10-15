@@ -774,18 +774,10 @@
     async function playBestQuark(item, options) {
       if (!item) return;
       const opts = options || {};
-      const continueHistory = opts.history && typeof opts.history === "object" ? opts.history : null;
-      const continueTarget = continueHistory ? detailContinuePlaybackTargetFor(item, continueHistory) : null;
-      const requestedTarget = continueTarget;
-      if (requestedTarget) setDetailPlaybackTarget(item, requestedTarget);
       if (_directPlayPending) {
         if (_directPlayPending.item === item) {
           // 详情进入时的 prepareOnly 与用户点击必须共享同一个 action。
           // 这里只改变当前 action 的意图，不创建新的搜索/session。
-          if (continueHistory) {
-            _directPlayPending.history = continueHistory;
-            _directPlayPending.episodeTarget = continueTarget;
-          }
           if (_directPlayPending.prepareOnly && !_directPlayPending.playRequested && !opts.prepareOnly) {
             _directPlayPending.playRequested = true;
             isRepeatClickWithinWindow(`qb:${item.tmdbId || item.title}`);
@@ -817,8 +809,7 @@
         suppressAutoPan: !!opts.suppressAutoPan,
         raceMode: !!opts.raceMode,
         prepareOnly,
-        history: continueHistory,
-        episodeTarget: requestedTarget,
+        episodeTarget: currentPlaybackTargetForItem(item),
         playRequested: prepareOnly ? !!opts.playRequested : true,
         forceFreshDirect: !!opts.forceFreshDirect,
         startedAt: Date.now(),
@@ -1094,8 +1085,7 @@
         await playPanResult(pick, {
           prechecked: true,
           handoffAction: action,
-          episodeTarget: action.episodeTarget || currentPlaybackTargetForItem(item),
-          historyResume: !!action.history
+          episodeTarget: action.episodeTarget || currentPlaybackTargetForItem(item)
         });
       })();
       try {

@@ -880,10 +880,6 @@
       }) || null;
     }
 
-    function detailContinueHistoryIsValid(history) {
-      return detailHasAuthoritativeNativeHistory(history);
-    }
-
     function recentNativeHistoryWinnerFor(item, list) {
       const source = Array.isArray(list) ? list : (state.recent.detailItems || state.recent.items || []);
       const mediaKey = recentWatchingMediaKey(item);
@@ -921,91 +917,4 @@
       } catch (e) {}
       if (state.tvDiag) state.tvDiag[String(name || "DETAIL_PLAYBACK_DECISION")] = payload;
       return payload;
-    }
-
-    function detailContinueResourceCandidateFor(item, target) {
-      if (!item || !target || !playbackTargetMatchesItem(target, item)) return null;
-      const normalizedTarget = normalizePlaybackTarget(item, target);
-      const candidate = buildDirectPanHistoryItem(normalizedTarget);
-      if (!normalizedTarget || !candidate || !candidate.url || !candidate.diskType) return null;
-      const payload = buildPanPlayPayload(candidate);
-      if (!payload || !payload.type || !payload.url) return null;
-      return { target: normalizedTarget, candidate };
-    }
-
-    function detailContinueResourceContextFor(item, nativeHistory) {
-      if (!item) return null;
-      const add = (source, target, contextFound, history) => {
-        const resource = detailContinueResourceCandidateFor(item, target);
-        if (!resource) return null;
-        return Object.assign({}, resource, {
-          source,
-          contextFound: !!contextFound,
-          history: history || null
-        });
-      };
-
-      // Native History winner 与 HTML Recent 使用同一媒体级选择规则，
-      // 先尝试当前展示的精确线路；缓存上下文只作为续播资源 fallback。
-      const history = nativeHistory || findDetailContinueHistory(item);
-      if (detailContinueHistoryIsValid(history)) {
-        const historyTarget = detailContinuePlaybackTargetFor(item, history);
-        const found = add("native-history", historyTarget, false, history);
-        if (found) return found;
-      }
-
-      // Continue Index / History Context 仅作为续播线路的 fallback。
-      const primaryContext = findContinueWatchingContext(item);
-      const localContexts = [primaryContext]
-        .concat(recentWatchingContextCandidates().filter((candidate) => (
-          candidate && playbackTargetMatchesItem(candidate.historyContextTarget, item)
-        )))
-        .filter(Boolean);
-      for (const context of localContexts) {
-        const contextTarget = detailContinuePlaybackTargetFor(item, context);
-        const found = add("continue-context", contextTarget, true, null);
-        if (found) return found;
-      }
-
-      // 播放器返回快照在 WebView 尚未重新加载 cache 时仍可直接恢复。
-      const playbackReturn = state.pan && state.pan.playbackReturn;
-      if (playbackReturn) {
-        const returnTarget = normalizePlaybackTarget(item, Object.assign(
-          {},
-          playbackReturn.item || {},
-          playbackReturn,
-          playbackReturn.episodeTarget || {}
-        ));
-        const found = add("playback-return", returnTarget, true, null);
-        if (found) return found;
-      }
-
-      return null;
-    }
-
-    async function resolveDetailContinueResource(item, run) {
-      if (!item) return null;
-      let resource = detailContinueResourceContextFor(item);
-      if (resource) return resource;
-      const contextsLoaded = !!(state.historyContexts && state.historyContexts.loaded);
-      const continueLoaded = !!(state.continueIndex && state.continueIndex.loaded);
-      if (contextsLoaded && continueLoaded) return null;
-      let timer = 0;
-      const loadTask = Promise.all([
-        loadHistoryContextIndex(),
-        loadContinueIndex()
-      ]).catch(() => null);
-      try {
-        await Promise.race([
-          loadTask,
-          new Promise((resolve) => {
-            timer = setTimeout(() => resolve(null), DETAIL_CONTINUE_GATE_MAX_MS);
-          })
-        ]);
-      } finally {
-        clearTimeout(timer);
-      }
-      if (run && !detailPlaybackIsCurrent(run)) return null;
-      resource = detailContinueResourceContextFor(item);
-      return resource;
     }

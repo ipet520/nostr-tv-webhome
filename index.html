@@ -17105,7 +17105,6 @@ utils.encode = function encode(arr, enc) {
     const CURATED_PREFLIGHT_BUDGET_MS = 700;
     const CURATED_PREFLIGHT_PER_SOURCE = 2;
     const CURATED_MAX_AUTO_CHECK_PER_SOURCE = 6;
-    const DETAIL_CONTINUE_GATE_MAX_MS = 300;
     const DETAIL_NATIVE_HISTORY_GATE_MAX_MS = 800;
     const CURATED_REQUEST_TIMEOUT_SEC = 6;
     const CURATED_REQUEST_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/149.0.0.0 Safari/537.36";
@@ -17336,10 +17335,9 @@ utils.encode = function encode(arr, enc) {
       previewMode: false,
       tvFullscreen: false,
       detailReturn: null,
-      detailHistoryHandoff: null,
-      detailPlayback: { seq: 0, token: "", itemKey: "", active: false, promise: null, candidate: null, sourceId: "", provider: "", playRequested: false, handoffStarted: false, history: null, historyVerified: false, episodeTarget: null, directAction: null, error: "", raceActive: false, providerCommitted: false, providerCommitCount: 0 },
+      detailPlayerReturn: null,
+      detailPlayback: { seq: 0, token: "", itemKey: "", active: false, promise: null, candidate: null, sourceId: "", provider: "", playRequested: false, handoffStarted: false, episodeTarget: null, directAction: null, error: "", raceActive: false, providerCommitted: false, providerCommitCount: 0 },
       detailEpisodeTarget: null,
-      historyResume: null,
       homeReturn: null,
       focusReturnEl: null,
       remoteInitialFocused: false,
@@ -21633,10 +21631,6 @@ utils.encode = function encode(arr, enc) {
       }) || null;
     }
 
-    function detailContinueHistoryIsValid(history) {
-      return detailHasAuthoritativeNativeHistory(history);
-    }
-
     function recentNativeHistoryWinnerFor(item, list) {
       const source = Array.isArray(list) ? list : (state.recent.detailItems || state.recent.items || []);
       const mediaKey = recentWatchingMediaKey(item);
@@ -21674,93 +21668,6 @@ utils.encode = function encode(arr, enc) {
       } catch (e) {}
       if (state.tvDiag) state.tvDiag[String(name || "DETAIL_PLAYBACK_DECISION")] = payload;
       return payload;
-    }
-
-    function detailContinueResourceCandidateFor(item, target) {
-      if (!item || !target || !playbackTargetMatchesItem(target, item)) return null;
-      const normalizedTarget = normalizePlaybackTarget(item, target);
-      const candidate = buildDirectPanHistoryItem(normalizedTarget);
-      if (!normalizedTarget || !candidate || !candidate.url || !candidate.diskType) return null;
-      const payload = buildPanPlayPayload(candidate);
-      if (!payload || !payload.type || !payload.url) return null;
-      return { target: normalizedTarget, candidate };
-    }
-
-    function detailContinueResourceContextFor(item, nativeHistory) {
-      if (!item) return null;
-      const add = (source, target, contextFound, history) => {
-        const resource = detailContinueResourceCandidateFor(item, target);
-        if (!resource) return null;
-        return Object.assign({}, resource, {
-          source,
-          contextFound: !!contextFound,
-          history: history || null
-        });
-      };
-
-      // Native History winner 与 HTML Recent 使用同一媒体级选择规则，
-      // 先尝试当前展示的精确线路；缓存上下文只作为续播资源 fallback。
-      const history = nativeHistory || findDetailContinueHistory(item);
-      if (detailContinueHistoryIsValid(history)) {
-        const historyTarget = detailContinuePlaybackTargetFor(item, history);
-        const found = add("native-history", historyTarget, false, history);
-        if (found) return found;
-      }
-
-      // Continue Index / History Context 仅作为续播线路的 fallback。
-      const primaryContext = findContinueWatchingContext(item);
-      const localContexts = [primaryContext]
-        .concat(recentWatchingContextCandidates().filter((candidate) => (
-          candidate && playbackTargetMatchesItem(candidate.historyContextTarget, item)
-        )))
-        .filter(Boolean);
-      for (const context of localContexts) {
-        const contextTarget = detailContinuePlaybackTargetFor(item, context);
-        const found = add("continue-context", contextTarget, true, null);
-        if (found) return found;
-      }
-
-      // 播放器返回快照在 WebView 尚未重新加载 cache 时仍可直接恢复。
-      const playbackReturn = state.pan && state.pan.playbackReturn;
-      if (playbackReturn) {
-        const returnTarget = normalizePlaybackTarget(item, Object.assign(
-          {},
-          playbackReturn.item || {},
-          playbackReturn,
-          playbackReturn.episodeTarget || {}
-        ));
-        const found = add("playback-return", returnTarget, true, null);
-        if (found) return found;
-      }
-
-      return null;
-    }
-
-    async function resolveDetailContinueResource(item, run) {
-      if (!item) return null;
-      let resource = detailContinueResourceContextFor(item);
-      if (resource) return resource;
-      const contextsLoaded = !!(state.historyContexts && state.historyContexts.loaded);
-      const continueLoaded = !!(state.continueIndex && state.continueIndex.loaded);
-      if (contextsLoaded && continueLoaded) return null;
-      let timer = 0;
-      const loadTask = Promise.all([
-        loadHistoryContextIndex(),
-        loadContinueIndex()
-      ]).catch(() => null);
-      try {
-        await Promise.race([
-          loadTask,
-          new Promise((resolve) => {
-            timer = setTimeout(() => resolve(null), DETAIL_CONTINUE_GATE_MAX_MS);
-          })
-        ]);
-      } finally {
-        clearTimeout(timer);
-      }
-      if (run && !detailPlaybackIsCurrent(run)) return null;
-      resource = detailContinueResourceContextFor(item);
-      return resource;
     }
     function recordDetailPlaybackLifecycle(run, event, detail) {
       const session = Number(run && run.token || 0);
@@ -21830,7 +21737,7 @@ utils.encode = function encode(arr, enc) {
       run.handoffPromise = (async () => {
         return run.provider === "curated"
           ? playPreparedDetailCandidate(item, candidate, button)
-          : playDetailDirectReadyCandidate(item, candidate, null, button);
+          : playDetailDirectReadyCandidate(item, candidate, button);
       })().catch(() => false).then((result) => {
         run.handoffDispatching = false;
         return result;
@@ -22084,13 +21991,49 @@ utils.encode = function encode(arr, enc) {
       return candidate;
     }
 
+    function restoreDetailPreparedCandidate(item, candidate, metadata) {
+      if (!item || state.selected !== item || !candidate || !buildPanPlayPayload(candidate)) return false;
+      const itemKey = panSearchItemKey(item);
+      const saved = metadata || {};
+      const previous = state.detailPlayback || {};
+      const run = {
+        seq: Number(previous.seq || 0) + 1,
+        token: ++_directPlayActionSeq,
+        item,
+        itemKey,
+        canonicalPromise: Promise.resolve(item),
+        canonicalStartedAt: Date.now(),
+        canonicalResolved: true,
+        canonicalSuccess: true,
+        active: false,
+        promise: null,
+        candidate,
+        sourceId: String(saved.sourceId || candidate.sourceId || candidate.source || ""),
+        provider: String(saved.provider || candidate.provider || "player-return"),
+        playRequested: false,
+        handoffStarted: false,
+        episodeTarget: normalizePlaybackTarget(item, saved.episodeTarget || currentPlaybackTargetForItem(item)) || null,
+        directAction: null,
+        error: "",
+        reason: "player_return_snapshot_restore",
+        phase: "READY",
+        settledResult: "READY",
+        raceActive: false,
+        providerCommitted: true,
+        providerCommitCount: 1,
+        preparationStarted: true
+      };
+      state.detailPlayback = run;
+      return true;
+    }
+
     async function playPreparedDetailCandidate(item, candidate, button) {
       const run = state.detailPlayback;
       if (!run || !detailPlaybackIsCurrent(run) || !candidate) return false;
       if (run.handoffStarted) return false;
       run.handoffStarted = true;
       run.playRequested = false;
-      run.candidate = null;
+      run.phase = "STARTING_PLAYER";
       showDirectPlayStatus(run.token, "STARTING_PLAYER", "正在启动播放器…", "native_handoff_start");
       const episodeTarget = currentPlaybackTargetForItem(item);
       if (episodeTarget) setDetailPlaybackTarget(item, episodeTarget);
@@ -22161,14 +22104,12 @@ utils.encode = function encode(arr, enc) {
         provider: "",
         playRequested: !!opts.playRequested,
         handoffStarted: false,
-        history: null,
-        historyVerified: false,
         episodeTarget: null,
         directAction: null,
         error: "",
         reason: String(opts.reason || "detail_prepare"),
         preparationStarted: false,
-        phase: "CONTINUE_GATE",
+        phase: "INITIALIZING",
         settledResult: "",
         finalFailureNotified: false,
         curatedSummarySent: false,
@@ -22444,32 +22385,13 @@ utils.encode = function encode(arr, enc) {
       return detailDirectReadyCandidateFor(item, ready);
     }
 
-    function detailContinuePlaybackTargetFor(item, history) {
-      if (!item || !history) return currentPlaybackTargetForItem(item);
-      const entry = history.historyContextEntry;
-      const rawItem = entry && entry.item && typeof entry.item === "object" ? entry.item : history;
-      const rawTarget = history.historyContextTarget
-        || entry && (entry.playbackTarget || entry.target)
-        || rawItem;
-      const source = history.continueContext || entry || history.historyContextTarget
-        ? Object.assign({}, entry || {}, rawTarget || {})
-        : historyPlaybackContext(history);
-      return normalizePlaybackTarget(item, source);
-    }
-
-    async function playDetailDirectReadyCandidate(item, candidate, history, button) {
+    async function playDetailDirectReadyCandidate(item, candidate, button) {
       if (!item || !candidate || !detailDirectPlayReadyFor(item)) return false;
       const detailRun = state.detailPlayback && detailPlaybackIsCurrent(state.detailPlayback)
         && state.detailPlayback.item === item ? state.detailPlayback : null;
       if (detailRun && detailRun.handoffStarted) return false;
-      const episodeTarget = detailContinuePlaybackTargetFor(item, history);
+      const episodeTarget = currentPlaybackTargetForItem(item);
       if (episodeTarget) setDetailPlaybackTarget(item, episodeTarget);
-      if (history) {
-        // Ready 已经确定了当前 Direct 资源；历史记录只补充季/集和进度上下文，
-        // 不再进入会重新搜索或切换资源的旧续播分支。
-        rememberDetailReturn(button);
-        state.historyResume = null;
-      }
       // 自动选择的 Direct 候选在最终交接前仍需同步复核缓存健康状态；
       // 手动盘搜入口继续由 playPanResult() 保留“警告后强制播放”语义。
       const admission = panAutoHealthAdmission(candidate, {});
@@ -22486,19 +22408,42 @@ utils.encode = function encode(arr, enc) {
       recordDirectReadyEvent("DIRECT_READY_CONSUMED", item, candidate, "ready_click", admission.state, null);
       await playPanResult(candidate, {
         prechecked: true,
-        episodeTarget,
-        historyResume: !!history
+        episodeTarget
       });
       return true;
     }
 
     async function requestDetailPlayback(item) {
       if (!item || state.selected !== item) return false;
-      if (canonicalResourceKey(item)) {
-        try { await resolveCanonicalResourceTitle(item); } catch (e) {}
-        if (state.selected !== item) return;
-      }
       const button = $("detailContinueBtn");
+      const returnHistory = detailReturnedNativeHistoryFor(item);
+      if (returnHistory) {
+        const marker = state.detailPlayerReturn;
+        marker.handoffStarted = true;
+        const returnedRun = state.detailPlayback && detailPlaybackIsCurrent(state.detailPlayback)
+          && state.detailPlayback.item === item ? state.detailPlayback : null;
+        if (returnedRun) {
+          returnedRun.handoffStarted = true;
+          returnedRun.playRequested = false;
+          returnedRun.phase = "STARTING_PLAYER";
+        }
+        try {
+          const started = await playNativeHistoryExact(returnHistory, { detail: true, button });
+          if (!started) throw new Error("原生历史无法精确恢复");
+          return true;
+        } catch (e) {
+          marker.handoffStarted = false;
+          if (returnedRun && state.detailPlayback === returnedRun) {
+            returnedRun.handoffStarted = false;
+            returnedRun.phase = returnedRun.candidate ? "READY" : "NO_RESOURCE";
+          }
+          updateDetailContinueButton();
+          toast("续播失败：" + (e && e.message || "原生历史无法精确恢复"));
+          return false;
+        }
+      }
+      const activeReturn = state.detailPlayerReturn;
+      if (activeReturn && activeReturn.itemKey === panSearchItemKey(item) && activeReturn.handoffStarted) return false;
       const directOptions = { detailPrimary: true, suppressAutoPan: true };
       const racingDetailPlayback = state.detailPlayback && detailPlaybackIsCurrent(state.detailPlayback)
         && state.detailPlayback.item === item && state.detailPlayback.raceActive
@@ -22517,7 +22462,7 @@ utils.encode = function encode(arr, enc) {
       }
       const readyCandidate = detailDirectPlayCandidateFor(item);
       if (readyCandidate) {
-        playDetailDirectReadyCandidate(item, readyCandidate, null, button).catch(() => {});
+        playDetailDirectReadyCandidate(item, readyCandidate, button).catch(() => {});
         return;
       }
       if (detailUnreleasedInfo(item).unreleased) {
@@ -22554,6 +22499,10 @@ utils.encode = function encode(arr, enc) {
       }
       // 播放/准备统一由同一个 playBestQuark action 处理；若当前是
       // prepareOnly action，由 playBestQuark 内部记录 playRequested 并继续等待。
+      if (canonicalResourceKey(item)) {
+        try { await resolveCanonicalResourceTitle(item); } catch (e) {}
+        if (state.selected !== item) return false;
+      }
       playBestQuark(item, directOptions);
     }
 
@@ -22592,6 +22541,15 @@ utils.encode = function encode(arr, enc) {
       return "idle";
     }
 
+    function detailReturnedNativeHistoryFor(item) {
+      const marker = state.detailPlayerReturn;
+      if (!item || !marker || marker.itemKey !== panSearchItemKey(item)
+        || marker.handoffStarted || !(Number(marker.returnedAt || 0) > 0)
+        || state.recent && state.recent.error) return null;
+      const history = findDetailContinueHistory(item);
+      return history && nativeHistoryRecordCanPlayExact(history) ? history : null;
+    }
+
     function updateDetailContinueButton() {
       const button = $("detailContinueBtn");
       const continueText = $("detailContinueText");
@@ -22601,7 +22559,7 @@ utils.encode = function encode(arr, enc) {
       button.__historyItem = null;
       button.style.display = "";
       button.setAttribute("aria-hidden", "false");
-      const hasNativeResume = !!(state.selected && findDetailContinueHistory(state.selected));
+      const hasNativeResume = !!(state.selected && detailReturnedNativeHistoryFor(state.selected));
       if (continueText) continueText.textContent = hasNativeResume ? "续播" : "播放";
       if (actions) actions.classList.toggle("has-continue", hasNativeResume);
       const directReady = detailDirectPlayReadyFor(state.selected);
@@ -23211,7 +23169,7 @@ utils.encode = function encode(arr, enc) {
       if (!source) return false;
       recordRecentNativeKeyFlow("RECENT_NATIVE_KEY_AT_DETAIL", source);
       if (source.continueContext && source.historyContextEntry) {
-        if (openContinueWatchingContext(source, { returnTarget: card, autoResume: false })) return true;
+        if (openContinueWatchingContext(source, { returnTarget: card })) return true;
       }
       if (source.source === "history") {
         openRecentItem(source, { returnTarget: card });
@@ -30337,66 +30295,6 @@ utils.encode = function encode(arr, enc) {
       });
       return button;
     }
-    function normalizedPanHistoryName(value) {
-      return String(value || "")
-        .toLowerCase()
-        .replace(/\.[a-z0-9]{1,8}(?=$|[\s._-])/gi, "")
-        .replace(/[\s._\-—–:：|/\\()[\]{}【】<>]+/g, "")
-        .trim();
-    }
-
-    function stablePanHistoryId(value) {
-      const text = String(value || "").trim();
-      return text && !historyUrlLike(text) ? text : "";
-    }
-
-    function panHistoryCandidateId(item) {
-      return stablePanHistoryId(item && (item.resourceId || item.resource_id || item.panFileId || item.pan_file_id || item.fileId || item.file_id));
-    }
-
-    function panHistoryCandidateName(item) {
-      return normalizedPanHistoryName(item && (item.fileName || item.file_name || item.filename || item.title || ""));
-    }
-
-    function panHistoryCandidateFitsTarget(item, target) {
-      if (!item || !target || target.mediaType !== "tv" || !target.episodeNumber) return true;
-      const season = Number(target.seasonNumber || 1);
-      const episode = Number(target.episodeNumber || 0);
-      if (panItemMatchesEpisode(item, season, episode) || panItemIsSeasonPack(item, season)) return true;
-      const title = String(item.title || item.fileName || "");
-      const seasonMarker = title.match(/S0*(\d+)(?![0-9])/i) || title.match(/第\s*0*(\d+)\s*季/);
-      if (seasonMarker && Number(seasonMarker[1]) !== season) return false;
-      if (/(?:S\s*0*\d+\s*E\s*0*\d+|\bE\s*0*\d+|第\s*0*\d+\s*集)/i.test(title)) return false;
-      return true;
-    }
-
-    function matchPanHistoryResource(historyOrTarget, results) {
-      const target = normalizePlaybackTarget(state.selected, historyOrTarget);
-      const list = (Array.isArray(results) ? results : []).filter(Boolean);
-      if (!target || !list.length) return null;
-      const targetId = stablePanHistoryId(target.resourceId || target.panFileId);
-      if (targetId) {
-        const exactId = list.find((item) => panHistoryCandidateId(item) === targetId);
-        if (exactId) return exactId;
-      }
-      const targetName = normalizedPanHistoryName(target.panFileName);
-      const targetProvider = normalizePanDiskType(target.panProvider || "");
-      if (targetName) {
-        const named = list.filter((item) => panHistoryCandidateName(item) === targetName && panHistoryCandidateFitsTarget(item, target));
-        const providerMatch = named.find((item) => !targetProvider || normalizePanDiskType(item.diskType) === targetProvider);
-        if (providerMatch) return providerMatch;
-        if (named.length === 1) return named[0];
-      }
-      const targetUrl = String(target.lastPlayUrl || "").trim();
-      if (targetUrl) {
-        const normalizedUrl = normalizePanUrl(targetUrl);
-        const urlMatch = list.find((item) => normalizePanUrl(item && (item.normalizedUrl || item.url) || "") === normalizedUrl
-          && panHistoryCandidateFitsTarget(item, target));
-        if (urlMatch) return urlMatch;
-      }
-      return null;
-    }
-
     function openPanHistoryItem(history, options) {
       const resolved = resolveHistoryMedia(history);
       if (!resolved) {
@@ -30413,60 +30311,11 @@ utils.encode = function encode(arr, enc) {
       const context = normalizePlaybackTarget(media, historyPlaybackContext(history));
       const opts = options || {};
       if (context) setDetailPlaybackTarget(media, context);
-      state.historyResume = {
-        history,
-        context,
-        mediaKey: mediaDomKey(media),
-        at: Date.now()
-      };
       openDetail(media, {
         returnTarget: opts.returnTarget || document.activeElement,
-        historyContext: context,
-        historyResume: true
+        historyContext: context
       });
       return true;
-    }
-
-    function buildDirectPanHistoryItem(target) {
-      if (!target) return null;
-      const url = String(target.lastPlayUrl || "").trim();
-      const provider = resolvePanProviderForHistory(target);
-      if (!url || !provider) return null;
-      return {
-        key: "history-direct|" + normalizePanUrl(url),
-        diskType: normalizePanDiskType(provider),
-        provider,
-        url,
-        normalizedUrl: url,
-        password: String(target.panPassword || "").trim(),
-        title: String(target.panTitle || target.panFileName || target.title || "盘搜资源").trim(),
-        fileName: String(target.panFileName || "").trim(),
-        fileId: String(target.panFileId || "").trim(),
-        resourceId: String(target.resourceId || "").trim()
-      };
-    }
-
-    async function resumePanHistoryFromSearch(item, target, preloadTask) {
-      if (!item || state.selected !== item) return false;
-      if (preloadTask && typeof preloadTask.then === "function") await preloadTask;
-      if (state.selected !== item) return false;
-      const waitUntil = Date.now() + 2600;
-      while (state.selected === item && Date.now() < waitUntil) {
-        const progress = state.pan.progress || {};
-        if ((state.pan.results || []).length || !progress.active) break;
-        await new Promise((resolve) => setTimeout(resolve, 140));
-      }
-      if (state.selected !== item) return false;
-      const match = matchPanHistoryResource(target, state.pan.results);
-      if (match) {
-        state.historyResume = null;
-        toast("正在恢复上次播放资源…");
-        await playPanResult(match, { episodeTarget: target, historyResume: true });
-        return true;
-      }
-      state.historyResume = null;
-      toast("上次播放资源暂不可用，可使用盘搜重新选择");
-      return false;
     }
 
     async function playNativeHistoryExact(item, options) {
@@ -30487,21 +30336,23 @@ utils.encode = function encode(arr, enc) {
       const watchItem = opts.watchItem || item;
       if (opts.detail) rememberDetailReturn(opts.button || $("detailContinueBtn"));
       else rememberHomeReturn(item, opts.returnTarget || document.activeElement, { origin: "recent_native_player" });
+      const detailPlayerReturn = opts.detail ? markDetailPlayerHandoff(state.selected) : null;
       saveUiSnapshotNow();
       rememberWatchIntent(watchItem, "view", context, nativeIdentity);
       // 用 localStorage 持久化标记，WebView 被挂起后 JS 内存会丢失
       // visibilitychange/pageshow/fmresume 恢复时读到此标记，保持当前页面不重置
       localStorage.setItem("fm_pan_playing", "1");
       try {
-        const ref = !opts.detail && historyRecordReference(item);
-        if (!opts.detail && (!ref || !nativeHistoryRecordCanPlayExact(item))) throw new Error(item.historyCapabilityReason || "当前 App 未提供可验证的精确历史播放，请使用原生历史页面");
+        const ref = historyRecordReference(item);
+        if (!ref || !nativeHistoryRecordCanPlayExact(item)) throw new Error(item.historyCapabilityReason || "当前 App 未提供可验证的精确历史播放，请使用原生历史页面");
         await sdk().vod(nativeSiteKey, nativeVodId, item.title || context.title, item.pic || context.poster,
-          ref ? { intent: "history_exact", historyRecordRef: ref } : undefined);
+          { intent: "history_exact", historyRecordRef: ref });
         await saveHistoryPlaybackContext(watchItem, context);
         startWatchTracking(watchItem, context, nativeIdentity);
         return true;
       } catch (e) {
         localStorage.removeItem("fm_pan_playing");
+        if (detailPlayerReturn && state.detailPlayerReturn === detailPlayerReturn) detailPlayerReturn.handoffStarted = false;
         throw e;
       }
     }
@@ -30517,7 +30368,7 @@ utils.encode = function encode(arr, enc) {
       const nativeSiteKey = String(item.siteKey || context.siteKey || "").trim();
       const nativeVodId = String(item.vodId || context.vodId || "").trim();
       if (item.continueContext) {
-        if (!openContinueWatchingContext(item, { returnTarget, autoResume: false })) toast("暂时无法恢复播放");
+        if (!openContinueWatchingContext(item, { returnTarget })) toast("暂时无法恢复播放");
         return;
       }
       // Native History owns the original site/vod identity.  When it is
@@ -31534,18 +31385,10 @@ utils.encode = function encode(arr, enc) {
           desc: item.desc || item.title || ""
         });
       const context = normalizePlaybackTarget(media, target);
-      state.historyResume = {
-        history: item,
-        context,
-        mediaKey: mediaDomKey(media),
-        autoResume: opts.autoResume === true,
-        at: Date.now()
-      };
       if (context) setDetailPlaybackTarget(media, context);
       openDetail(media, {
         returnTarget: opts.returnTarget || document.activeElement,
-        historyContext: context,
-        historyResume: true
+        historyContext: context
       });
       return true;
     }
@@ -32696,12 +32539,22 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         clearDirectPlayStatus(0, "selected_change");
         cancelPendingDirectPlay("selected_change");
         cancelDetailPlaybackPreparation("selected_change");
-        state.detailHistoryHandoff = null;
+        state.detailPlayerReturn = null;
       }
       const restorePlaybackReturn = opts.playerReturnRestore === true
         && opts.panSnapshot && opts.panSnapshot.playbackReturn;
+      const restoreCurrentDetailReturn = opts.playerReturnRestore === true && opts.detailPlayerReturn;
       if (restorePlaybackReturn) state.pan.playbackReturn = opts.panSnapshot.playbackReturn;
-      if (!opts.historyResume && !opts.playerReturnRestore) state.historyResume = null;
+      if (restoreCurrentDetailReturn) state.detailPlayerReturn = opts.detailPlayerReturn;
+      else if (opts.playerReturnRestore === true && restorePlaybackReturn) {
+        state.detailPlayerReturn = {
+          itemKey: panSearchItemKey(item),
+          handoffStarted: true,
+          startedAt: Number(restorePlaybackReturn.at || Date.now()),
+          returnedAt: 0
+        };
+      }
+      else if (opts.playerReturnRestore !== true && !detailWasActive) state.detailPlayerReturn = null;
       if (opts.episodeTarget || opts.historyContext) setDetailPlaybackTarget(item, opts.episodeTarget || opts.historyContext);
       else if (!sameSelected && !opts.restore) state.detailEpisodeTarget = null;
       if (!opts.restore && !detailWasActive) rememberHomeReturn(item, opts.returnTarget);
@@ -32713,8 +32566,15 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       // 普通详情播放沿用 Native 的播放交接；历史续播只通过历史页的精确入口触发。
       if (!opts.keepPan) {
         resetPanSearchState(true, {
-          reason: "detail_open",
+          reason: opts.playerReturnRestore === true ? "player_return_restore" : "detail_open",
           preservePlaybackReturn: !!restorePlaybackReturn
+        });
+      }
+      if (restorePlaybackReturn && restorePlaybackReturn.candidate) {
+        restoreDetailPreparedCandidate(item, restorePlaybackReturn.candidate, {
+          episodeTarget: restorePlaybackReturn.episodeTarget,
+          provider: restorePlaybackReturn.panProvider,
+          sourceId: restorePlaybackReturn.key
         });
       }
       // 当前会话仍使用原 Curated/Direct 竞争和健康准入。
@@ -34639,18 +34499,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     async function playBestQuark(item, options) {
       if (!item) return;
       const opts = options || {};
-      const continueHistory = opts.history && typeof opts.history === "object" ? opts.history : null;
-      const continueTarget = continueHistory ? detailContinuePlaybackTargetFor(item, continueHistory) : null;
-      const requestedTarget = continueTarget;
-      if (requestedTarget) setDetailPlaybackTarget(item, requestedTarget);
       if (_directPlayPending) {
         if (_directPlayPending.item === item) {
           // 详情进入时的 prepareOnly 与用户点击必须共享同一个 action。
           // 这里只改变当前 action 的意图，不创建新的搜索/session。
-          if (continueHistory) {
-            _directPlayPending.history = continueHistory;
-            _directPlayPending.episodeTarget = continueTarget;
-          }
           if (_directPlayPending.prepareOnly && !_directPlayPending.playRequested && !opts.prepareOnly) {
             _directPlayPending.playRequested = true;
             isRepeatClickWithinWindow(`qb:${item.tmdbId || item.title}`);
@@ -34682,8 +34534,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         suppressAutoPan: !!opts.suppressAutoPan,
         raceMode: !!opts.raceMode,
         prepareOnly,
-        history: continueHistory,
-        episodeTarget: requestedTarget,
+        episodeTarget: currentPlaybackTargetForItem(item),
         playRequested: prepareOnly ? !!opts.playRequested : true,
         forceFreshDirect: !!opts.forceFreshDirect,
         startedAt: Date.now(),
@@ -34959,8 +34810,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         await playPanResult(pick, {
           prechecked: true,
           handoffAction: action,
-          episodeTarget: action.episodeTarget || currentPlaybackTargetForItem(item),
-          historyResume: !!action.history
+          episodeTarget: action.episodeTarget || currentPlaybackTargetForItem(item)
         });
       })();
       try {
@@ -38232,11 +38082,29 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         panFileId: item && (item.fileId || item.file_id) || "",
         resourceId: item && (item.resourceId || item.resource_id) || "",
         lastPlayUrl,
+        candidate: snapshotPanPlaybackCandidate(item),
         at: Date.now()
       };
       state.pan.focusKey = key;
       state.pan.focusMode = "results";
       await saveUiSnapshotNow();
+    }
+
+    function snapshotPanPlaybackCandidate(item) {
+      if (!item || typeof item !== "object") return null;
+      try { return JSON.parse(JSON.stringify(item)); } catch (e) { return null; }
+    }
+
+    function markDetailPlayerHandoff(item) {
+      const detail = $("detailSheet");
+      if (!item || state.selected !== item || !detail || !detail.classList.contains("active")) return null;
+      state.detailPlayerReturn = {
+        itemKey: panSearchItemKey(item),
+        handoffStarted: true,
+        startedAt: Date.now(),
+        returnedAt: 0
+      };
+      return state.detailPlayerReturn;
     }
 
     async function persistPlaybackBeforeNativeHandoff(item, episodeTarget, panItem, handoffAction) {
@@ -38508,6 +38376,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     async function playPanResult(item, options) {
       const opts = options || {};
       const selectedItem = state.selected;
+      const playbackContext = { token: state.pan.viewToken, item: selectedItem };
       const episodeTarget = normalizePlaybackTarget(selectedItem, opts.episodeTarget || currentPlaybackTargetForItem(selectedItem));
       const payload = buildPanPlayPayload(item);
       if (!payload) {
@@ -38516,9 +38385,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         return;
       }
       if (!opts.prechecked) {
-        const context = { token: state.pan.viewToken, item: selectedItem };
         if (opts.handoffAction) recordPanDirectHandoffStage("HEALTH_CHECK_START", selectedItem, opts.handoffAction, { healthCheckCandidateCount: 1 });
-        const preflight = await freshPanPreflight(item, context, { playback: true });
+        const preflight = await freshPanPreflight(item, playbackContext, { playback: true });
         if (opts.handoffAction) {
           recordPanDirectHandoffStage(preflight.timedOut ? "HEALTH_CHECK_TIMEOUT" : "HEALTH_CHECK_OK", selectedItem, opts.handoffAction, {
             healthCheckTimedOut: !!preflight.timedOut,
@@ -38532,6 +38400,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         }
       }
       if (opts.handoffAction) recordPanDirectHandoffStage("SNAPSHOT_START", selectedItem, opts.handoffAction);
+      const detailPlayerReturn = selectedItem ? markDetailPlayerHandoff(selectedItem) : null;
       if (selectedItem) {
         const nativeIdentity = {
           siteKey: "push_agent",
@@ -38547,6 +38416,20 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       // Native handoff 前把播放器返回、History Context、Continue Index 做成
       // 一个有界 best-effort barrier；任何单项失败都不得阻塞 pan.play。
       await persistPlaybackBeforeNativeHandoff(selectedItem, episodeTarget, item, opts.handoffAction);
+      if (!panContextIsCurrent(playbackContext)) {
+        if (detailPlayerReturn && state.detailPlayerReturn === detailPlayerReturn) {
+          state.detailPlayerReturn = null;
+          const run = state.detailPlayback;
+          if (run && run.itemKey === detailPlayerReturn.itemKey && run.handoffStarted) {
+            run.handoffStarted = false;
+            run.playRequested = false;
+            run.active = false;
+            run.phase = run.candidate ? "READY" : "IDLE";
+            run.settledResult = run.candidate ? "READY" : "";
+          }
+        }
+        return;
+      }
       try {
         const pan = sdk().pan || {};
         if (!pan.play) throw new Error("当前 App 不支持 pan.play");
@@ -38560,19 +38443,32 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         if (result && typeof result.catch === "function") {
           result.catch((error) => {
             if (typeof opts.onPlayFailure === "function") opts.onPlayFailure(error);
-            else handlePanPlayFailure(selectedItem, error, opts.handoffAction && opts.handoffAction.token);
+            else handlePanPlayFailure(selectedItem, error, opts.handoffAction && opts.handoffAction.token, detailPlayerReturn);
           });
         }
       } catch (e) {
         if (typeof opts.onPlayFailure === "function") opts.onPlayFailure(e);
-        else handlePanPlayFailure(selectedItem, e, opts.handoffAction && opts.handoffAction.token);
+        else handlePanPlayFailure(selectedItem, e, opts.handoffAction && opts.handoffAction.token, detailPlayerReturn);
       }
     }
 
-    function handlePanPlayFailure(item, error, actionId) {
+    function handlePanPlayFailure(item, error, actionId, detailPlayerReturn) {
       localStorage.removeItem("fm_pan_playing");
       state.pan.isPlaying = false;
       state.pan.playbackReturn = null;
+      if (detailPlayerReturn && state.detailPlayerReturn === detailPlayerReturn) {
+        state.detailPlayerReturn = null;
+        const run = state.detailPlayback;
+        if (run && run.itemKey === detailPlayerReturn.itemKey && run.handoffStarted) {
+          run.handoffStarted = false;
+          run.playRequested = false;
+          run.active = false;
+          run.phase = run.candidate ? "READY" : "IDLE";
+          run.settledResult = run.candidate ? "READY" : "";
+          run.error = "";
+        }
+        updateDetailContinueButton();
+      }
       if (actionId && updateDirectPlayStatus(actionId, "FINAL_ERROR", DIRECT_PLAY_STATUS_TEXT.FINAL_ERROR, "play_failure")) {
         const status = state.directPlayStatus;
         clearTimeout(status.clearTimer);
@@ -38595,7 +38491,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       clearDirectPlayStatus(0, "route_leave");
       cancelPendingDirectPlay("detail_closed");
       cancelDetailPlaybackPreparation("detail_closed");
-      state.detailHistoryHandoff = null;
+      state.detailPlayerReturn = null;
       // 防止动画期间重复触发
       if (sheet.classList.contains("sheet-closing")) return;
 
@@ -39321,12 +39217,9 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
       }
       clearDirectPlayStatus(run.token, reason || "native_search_history_changed");
       run.candidate = null;
-      run.continueResource = null;
       run.playRequested = false;
       run.handoffStarted = false;
       cancelDetailPlaybackPreparation(reason || "native_search_history_changed");
-      if (state.detailHistoryHandoff && state.detailHistoryHandoff.item === item) state.detailHistoryHandoff = null;
-      state.historyResume = null;
       state.detailEpisodeTarget = null;
       if (state.pan && state.pan.directReady && state.pan.directReady.itemKey === itemKey) {
         state.pan.directReady = null;
@@ -42638,6 +42531,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         connectionOpen: !!($("connectionDock") && $("connectionDock").classList.contains("open")),
         selected: state.selected ? normalizeSnapshot(state.selected) : null,
         detailEpisodeTarget: state.detailEpisodeTarget || null,
+        detailPlayerReturn: state.detailPlayerReturn || null,
         detailScrollTop: detail ? Math.round(detail.scrollTop || 0) : 0,
         detailReturn: state.detailReturn || null,
         homeReturn: state.homeReturn || null,
@@ -42762,6 +42656,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
     async function restoreUiSnapshot(snapshot) {
       if (!snapshot) return false;
       state.detailReturn = snapshot.detailReturn || null;
+      state.detailPlayerReturn = snapshot.detailPlayerReturn || null;
       state.detailEpisodeTarget = snapshot.detailEpisodeTarget && normalizePlaybackTarget(snapshot.selected || state.selected, snapshot.detailEpisodeTarget) || null;
       const savedHomeReturn = normalizeLegacySavedState(snapshot.homeReturn || null);
       if (snapshot.homeRailScroll && typeof snapshot.homeRailScroll === "object") {
@@ -42812,7 +42707,8 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         openDetail(snapshot.selected, {
           restore: true,
           skipHistory: true,
-          playerReturnRestore: !!(snapshot.pan && snapshot.pan.playbackReturn),
+          playerReturnRestore: !!(snapshot.detailPlayerReturn || snapshot.pan && snapshot.pan.playbackReturn),
+          detailPlayerReturn: snapshot.detailPlayerReturn || null,
           panSnapshot: snapshot.pan || null
         });
         restorePanSnapshot(snapshot.pan);
@@ -42909,12 +42805,6 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             if (returnOptions.nativeSearchReturn === true) {
               await handleWebHomeResume({ force: true, playerReturn: true, nativeSearchReturn: true });
               nativeSearchReturnHandled = true;
-            // 盘搜播放返回：panSearchBlock 已 active，直接走盘搜恢复，不重渲染整个 detail
-            } else if (state.pan.playbackReturn && $("panSearchBlock") && $("panSearchBlock").classList.contains("active")) {
-              restorePanPlaybackReturn({});
-              await settlePlayerReturnHistory();
-              await loadRecentList({ refresh: true, silent: true, reconcileDetail: false });
-              reconcileDetailAfterNativeReturn(state.selected, "pan-play");
             } else {
               await handleWebHomeResume({ force: true, playerReturn: true, nativeSearchReturn: false });
             }
@@ -42931,12 +42821,14 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
             if (snapshot && snapshot.homeReturn) state.homeReturn = normalizeLegacySavedState(snapshot.homeReturn);
             if (snapshot && snapshot.selected && snapshot.route === "detail") {
               if (snapshot.detailReturn) state.detailReturn = snapshot.detailReturn;
+              state.detailPlayerReturn = snapshot.detailPlayerReturn || null;
               state.detailEpisodeTarget = snapshot.detailEpisodeTarget && normalizePlaybackTarget(snapshot.selected, snapshot.detailEpisodeTarget) || null;
               if (location.hash !== "#detail") history.replaceState({ sheet: "detail" }, "", "#detail");
               openDetail(snapshot.selected, {
                 restore: true,
                 skipHistory: true,
-                playerReturnRestore: !!(snapshot.pan && snapshot.pan.playbackReturn),
+                playerReturnRestore: !!(snapshot.detailPlayerReturn || snapshot.pan && snapshot.pan.playbackReturn),
+                detailPlayerReturn: snapshot.detailPlayerReturn || null,
                 panSnapshot: snapshot.pan || null
               });
               if (snapshot.pan) restorePanSnapshot(snapshot.pan);
@@ -43022,14 +42914,35 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         || !sheet || !sheet.classList.contains("active") || !item) return false;
       const run = state.detailPlayback && detailPlaybackIsCurrent(state.detailPlayback)
         && state.detailPlayback.item === item ? state.detailPlayback : null;
-      const handedOff = !!(run && (run.handoffStarted
+      const itemKey = panSearchItemKey(item);
+      let marker = state.detailPlayerReturn;
+      if (!marker || marker.itemKey !== itemKey) {
+        const hadPlayerReturn = !!(state.pan.playbackReturn || run && (run.handoffStarted
+          || ["STARTING_PLAYER", "PAN_PLAY_CALLED"].includes(String(run.phase || ""))));
+        if (!hadPlayerReturn) return false;
+        marker = state.detailPlayerReturn = { itemKey, handoffStarted: true, startedAt: Date.now(), returnedAt: 0 };
+      }
+      const handedOff = !!(marker.handoffStarted || run && (run.handoffStarted
         || ["STARTING_PLAYER", "PAN_PLAY_CALLED"].includes(String(run.phase || ""))));
       await loadRecentList({ refresh: true, silent: true, reconcileDetail: false }).catch(() => {});
       if (state.selected !== item || state.detailClosing || !$("detailSheet") || !$("detailSheet").classList.contains("active")) return false;
       if (handedOff && state.detailPlayback === run) {
         clearDirectPlayStatus(run.token, "player_returned");
-        cancelDetailPlaybackPreparation("player_returned");
+        run.handoffStarted = false;
+        run.playRequested = false;
+        if (run.candidate) {
+          run.active = false;
+          run.phase = "READY";
+          run.settledResult = "READY";
+          run.error = "";
+        } else {
+          run.phase = "IDLE";
+          run.settledResult = "";
+          run.error = "";
+        }
       }
+      marker.handoffStarted = false;
+      marker.returnedAt = Date.now();
       updateDetailContinueButton();
       return true;
     }
@@ -43056,7 +42969,7 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         } else await settlePlayerReturnHistory();
       }
       let detailRearmed = false;
-      if (isPlayerReturn && !isPanPlaybackReturn && opts.nativeSearchReturn !== true) {
+      if (isPlayerReturn && opts.nativeSearchReturn !== true) {
         detailRearmed = await rearmDetailPlaybackAfterPlayerReturn({ playerReturn: true });
       }
       if (restoreRecentNativeHome) await loadRecentList({ refresh: true, silent: true });

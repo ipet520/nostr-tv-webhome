@@ -146,7 +146,6 @@
     const CURATED_PREFLIGHT_BUDGET_MS = 700;
     const CURATED_PREFLIGHT_PER_SOURCE = 2;
     const CURATED_MAX_AUTO_CHECK_PER_SOURCE = 6;
-    const DETAIL_CONTINUE_GATE_MAX_MS = 300;
     const DETAIL_NATIVE_HISTORY_GATE_MAX_MS = 800;
     const CURATED_REQUEST_TIMEOUT_SEC = 6;
     const CURATED_REQUEST_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/149.0.0.0 Safari/537.36";
@@ -377,10 +376,9 @@
       previewMode: false,
       tvFullscreen: false,
       detailReturn: null,
-      detailHistoryHandoff: null,
-      detailPlayback: { seq: 0, token: "", itemKey: "", active: false, promise: null, candidate: null, sourceId: "", provider: "", playRequested: false, handoffStarted: false, history: null, historyVerified: false, episodeTarget: null, directAction: null, error: "", raceActive: false, providerCommitted: false, providerCommitCount: 0 },
+      detailPlayerReturn: null,
+      detailPlayback: { seq: 0, token: "", itemKey: "", active: false, promise: null, candidate: null, sourceId: "", provider: "", playRequested: false, handoffStarted: false, episodeTarget: null, directAction: null, error: "", raceActive: false, providerCommitted: false, providerCommitCount: 0 },
       detailEpisodeTarget: null,
-      historyResume: null,
       homeReturn: null,
       focusReturnEl: null,
       remoteInitialFocused: false,

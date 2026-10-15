@@ -687,11 +687,29 @@
         panFileId: item && (item.fileId || item.file_id) || "",
         resourceId: item && (item.resourceId || item.resource_id) || "",
         lastPlayUrl,
+        candidate: snapshotPanPlaybackCandidate(item),
         at: Date.now()
       };
       state.pan.focusKey = key;
       state.pan.focusMode = "results";
       await saveUiSnapshotNow();
+    }
+
+    function snapshotPanPlaybackCandidate(item) {
+      if (!item || typeof item !== "object") return null;
+      try { return JSON.parse(JSON.stringify(item)); } catch (e) { return null; }
+    }
+
+    function markDetailPlayerHandoff(item) {
+      const detail = $("detailSheet");
+      if (!item || state.selected !== item || !detail || !detail.classList.contains("active")) return null;
+      state.detailPlayerReturn = {
+        itemKey: panSearchItemKey(item),
+        handoffStarted: true,
+        startedAt: Date.now(),
+        returnedAt: 0
+      };
+      return state.detailPlayerReturn;
     }
 
     async function persistPlaybackBeforeNativeHandoff(item, episodeTarget, panItem, handoffAction) {
@@ -963,6 +981,7 @@
     async function playPanResult(item, options) {
       const opts = options || {};
       const selectedItem = state.selected;
+      const playbackContext = { token: state.pan.viewToken, item: selectedItem };
       const episodeTarget = normalizePlaybackTarget(selectedItem, opts.episodeTarget || currentPlaybackTargetForItem(selectedItem));
       const payload = buildPanPlayPayload(item);
       if (!payload) {
@@ -971,9 +990,8 @@
         return;
       }
       if (!opts.prechecked) {
-        const context = { token: state.pan.viewToken, item: selectedItem };
         if (opts.handoffAction) recordPanDirectHandoffStage("HEALTH_CHECK_START", selectedItem, opts.handoffAction, { healthCheckCandidateCount: 1 });
-        const preflight = await freshPanPreflight(item, context, { playback: true });
+        const preflight = await freshPanPreflight(item, playbackContext, { playback: true });
         if (opts.handoffAction) {
           recordPanDirectHandoffStage(preflight.timedOut ? "HEALTH_CHECK_TIMEOUT" : "HEALTH_CHECK_OK", selectedItem, opts.handoffAction, {
             healthCheckTimedOut: !!preflight.timedOut,
@@ -987,6 +1005,7 @@
         }
       }
       if (opts.handoffAction) recordPanDirectHandoffStage("SNAPSHOT_START", selectedItem, opts.handoffAction);
+      const detailPlayerReturn = selectedItem ? markDetailPlayerHandoff(selectedItem) : null;
       if (selectedItem) {
         const nativeIdentity = {
           siteKey: "push_agent",
@@ -1002,6 +1021,20 @@
       // Native handoff 前把播放器返回、History Context、Continue Index 做成
       // 一个有界 best-effort barrier；任何单项失败都不得阻塞 pan.play。
       await persistPlaybackBeforeNativeHandoff(selectedItem, episodeTarget, item, opts.handoffAction);
+      if (!panContextIsCurrent(playbackContext)) {
+        if (detailPlayerReturn && state.detailPlayerReturn === detailPlayerReturn) {
+          state.detailPlayerReturn = null;
+          const run = state.detailPlayback;
+          if (run && run.itemKey === detailPlayerReturn.itemKey && run.handoffStarted) {
+            run.handoffStarted = false;
+            run.playRequested = false;
+            run.active = false;
+            run.phase = run.candidate ? "READY" : "IDLE";
+            run.settledResult = run.candidate ? "READY" : "";
+          }
+        }
+        return;
+      }
       try {
         const pan = sdk().pan || {};
         if (!pan.play) throw new Error("当前 App 不支持 pan.play");
@@ -1015,19 +1048,32 @@
         if (result && typeof result.catch === "function") {
           result.catch((error) => {
             if (typeof opts.onPlayFailure === "function") opts.onPlayFailure(error);
-            else handlePanPlayFailure(selectedItem, error, opts.handoffAction && opts.handoffAction.token);
+            else handlePanPlayFailure(selectedItem, error, opts.handoffAction && opts.handoffAction.token, detailPlayerReturn);
           });
         }
       } catch (e) {
         if (typeof opts.onPlayFailure === "function") opts.onPlayFailure(e);
-        else handlePanPlayFailure(selectedItem, e, opts.handoffAction && opts.handoffAction.token);
+        else handlePanPlayFailure(selectedItem, e, opts.handoffAction && opts.handoffAction.token, detailPlayerReturn);
       }
     }
 
-    function handlePanPlayFailure(item, error, actionId) {
+    function handlePanPlayFailure(item, error, actionId, detailPlayerReturn) {
       localStorage.removeItem("fm_pan_playing");
       state.pan.isPlaying = false;
       state.pan.playbackReturn = null;
+      if (detailPlayerReturn && state.detailPlayerReturn === detailPlayerReturn) {
+        state.detailPlayerReturn = null;
+        const run = state.detailPlayback;
+        if (run && run.itemKey === detailPlayerReturn.itemKey && run.handoffStarted) {
+          run.handoffStarted = false;
+          run.playRequested = false;
+          run.active = false;
+          run.phase = run.candidate ? "READY" : "IDLE";
+          run.settledResult = run.candidate ? "READY" : "";
+          run.error = "";
+        }
+        updateDetailContinueButton();
+      }
       if (actionId && updateDirectPlayStatus(actionId, "FINAL_ERROR", DIRECT_PLAY_STATUS_TEXT.FINAL_ERROR, "play_failure")) {
         const status = state.directPlayStatus;
         clearTimeout(status.clearTimer);
@@ -1050,7 +1096,7 @@
       clearDirectPlayStatus(0, "route_leave");
       cancelPendingDirectPlay("detail_closed");
       cancelDetailPlaybackPreparation("detail_closed");
-      state.detailHistoryHandoff = null;
+      state.detailPlayerReturn = null;
       // 防止动画期间重复触发
       if (sheet.classList.contains("sheet-closing")) return;
 
@@ -1776,12 +1822,9 @@
       }
       clearDirectPlayStatus(run.token, reason || "native_search_history_changed");
       run.candidate = null;
-      run.continueResource = null;
       run.playRequested = false;
       run.handoffStarted = false;
       cancelDetailPlaybackPreparation(reason || "native_search_history_changed");
-      if (state.detailHistoryHandoff && state.detailHistoryHandoff.item === item) state.detailHistoryHandoff = null;
-      state.historyResume = null;
       state.detailEpisodeTarget = null;
       if (state.pan && state.pan.directReady && state.pan.directReady.itemKey === itemKey) {
         state.pan.directReady = null;
