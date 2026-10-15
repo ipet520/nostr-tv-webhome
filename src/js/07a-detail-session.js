@@ -163,7 +163,10 @@
         if (!resume) {
           const preflight = await freshPanPreflight(candidate, { token: state.pan.viewToken, item: selected }, { playback: true });
           if (!current() || preflight.cancelled) return false;
-          if (opts.prechecked && (isPanHealthBad(candidate) || !panAutoHealthAdmission(candidate, {}).accepted)) throw new Error("本次会话资源已失效，请重新准备");
+          const freshHealth = preflight.available
+            ? { [panHealthKey(candidate)]: preflight.state || "uncertain" }
+            : {};
+          if (opts.prechecked && !panAutoHealthAdmission(candidate, freshHealth).accepted) throw new Error("本次会话资源已失效，请重新准备");
           if (!opts.prechecked && isPanHealthBad(candidate)) toast("该资源检测可能失效，仍尝试播放");
         }
         rememberDetailReturn($("detailContinueBtn"));
