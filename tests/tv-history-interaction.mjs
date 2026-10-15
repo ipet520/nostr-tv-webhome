@@ -18,7 +18,7 @@ const hook = `window.testBrowse = { state, renderAll, renderTvBrowse, tvBrowseSt
  buildUiSnapshot, restoreUiSnapshot, openSidebar, closeSidebar, openSearchPage, closeSearchPage,
  bindActions, installRemoteKeys, secondaryActiveQuery, syncBrowseDevicePresentation, handleWebHomeResume, boot,
  schedulePlayerReturn,
- RECENT_DOUBLE_PRESS_WINDOW_MS, cancelRecentDeleteArm, isVisibleFocusable, tvHistoryPressItem, tvPresentationStatus, homeHeroPresentationStatus, tvEpisodeStatusLabel, normalizeHistoryList, tvBrowseCloseHistory, tvBrowseContinueHistory, tvBrowseQueryKey, tvBrowseOpenHistory, tvBrowsePreview, publishHomeWeeklySnapshot, enterRecentManageMode, exitRecentManageMode, nativeHistoryRefreshPending,
+ RECENT_DOUBLE_PRESS_WINDOW_MS, cancelRecentDeleteArm, isVisibleFocusable, tvHistoryPressItem, recentWatchingCard, recentWatchingPressKey, tvPresentationStatus, homeHeroPresentationStatus, tvEpisodeStatusLabel, normalizeHistoryList, normalizeRecentWatchingItems, tvBrowseCloseHistory, tvBrowseContinueHistory, tvBrowseQueryKey, tvBrowseOpenHistory, tvBrowsePreview, publishHomeWeeklySnapshot, enterRecentManageMode, exitRecentManageMode, nativeHistoryRefreshPending,
  openDetail, closeDetail, sdk, loadRecentList, renderHomeRecent, tvBrowseBeginStartup, homeFocusUserEpoch, storeMovieDetailCache, storeTvDetailCache, updateMovieReleaseStatusCards, requestMovieDetailShared, homeEnrichmentRequest, bestDetailLogo, tvBrowseClearPreview, focusRemoteTarget, artLogoResource, prepareArtLogo, renderDetailTitleLogo };
  window.testBrowse.disableTracking = () => { rememberWatchIntent = () => {}; startWatchTracking = () => {}; saveHistoryPlaybackContext = async () => {}; };
  window.testBrowse.setup = () => {
@@ -166,16 +166,59 @@ async function checks() {
   assert.equal(await returnPage.locator('#tvHistoryTime').textContent(),'0:30 / 1:40','the selected history progress must refresh after a second return inside the prior grace window');
   await ok('NEW_PLAYER_RETURN_DURING_ACTIVE_REFRESH_IS_QUEUED_AND_RECONCILED',returnPage);
   returnPage=await historyPage();
+  const repeatedReturnPageToken=await returnPage.evaluate(()=>{window.__repeatedReturnPageToken='same-document';return window.__repeatedReturnPageToken;});
+  await returnPage.evaluate(()=>{
+    window.__historyTrace=[];
+    const original=console.debug.bind(console);
+    console.debug=(...args)=>{
+      const message=String(args[0]||'');
+      if(/^(PLAYER_RETURN_TRANSACTION_START|PLAYER_RETURN_QUEUED|NATIVE_HISTORY_CHANGE_REFRESH|RECENT_LOAD_START|RECENT_LOAD_COMMIT)/.test(message)) {
+        window.__historyTrace.push([message].concat(args.slice(1).map(value=>typeof value==='string'?value:JSON.stringify(value))).join(' '));
+      }
+      original(...args);
+    };
+  });
   for(let cycle=1;cycle<=3;cycle++) {
-    await returnPage.locator('#tvBrowseRail .card').first().focus();
+    const traceStart=await returnPage.evaluate(()=>window.__historyTrace.length);
+    const target=await returnPage.locator('#tvBrowseRail .card').nth(cycle-1).evaluate(card=>({
+      key:card.__mediaItem.nativeHistoryKey,title:card.__mediaItem.title
+    }));
+    await returnPage.locator('#tvBrowseRail .card').nth(cycle-1).focus();
     await returnPage.evaluate(()=>document.activeElement.click());
     await returnPage.waitForFunction(cycle=>vodCalls.length===cycle,cycle);
+    assert.equal(await returnPage.evaluate(()=>localStorage.getItem('fm_pan_playing')),'1',`cycle ${cycle} sets the Native handoff marker`);
     const reads=await returnPage.evaluate(()=>historyReads);
     await returnPage.evaluate(()=>{window.dispatchEvent(new Event('fmpause'));window.dispatchEvent(new Event('fmresume'));});
     await returnPage.waitForFunction(reads=>historyReads>reads&&!localStorage.getItem('fm_pan_playing'),reads);
-    await returnPage.waitForTimeout(2250);
+    await returnPage.waitForFunction(()=>!testBrowse.state.recent.loading&&!testBrowse.schedulePlayerReturn._pending&&!testBrowse.schedulePlayerReturn._running,null,{timeout:5000});
+    const nextPosition=cycle*17000;
+    await returnPage.evaluate(({key,nextPosition,cycle})=>{
+      const native=historyFixture.find(item=>item.key===key);
+      if(!native)throw new Error('returned Native record disappeared: '+key);
+      native.position=nextPosition;native.duration=100000;native.createTime=Date.now()+cycle*10000;
+      historyFixture.sort((a,b)=>Number(b.createTime||0)-Number(a.createTime||0));
+      window.dispatchEvent(new CustomEvent('fmhistorychange',{detail:{version:1}}));
+    },{...target,nextPosition,cycle});
+    await returnPage.waitForFunction(({key,nextPosition})=>{
+      const item=testBrowse.state.recent.items.find(entry=>entry.nativeHistoryKey===key);
+      return item&&item.nativeHistoryRaw.position===nextPosition&&!testBrowse.state.recent.loading
+        &&testBrowse.state.recent.nativeHistoryCommittedRevision===testBrowse.state.recent.nativeHistoryRevision;
+    },{key:target.key,nextPosition},{timeout:5000});
+    assert.equal(await returnPage.evaluate(key=>testBrowse.state.recent.items[0].nativeHistoryKey===key,target.key),true,`cycle ${cycle} commits changed Native ordering`);
+    assert.equal(await returnPage.locator('#tvHistoryTime').textContent(),`0:${String(nextPosition/1000).padStart(2,'0')} / 1:40`,`cycle ${cycle} renders the latest playback position`);
+    assert.equal(await returnPage.locator('#tvHistoryProgress > span').evaluate(e=>e.style.width),`${nextPosition/1000}%`);
+    assert.equal(await returnPage.evaluate(()=>window.__repeatedReturnPageToken),repeatedReturnPageToken,'repeated return keeps the same HTML document');
+    const trace=await returnPage.evaluate(start=>window.__historyTrace.slice(start),traceStart);
+    assert.ok(trace.some(line=>line.startsWith('PLAYER_RETURN_TRANSACTION_START')),`cycle ${cycle} starts a player-return transaction`);
+    assert.ok(trace.some(line=>line.startsWith('NATIVE_HISTORY_CHANGE_REFRESH')),`cycle ${cycle} receives the post-commit Native event`);
+    assert.ok(trace.some(line=>line.startsWith('RECENT_LOAD_COMMIT')),`cycle ${cycle} commits a Native History read`);
+    console.log(`HISTORY_RETURN_CYCLE_${cycle} = `+JSON.stringify({state:await returnPage.evaluate(()=>({
+      marker:localStorage.getItem('fm_pan_playing'),nativeRevision:testBrowse.state.recent.nativeHistoryRevision,
+      committedRevision:testBrowse.state.recent.nativeHistoryCommittedRevision,reads:historyReads,
+      selectedTime:document.querySelector('#tvHistoryTime').textContent
+    })),trace}));
   }
-  await ok('THREE_HISTORY_POSTER_CLICK_RETURN_CYCLES_WITH_LIVE_HISTORY_REFRESH',returnPage);
+  await ok('THREE_HISTORY_POSTER_RETURN_CYCLES_REFRESH_PROGRESS_AND_ORDER_WITHOUT_RELOAD',returnPage);
   returnPage=await historyPage();
   const beforeResumeReads=await returnPage.evaluate(()=>historyReads);
   await returnPage.evaluate(()=>{
@@ -447,8 +490,20 @@ async function checks() {
   p=await historyPage(1);await press(p,'Enter');await press(p,'Enter');await p.evaluate(()=>{testBrowse.state.recent.items=[];});await press(p,'Enter');await waitWindow(p);
   assert.equal((await counts(p)).deleted,0);assert.equal((await counts(p)).vod,0);assert.equal((await counts(p)).armed,'');await ok('INVALIDATED_ARM_CANNOT_DELETE',p);
 
-  p=await historyPage(3);await p.locator('#tvBrowseRail .card').first().focus();await press(p,'Enter');await press(p,'Enter');
+  p=await historyPage(3);await p.locator('#tvBrowseRail .card').first().focus();await press(p,'Enter');await press(p,'Enter');await press(p,'Enter');
   await p.waitForFunction(()=>historyFixture.length===2&&document.querySelectorAll('#tvBrowseRail .card').length===2);
+  const remainingAfterFirstDelete=await p.evaluate(()=>Array.from(document.querySelectorAll('#tvBrowseRail .card')).map(card=>({
+    title:card.__mediaItem&&card.__mediaItem.title,
+    recentWatching:!!(card.__mediaItem&&card.__mediaItem.recentWatching),
+    cssClass:card.classList.contains('recent-watching-card'),
+    recentCard:testBrowse.recentWatchingCard(card)===card,
+    remoteKey:testBrowse.recentWatchingPressKey(card)
+  })));
+  assert.equal(remainingAfterFirstDelete.length,2);
+  assert.ok(remainingAfterFirstDelete.every(card=>card.recentWatching&&card.cssClass&&card.recentCard&&card.remoteKey),
+    'Native deletion readback must leave every remaining card eligible for the history remote-key path');
+  results.push('DELETE_READBACK_RETAINS_HISTORY_CARD_REMOTE_IDENTITY');
+  console.log('DELETE_READBACK_RETAINS_HISTORY_CARD_REMOTE_IDENTITY = PASS');
   await p.evaluate(()=>{historyFixture[0].position=456000;historyFixture[0].duration=1000000;historyFixture[0].createTime=Date.now()+5000;historyReadFailureCount=1;window.dispatchEvent(new CustomEvent('fmhistorychange',{detail:{version:1}}));});
   await p.waitForFunction(()=>testBrowse.state.recent.items[0]&&testBrowse.state.recent.items[0].position===456000&&!testBrowse.state.recent.loading,null,{timeout:5000});
   assert.equal(await p.locator('#tvHistoryTime').textContent(),'7:36 / 16:40','a failed read after deletion must recover the current Native progress');
@@ -456,7 +511,69 @@ async function checks() {
   await p.locator('#tvBrowseRail .card').first().focus();await press(p,'Enter');await press(p,'Enter');
   await p.waitForFunction(()=>historyFixture.length===1&&document.querySelectorAll('#tvBrowseRail .card').length===1);
   assert.equal((await counts(p)).deleted,2,'double-delete remains available after a successful deletion and refresh retry');
-  await ok('DELETE_THEN_TRANSIENT_READ_FAILURE_RETRY_AND_SECOND_DELETE',p);
+  const afterSecondDelete=await p.evaluate(()=>Array.from(document.querySelectorAll('#tvBrowseRail .card')).map(card=>({
+    recentWatching:!!(card.__mediaItem&&card.__mediaItem.recentWatching),
+    cssClass:card.classList.contains('recent-watching-card'),
+    recentCard:testBrowse.recentWatchingCard(card)===card,
+    remoteKey:testBrowse.recentWatchingPressKey(card)
+  })));
+  assert.equal(afterSecondDelete.length,1);
+  assert.ok(afterSecondDelete.every(card=>card.recentWatching&&card.cssClass&&card.recentCard&&card.remoteKey),
+    'the second authoritative readback must preserve remote recognition on the final record');
+  await p.locator('#tvBrowseRail .card').first().focus();await press(p,'Enter');await press(p,'Enter');await press(p,'Enter');
+  await p.waitForFunction(()=>historyFixture.length===0&&document.querySelectorAll('#tvBrowseRail .card').length===0);
+  assert.equal((await counts(p)).deleted,3,'the final remaining card still reaches Native deletion');
+  await ok('DELETE_THEN_TRANSIENT_READ_FAILURE_RETRY_AND_CONTINUOUS_REMAINING_DELETES',p);
+
+  p=await historyPage(3);
+  const deletePlayPageToken=await p.evaluate(()=>{window.__deletePlayPageToken='same-document';return window.__deletePlayPageToken;});
+  await p.locator('#tvBrowseRail .card').first().focus();await press(p,'Enter');await press(p,'Enter');await press(p,'Enter');
+  await p.waitForFunction(()=>historyFixture.length===2&&document.querySelectorAll('#tvBrowseRail .card').length===2);
+  const playedAfterDelete=await p.locator('#tvBrowseRail .card').nth(1).evaluate(card=>({
+    key:card.__mediaItem.nativeHistoryKey,title:card.__mediaItem.title
+  }));
+  await p.locator('#tvBrowseRail .card').nth(1).focus();await p.evaluate(()=>document.activeElement.click());
+  await p.waitForFunction(()=>vodCalls.length===1);
+  assert.equal(await p.evaluate(()=>localStorage.getItem('fm_pan_playing')),'1');
+  const readsBeforeAlternatingReturn=await p.evaluate(()=>historyReads);
+  await p.evaluate(()=>{window.dispatchEvent(new Event('fmpause'));window.dispatchEvent(new Event('fmresume'));});
+  await p.waitForFunction(reads=>historyReads>reads&&!localStorage.getItem('fm_pan_playing'),readsBeforeAlternatingReturn);
+  await p.waitForFunction(()=>!testBrowse.state.recent.loading&&!testBrowse.schedulePlayerReturn._pending&&!testBrowse.schedulePlayerReturn._running,null,{timeout:5000});
+  await p.evaluate(({key})=>{
+    const native=historyFixture.find(item=>item.key===key);
+    native.position=64000;native.duration=100000;native.createTime=Date.now()+20000;
+    historyFixture.sort((a,b)=>Number(b.createTime||0)-Number(a.createTime||0));
+    window.dispatchEvent(new CustomEvent('fmhistorychange',{detail:{version:1}}));
+  },playedAfterDelete);
+  await p.waitForFunction(({key})=>{
+    const item=testBrowse.state.recent.items.find(entry=>entry.nativeHistoryKey===key);
+    return item&&item.nativeHistoryRaw.position===64000&&!testBrowse.state.recent.loading
+      &&testBrowse.state.recent.nativeHistoryCommittedRevision===testBrowse.state.recent.nativeHistoryRevision;
+  },playedAfterDelete,{timeout:5000});
+  assert.equal(await p.locator('#tvHistoryTime').textContent(),'1:04 / 1:40');
+  assert.equal(await p.locator('#tvHistoryProgress > span').evaluate(e=>e.style.width),'64%');
+  assert.equal(await p.evaluate(key=>testBrowse.state.recent.items[0].nativeHistoryKey===key,playedAfterDelete.key),true);
+  const interactiveAfterReturn=await p.evaluate(()=>Array.from(document.querySelectorAll('#tvBrowseRail .card')).map(card=>({
+    recentWatching:!!(card.__mediaItem&&card.__mediaItem.recentWatching),
+    cssClass:card.classList.contains('recent-watching-card'),
+    remoteKey:testBrowse.recentWatchingPressKey(card)
+  })));
+  assert.equal(interactiveAfterReturn.length,2);
+  assert.ok(interactiveAfterReturn.every(card=>card.recentWatching&&card.cssClass&&card.remoteKey));
+  await p.evaluate(key=>Array.from(document.querySelectorAll('#tvBrowseRail .card')).find(card=>card.__mediaItem.nativeHistoryKey===key).focus(),playedAfterDelete.key);
+  await press(p,'Enter');await press(p,'Enter');await press(p,'Enter');
+  await p.waitForFunction(key=>historyFixture.length===1&&historyFixture[0].key!==key&&document.querySelectorAll('#tvBrowseRail .card').length===1,playedAfterDelete.key);
+  const lastCardState=await p.locator('#tvBrowseRail .card').first().evaluate(card=>({
+    recentWatching:!!(card.__mediaItem&&card.__mediaItem.recentWatching),
+    cssClass:card.classList.contains('recent-watching-card'),
+    remoteKey:testBrowse.recentWatchingPressKey(card)
+  }));
+  assert.ok(lastCardState.recentWatching&&lastCardState.cssClass&&lastCardState.remoteKey);
+  await p.locator('#tvBrowseRail .card').first().focus();await press(p,'Enter');await press(p,'Enter');await press(p,'Enter');
+  await p.waitForFunction(()=>historyFixture.length===0&&document.querySelectorAll('#tvBrowseRail .card').length===0);
+  assert.equal((await counts(p)).vod,1);assert.equal((await counts(p)).deleted,3);
+  assert.equal(await p.evaluate(()=>window.__deletePlayPageToken),deletePlayPageToken,'delete/play/delete keeps one HTML page');
+  await ok('DELETE_PLAY_RETURN_REFRESH_AND_REPEATED_DELETE_WITHOUT_RELOAD',p);
 
   p=await historyPage(1);await p.locator('#tvBrowseRail .card').click();assert.equal((await counts(p)).vod,0);await waitWindow(p);assert.equal((await counts(p)).vod,1);
   await ok('POINTER_CLICK_USES_SAME_SINGLE_PRESS_WINDOW',p);

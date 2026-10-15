@@ -67,11 +67,10 @@
               await loadHistoryContextIndex();
               if (!state.watch || !state.watch.item) await loadPendingWatch();
               const list = await readNativeHistoryForUi();
-              normalized = normalizeHistoryList(list);
+              normalized = normalizeRecentWatchingItems(list);
               detailItems = normalizeHistoryList(list && list.version === 1 ? list.legacy || [] : list);
               referenceVersion = list && list.version === 1 ? 1 : 0;
               normalized.forEach((item) => recordRecentNativeKeyFlow("RECENT_NATIVE_KEY_AT_LOAD", item));
-              normalized.forEach((item) => { item.recentWatching = true; });
             } catch (e) {
               error = e;
             }

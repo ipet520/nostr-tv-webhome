@@ -21531,6 +21531,12 @@ utils.encode = function encode(arr, enc) {
       return normalized;
     }
 
+    function normalizeRecentWatchingItems(list) {
+      const items = normalizeHistoryList(list);
+      items.forEach((item) => { item.recentWatching = true; });
+      return items;
+    }
+
     function detailHistoryTitleCandidates(item) {
       return [
         item && item.title,
@@ -22946,11 +22952,10 @@ utils.encode = function encode(arr, enc) {
               await loadHistoryContextIndex();
               if (!state.watch || !state.watch.item) await loadPendingWatch();
               const list = await readNativeHistoryForUi();
-              normalized = normalizeHistoryList(list);
+              normalized = normalizeRecentWatchingItems(list);
               detailItems = normalizeHistoryList(list && list.version === 1 ? list.legacy || [] : list);
               referenceVersion = list && list.version === 1 ? 1 : 0;
               normalized.forEach((item) => recordRecentNativeKeyFlow("RECENT_NATIVE_KEY_AT_LOAD", item));
-              normalized.forEach((item) => { item.recentWatching = true; });
             } catch (e) {
               error = e;
             }
@@ -23900,7 +23905,7 @@ utils.encode = function encode(arr, enc) {
           results.push(present.has(entry.key) && ["DELETED", "NOT_FOUND"].includes(result.status)
             ? { displayId: entry.key, status: "FAILED", message: "原生回读仍存在该记录" } : result);
         });
-        state.recent.items = normalizeHistoryList(response.readback);
+        state.recent.items = normalizeRecentWatchingItems(response.readback);
         state.recent.detailItems = normalizeHistoryList(response.readback.legacy || []);
         state.recent.loaded = true; state.recent.error = ""; state.recent.refreshedAt = Date.now();
         // An in-flight older list must not resurrect deleted cards.

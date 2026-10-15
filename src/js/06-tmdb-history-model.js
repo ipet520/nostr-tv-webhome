@@ -775,6 +775,12 @@
       return normalized;
     }
 
+    function normalizeRecentWatchingItems(list) {
+      const items = normalizeHistoryList(list);
+      items.forEach((item) => { item.recentWatching = true; });
+      return items;
+    }
+
     function detailHistoryTitleCandidates(item) {
       return [
         item && item.title,

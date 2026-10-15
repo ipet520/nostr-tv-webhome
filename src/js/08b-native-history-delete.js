@@ -68,7 +68,7 @@
           results.push(present.has(entry.key) && ["DELETED", "NOT_FOUND"].includes(result.status)
             ? { displayId: entry.key, status: "FAILED", message: "原生回读仍存在该记录" } : result);
         });
-        state.recent.items = normalizeHistoryList(response.readback);
+        state.recent.items = normalizeRecentWatchingItems(response.readback);
         state.recent.detailItems = normalizeHistoryList(response.readback.legacy || []);
         state.recent.loaded = true; state.recent.error = ""; state.recent.refreshedAt = Date.now();
         // An in-flight older list must not resurrect deleted cards.

@@ -58,7 +58,7 @@ c.saveHistoryPlaybackContext=async()=>{};
 vm.runInContext('const contractSdk={vod:'+expressions.vod+',history:'+expressions.history+',historyDelete:'+expressions.historyDelete+'}; function sdk(){return contractSdk;}',c);
 const results=[];
 async function test(name,fn){await fn();results.push(name);console.log(name+' = PASS');}
-function load(){c.state.recent.items=c.normalizeHistoryList(read());return c.state.recent.items;}
+function load(){c.state.recent.items=c.normalizeRecentWatchingItems(read());return c.state.recent.items;}
 const resumeSource=source('22-snapshot-resume-boot.js');
 const historyEventListener=resumeSource.match(/window\.addEventListener\("fmhistorychange", (\(event\) => \{[\s\S]*?\n    \})\);/);
 assert.ok(historyEventListener,'the production versioned Native History event listener is extractable');
@@ -120,13 +120,36 @@ await test('inactive Native event remains pending until the next history read',a
  assert.equal(c.state.recent.items[0].position,456000);
  assert.equal(calls.filter(call=>call.method==='app.history').length,readsBefore+1,'pending revision forces a fresh read despite the normal Recent TTL');
 });
+await test('three consecutive post-playback Native events commit progress and ordering',async()=>{
+ native.legacy=false;native.envelope=null;native.historyQueue=null;native.historyFailureCount=0;
+ native.rows=[raw('A',{position:10000,duration:1000000,createTime:1000}),raw('B',{position:20000,duration:1000000,createTime:2000}),raw('C',{position:30000,duration:1000000,createTime:3000})];
+ c.tvBrowseActive=()=>true;c.state.activeList='all';c.state.recent.items=load();c.state.recent.loaded=true;
+ c.state.recent.loading=false;c.state.recent.loadingPromise=null;c.state.recent.pendingRefresh=false;
+ c.state.recent.nativeHistoryRevision=0;c.state.recent.nativeHistoryCommittedRevision=0;
+ for(let cycle=1;cycle<=3;cycle++){
+  const key=['A','B','C'][cycle-1]+'@@@vod@@@7';
+  const row=native.rows.find(item=>item.key===key);
+  row.position=cycle*111000;row.duration=1000000;row.createTime=10000+cycle*1000;
+  native.rows.sort((a,b)=>Number(b.createTime||0)-Number(a.createTime||0));
+  handleHistoryChange({detail:{version:1}});
+  const pending=c.state.recent.loadingPromise;
+  assert.ok(pending,`cycle ${cycle} starts a Native History read`);
+  await pending;
+  assert.equal(c.state.recent.items[0].nativeHistoryKey,key,`cycle ${cycle} commits the latest Native ordering`);
+  assert.equal(c.state.recent.items.find(item=>item.nativeHistoryKey===key).position,cycle*111000,`cycle ${cycle} commits the current progress`);
+  assert.equal(c.state.recent.items.every(item=>item.recentWatching===true),true,`cycle ${cycle} preserves history interaction metadata`);
+  assert.equal(c.state.recent.nativeHistoryCommittedRevision,c.state.recent.nativeHistoryRevision,`cycle ${cycle} consumes its invalidation`);
+ }
+ native.rows=[raw('A',{position:10000,duration:1000000,createTime:1000}),raw('B',{position:20000,duration:1000000,createTime:2000}),raw('C',{position:30000,duration:1000000,createTime:3000})];
+ c.state.recent.items=load();c.state.recent.nativeHistoryRevision=0;c.state.recent.nativeHistoryCommittedRevision=0;
+});
 await test('opening history during an older in-flight read queues a trailing Native refresh',async()=>{
  native.envelope=null;native.historyQueue=[];c.tvBrowseActive=()=>false;
  c.state.activeList='all';c.state.recent.items=load();c.state.recent.loaded=true;
  c.state.recent.nativeHistoryRevision=0;c.state.recent.nativeHistoryCommittedRevision=0;
  const stale=read();const pending=c.loadRecentList({refresh:true,silent:true,reconcileDetail:false});
  await waitFor(()=>native.historyQueue.length===1);
- native.rows[0]=Object.assign({},native.rows[0],{position:333000,createTime:5000});const fresh=read();
+ native.rows[0]=Object.assign({},native.rows[0],{position:333000,createTime:5000});native.rows.sort((a,b)=>Number(b.createTime||0)-Number(a.createTime||0));const fresh=read();
  handleHistoryChange({detail:{version:1}});
  assert.equal(c.nativeHistoryRefreshPending(),true);
  c.tvBrowseActive=()=>true;
@@ -150,6 +173,13 @@ await test('a transient Native read failure after deletion preserves the last-go
  const deleted=c.state.recent.items[0];
  const deleteResults=await c.deleteHistoryRecords([deleted]);
  assert.equal(deleteResults[0].status,'DELETED');assert.equal(c.state.recent.items.length,2);assert.equal(c.state.recent.error,'','a verified delete readback clears a stale read error');
+ assert.ok(c.state.recent.items.every(item=>item.recentWatching===true),'authoritative delete readback keeps every remaining record interactive');
+ c.tvBrowseActive=()=>true;c.tvBrowseState=()=>({view:'history'});
+ const remainingCards=c.state.recent.items.map(item=>({__mediaItem:item,isConnected:true,
+  classList:{contains:name=>name==='recent-watching-card'},
+  closest(selector){return selector==='.recent-watching-card'||selector==='#tvBrowseRail'?this:null;}}));
+ assert.ok(remainingCards.every(card=>c.recentWatchingCard(card)===card&&c.recentWatchingPressKey(card)),
+  'remaining records retain the exact card and remote-key recognition gates used by TV history');
  native.rows[0]=Object.assign({},native.rows[0],{position:156000,createTime:5000});native.historyFailureCount=1;
  const readsBefore=calls.filter(call=>call.method==='app.history').length;
  handleHistoryChange({detail:{version:1}});
