@@ -1748,6 +1748,58 @@
       await settleWatchFromHistory();
     }
 
+    function retireDetailPreparedPlaybackAfterNativeSearch(item, marker, reason) {
+      if (!item || state.selected !== item || !marker) return false;
+      const itemKey = panSearchItemKey(item);
+      if (String(marker.itemKey || "") !== itemKey) return false;
+      const capturedRunToken = Number(marker.detailRunToken || 0) || 0;
+      const capturedRunItemKey = String(marker.detailRunItemKey || "").trim();
+      const run = state.detailPlayback && detailPlaybackIsCurrent(state.detailPlayback)
+        ? state.detailPlayback
+        : null;
+      const capturedRunMatches = !!(run && capturedRunToken
+        && capturedRunItemKey === itemKey
+        && String(run.itemKey || "") === capturedRunItemKey
+        && Number(run.token || 0) === capturedRunToken);
+      if (!capturedRunMatches) {
+        try {
+          console.debug("NATIVE_SEARCH_PREPARED_RETIRE_SKIPPED", JSON.stringify({
+            itemKey,
+            reason: reason || "native_search_history_changed",
+            capturedRunToken,
+            currentRunToken: Number(run && run.token || 0),
+            capturedRunItemKey,
+            currentRunItemKey: String(run && run.itemKey || "")
+          }));
+        } catch (e) {}
+        return false;
+      }
+      clearDirectPlayStatus(run.token, reason || "native_search_history_changed");
+      run.candidate = null;
+      run.continueResource = null;
+      run.playRequested = false;
+      run.handoffStarted = false;
+      cancelDetailPlaybackPreparation(reason || "native_search_history_changed");
+      if (state.detailHistoryHandoff && state.detailHistoryHandoff.item === item) state.detailHistoryHandoff = null;
+      state.historyResume = null;
+      state.detailEpisodeTarget = null;
+      if (state.pan && state.pan.directReady && state.pan.directReady.itemKey === itemKey) {
+        state.pan.directReady = null;
+      }
+      if (state.pan && state.pan.directFailure && state.pan.directFailure.itemKey === itemKey) {
+        state.pan.directFailure = null;
+      }
+      try {
+        console.debug("NATIVE_SEARCH_PREPARED_RETIRED", JSON.stringify({
+          itemKey,
+          reason: reason || "native_search_history_changed",
+          runToken: Number(run.token || 0),
+          capturedRunToken
+        }));
+      } catch (e) {}
+      return true;
+    }
+
     function reconcileDetailAfterNativeReturn(item, origin) {
       const detail = $("detailSheet");
       if (state.detailClosing || !detail || !detail.classList.contains("active") || !item || state.selected !== item) return false;

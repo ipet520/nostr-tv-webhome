@@ -520,12 +520,17 @@
       const sheet = $("detailSheet");
       if (opts.playerReturn !== true || opts.manualPanPlaybackReturn === true || state.detailClosing
         || !sheet || !sheet.classList.contains("active") || !item) return false;
+      const run = state.detailPlayback && detailPlaybackIsCurrent(state.detailPlayback)
+        && state.detailPlayback.item === item ? state.detailPlayback : null;
+      const handedOff = !!(run && (run.handoffStarted
+        || ["STARTING_PLAYER", "PAN_PLAY_CALLED"].includes(String(run.phase || ""))));
       await loadRecentList({ refresh: true, silent: true, reconcileDetail: false }).catch(() => {});
       if (state.selected !== item || state.detailClosing || !$("detailSheet") || !$("detailSheet").classList.contains("active")) return false;
-      prepareDetailPlaybackForDetail(item, {
-        reason: "player_return_rearm",
-        playerReturnRestore: true
-      }).catch(() => {});
+      if (handedOff && state.detailPlayback === run) {
+        clearDirectPlayStatus(run.token, "player_returned");
+        cancelDetailPlaybackPreparation("player_returned");
+      }
+      updateDetailContinueButton();
       return true;
     }
 

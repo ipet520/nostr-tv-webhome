@@ -113,6 +113,9 @@
               })); } catch (e) {}
               if (state.activeList === "recent") renderActiveGrid();
               if (state.activeList === "all") renderHome();
+              if (!error && state.selected && $("detailSheet") && $("detailSheet").classList.contains("active")) {
+                updateDetailContinueButton();
+              }
             }
             if (recent.activeRun === run) recent.activeRun = null;
             if (!recent.pendingRefresh) break;

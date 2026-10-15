@@ -47,10 +47,11 @@
         });
       }
       // 当前会话仍使用原 Curated/Direct 竞争和健康准入。
-      prepareDetailPlaybackForDetail(item, {
-        reason: "detail_open",
-        playerReturnRestore: opts.playerReturnRestore === true
-      }).catch(() => {});
+      if (opts.playerReturnRestore !== true) {
+        prepareDetailPlaybackForDetail(item, {
+          reason: "detail_open"
+        }).catch(() => {});
+      }
       ensureSheetViewport($("detailSheet"));
       syncDetailLayout();
       document.body.classList.add("detail-active");

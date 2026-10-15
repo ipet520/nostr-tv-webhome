@@ -837,17 +837,18 @@
       button.__historyItem = null;
       button.style.display = "";
       button.setAttribute("aria-hidden", "false");
-      if (continueText) continueText.textContent = "播放";
-      if (actions) actions.classList.remove("has-continue");
+      const hasNativeResume = !!(state.selected && findDetailContinueHistory(state.selected));
+      if (continueText) continueText.textContent = hasNativeResume ? "续播" : "播放";
+      if (actions) actions.classList.toggle("has-continue", hasNativeResume);
       const directReady = detailDirectPlayReadyFor(state.selected);
-      // 文字由权威 Native History 决定；图标状态同样优先尊重有效历史，
-      // 再反映当前详情生命周期中的可交接资源、准备中和终态失败。
+      // Native History 只决定按钮的续播提示；点击仍使用当前详情准备的资源，
+      // 不把历史记录注入当前资源选择或播放交接。
       const playState = detailContinuePlayStateFor(state.selected);
       const ready = playState === "ready";
       button.classList.toggle("is-ready", ready);
       button.dataset.ready = ready ? "true" : "false";
       button.dataset.playState = playState;
-      button.dataset.mode = "FIRST_PLAY";
+      button.dataset.mode = hasNativeResume ? "CONTINUE" : "FIRST_PLAY";
       button.dataset.directReady = directReady ? "true" : "false";
       if (searchText) searchText.textContent = "聚搜";
     }
