@@ -70,7 +70,7 @@
         });
         state.recent.items = normalizeHistoryList(response.readback);
         state.recent.detailItems = normalizeHistoryList(response.readback.legacy || []);
-        state.recent.loaded = true; state.recent.refreshedAt = Date.now();
+        state.recent.loaded = true; state.recent.error = ""; state.recent.refreshedAt = Date.now();
         // An in-flight older list must not resurrect deleted cards.
         if (state.recent.activeRun) state.recent.activeRun.invalidated = true;
         const successful = new Set(results.filter((result) => result.status === "DELETED" || result.status === "NOT_FOUND").map((result) => result.displayId));

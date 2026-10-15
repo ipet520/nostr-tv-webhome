@@ -11,7 +11,7 @@ const expressions={vod:java.match(/playVod:(\(siteKey,vodId,title,pic,options\)=
  history:java.match(/history:(\(options\)=>[^\n]+)/)[1].trim().replace(/,$/,''),
  historyDelete:java.match(/historyDelete:(\(options\)=>[^\n]+)/)[1].trim().replace(/,$/,'')};
 const calls=[];
-const native={rows:[],legacy:false,permission:true,failKey:'',playFailure:false,playing:null,historyQueue:null,envelope:null};
+const native={rows:[],legacy:false,permission:true,failKey:'',playFailure:false,playing:null,historyQueue:null,envelope:null,historyFailureCount:0};
 const localStore=new Map();
 const raw=(site,extra={})=>({key:site+'@@@vod@@@7',cid:7,vodName:'Example',vodPic:'/poster.jpg',mediaType:'movie',tmdbId:42,position:50_000,duration:500_000,createTime:1000,...extra});
 const refOf=row=>({version:1,kind:row.kind||'ITEM',historyKey:row.key,cid:row.cid,siteKey:row.key.split('@@@')[0],vodId:row.key.split('@@@')[1],mediaType:row.mediaType,tmdbId:row.tmdbId,seasonNumber:row.tmdbSeasonNumber??-1,updatedAt:row.createTime,scopeToken:'fixture-'+row.createTime});
@@ -20,6 +20,7 @@ const read=()=>native.legacy?native.rows.map(row=>({...row})):{version:1,mode:'i
 async function invoke(method,payload){
  calls.push({method,payload:JSON.parse(JSON.stringify(payload))});
  if(method==='app.history'){
+   if(native.historyFailureCount>0){native.historyFailureCount--;throw Error('fixture transient Native History read failure');}
    if(native.historyQueue)return new Promise(resolve=>native.historyQueue.push(resolve));
    return native.envelope || (payload.mode==='independent'?read():native.rows.map(row=>({...row})));
  }
@@ -139,6 +140,39 @@ await test('opening history during an older in-flight read queues a trailing Nat
  assert.equal(c.state.recent.items[0].nativeHistoryKey,native.rows[0].key);
  assert.equal(c.nativeHistoryRefreshPending(),false);
  native.historyQueue=null;
+});
+await test('a transient Native read failure after deletion preserves the last-good list and retries the pending revision',async()=>{
+ native.historyQueue=null;native.envelope=null;native.legacy=false;
+ native.rows=[raw('A',{position:10000,duration:1000000,createTime:1000}),raw('B',{position:20000,duration:1000000,createTime:2000}),raw('C',{position:30000,duration:1000000,createTime:3000})];
+ c.state.activeList='all';c.tvBrowseActive=()=>true;c.state.recent.items=load();c.state.recent.loaded=true;
+ c.state.recent.loading=false;c.state.recent.loadingPromise=null;c.state.recent.nativeHistoryRevision=0;c.state.recent.nativeHistoryCommittedRevision=0;
+ c.state.recent.error='stale transient read error';
+ const deleted=c.state.recent.items[0];
+ const deleteResults=await c.deleteHistoryRecords([deleted]);
+ assert.equal(deleteResults[0].status,'DELETED');assert.equal(c.state.recent.items.length,2);assert.equal(c.state.recent.error,'','a verified delete readback clears a stale read error');
+ native.rows[0]=Object.assign({},native.rows[0],{position:156000,createTime:5000});native.historyFailureCount=1;
+ const readsBefore=calls.filter(call=>call.method==='app.history').length;
+ handleHistoryChange({detail:{version:1}});
+ await c.state.recent.loadingPromise;
+ assert.equal(calls.filter(call=>call.method==='app.history').length,readsBefore+2,'one failed Native read is followed by one bounded retry');
+ assert.equal(c.state.recent.items.length,2,'a failed response cannot erase the verified post-delete list');
+ assert.equal(c.state.recent.items[0].nativeHistoryKey,native.rows[0].key,'retry commits the latest post-delete ordering');
+ assert.equal(c.state.recent.items[0].position,156000,'retry commits current Native progress');
+ assert.equal(c.nativeHistoryRefreshPending(),false,'successful retry consumes the pending Native revision');
+});
+await test('failed bounded retry preserves history and a later Native read can consume the revision',async()=>{
+ native.historyQueue=null;native.envelope=null;native.historyFailureCount=2;
+ c.state.activeList='all';c.tvBrowseActive=()=>true;c.state.recent.items=load();c.state.recent.loaded=true;
+ c.state.recent.loading=false;c.state.recent.loadingPromise=null;c.state.recent.nativeHistoryRevision=0;c.state.recent.nativeHistoryCommittedRevision=0;
+ const expectedCount=c.state.recent.items.length, readsBefore=calls.filter(call=>call.method==='app.history').length;
+ handleHistoryChange({detail:{version:1}});
+ await c.state.recent.loadingPromise;
+ assert.equal(calls.filter(call=>call.method==='app.history').length,readsBefore+2,'one event is limited to its initial read and one recovery retry');
+ assert.equal(c.state.recent.items.length,expectedCount,'two failed reads retain the last-good list');
+ assert.equal(c.nativeHistoryRefreshPending(),true,'failed bounded recovery must not consume the Native revision');
+ native.historyFailureCount=0;
+ await c.loadRecentList({silent:true,reconcileDetail:false});
+ assert.equal(c.nativeHistoryRefreshPending(),false,'a later view read recovers the pending Native revision');
 });
 await test('a distinct player return during the refresh transaction is queued without extending the duplicate grace lock',async()=>{
  const resume=source('22-snapshot-resume-boot.js');

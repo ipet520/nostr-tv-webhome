@@ -48,6 +48,7 @@
         let runSilent = !!opts.silent;
         let runReconcileDetail = opts.reconcileDetail !== false;
         let trailing = false;
+        let nativeReadRetryUsed = false;
         try {
           while (true) {
             const run = { id: ++recent.runSeq, invalidated: false, reconcileDetail: runReconcileDetail,
@@ -76,10 +77,21 @@
             }
             if (!run.invalidated) {
               if (error) {
-                recent.items = [];
-                recent.loaded = true;
+                // A transient Bridge failure is not evidence that Native History
+                // is empty. Keep the last verified snapshot (including a delete
+                // readback) and leave the Native revision uncommitted so a later
+                // view open can retry it.
                 recent.error = error.message || "unknown";
                 if (!runSilent) setStatus("tmdb", "最近观看读取失败");
+                if (nativeHistoryRefreshPending() && !nativeReadRetryUsed) {
+                  nativeReadRetryUsed = true;
+                  if (!recent.pendingRefresh) {
+                    recent.pendingRefresh = true;
+                    recent.pendingRefreshSilent = true;
+                    recent.pendingRefreshReconcileDetail = run.reconcileDetail !== false;
+                  }
+                  try { console.debug("RECENT_NATIVE_READ_RETRY", run.id); } catch (e) {}
+                }
               } else {
                 recent.items = normalized || [];
                 recent.detailItems = detailItems || [];

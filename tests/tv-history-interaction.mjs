@@ -80,7 +80,7 @@ async function press(page, key) { await page.keyboard.press(key); await page.wai
 const results=[];
 async function historyPage(count=3) {
   const p=await pageAt(true);await p.evaluate(count=>{
-    testBrowse.disableTracking(); window.vodCalls=[];window.deleteCalls=[];window.historyReads=0;window.deleteFailure=false;window.nativeBacks=0;
+    testBrowse.disableTracking(); window.vodCalls=[];window.deleteCalls=[];window.historyReads=0;window.historyReadFailureCount=0;window.deleteFailure=false;window.nativeBacks=0;
     window.historyFixture=Array.from({length:count},(_,i)=>({key:`fixture@@@vod-${i+1}@@@1`,vodName:'历史记录'+(i+1),vodPic:'/poster.jpg',position:8000+i*1000,duration:100000,episodeName:'Native episode '+(i+1),createTime:Date.now()-i*1000,mediaType:'movie',tmdbId:7000+i}));
     window.historyEnvelope=()=>({version:1,mode:'independent',legacy:historyFixture.map(i=>({...i})),records:historyFixture.map(i=>{
       const parts=i.key.split('@@@');
@@ -88,7 +88,7 @@ async function historyPage(count=3) {
       return {...i,historyRecordRef:ref,canPlayExact:true,canResume:i.position>0&&i.duration>0,canDelete:true,deleteScope:'ITEM',sourceLabel:parts[0]};
     })});
     const original=testBrowse.sdk();window.fm=Object.assign({},original,{
-      history:async(options)=>{historyReads++;return options&&options.mode==='independent'?historyEnvelope():historyFixture.map(i=>({...i}));},
+      history:async(options)=>{historyReads++;if(options&&options.mode==='independent'&&historyReadFailureCount>0){historyReadFailureCount--;throw Error('fixture transient Native History read failure');}return options&&options.mode==='independent'?historyEnvelope():historyFixture.map(i=>({...i}));},
       historyDelete:async({refs})=>{
         const results=refs.map(ref=>{
           deleteCalls.push({...ref});
@@ -446,6 +446,17 @@ async function checks() {
 
   p=await historyPage(1);await press(p,'Enter');await press(p,'Enter');await p.evaluate(()=>{testBrowse.state.recent.items=[];});await press(p,'Enter');await waitWindow(p);
   assert.equal((await counts(p)).deleted,0);assert.equal((await counts(p)).vod,0);assert.equal((await counts(p)).armed,'');await ok('INVALIDATED_ARM_CANNOT_DELETE',p);
+
+  p=await historyPage(3);await p.locator('#tvBrowseRail .card').first().focus();await press(p,'Enter');await press(p,'Enter');
+  await p.waitForFunction(()=>historyFixture.length===2&&document.querySelectorAll('#tvBrowseRail .card').length===2);
+  await p.evaluate(()=>{historyFixture[0].position=456000;historyFixture[0].duration=1000000;historyFixture[0].createTime=Date.now()+5000;historyReadFailureCount=1;window.dispatchEvent(new CustomEvent('fmhistorychange',{detail:{version:1}}));});
+  await p.waitForFunction(()=>testBrowse.state.recent.items[0]&&testBrowse.state.recent.items[0].position===456000&&!testBrowse.state.recent.loading,null,{timeout:5000});
+  assert.equal(await p.locator('#tvHistoryTime').textContent(),'7:36 / 16:40','a failed read after deletion must recover the current Native progress');
+  assert.equal(await p.locator('#tvBrowseRail .card').count(),2,'the failed read must not blank or resurrect the deleted history card');
+  await p.locator('#tvBrowseRail .card').first().focus();await press(p,'Enter');await press(p,'Enter');
+  await p.waitForFunction(()=>historyFixture.length===1&&document.querySelectorAll('#tvBrowseRail .card').length===1);
+  assert.equal((await counts(p)).deleted,2,'double-delete remains available after a successful deletion and refresh retry');
+  await ok('DELETE_THEN_TRANSIENT_READ_FAILURE_RETRY_AND_SECOND_DELETE',p);
 
   p=await historyPage(1);await p.locator('#tvBrowseRail .card').click();assert.equal((await counts(p)).vod,0);await waitWindow(p);assert.equal((await counts(p)).vod,1);
   await ok('POINTER_CLICK_USES_SAME_SINGLE_PRESS_WINDOW',p);
