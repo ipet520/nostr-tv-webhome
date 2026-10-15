@@ -140,6 +140,39 @@ await test('opening history during an older in-flight read queues a trailing Nat
  assert.equal(c.nativeHistoryRefreshPending(),false);
  native.historyQueue=null;
 });
+await test('a distinct player return during the refresh transaction is queued without extending the duplicate grace lock',async()=>{
+ const resume=source('22-snapshot-resume-boot.js');
+ const start=resume.indexOf('    function schedulePlayerReturn(options)');
+ const end=resume.indexOf('    async function rearmDetailPlaybackAfterPlayerReturn(options)',start);
+ assert.ok(start>=0&&end>start,'the production player-return scheduler is extractable');
+ let runs=0,releaseFirst;
+ const scheduler=vm.createContext({
+  state:{resume:{timer:0},pan:{playbackReturn:false}},
+  console:{debug(){}},
+  setTimeout,clearTimeout,
+  $:()=>null,
+  nativeSearchReturnMarkerFor:()=>null,
+  isRecentNativeHomeReturn:()=>false,
+  readUiSnapshot:async()=>null,
+  handleWebHomeResume:()=>{runs++;return runs===1?new Promise(resolve=>{releaseFirst=resolve;}):Promise.resolve();}
+ });
+ vm.runInContext(resume.slice(start,end),scheduler,{filename:'22-snapshot-resume-boot.js'});
+ scheduler.schedulePlayerReturn({playerReturn:true});
+ await waitFor(()=>runs===1);
+ scheduler.schedulePlayerReturn({playerReturn:true});
+ assert.equal(scheduler.schedulePlayerReturn._playerReturnPending,true,'a new Native handoff must survive an active return transaction');
+ releaseFirst();
+ await waitFor(()=>runs===2);
+ assert.equal(scheduler.schedulePlayerReturn._playerReturnPending,false);
+ assert.equal(scheduler.schedulePlayerReturn._running,false,'the active lock must end with the transaction');
+ assert.ok(scheduler.schedulePlayerReturn._graceUntil>Date.now(),'duplicate lifecycle notifications retain a separate grace window');
+ scheduler.schedulePlayerReturn({playerReturn:true});
+ await waitFor(()=>runs===3);
+ assert.equal(scheduler.schedulePlayerReturn._running,false,'a distinct return inside the grace window starts a fresh transaction');
+ scheduler.scheduleWebHomeResume({force:true});
+ await new Promise(resolve=>setTimeout(resolve,100));
+ assert.equal(runs,3,'a generic duplicate resume remains suppressed during the grace window');
+});
 await test('E01_E05 independent sources are not collapsed by HTML',()=>{native.rows=[raw('A'),raw('B',{createTime:2000})];assert.equal(load().length,2);});
 await test('E03_E11 same-key seasons differ and no-TMDB record stays keyed',()=>{
  native.rows=[raw('A',{mediaType:'tv',tmdbSeasonNumber:2,tmdbEpisodeNumber:5}),raw('A',{kind:'SEASON',mediaType:'tv',tmdbSeasonNumber:0,tmdbEpisodeNumber:1}),raw('B',{tmdbId:0})];

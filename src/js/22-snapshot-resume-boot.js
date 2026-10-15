@@ -365,16 +365,32 @@
       if (schedulePlayerReturn._pending || schedulePlayerReturn._running) {
         // marker 可能在普通返回 timer 已排队后才被观察到；合并意图，
         // 不创建第二个 transaction，也不让 native-search 语义在去重时丢失。
+        if (incomingOptions.playerReturn === true) {
+          // A new handoff has its own fm_pan_playing marker. Unlike duplicate
+          // lifecycle notifications, it must run after the active transaction.
+          schedulePlayerReturn._playerReturnPending = true;
+          try { console.debug("PLAYER_RETURN_QUEUED"); } catch (e) {}
+        }
         if (incomingOptions.nativeSearchReturn === true) {
           schedulePlayerReturn._nativeSearchReturnPending = true;
         }
+        if (incomingOptions.playerReturn !== true && incomingOptions.nativeSearchReturn !== true) {
+          try { console.debug("PLAYER_RETURN_DUPLICATE_IGNORED"); } catch (e) {}
+        }
+        return;
+      }
+      const playerReturn = incomingOptions.playerReturn === true;
+      // `_running` tracks the active transaction only. Keep a separate grace
+      // window for noisy resume lifecycle events, while allowing a new Native
+      // handoff to bypass it and refresh immediately.
+      if (!playerReturn && incomingOptions.nativeSearchReturn !== true
+        && Date.now() < Number(schedulePlayerReturn._graceUntil || 0)) {
         try { console.debug("PLAYER_RETURN_DUPLICATE_IGNORED"); } catch (e) {}
         return;
       }
       const returnOptions = {
         nativeSearchReturn: incomingOptions.nativeSearchReturn === true
       };
-      schedulePlayerReturn._nativeSearchReturnPending = false;
       clearTimeout(schedulePlayerReturn._timer);
       clearTimeout(state.resume.timer);
       schedulePlayerReturn._pending = true;
@@ -456,13 +472,20 @@
           } else if (nativeSearchReturnHandled) {
             schedulePlayerReturn._nativeSearchReturnPending = false;
           }
-          // 保留原有返回事件 grace window；_pending 负责覆盖 80ms 延迟期间的竞态。
-          setTimeout(() => {
-            schedulePlayerReturn._running = false;
-            if (schedulePlayerReturn._nativeSearchReturnPending || nativeSearchReturnMarkerFor()) {
-              schedulePlayerReturn({ nativeSearchReturn: true });
-            }
-          }, 2000);
+          // Preserve duplicate lifecycle suppression without making its grace
+          // period block a later, distinct player handoff.
+          const playerReturnPending = schedulePlayerReturn._playerReturnPending;
+          const nativeSearchReturnPending = schedulePlayerReturn._nativeSearchReturnPending || nativeSearchReturnMarkerFor();
+          schedulePlayerReturn._playerReturnPending = false;
+          schedulePlayerReturn._nativeSearchReturnPending = false;
+          schedulePlayerReturn._running = false;
+          schedulePlayerReturn._graceUntil = Date.now() + 2000;
+          if (playerReturnPending || nativeSearchReturnPending) {
+            schedulePlayerReturn({
+              playerReturn: playerReturnPending,
+              nativeSearchReturn: nativeSearchReturnPending
+            });
+          }
         }
       }, 80);
     }
@@ -470,6 +493,8 @@
     schedulePlayerReturn._pending = false;
     schedulePlayerReturn._running = false;
     schedulePlayerReturn._nativeSearchReturnPending = false;
+    schedulePlayerReturn._playerReturnPending = false;
+    schedulePlayerReturn._graceUntil = 0;
 
     function scheduleWebHomeResume(options) {
       const opts = options || {};
@@ -477,13 +502,15 @@
         schedulePlayerReturn({ nativeSearchReturn: true });
         return;
       }
-      if (schedulePlayerReturn._pending || schedulePlayerReturn._running) {
+      if (schedulePlayerReturn._pending || schedulePlayerReturn._running
+        || Date.now() < Number(schedulePlayerReturn._graceUntil || 0)) {
         try { console.debug("PLAYER_RETURN_DUPLICATE_IGNORED"); } catch (e) {}
         return;
       }
       clearTimeout(state.resume.timer);
       state.resume.timer = setTimeout(() => {
-        if (schedulePlayerReturn._pending || schedulePlayerReturn._running) {
+        if (schedulePlayerReturn._pending || schedulePlayerReturn._running
+          || Date.now() < Number(schedulePlayerReturn._graceUntil || 0)) {
           try { console.debug("PLAYER_RETURN_DUPLICATE_IGNORED"); } catch (e) {}
           return;
         }
@@ -807,7 +834,7 @@
         localStorage.removeItem("fm_pan_playing");
         state.pan.isPlaying = false;
         // 从播放器返回：主动恢复详情页（内存存活则刷新，WebView 重建则从 snapshot 重开）
-        schedulePlayerReturn();
+        schedulePlayerReturn({ playerReturn: true });
         return;
       }
       scheduleWebHomeResume();
@@ -831,7 +858,7 @@
         localStorage.removeItem("fm_pan_playing");
         state.pan.isPlaying = false;
         // 从播放器返回：先立即恢复 UI，loadInfo 在后台静默刷新
-        schedulePlayerReturn();
+        schedulePlayerReturn({ playerReturn: true });
         loadInfo().catch(() => {});
         return;
       }
@@ -883,7 +910,7 @@
           localStorage.removeItem("fm_pan_playing");
           state.pan.isPlaying = false;
           // 从播放器返回：主动恢复详情页
-          schedulePlayerReturn();
+          schedulePlayerReturn({ playerReturn: true });
           return;
         }
 

@@ -17,6 +17,7 @@ const hook = `window.testBrowse = { state, renderAll, renderTvBrowse, tvBrowseSt
  tvBrowseSelectColumn, tvBrowseSnapshot, restoreTvBrowseSnapshot, rememberHomeReturn, restoreHomeReturn,
  buildUiSnapshot, restoreUiSnapshot, openSidebar, closeSidebar, openSearchPage, closeSearchPage,
  bindActions, installRemoteKeys, secondaryActiveQuery, syncBrowseDevicePresentation, handleWebHomeResume, boot,
+ schedulePlayerReturn,
  RECENT_DOUBLE_PRESS_WINDOW_MS, cancelRecentDeleteArm, isVisibleFocusable, tvHistoryPressItem, tvPresentationStatus, homeHeroPresentationStatus, tvEpisodeStatusLabel, normalizeHistoryList, tvBrowseCloseHistory, tvBrowseContinueHistory, tvBrowseQueryKey, tvBrowseOpenHistory, tvBrowsePreview, publishHomeWeeklySnapshot, enterRecentManageMode, exitRecentManageMode, nativeHistoryRefreshPending,
  openDetail, closeDetail, sdk, loadRecentList, renderHomeRecent, tvBrowseBeginStartup, homeFocusUserEpoch, storeMovieDetailCache, storeTvDetailCache, updateMovieReleaseStatusCards, requestMovieDetailShared, homeEnrichmentRequest, bestDetailLogo, tvBrowseClearPreview, focusRemoteTarget, artLogoResource, prepareArtLogo, renderDetailTitleLogo };
  window.testBrowse.disableTracking = () => { rememberWatchIntent = () => {}; startWatchTracking = () => {}; saveHistoryPlaybackContext = async () => {}; };
@@ -131,6 +132,39 @@ async function checks() {
   }
   assert.equal((await counts(returnPage)).vod,3);
   await ok('THREE_NATIVE_HISTORY_ROUNDTRIPS_WITHOUT_KEYUP_OR_RELOAD',returnPage);
+  returnPage=await historyPage();
+  await returnPage.evaluate(()=>{
+    const original=window.fm.history;
+    window.releaseFirstHistoryRead=null;window.firstHistoryReadHeld=false;
+    window.fm.history=async(options)=>{
+      if(options&&options.mode==='independent'&&!firstHistoryReadHeld){
+        firstHistoryReadHeld=true;
+        const firstSnapshot=historyEnvelope();
+        await new Promise(resolve=>{releaseFirstHistoryRead=resolve;});
+        return firstSnapshot;
+      }
+      return original(options);
+    };
+  });
+  await returnPage.locator('#tvHistoryContinue').focus();
+  await press(returnPage,'Enter');
+  await returnPage.waitForFunction(()=>vodCalls.length===1);
+  await returnPage.evaluate(()=>{historyFixture[0].position=20000;historyFixture[0].createTime=Date.now()+1000;window.dispatchEvent(new Event('fmpause'));window.dispatchEvent(new Event('fmresume'));});
+  await returnPage.waitForFunction(()=>firstHistoryReadHeld);
+  await returnPage.locator('#tvHistoryContinue').focus();
+  await press(returnPage,'Enter');
+  await returnPage.waitForFunction(()=>vodCalls.length===2);
+  await returnPage.evaluate(()=>{
+    historyFixture[0].position=30000;historyFixture[0].createTime=Date.now()+2000;
+    historyFixture[1].position=45000;historyFixture[1].createTime=Date.now()+3000;
+    window.dispatchEvent(new Event('fmpause'));window.dispatchEvent(new Event('fmresume'));
+  });
+  await returnPage.waitForFunction(()=>testBrowse.schedulePlayerReturn._playerReturnPending===true);
+  await returnPage.evaluate(()=>releaseFirstHistoryRead());
+  await returnPage.waitForFunction(()=>testBrowse.state.recent.items.some(item=>item.nativeHistoryRaw&&item.nativeHistoryRaw.position===45000),null,{timeout:4000});
+  assert.equal(await returnPage.evaluate(()=>testBrowse.state.recent.items[0].title),'历史记录2','the queued second return must commit the latest ordering');
+  assert.equal(await returnPage.locator('#tvHistoryTime').textContent(),'0:30 / 1:40','the selected history progress must refresh after a second return inside the prior grace window');
+  await ok('NEW_PLAYER_RETURN_DURING_ACTIVE_REFRESH_IS_QUEUED_AND_RECONCILED',returnPage);
   returnPage=await historyPage();
   for(let cycle=1;cycle<=3;cycle++) {
     await returnPage.locator('#tvBrowseRail .card').first().focus();
