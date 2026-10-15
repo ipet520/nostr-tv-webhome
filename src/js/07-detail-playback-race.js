@@ -748,7 +748,6 @@
       const returnHistory = detailReturnedNativeHistoryFor(item);
       if (returnHistory) {
         const marker = state.detailPlayerReturn;
-        marker.handoffStarted = true;
         const returnedRun = state.detailPlayback && detailPlaybackIsCurrent(state.detailPlayback)
           && state.detailPlayback.item === item ? state.detailPlayback : null;
         if (returnedRun) {
@@ -841,6 +840,12 @@
 
     function detailContinuePlayStateFor(item) {
       if (!item) return "idle";
+      // When the primary action is an executable Native History resume, its
+      // ready state takes precedence over an unrelated Curated/Direct run.
+      // This keeps the icon color aligned with both the visible label and the
+      // history_exact action dispatched by requestDetailPlayback().
+      if (typeof detailReturnedNativeHistoryFor === "function"
+        && detailReturnedNativeHistoryFor(item)) return "ready";
       const run = state.detailPlayback && detailPlaybackIsCurrent(state.detailPlayback)
         && state.detailPlayback.item === item ? state.detailPlayback : null;
       const racePreparing = !!(run && run.raceActive && !run.providerCommitted);
@@ -870,13 +875,34 @@
       return "idle";
     }
 
+    function detailNativeHistoryKey(history) {
+      const ref = history && history.historyRecordRef;
+      return String(history && (history.nativeHistoryKey || history.historyKey) || ref && ref.historyKey || "").trim();
+    }
+
+    function refreshDetailReturnHistory(item) {
+      const marker = state.detailPlayerReturn;
+      const detail = $("detailSheet");
+      if (!item || state.selected !== item || !marker || marker.itemKey !== panSearchItemKey(item)
+        || marker.handoffStarted || !(Number(marker.returnedAt || 0) > 0)
+        || !detail || !detail.classList.contains("active")) return false;
+      const history = findDetailContinueHistory(item);
+      marker.nativeHistoryKey = nativeHistoryRecordCanPlayExact(history) ? detailNativeHistoryKey(history) : "";
+      return !!marker.nativeHistoryKey;
+    }
+
     function detailReturnedNativeHistoryFor(item) {
       const marker = state.detailPlayerReturn;
       if (!item || !marker || marker.itemKey !== panSearchItemKey(item)
-        || marker.handoffStarted || !(Number(marker.returnedAt || 0) > 0)
-        || state.recent && state.recent.error) return null;
-      const history = findDetailContinueHistory(item);
-      return history && nativeHistoryRecordCanPlayExact(history) ? history : null;
+        || marker.handoffStarted || !(Number(marker.returnedAt || 0) > 0)) return null;
+      const hasPinnedIdentity = Object.prototype.hasOwnProperty.call(marker, "nativeHistoryKey");
+      const pinnedKey = String(marker.nativeHistoryKey || "").trim();
+      const rows = state.recent && (state.recent.detailItems || state.recent.items) || [];
+      const history = hasPinnedIdentity
+        ? (pinnedKey ? rows.find((candidate) => detailNativeHistoryKey(candidate) === pinnedKey) || null : null)
+        : findDetailContinueHistory(item);
+      return history && detailHasAuthoritativeNativeHistory(history)
+        && detailHistoryMatches(item, history) && nativeHistoryRecordCanPlayExact(history) ? history : null;
     }
 
     function updateDetailContinueButton() {
@@ -884,6 +910,10 @@
       const continueText = $("detailContinueText");
       const searchText = $("detailSearchText");
       if (!button) return;
+      const selected = state.selected;
+      const returnMarker = state.detailPlayerReturn;
+      if (selected && returnMarker && returnMarker.itemKey === panSearchItemKey(selected)
+        && returnMarker.handoffStarted) return;
       const actions = button.closest(".actions");
       button.__historyItem = null;
       button.style.display = "";
@@ -892,8 +922,8 @@
       if (continueText) continueText.textContent = hasNativeResume ? "续播" : "播放";
       if (actions) actions.classList.toggle("has-continue", hasNativeResume);
       const directReady = detailDirectPlayReadyFor(state.selected);
-      // Native History 只决定按钮的续播提示；点击仍使用当前详情准备的资源，
-      // 不把历史记录注入当前资源选择或播放交接。
+      // 新进入详情时继续使用当前准备资源；只有同一详情页真实播放器返回后，
+      // 可精确恢复的 Native History 才接管主按钮的续播交接。
       const playState = detailContinuePlayStateFor(state.selected);
       const ready = playState === "ready";
       button.classList.toggle("is-ready", ready);

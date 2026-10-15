@@ -27,7 +27,7 @@ const reconcileSource = between(
   "\n    // 滚动恢复：closeDetail(needBack)"
 );
 
-function reconcileHarness({ historyChanged = true, capturedRunToken = 13 } = {}) {
+function reconcileHarness({ historyChanged = true, capturedRunToken = 13, exactHistory = true } = {}) {
   const item = { title: "Selected title" };
   const run = {
     item,
@@ -59,11 +59,14 @@ function reconcileHarness({ historyChanged = true, capturedRunToken = 13 } = {})
       detailRunToken: capturedRunToken,
       detailRunItemKey: "media-1"
     }),
-    recentNativeHistoryWinnerFor: () => ({ source: "history" }),
+    recentNativeHistoryWinnerFor: () => ({ source: "history", nativeHistoryKey: "site@@@vod@@@7" }),
     detailHasAuthoritativeNativeHistory: () => true,
+    nativeHistoryRecordCanPlayExact: () => exactHistory,
     detailHistoryMatches: () => true,
+    detailNativeHistoryKey: (history) => history.nativeHistoryKey,
     nativeSearchHistoryChanged: () => historyChanged,
     nativeSearchHistoryChangeReason: () => historyChanged ? "progress-advanced" : "",
+    clearNativeSearchReturnMarker: () => calls.push(["clear-search-marker"]),
     detailPlaybackIsCurrent: (candidate) => candidate === state.detailPlayback && !candidate.cancelled,
     clearDirectPlayStatus: (...args) => calls.push(["clear-status", ...args]),
     cancelDetailPlaybackPreparation: (...args) => {
@@ -93,6 +96,11 @@ function reconcileHarness({ historyChanged = true, capturedRunToken = 13 } = {})
   assert.equal(h.state.pan.directFailure, null);
   assert.equal(h.calls.filter(([name]) => name === "cancel-prepare").length, 1);
   assert.equal(h.calls.filter(([name]) => name === "update-button").length, 1);
+  assert.equal(h.state.detailPlayerReturn.nativeHistoryKey, "site@@@vod@@@7",
+    "a played native-search result pins the exact committed Native record");
+  assert.equal(h.state.detailPlayerReturn.handoffStarted, false);
+  assert.ok(h.state.detailPlayerReturn.returnedAt > 0);
+  assert.equal(h.calls.filter(([name]) => name === "clear-search-marker").length, 1);
 }
 
 {
@@ -105,9 +113,19 @@ function reconcileHarness({ historyChanged = true, capturedRunToken = 13 } = {})
 
 {
   const h = reconcileHarness({ historyChanged: false });
-  assert.equal(h.reconcile(h.item, "native-search"), true);
+  assert.equal(h.reconcile(h.item, "native-search"), false,
+    "opening Native Search without playback remains pending for a committed History event");
   assert.equal(h.state.detailPlayback, h.run, "unchanged history preserves current preparation");
   assert.equal(h.calls.some(([name]) => name === "cancel-prepare"), false);
+  assert.equal(h.state.detailPlayerReturn, undefined, "cancelled search does not manufacture a player return");
+}
+
+{
+  const h = reconcileHarness({ exactHistory: false });
+  assert.equal(h.reconcile(h.item, "native-search"), false,
+    "a changed but non-exact Native record cannot become a history_exact continuation");
+  assert.equal(h.state.detailPlayback, h.run, "non-executable History does not retire the prepared candidate");
+  assert.equal(h.state.detailPlayerReturn, undefined);
 }
 
 const returnedHistorySource = between(
@@ -139,16 +157,19 @@ let resumeHistory = { nativeHistoryKey: "history-a", exact: true };
 const currentCandidate = { url: "https://selected-source.example/current" };
 const state = { selected: selectedItem, detailPlayback: { candidate: currentCandidate }, detailPlayerReturn: null, recent: { error: "" } };
 const returnedHistory = new Function("state", "panSearchItemKey", "findDetailContinueHistory", "nativeHistoryRecordCanPlayExact",
+  "detailHasAuthoritativeNativeHistory", "detailHistoryMatches", "detailNativeHistoryKey",
   `return (${returnedHistorySource});`
 )(state, () => "media-1", () => resumeHistory, (history) => !!(history && history.exact
-  && Number(history.position == null ? 1 : history.position) > 0));
-const updateButton = new Function("$", "state", "detailReturnedNativeHistoryFor", "detailDirectPlayReadyFor", "detailContinuePlayStateFor",
+  && Number(history.position == null ? 1 : history.position) > 0), (history) => !!history.exact,
+(item, history) => !!item && !!history, (history) => history.nativeHistoryKey);
+let resumePlayState = () => "idle";
+const updateButton = new Function("$", "state", "detailReturnedNativeHistoryFor", "detailDirectPlayReadyFor", "detailContinuePlayStateFor", "panSearchItemKey",
   `return (${updateButtonSource});`
 )((id) => ({
   detailContinueBtn: button,
   detailContinueText: continueText,
   detailSearchText: searchText
-})[id], state, () => returnedHistory(selectedItem), () => false, () => "idle");
+})[id], state, () => returnedHistory(selectedItem), () => false, (...args) => resumePlayState(...args), () => "media-1");
 
 updateButton();
 assert.equal(continueText.textContent, "播放", "old Native History alone does not label a new detail entry as resume");
@@ -163,11 +184,45 @@ assert.equal(continueText.textContent, "续播", "an exact Native resume point i
 assert.equal(button.dataset.mode, "CONTINUE");
 assert.equal(classes.has("has-continue"), true);
 
+const playStateSource = between(
+  playbackSource,
+  "    function detailContinuePlayStateFor(item) {",
+  "\n    function detailNativeHistoryKey"
+);
+const playState = new Function("state", "detailReturnedNativeHistoryFor", "detailPlaybackIsCurrent",
+  "detailDirectPlayReadyFor", "detailDirectFailureTypeFor", "panDirectPlayActionIsCurrent",
+  `return (${playStateSource});`
+)(state, () => resumeHistory.exact && Number(resumeHistory.position == null ? 1 : resumeHistory.position) > 0
+  ? resumeHistory : null, () => true, () => false, () => "", () => true);
+resumePlayState = playState;
+state.detailPlayback = { item: selectedItem, phase: "PREPARING", active: true, preparationStarted: true };
+assert.equal(playState(selectedItem), "ready",
+  "an executable history_exact resume is visually ready even while an old Curated/Direct run still says preparing");
+updateButton();
+assert.equal(button.dataset.playState, "ready");
+assert.equal(continueText.textContent, "续播");
+assert.match(read("../src/css/10-detail-action-colors.css"), /data-play-state="preparing"\] > \.icon\s*\{[^}]*#F2B84B/s);
+assert.match(read("../src/css/10-detail-action-colors.css"), /data-play-state="ready"\] > \.icon\s*\{[^}]*#35E07A/s);
+
+// The history bridge and the button must keep their previous presentation
+// during the handoff itself; a commit-triggered refresh cannot flash Play.
+button.dataset.playState = "ready";
+continueText.textContent = "续播";
+state.detailPlayerReturn.handoffStarted = true;
+updateButton();
+assert.equal(continueText.textContent, "续播", "in-flight history refresh cannot flash the button back to Play");
+assert.equal(button.dataset.playState, "ready", "in-flight refresh cannot paint a preparing/yellow icon");
+state.detailPlayerReturn.handoffStarted = false;
+
 resumeHistory = { nativeHistoryKey: "history-a", exact: true, position: 0 };
 updateButton();
 assert.equal(continueText.textContent, "播放");
 assert.equal(button.dataset.mode, "FIRST_PLAY");
+assert.notEqual(button.dataset.playState, "ready", "zero progress cannot receive the green exact-resume state");
 assert.equal(classes.has("has-continue"), false);
+assert.equal(searchText.textContent, "聚搜", "the separate Native Search action retains its independent neutral control state");
+assert.match(read("../src/css/10-detail-action-colors.css"), /#detailSearchBtn > \.icon,[\s\S]*?#panSearchBtn > \.icon\s*\{\s*fill: none !important;\s*stroke: currentColor !important;/,
+  "search icons use their own inherited style and are not recolored as resume icons");
 
 const requestSource = between(
   playbackSource,
@@ -191,6 +246,7 @@ assert.match(playbackSource, /function handleDetailPrimaryAction\(\)\s*\{\s*retu
     `return (${requestSource});`
   )(() => ({}), state, () => history, () => false, async (record, options) => {
     calls.push([record, options.detail, options.button]);
+    state.detailPlayerReturn.handoffStarted = true;
     return true;
   }, () => {}, () => {}, () => "media-1");
   assert.equal(await request(item), true);

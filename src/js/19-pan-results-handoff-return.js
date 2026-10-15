@@ -703,11 +703,18 @@
     function markDetailPlayerHandoff(item) {
       const detail = $("detailSheet");
       if (!item || state.selected !== item || !detail || !detail.classList.contains("active")) return null;
+      const previous = state.detailPlayerReturn;
+      const previousHistoryKey = previous && previous.itemKey === panSearchItemKey(item) && !previous.handoffStarted
+        ? String(previous.nativeHistoryKey || "").trim() : "";
+      // A new concrete player handoff supersedes a still-open Native Search
+      // return probe. The player's committed History event uses this return path.
+      if (typeof clearNativeSearchReturnMarker === "function") clearNativeSearchReturnMarker();
       state.detailPlayerReturn = {
         itemKey: panSearchItemKey(item),
         handoffStarted: true,
         startedAt: Date.now(),
-        returnedAt: 0
+        returnedAt: 0,
+        nativeHistoryKey: previousHistoryKey
       };
       return state.detailPlayerReturn;
     }
@@ -1097,6 +1104,7 @@
       cancelPendingDirectPlay("detail_closed");
       cancelDetailPlaybackPreparation("detail_closed");
       state.detailPlayerReturn = null;
+      if (typeof clearNativeSearchReturnMarker === "function") clearNativeSearchReturnMarker();
       // 防止动画期间重复触发
       if (sheet.classList.contains("sheet-closing")) return;
 
@@ -1220,7 +1228,8 @@
     function nativeSearchHistorySnapshotFor(item, history) {
       if (!item) return null;
       const candidate = arguments.length > 1 ? history : recentNativeHistoryWinnerFor(item);
-      if (!candidate || !detailHasAuthoritativeNativeHistory(candidate) || !detailHistoryMatches(item, candidate)) return null;
+      if (!candidate || !detailHasAuthoritativeNativeHistory(candidate) || !detailHistoryMatches(item, candidate)
+        || !nativeHistoryRecordCanPlayExact(candidate)) return null;
       return {
         itemKey: panSearchItemKey(item),
         siteKey: String(candidate.siteKey || candidate.nativeSiteKey || "").trim(),
@@ -1267,6 +1276,9 @@
       const beforeProgress = Number(before.progress || 0) || 0;
       const afterProgress = Number(after.progress || 0) || 0;
       if (afterProgress > beforeProgress) return "progress-advanced";
+      const beforeUpdatedAt = Math.max(Number(before.updatedAt || 0) || 0, Number(before.createTime || 0) || 0);
+      const afterUpdatedAt = Math.max(Number(after.updatedAt || 0) || 0, Number(after.createTime || 0) || 0);
+      if (afterUpdatedAt > beforeUpdatedAt) return "history-updated";
       return "";
     }
 
@@ -1851,12 +1863,28 @@
         const marker = nativeSearchReturnMarkerFor();
         if (!marker || marker.itemKey !== panSearchItemKey(item)) return false;
         const winner = recentNativeHistoryWinnerFor(item);
-        const history = winner && detailHasAuthoritativeNativeHistory(winner) && detailHistoryMatches(item, winner) ? winner : null;
+        const history = winner && detailHasAuthoritativeNativeHistory(winner) && detailHistoryMatches(item, winner)
+          && nativeHistoryRecordCanPlayExact(winner) ? winner : null;
         const changed = nativeSearchHistoryChanged(item, marker, history);
         if (history && changed) {
           retireDetailPreparedPlaybackAfterNativeSearch(item, marker,
             nativeSearchHistoryChangeReason(item, marker, history) || "native_search_authoritative_history");
+          state.detailPlayerReturn = {
+            itemKey: panSearchItemKey(item),
+            handoffStarted: false,
+            startedAt: Number(marker.at || 0) || Date.now(),
+            returnedAt: Date.now(),
+            nativeHistoryKey: detailNativeHistoryKey(history)
+          };
+          clearNativeSearchReturnMarker();
+          updateDetailContinueButton();
+          return true;
         }
+        // The search page can return before Native completes its asynchronous
+        // History write. Keep the probe and prepared resources until a later
+        // successful read distinguishes a played result from a cancelled search.
+        updateDetailContinueButton();
+        return false;
       }
       updateDetailContinueButton();
       return true;

@@ -40,7 +40,10 @@
           returnedAt: 0
         };
       }
-      else if (opts.playerReturnRestore !== true && !detailWasActive) state.detailPlayerReturn = null;
+      else if (opts.playerReturnRestore !== true && !detailWasActive) {
+        state.detailPlayerReturn = null;
+        if (typeof clearNativeSearchReturnMarker === "function") clearNativeSearchReturnMarker();
+      }
       if (opts.episodeTarget || opts.historyContext) setDetailPlaybackTarget(item, opts.episodeTarget || opts.historyContext);
       else if (!sameSelected && !opts.restore) state.detailEpisodeTarget = null;
       if (!opts.restore && !detailWasActive) rememberHomeReturn(item, opts.returnTarget);

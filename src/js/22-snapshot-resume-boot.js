@@ -471,7 +471,10 @@
           // Preserve duplicate lifecycle suppression without making its grace
           // period block a later, distinct player handoff.
           const playerReturnPending = schedulePlayerReturn._playerReturnPending;
-          const nativeSearchReturnPending = schedulePlayerReturn._nativeSearchReturnPending || nativeSearchReturnMarkerFor();
+          // A persisted Native Search probe may intentionally wait for the
+          // post-save fmhistorychange event. Do not spin another return
+          // transaction just because that probe remains pending.
+          const nativeSearchReturnPending = schedulePlayerReturn._nativeSearchReturnPending;
           schedulePlayerReturn._playerReturnPending = false;
           schedulePlayerReturn._nativeSearchReturnPending = false;
           schedulePlayerReturn._running = false;
@@ -533,7 +536,7 @@
         || ["STARTING_PLAYER", "PAN_PLAY_CALLED"].includes(String(run.phase || ""))));
       await loadRecentList({ refresh: true, silent: true, reconcileDetail: false }).catch(() => {});
       if (state.selected !== item || state.detailClosing || !$("detailSheet") || !$("detailSheet").classList.contains("active")) return false;
-      if (handedOff && state.detailPlayback === run) {
+      if (handedOff && run && state.detailPlayback === run) {
         clearDirectPlayStatus(run.token, "player_returned");
         run.handoffStarted = false;
         run.playRequested = false;
@@ -550,6 +553,9 @@
       }
       marker.handoffStarted = false;
       marker.returnedAt = Date.now();
+      if (!(state.recent && state.recent.error) && typeof refreshDetailReturnHistory === "function") {
+        refreshDetailReturnHistory(item);
+      }
       updateDetailContinueButton();
       return true;
     }
@@ -911,7 +917,13 @@
       // Native dispatches this only after its History write has committed.
       // Re-read the Native source of truth instead of polling after resume.
       try { console.debug("NATIVE_HISTORY_CHANGE_REFRESH", revision); } catch (e) {}
-      loadRecentList({ refresh: true, silent: true, reconcileDetail: false }).catch(() => {});
+      loadRecentList({ refresh: true, silent: true, reconcileDetail: false })
+        .then(() => {
+          if (state.recent && state.recent.error) return;
+          const marker = nativeSearchReturnMarkerFor();
+          if (marker && state.selected) reconcileDetailAfterNativeReturn(state.selected, "native-search");
+        })
+        .catch(() => {});
     });
     window.addEventListener("fmpause", () => {
       releaseTvBrowseNativeInput();

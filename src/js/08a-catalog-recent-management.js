@@ -117,6 +117,7 @@
               if (state.activeList === "recent") renderActiveGrid();
               if (state.activeList === "all") renderHome();
               if (!error && state.selected && $("detailSheet") && $("detailSheet").classList.contains("active")) {
+                if (typeof refreshDetailReturnHistory === "function") refreshDetailReturnHistory(state.selected);
                 updateDetailContinueButton();
               }
             }
