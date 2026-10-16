@@ -16,7 +16,7 @@ function installHook() {
     syncBrowseDevicePresentation, bindActions, installRemoteKeys, tvBrowseBeginStartup, homeFocusUserEpoch,
     tvWallpaperState, tvWallpaperScheduleIdle, tvWallpaperEnter, tvWallpaperMove, tvWallpaperPause,
     tvWallpaperResume, tvWallpaperPreferencesChanged, tvWallpaperStopTimer, tvWallpaperCurrentSelection,
-    tvWallpaperHandleKey, handleTvWallpaperPopState, renderUiPrefsControls, sanitizeUiPrefs,
+    tvWallpaperHandleKey, tvWallpaperUpdateInfoShift, handleTvWallpaperPopState, renderUiPrefsControls, sanitizeUiPrefs,
     setTvWallpaperPreference, toggleConnectionPanel, closeConnectionPanel,
     tvBrowsePreview, openDetail, closeDetail, isVisibleFocusable
   };
@@ -28,7 +28,7 @@ function installHook() {
     state.hot.items = Array.from({ length: count }, (_, i) => ({
       id: "wallpaper-" + i, tmdbId: 7000 + i, title: "壁纸影片" + i, mediaType: "movie",
       source: "nostr-hot", people: 9, pic: "/poster-" + i + ".jpg",
-      landscape: "/backdrop-" + i + ".jpg", overview: "剧情简介" + i, releaseDate: "2025-01-01"
+      landscape: "/backdrop-" + i + ".jpg", overview: ("用于检查壁纸模式信息区安全边界的长剧情简介。".repeat(18)) + i, releaseDate: "2025-01-01"
     }));
     state.recent.loaded = true; state.recent.items = [];
     state.uiPrefs = { loaded: true, homeFullscreenEnabled: true, tvWallpaperEnterSeconds: 10, tvWallpaperIntervalSeconds: 10 };
@@ -145,6 +145,49 @@ try {
   await page.evaluate(() => testWallpaper.clock.fire(10000));
   await page.waitForTimeout(450);
   assert.equal(await page.evaluate(() => testWallpaper.tvWallpaperState().active), true);
+  const wallpaperInfoBounds = await page.evaluate(() => {
+    const root = document.querySelector("#tvBrowse"), info = document.querySelector("#tvBrowseInfo");
+    const foreground = root.querySelector(".tv-browse-foreground"), rootRect = root.getBoundingClientRect();
+    const infoRect = info.getBoundingClientRect(), rootStyle = getComputedStyle(root);
+    const visibleHeight = parseFloat(rootStyle.getPropertyValue("--tv-visible-height"));
+    const titleBottomGap = parseFloat(rootStyle.getPropertyValue("--tv-rail-title-bottom-gap"));
+    const bottomPadding = parseFloat(getComputedStyle(foreground).paddingBottom);
+    return {
+      infoBottom: infoRect.bottom - rootRect.top,
+      referenceBottom: visibleHeight - bottomPadding - titleBottomGap,
+      visibleHeight,
+      overviewLineClamp: getComputedStyle(document.querySelector("#tvBrowseOverview")).webkitLineClamp,
+      overviewScrollHeight: document.querySelector("#tvBrowseOverview").scrollHeight,
+      overviewClientHeight: document.querySelector("#tvBrowseOverview").clientHeight
+    };
+  });
+  assert.ok(Math.abs(wallpaperInfoBounds.infoBottom - wallpaperInfoBounds.referenceBottom) <= 1.5,
+    "wallpaper info bottom aligns with the normal rail title's safe lower edge");
+  assert.ok(wallpaperInfoBounds.infoBottom <= wallpaperInfoBounds.visibleHeight,
+    "wallpaper info remains inside the measured visible viewport");
+  assert.equal(wallpaperInfoBounds.overviewLineClamp, "3", "long overview keeps the existing three-line clamp");
+  assert.ok(wallpaperInfoBounds.overviewScrollHeight > wallpaperInfoBounds.overviewClientHeight,
+    "long overview remains ellipsized by its existing line clamp");
+  await page.evaluate(() => {
+    document.querySelector("#tvBrowse").style.setProperty("--tv-visible-height", "680px");
+    testWallpaper.tvWallpaperUpdateInfoShift();
+  });
+  await page.waitForTimeout(450);
+  const resizedInfoBounds = await page.evaluate(() => {
+    const root = document.querySelector("#tvBrowse"), info = document.querySelector("#tvBrowseInfo");
+    const foreground = root.querySelector(".tv-browse-foreground"), rootRect = root.getBoundingClientRect();
+    const rootStyle = getComputedStyle(root);
+    return info.getBoundingClientRect().bottom - rootRect.top
+      - (parseFloat(rootStyle.getPropertyValue("--tv-visible-height"))
+        - parseFloat(getComputedStyle(foreground).paddingBottom)
+        - parseFloat(rootStyle.getPropertyValue("--tv-rail-title-bottom-gap")));
+  });
+  assert.ok(Math.abs(resizedInfoBounds) <= 1.5, "wallpaper position follows the measured WebView visible height");
+  await page.evaluate(() => {
+    document.querySelector("#tvBrowse").style.setProperty("--tv-visible-height", "720px");
+    testWallpaper.tvWallpaperUpdateInfoShift();
+  });
+  await page.waitForTimeout(450);
   assert.equal(await page.evaluate(() => testWallpaper.tvBrowsePosition().key), before.key, "entering keeps current resource position");
   assert.equal(await page.locator("#tvBrowseTitle").textContent(), before.title);
   assert.equal(await page.evaluate(() => testWallpaper.tvBrowseState().backdropUrl), before.backdrop, "entering preserves the current backdrop");

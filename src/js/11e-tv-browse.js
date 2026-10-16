@@ -253,13 +253,26 @@
       } catch (e) { wall.historyEntry = false; }
     }
 
+    function tvWallpaperInfoTargetTop(root, infoRect) {
+      const rootRect = root.getBoundingClientRect();
+      const foreground = root.querySelector(".tv-browse-foreground");
+      if (!rootRect.height || !infoRect.height || !foreground) return null;
+      const rootStyle = getComputedStyle(root);
+      const visibleHeight = parseFloat(rootStyle.getPropertyValue("--tv-visible-height")) || rootRect.height;
+      const titleBottomGap = parseFloat(rootStyle.getPropertyValue("--tv-rail-title-bottom-gap"));
+      const bottomPadding = parseFloat(getComputedStyle(foreground).paddingBottom);
+      if (!Number.isFinite(titleBottomGap) || !Number.isFinite(bottomPadding)) return null;
+      return Math.max(0, visibleHeight - bottomPadding - titleBottomGap - infoRect.height);
+    }
+
     function tvWallpaperUpdateInfoShift() {
       if (!tvWallpaperIsActive()) return;
       const root = $("tvBrowse"), info = $("tvBrowseInfo");
       if (!root || !info) return;
       const rootRect = root.getBoundingClientRect(), infoRect = info.getBoundingClientRect();
       if (!rootRect.height || !infoRect.height) return;
-      const targetTop = Math.max(0, Math.min(rootRect.height * .64, rootRect.height - infoRect.height - 24));
+      const targetTop = tvWallpaperInfoTargetTop(root, infoRect);
+      if (targetTop === null) return;
       const currentShift = Number.parseFloat(root.style.getPropertyValue("--tv-wallpaper-info-shift")) || 0;
       const baseTop = infoRect.top - rootRect.top - currentShift;
       root.style.setProperty("--tv-wallpaper-info-shift", Math.round(targetTop - baseTop) + "px");
@@ -280,13 +293,11 @@
       tvWallpaperHistoryPush();
       const info = $("tvBrowseInfo");
       if (info) {
-        const rootRect = root.getBoundingClientRect(), infoRect = info.getBoundingClientRect();
-        const top = Math.max(0, Math.min(rootRect.height * .64, rootRect.height - infoRect.height - 24));
         root.style.setProperty("--tv-wallpaper-info-shift", "0px");
         root.classList.add("wallpaper-mode");
         requestAnimationFrame(() => {
           if (!wall.active || !root.isConnected) return;
-          root.style.setProperty("--tv-wallpaper-info-shift", Math.round(top - (infoRect.top - rootRect.top)) + "px");
+          tvWallpaperUpdateInfoShift();
         });
       } else root.classList.add("wallpaper-mode");
       tvWallpaperScheduleRotation();
@@ -887,6 +898,7 @@
         // Project the real 1.04-scaled title edge into the visible viewport.
         // CSS resolves system safe-area insets on this one foreground.
         const titleEdge = railSlot - focusSpace - (poster + caption) * 1.02 + 6 * 1.04;
+        px("rail-title-bottom-gap", titleEdge);
         px("safe-bottom", Math.max(2, Math.max(8, height * .019) - titleEdge));
         const bottom = parseFloat(getComputedStyle(foreground).paddingBottom);
         upper = height - top - bottom - $("tvBrowseColumns").offsetHeight - railSlot - gap;
@@ -907,6 +919,7 @@
       const spare = upperHost.clientHeight - used - gap - parseFloat(root.style.getPropertyValue("--tv-preview-gap"));
       set("filter-overview-lines", String(height < 450 ? 0 : clamp(0, Math.floor(spare / (overviewFont * 1.5)), height >= 720 ? 3 : 2)));
       syncTvBrowseFilterOverview();
+      if (tvWallpaperIsActive()) tvWallpaperUpdateInfoShift();
     }
 
     function initTvBrowse() {
