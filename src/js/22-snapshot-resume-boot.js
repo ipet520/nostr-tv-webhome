@@ -692,6 +692,7 @@
     }
 
     window.addEventListener("popstate", (event) => {
+      if (handleTvWallpaperPopState(event)) return;
       const detailSheet = $("detailSheet");
       // Native Back traverses the same transient panel history as Basic Settings.
       if (tvBrowseActive() && tvBrowseState().view === "history" && !tvPanelHistoryEntryActive("tvHistory", "#tv-history")
@@ -853,6 +854,7 @@
       state.scrollLoadTimer = setTimeout(loadMoreVisible, 80);
     }, { passive: true });
     window.addEventListener("pagehide", () => {
+      tvWallpaperPause();
       clearDirectPlayStatusOnNativeTakeover("pagehide");
       saveUiSnapshotNow();
       clearRelayBackfillTimers();
@@ -860,6 +862,7 @@
       stopWatchTracking(true);
     });
     window.addEventListener("pageshow", () => {
+      tvWallpaperResume();
       completeTvBrowseNativeReturn();
       const panWasPlaying = localStorage.getItem("fm_pan_playing") === "1";
       if (panWasPlaying) {
@@ -884,6 +887,7 @@
         .catch(() => {});
     });
     window.addEventListener("fmresume", () => {
+      tvWallpaperResume();
       completeTvBrowseNativeReturn();
       const panWasPlaying = localStorage.getItem("fm_pan_playing") === "1";
       if (panWasPlaying) {
@@ -926,17 +930,20 @@
         .catch(() => {});
     });
     window.addEventListener("fmpause", () => {
+      tvWallpaperPause();
       releaseTvBrowseNativeInput();
       saveUiSnapshotNow();
     });
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") {
+        tvWallpaperPause();
         clearDirectPlayStatusOnNativeTakeover("visibility_hidden");
         saveUiSnapshotNow();
         state.detailCover.swipe = null;
         pauseDetailCoverCarousel();
       }
       if (document.visibilityState === "visible") {
+        tvWallpaperResume();
         completeTvBrowseNativeReturn();
         restartDetailCoverCarousel();
         updateDetailCoverControls();

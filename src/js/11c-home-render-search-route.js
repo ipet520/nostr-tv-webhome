@@ -122,6 +122,7 @@
       state.activeList = "all";
       state.homeV14.searchReturn = null;
       renderAll({ deferContent: false });
+      if (typeof tvWallpaperAfterHomeReturn === "function") tvWallpaperAfterHomeReturn();
       const restore = () => {
         applyHomeScrollTop(Math.max(0, Number(saved.scrollY || 0)));
         const searchRail = $("searchRail");

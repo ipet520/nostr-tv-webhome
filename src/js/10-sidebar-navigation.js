@@ -421,6 +421,7 @@
       settleMobileSidebarHistory({
         fromPopState: opts.fromPopState === true
       });
+      if (typeof tvWallpaperAfterHomeReturn === "function") tvWallpaperAfterHomeReturn();
       return context;
     }
 

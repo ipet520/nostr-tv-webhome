@@ -16,13 +16,20 @@
 
     function sanitizeUiPrefs(value) {
       const raw = value && typeof value === "object" ? value : {};
-      return { homeFullscreenEnabled: raw.homeFullscreenEnabled === false ? false : true };
+      const wallpaperEnterSeconds = Number(raw.tvWallpaperEnterSeconds);
+      const wallpaperIntervalSeconds = Number(raw.tvWallpaperIntervalSeconds);
+      return {
+        homeFullscreenEnabled: raw.homeFullscreenEnabled === false ? false : true,
+        tvWallpaperEnterSeconds: [0, 10, 30, 60].includes(wallpaperEnterSeconds) ? wallpaperEnterSeconds : 10,
+        tvWallpaperIntervalSeconds: [0, 10, 20].includes(wallpaperIntervalSeconds) ? wallpaperIntervalSeconds : 10
+      };
     }
 
     function applyUiPrefs() {
       const prefs = sanitizeUiPrefs(state.uiPrefs || {});
       state.uiPrefs = Object.assign({ loaded: state.uiPrefs && state.uiPrefs.loaded }, prefs);
       renderUiPrefsControls();
+      if (typeof tvWallpaperPreferencesChanged === "function") tvWallpaperPreferencesChanged();
       if ($("detailSheet") && $("detailSheet").classList.contains("active")) {
         resetDetailCoverFrame($("detailImage") && $("detailImage").parentElement);
         scheduleDetailTextClamp();
@@ -40,9 +47,24 @@
     }
 
     function renderUiPrefsControls() {
+      const prefs = sanitizeUiPrefs(state.uiPrefs || {});
       const fullscreen = isHomeFullscreenEnabled() ? "on" : "off";
       document.querySelectorAll("[data-home-fullscreen]").forEach((button) => {
         const active = button.dataset.homeFullscreen === fullscreen;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-pressed", active ? "true" : "false");
+      });
+      document.querySelectorAll(".tv-wallpaper-setting").forEach((setting) => {
+        setting.hidden = !isTvLikeDevice();
+        setting.style.display = isTvLikeDevice() ? "" : "none";
+      });
+      document.querySelectorAll("[data-wallpaper-enter]").forEach((button) => {
+        const active = Number(button.dataset.wallpaperEnter === "off" ? 0 : button.dataset.wallpaperEnter) === prefs.tvWallpaperEnterSeconds;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-pressed", active ? "true" : "false");
+      });
+      document.querySelectorAll("[data-wallpaper-interval]").forEach((button) => {
+        const active = Number(button.dataset.wallpaperInterval) === prefs.tvWallpaperIntervalSeconds;
         button.classList.toggle("active", active);
         button.setAttribute("aria-pressed", active ? "true" : "false");
       });
@@ -787,6 +809,16 @@
       scheduleUiSnapshotSave();
     }
 
+    async function setTvWallpaperPreference(field, value) {
+      if (!isTvLikeDevice()) return;
+      if (field !== "tvWallpaperEnterSeconds" && field !== "tvWallpaperIntervalSeconds") return;
+      state.uiPrefs = Object.assign({}, state.uiPrefs || {}, sanitizeUiPrefs(state.uiPrefs || {}), { [field]: Number(value), loaded: true });
+      applyUiPrefs();
+      if (window.fongmiBridge && !window.fm) await waitForNativeSdk(1200);
+      try { await sdk().cache.set(cacheKey("uiPrefs"), JSON.stringify(sanitizeUiPrefs(state.uiPrefs))); } catch (e) {}
+      scheduleUiSnapshotSave();
+    }
+
     function reassertConnectionSegmentedFocus(target) {
       if (!isTvLikeDevice() || !isConnectionPanelOpen() || !target || !target.isConnected || !isVisibleFocusable(target)) return;
       if (document.activeElement !== target) focusRemoteTarget(target);
@@ -799,6 +831,8 @@
     function commitConnectionSegmentedTarget(target) {
       if (!target) return Promise.resolve(false);
       const fullscreenValue = target.dataset.homeFullscreen;
+      const wallpaperEnter = target.dataset.wallpaperEnter;
+      const wallpaperInterval = target.dataset.wallpaperInterval;
       let commit = null;
       if (fullscreenValue === "on" || fullscreenValue === "off") {
         const enabled = fullscreenValue === "on";
@@ -807,6 +841,21 @@
           return Promise.resolve(false);
         }
         commit = setHomeFullscreenEnabled(enabled);
+      }
+      if (wallpaperEnter != null) {
+        const value = wallpaperEnter === "off" ? 0 : Number(wallpaperEnter);
+        if (sanitizeUiPrefs(state.uiPrefs || {}).tvWallpaperEnterSeconds === value) {
+          reassertConnectionSegmentedFocus(target);
+          return Promise.resolve(false);
+        }
+        commit = setTvWallpaperPreference("tvWallpaperEnterSeconds", value);
+      } else if (wallpaperInterval != null) {
+        const value = Number(wallpaperInterval);
+        if (sanitizeUiPrefs(state.uiPrefs || {}).tvWallpaperIntervalSeconds === value) {
+          reassertConnectionSegmentedFocus(target);
+          return Promise.resolve(false);
+        }
+        commit = setTvWallpaperPreference("tvWallpaperIntervalSeconds", value);
       }
       if (!commit || typeof commit.then !== "function") {
         reassertConnectionSegmentedFocus(target);
@@ -827,13 +876,17 @@
       if (key !== "ArrowLeft" && key !== "ArrowRight") return false;
       const group = button.closest && button.closest(".detail-style-segmented");
       if (!group) return false;
-      const field = button.dataset.homeFullscreen != null ? "homeFullscreen" : "";
+      const field = button.dataset.homeFullscreen != null ? "homeFullscreen"
+        : button.dataset.wallpaperEnter != null ? "wallpaperEnter"
+          : button.dataset.wallpaperInterval != null ? "wallpaperInterval" : "";
       if (!field) return false;
-      const values = ["on", "off"];
+      const values = field === "homeFullscreen" ? ["on", "off"]
+        : field === "wallpaperEnter" ? ["off", "10", "30", "60"] : ["10", "20", "0"];
       const currentValue = String(button.dataset[field] || "");
       const currentIndex = values.indexOf(currentValue);
       const targetValue = values[Math.max(0, Math.min(values.length - 1, currentIndex + (key === "ArrowRight" ? 1 : -1)))] || currentValue;
-      const target = Array.from(group.querySelectorAll("button[data-home-fullscreen]"))
+      const target = Array.from(group.querySelectorAll("button"))
+        .filter((candidate) => candidate.dataset[field] != null)
         .find((candidate) => isVisibleFocusable(candidate) && candidate.dataset[field] === targetValue) || button;
       event.preventDefault();
       event.stopPropagation();

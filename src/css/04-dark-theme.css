@@ -1529,6 +1529,19 @@
       box-sizing: border-box;
     }
 
+    #connectionOverlayHost .connection-item.tv-wallpaper-setting {
+      grid-template-columns: max-content minmax(0, 1fr);
+      gap: 8px;
+    }
+
+    #connectionOverlayHost .tv-wallpaper-entry-setting > .detail-style-segmented {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    #connectionOverlayHost .tv-wallpaper-interval-setting > .detail-style-segmented {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
     #connectionOverlayHost .detail-style-option {
       min-width: 0;
       overflow: visible;

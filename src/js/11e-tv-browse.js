@@ -52,12 +52,14 @@
     }
 
     function tvBrowseState() {
-      return state.tvBrowse || (state.tvBrowse = {
+      const ui = state.tvBrowse || (state.tvBrowse = {
         column: "recommendation", view: "home", historyReturnFocus: null, positions: {}, filterOpen: false, filterFocusGroup: "",
         confirm: null, enterHeld: false, suppressClickUntil: 0,
         previewKey: "", backdropToken: 0, backdropSlot: 0, backdropUrl: "",
         focusIntent: null, retryFocusIntent: null, railCache: {}, railCacheOrder: [], initialized: false
       });
+      if (!ui.wallpaper) ui.wallpaper = { active: false, timer: 0, timerToken: 0, moveToken: 0, movePending: false, paused: false, lastActivityAt: 0, historyEntry: false, pendingHistoryAction: null, currentKey: "", currentItem: null, consumeUntilKeyup: {}, phase: "idle" };
+      return ui;
     }
 
     function tvBrowseFocusLabel() {
@@ -133,6 +135,452 @@
     function tvBrowseQueryKey() {
       const ui = tvBrowseState();
       return ui.view === "history" ? "native-history" : secondaryFilterKey(ui.column, secondaryFilterState(ui.column));
+    }
+
+    function tvWallpaperState() { return tvBrowseState().wallpaper; }
+
+    function tvWallpaperIsActive() { return !!tvWallpaperState().active; }
+
+    function tvWallpaperCurrentItems(query) {
+      const ui = tvBrowseState();
+      const activeQuery = query || secondaryGetQuery(ui.column);
+      if (ui.view !== "home" || !activeQuery) return [];
+      const source = ui.column === "recommendation"
+        ? filterBlocked(activeQuery.items || [])
+        : secondaryFilterItems(ui.column, activeQuery.items || []);
+      return (source || []).filter(hasPoster);
+    }
+
+    function tvWallpaperCurrentSelection() {
+      const ui = tvBrowseState(), position = tvBrowsePosition(), wall = tvWallpaperState();
+      const query = secondaryGetQuery(ui.column), items = tvWallpaperCurrentItems(query);
+      if (!items.length) return { query, items, index: -1, item: null, key: "" };
+      const preferredKey = wall.active ? position.key : ui.previewKey || position.key;
+      let index = preferredKey ? items.findIndex((item) => mediaDomKey(item) === preferredKey) : -1;
+      if (index < 0) index = items.findIndex((item) => mediaDomKey(item) === position.key);
+      if (index < 0) index = Math.max(0, Math.min(items.length - 1, Number(position.index) || 0));
+      const item = items[index] || null;
+      return { query, items, index, item, key: item ? mediaDomKey(item) : "" };
+    }
+
+    function tvWallpaperCardFor(selection) {
+      if (!selection || !selection.item) return null;
+      const rail = $("tvBrowseRail");
+      return rail && Array.from(rail.children).find((card) => card.__mediaItem
+        && mediaDomKey(card.__mediaItem) === selection.key
+        && Number(card.dataset.cardIndex) === selection.index) || null;
+    }
+
+    function tvWallpaperRouteReady() {
+      const ui = tvBrowseState(), root = $("tvBrowse"), detail = $("detailSheet"), sync = $("syncSheet");
+      const search = $("searchPage"), secondary = $("secondaryCatalog");
+      return isTvLikeDevice() && tvBrowseActive() && homeUiRoute() === "home"
+        && ui.view === "home" && !ui.filterOpen && !isSidebarOpen() && !isConnectionPanelOpen()
+        && !(detail && detail.classList.contains("active")) && !(sync && sync.classList.contains("active"))
+        && !(search && !search.hidden) && !(secondary && !secondary.hidden)
+        && !(typeof isPanSearchActive === "function" && isPanSearchActive())
+        && !(typeof isSearchSuggestOpen === "function" && isSearchSuggestOpen())
+        && !(state.blocked && state.blocked.selecting)
+        && !(typeof recentManageRuntime === "function" && recentManageRuntime().active)
+        && !!(root && !root.hidden);
+    }
+
+    function tvWallpaperCanEnter() {
+      const wall = tvWallpaperState();
+      if (wall.paused || document.visibilityState === "hidden" || !tvWallpaperRouteReady()) return false;
+      const selection = tvWallpaperCurrentSelection();
+      return !!(selection.item && selection.key && tvBrowseState().previewKey === selection.key
+        && tvWallpaperCardFor(selection));
+    }
+
+    function tvWallpaperCanContinue() {
+      return tvWallpaperIsActive() && !tvWallpaperState().paused
+        && document.visibilityState !== "hidden" && tvWallpaperRouteReady();
+    }
+
+    function tvWallpaperStopTimer() {
+      const wall = tvWallpaperState();
+      if (wall.timer) clearTimeout(wall.timer);
+      wall.timer = 0; wall.timerToken += 1; wall.phase = wall.active ? "wallpaper" : "idle";
+    }
+
+    function tvWallpaperScheduleIdle(resetActivity) {
+      const wall = tvWallpaperState(), prefs = sanitizeUiPrefs(state.uiPrefs || {});
+      if (resetActivity) {
+        wall.lastActivityAt = Date.now();
+        tvWallpaperStopTimer();
+      }
+      if (wall.active || wall.paused || document.visibilityState === "hidden" || prefs.tvWallpaperEnterSeconds <= 0) {
+        tvWallpaperStopTimer();
+        return false;
+      }
+      if (!tvWallpaperCanEnter()) {
+        if (wall.timer) tvWallpaperStopTimer();
+        return false;
+      }
+      if (wall.timer) return true;
+      if (!wall.lastActivityAt) wall.lastActivityAt = Date.now();
+      const waitMs = prefs.tvWallpaperEnterSeconds * 1000;
+      const delay = Math.max(0, wall.lastActivityAt + waitMs - Date.now());
+      const token = ++wall.timerToken;
+      wall.phase = "idle";
+      wall.timer = setTimeout(() => {
+        if (token !== wall.timerToken) return;
+        wall.timer = 0;
+        wall.phase = "idle";
+        if (tvWallpaperCanEnter()) tvWallpaperEnter();
+        else if (tvWallpaperRouteReady()) {
+          wall.lastActivityAt = Date.now();
+          tvWallpaperScheduleIdle(false);
+        }
+      }, delay);
+      return true;
+    }
+
+    function tvWallpaperHistoryPush() {
+      const wall = tvWallpaperState();
+      try {
+        const baseState = history.state;
+        const current = baseState && typeof baseState === "object" ? baseState : {};
+        wall.historyBaseState = baseState;
+        wall.historyBaseUrl = location.href;
+        // Preserve null exactly for the return check. A fresh page commonly
+        // starts with history.state === null even though pushState needs an
+        // object for the transient wallpaper marker.
+        wall.historyBaseSerialized = JSON.stringify(baseState == null ? null : baseState);
+        history.pushState(Object.assign({}, current, { tvBrowseWallpaper: true }), "", location.href);
+        wall.historyEntry = true;
+      } catch (e) { wall.historyEntry = false; }
+    }
+
+    function tvWallpaperUpdateInfoShift() {
+      if (!tvWallpaperIsActive()) return;
+      const root = $("tvBrowse"), info = $("tvBrowseInfo");
+      if (!root || !info) return;
+      const rootRect = root.getBoundingClientRect(), infoRect = info.getBoundingClientRect();
+      if (!rootRect.height || !infoRect.height) return;
+      const targetTop = Math.max(0, Math.min(rootRect.height * .64, rootRect.height - infoRect.height - 24));
+      const currentShift = Number.parseFloat(root.style.getPropertyValue("--tv-wallpaper-info-shift")) || 0;
+      const baseTop = infoRect.top - rootRect.top - currentShift;
+      root.style.setProperty("--tv-wallpaper-info-shift", Math.round(targetTop - baseTop) + "px");
+    }
+
+    function tvWallpaperEnter() {
+      const wall = tvWallpaperState(), ui = tvBrowseState(), root = $("tvBrowse");
+      if (wall.active || !root || !tvWallpaperCanEnter()) return false;
+      tvWallpaperStopTimer();
+      const selection = tvWallpaperCurrentSelection();
+      if (!selection.item) return false;
+      const position = tvBrowsePosition();
+      position.key = selection.key; position.index = selection.index;
+      wall.active = true; wall.phase = "wallpaper"; wall.currentKey = selection.key; wall.currentItem = selection.item;
+      wall.pendingHistoryAction = null; wall.movePending = false; wall.moveToken += 1;
+      ui.focusIntent = null; ui.retryFocusIntent = null;
+      if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+      tvWallpaperHistoryPush();
+      const info = $("tvBrowseInfo");
+      if (info) {
+        const rootRect = root.getBoundingClientRect(), infoRect = info.getBoundingClientRect();
+        const top = Math.max(0, Math.min(rootRect.height * .64, rootRect.height - infoRect.height - 24));
+        root.style.setProperty("--tv-wallpaper-info-shift", "0px");
+        root.classList.add("wallpaper-mode");
+        requestAnimationFrame(() => {
+          if (!wall.active || !root.isConnected) return;
+          root.style.setProperty("--tv-wallpaper-info-shift", Math.round(top - (infoRect.top - rootRect.top)) + "px");
+        });
+      } else root.classList.add("wallpaper-mode");
+      tvWallpaperScheduleRotation();
+      return true;
+    }
+
+    function tvWallpaperMaterialize(selection) {
+      if (!selection || !selection.item) return null;
+      let card = tvWallpaperCardFor(selection);
+      if (!card) {
+        renderTvBrowse({ append: true, ensureIndex: selection.index, reason: "wallpaper-target" });
+        card = tvWallpaperCardFor(selection);
+      }
+      return card;
+    }
+
+    function tvWallpaperFocusCurrent(selection) {
+      const ui = tvBrowseState();
+      const current = selection || tvWallpaperCurrentSelection();
+      const position = tvBrowsePosition();
+      if (current.item) { position.key = current.key; position.index = current.index; }
+      const card = tvWallpaperMaterialize(current);
+      if (card && mediaDomKey(card.__mediaItem) === current.key && isVisibleFocusable(card)) {
+        focusRemoteTarget(card);
+        return true;
+      }
+      const fallback = tvBrowseColumnButton(ui.column) || $("tvFunction-search");
+      if (fallback && isVisibleFocusable(fallback)) focusRemoteTarget(fallback);
+      return false;
+    }
+
+    function tvWallpaperExit(options) {
+      const opts = options || {}, wall = tvWallpaperState(), root = $("tvBrowse"), ui = tvBrowseState();
+      if (!wall.active) return false;
+      const selection = tvWallpaperCurrentSelection();
+      tvWallpaperStopTimer();
+      wall.moveToken += 1; wall.movePending = false;
+      wall.active = false; wall.phase = "idle"; wall.currentKey = selection.key; wall.currentItem = selection.item;
+      ui.focusIntent = null; ui.retryFocusIntent = null;
+      if (selection.item) {
+        const position = tvBrowsePosition();
+        position.key = selection.key; position.index = selection.index;
+      }
+      if (root) {
+        root.classList.remove("wallpaper-mode");
+        root.style.setProperty("--tv-wallpaper-info-shift", "0px");
+      }
+      if (opts.reason !== "detail" && opts.deferFocus !== true) tvWallpaperFocusCurrent(selection);
+      if (opts.userExit) wall.lastActivityAt = Date.now();
+      const historyAction = opts.reason === "detail"
+        ? { type: "detail", item: selection.item, returnTarget: null }
+        : { type: "exit" };
+      wall.pendingHistoryAction = wall.historyEntry && opts.historyAlreadyPopped !== true ? historyAction : null;
+      if (historyAction.type === "detail") historyAction.returnTarget = tvWallpaperMaterialize(selection);
+      if (wall.historyEntry && opts.historyAlreadyPopped !== true) {
+        try { history.back(); }
+        catch (e) {
+          wall.historyEntry = false; wall.pendingHistoryAction = null;
+          wall.historyBaseState = null; wall.historyBaseUrl = ""; wall.historyBaseSerialized = "";
+        }
+      } else {
+        wall.historyEntry = false;
+        wall.pendingHistoryAction = null;
+        wall.historyBaseState = null; wall.historyBaseUrl = ""; wall.historyBaseSerialized = "";
+        if (historyAction.type === "detail" && historyAction.item) openDetail(historyAction.item, { returnTarget: historyAction.returnTarget });
+      }
+      if (historyAction.type !== "detail") tvWallpaperScheduleIdle(!!opts.userExit);
+      return true;
+    }
+
+    function tvWallpaperHandleKey(event, key) {
+      const wall = tvWallpaperState();
+      const consumed = wall.consumeUntilKeyup || (wall.consumeUntilKeyup = {});
+      if (consumed[key]) {
+        event.preventDefault(); event.stopPropagation();
+        if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+        return true;
+      }
+      if (!wall.active) return false;
+      if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Escape", "Backspace", "Enter"].includes(key)) return false;
+      event.preventDefault(); event.stopPropagation();
+      if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+      if (key === "ArrowUp" || key === "ArrowDown") {
+        consumed[key] = true;
+        tvWallpaperExit({ reason: "user", userExit: true });
+      } else if (key === "Escape" || key === "Backspace") {
+        consumed[key] = true;
+        tvWallpaperExit({ reason: "user", userExit: true });
+      } else if (key === "Enter") {
+        consumed.Enter = true;
+        const selection = tvWallpaperCurrentSelection();
+        if (selection.item) tvWallpaperExit({ reason: "detail", deferFocus: true });
+      } else {
+        const direction = key === "ArrowRight" ? 1 : -1;
+        tvWallpaperStopTimer();
+        tvWallpaperMove(direction, false).finally(() => tvWallpaperScheduleRotation());
+      }
+      return true;
+    }
+
+    async function tvWallpaperMove(direction, automatic) {
+      const wall = tvWallpaperState();
+      if (!wall.active || wall.movePending || !tvWallpaperCanContinue()) return false;
+      const token = ++wall.moveToken;
+      wall.movePending = true;
+      let moved = false;
+      try {
+        let selection = tvWallpaperCurrentSelection(), query = selection.query, items = selection.items;
+        if (!selection.item || items.length < 1) return false;
+        let currentIndex = selection.index;
+        if (direction > 0 && currentIndex + 1 >= items.length && query.hasMore) {
+          if (query.loading) return false;
+          let before = items.length;
+          while (query.hasMore && !query.loading && items.length <= currentIndex + 1) {
+            await loadSecondaryPage(tvBrowseState().column, query, query.page + 1, { reason: automatic ? "tv-wallpaper-rotation" : "tv-wallpaper-manual" });
+            if (token !== wall.moveToken || !wall.active || wall.paused) return false;
+            query = secondaryGetQuery(tvBrowseState().column);
+            items = tvWallpaperCurrentItems(query);
+            selection = tvWallpaperCurrentSelection();
+            currentIndex = selection.index;
+            if (items.length <= currentIndex + 1 && query.loading) break;
+            if (items.length === before && !query.hasMore) break;
+            before = items.length;
+          }
+        }
+        if (token !== wall.moveToken || !wall.active || wall.paused) return false;
+        selection = tvWallpaperCurrentSelection();
+        items = selection.items; currentIndex = selection.index; query = selection.query;
+        if (!selection.item || items.length <= 1) return false;
+        let nextIndex = currentIndex + direction;
+        if (nextIndex < 0) return false;
+        if (nextIndex >= items.length) {
+          if (!automatic || query.hasMore || query.loading) return false;
+          nextIndex = 0;
+        }
+        const nextItem = items[nextIndex], nextKey = mediaDomKey(nextItem);
+        if (!nextItem || !nextKey || nextKey === selection.key) return false;
+        const position = tvBrowsePosition();
+        position.key = nextKey; position.index = nextIndex;
+        const next = { query, items, index: nextIndex, item: nextItem, key: nextKey };
+        tvWallpaperMaterialize(next);
+        if (token !== wall.moveToken || !wall.active || wall.paused) return false;
+        tvBrowsePreview(nextItem);
+        wall.currentKey = nextKey; wall.currentItem = nextItem;
+        tvBrowseMaybeLoadMore(nextIndex);
+        moved = true;
+        requestAnimationFrame(tvWallpaperUpdateInfoShift);
+        return true;
+      } finally {
+        if (token === wall.moveToken) wall.movePending = false;
+        if (moved && !automatic) tvWallpaperScheduleRotation();
+      }
+    }
+
+    function tvWallpaperScheduleRotation() {
+      const wall = tvWallpaperState(), prefs = sanitizeUiPrefs(state.uiPrefs || {});
+      if (!wall.active || wall.paused || document.visibilityState === "hidden" || prefs.tvWallpaperIntervalSeconds <= 0 || wall.movePending) {
+        if (wall.timer && wall.active) tvWallpaperStopTimer();
+        return false;
+      }
+      if (!tvWallpaperCanContinue()) {
+        tvWallpaperExit({ reason: "blocked" });
+        return false;
+      }
+      const selection = tvWallpaperCurrentSelection();
+      if (!selection.item || selection.items.length <= 1 && !selection.query.hasMore) return false;
+      if (wall.timer) return true;
+      const token = ++wall.timerToken;
+      wall.phase = "rotation";
+      wall.timer = setTimeout(() => {
+        if (token !== wall.timerToken) return;
+        wall.timer = 0; wall.phase = "rotation";
+        if (!tvWallpaperCanContinue()) {
+          if (document.visibilityState === "hidden") tvWallpaperPause();
+          else tvWallpaperExit({ reason: "blocked" });
+          return;
+        }
+        tvWallpaperMove(1, true).finally(() => {
+          if (wall.active && !wall.paused) tvWallpaperScheduleRotation();
+        });
+      }, prefs.tvWallpaperIntervalSeconds * 1000);
+      return true;
+    }
+
+    function tvWallpaperNoteUserActivity() {
+      if (!isTvLikeDevice()) return;
+      const wall = tvWallpaperState();
+      if (wall.active) return;
+      wall.lastActivityAt = Date.now();
+      tvWallpaperScheduleIdle(true);
+    }
+
+    function tvWallpaperAfterHomeReturn() {
+      const wall = tvWallpaperState();
+      if (wall.active) tvWallpaperExit({ reason: "blocked" });
+      wall.lastActivityAt = Date.now();
+      tvWallpaperScheduleIdle(true);
+    }
+
+    function tvWallpaperPreferencesChanged() {
+      const wall = tvWallpaperState(), prefs = sanitizeUiPrefs(state.uiPrefs || {});
+      if (!isTvLikeDevice() || prefs.tvWallpaperEnterSeconds <= 0) {
+        if (!wall.active) tvWallpaperStopTimer();
+        return;
+      }
+      if (wall.active) {
+        tvWallpaperStopTimer();
+        tvWallpaperScheduleRotation();
+      }
+      else {
+        wall.lastActivityAt = Date.now();
+        tvWallpaperScheduleIdle(true);
+      }
+    }
+
+    function tvWallpaperOnBrowseRendered(selected, items) {
+      const wall = tvWallpaperState(), ui = tvBrowseState();
+      if (!selected) {
+        if (wall.active) tvWallpaperExit({ reason: "blocked" });
+        else { wall.lastActivityAt = 0; tvWallpaperStopTimer(); }
+        return;
+      }
+      if (wall.active) {
+        const index = (items || []).indexOf(selected), position = tvBrowsePosition();
+        position.key = mediaDomKey(selected); position.index = Math.max(0, index);
+        wall.currentKey = position.key; wall.currentItem = selected;
+        if (!wall.timer && !wall.movePending) tvWallpaperScheduleRotation();
+      } else if (ui.view === "home" && !(wall.pendingHistoryAction && wall.pendingHistoryAction.type === "detail")) {
+        tvWallpaperScheduleIdle(false);
+      }
+    }
+
+    function tvWallpaperReconcile() {
+      const wall = tvWallpaperState(), prefs = sanitizeUiPrefs(state.uiPrefs || {});
+      if (!isTvLikeDevice()) {
+        if (wall.active) tvWallpaperExit({ reason: "blocked" });
+        else tvWallpaperStopTimer();
+        return;
+      }
+      if (wall.paused || document.visibilityState === "hidden") { tvWallpaperStopTimer(); return; }
+      if (wall.active) {
+        if (!tvWallpaperCanContinue()) { tvWallpaperExit({ reason: "blocked" }); return; }
+        if (!wall.timer && !wall.movePending) tvWallpaperScheduleRotation();
+      } else if (prefs.tvWallpaperEnterSeconds > 0) {
+        tvWallpaperScheduleIdle(false);
+      } else tvWallpaperStopTimer();
+    }
+
+    function handleTvWallpaperPopState(event) {
+      const wall = tvWallpaperState();
+      const matchesBase = () => {
+        if (!wall.historyBaseSerialized) return true;
+        let serialized = "";
+        try { serialized = JSON.stringify(event && event.state == null ? null : event.state); } catch (e) { return false; }
+        return location.href === wall.historyBaseUrl && serialized === wall.historyBaseSerialized;
+      };
+      if (wall.pendingHistoryAction) {
+        if (!matchesBase()) {
+          try { history.forward(); } catch (e) {}
+          return true;
+        }
+        const action = wall.pendingHistoryAction;
+        wall.pendingHistoryAction = null; wall.historyEntry = false;
+        wall.historyBaseState = null; wall.historyBaseUrl = ""; wall.historyBaseSerialized = "";
+        if (action.type === "detail" && action.item) openDetail(action.item, { returnTarget: action.returnTarget });
+        return true;
+      }
+      if (wall.active) {
+        if (!matchesBase()) {
+          try { history.forward(); } catch (e) {}
+          return true;
+        }
+        wall.historyEntry = false;
+        wall.historyBaseState = null; wall.historyBaseUrl = ""; wall.historyBaseSerialized = "";
+        tvWallpaperExit({ reason: "native-back", historyAlreadyPopped: true, userExit: true });
+        return true;
+      }
+      return false;
+    }
+
+    function tvWallpaperPause() {
+      const wall = tvWallpaperState();
+      wall.paused = true; wall.moveToken += 1; wall.movePending = false;
+      tvWallpaperStopTimer();
+    }
+
+    function tvWallpaperResume() {
+      const wall = tvWallpaperState();
+      wall.paused = false; wall.moveToken += 1; wall.movePending = false;
+      if (wall.active) tvWallpaperScheduleRotation();
+      else {
+        wall.lastActivityAt = Date.now();
+        tvWallpaperScheduleIdle(true);
+      }
     }
 
     function tvBrowseOpenHistory() {
@@ -240,7 +688,7 @@
 
     function tvBrowseTryFocus() {
       const ui = tvBrowseState(), intent = ui.focusIntent;
-      if (!intent || !tvBrowseActive() || isSidebarOpen() || focusScopeRoot() !== document) return;
+      if (!intent || tvWallpaperIsActive() || !tvBrowseActive() || isSidebarOpen() || focusScopeRoot() !== document) return;
       if (intent.epoch !== homeFocusUserEpoch()) { ui.focusIntent = null; return; }
       const query = ui.view === "history" ? state.recent : secondaryActiveQuery(ui.column);
       const position = tvBrowsePosition();
@@ -564,7 +1012,10 @@
       // Finite sources can change independently of the catalog page loader.
       if (!historyView && ui.column === "recommendation") {
         const pool = recommendationPoolItems();
-        query.renderedCount = Math.max(18, Number(query.renderedCount || 0));
+        const ensureIndex = Number(options && options.ensureIndex);
+        query.renderedCount = Math.max(18, Number(query.renderedCount || 0),
+          tvWallpaperIsActive() ? tvBrowsePosition().index + 8 : 0,
+          Number.isFinite(ensureIndex) ? ensureIndex + 8 : 0);
         query.items = pool.slice(0, query.renderedCount);
         query.hasMore = query.renderedCount < pool.length;
         query.loaded = !!state.hot.ready; query.loading = !state.hot.ready; query.page = Math.ceil(query.renderedCount / query.batchSize);
@@ -662,6 +1113,7 @@
       if (historyView) { position.key = selected ? mediaDomKey(selected) : ""; position.index = selected ? items.indexOf(selected) : 0; }
       if (selected) tvBrowsePreview(selected);
       else tvBrowseClearPreview();
+      tvWallpaperOnBrowseRendered(selected, items);
       if (historyView && !selected) {
         ui.backdropUrl = "";
         [$("tvBrowseBackdrop"), $("tvBrowseBackdropNext")].forEach((layer) => { layer.style.backgroundImage = ""; layer.classList.remove("visible"); });
@@ -669,7 +1121,7 @@
       }
       // observeHomeImages already registers TV episode enrichment.
       observeHomeImages(rail); observeMovieCardEnrichment(rail);
-      if (focused && railChanged && focusScopeRoot() === document && !isSidebarOpen()) {
+      if (focused && railChanged && !tvWallpaperIsActive() && focusScopeRoot() === document && !isSidebarOpen()) {
         const target = Array.from(rail.children).find((card) => card.dataset.mediaKey === focused) || (ui.filterOpen ? Array.from(rail.children).find(isVisibleFocusable) || tvBrowseFilterTarget() : tvBrowsePosterTarget());
         if (target) focusRemoteTarget(target);
       }

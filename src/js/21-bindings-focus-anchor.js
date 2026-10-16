@@ -98,9 +98,11 @@
       });
       if ($("sourceDomainsToggle")) $("sourceDomainsToggle").addEventListener("click", toggleSourceDomains);
       if ($("sourceDomainsResetBtn")) $("sourceDomainsResetBtn").addEventListener("click", restoreSourceDomainDefaults);
-      document.querySelectorAll("[data-home-fullscreen]").forEach((button) => {
+      document.querySelectorAll("[data-home-fullscreen],[data-wallpaper-enter],[data-wallpaper-interval]").forEach((button) => {
         button.addEventListener("click", () => {
-          setHomeFullscreenEnabled(button.dataset.homeFullscreen !== "off").catch(() => {});
+          if (button.dataset.homeFullscreen != null) setHomeFullscreenEnabled(button.dataset.homeFullscreen !== "off").catch(() => {});
+          else if (button.dataset.wallpaperEnter != null) setTvWallpaperPreference("tvWallpaperEnterSeconds", button.dataset.wallpaperEnter === "off" ? 0 : Number(button.dataset.wallpaperEnter)).catch(() => {});
+          else if (button.dataset.wallpaperInterval != null) setTvWallpaperPreference("tvWallpaperIntervalSeconds", Number(button.dataset.wallpaperInterval)).catch(() => {});
         });
         button.addEventListener("keydown", (event) => {
           handleConnectionSegmentedDirectionalKey(button, event);
@@ -358,7 +360,17 @@
     }
 
     function installRemoteKeys() {
+      document.addEventListener("keydown", (event) => {
+        const key = normalizeRemoteKey(event);
+        if (tvWallpaperHandleKey(event, key)) return;
+        if (event.isTrusted !== false) tvWallpaperNoteUserActivity();
+      }, true);
+      document.addEventListener("keyup", (event) => {
+        const key = normalizeRemoteKey(event), consumed = tvWallpaperState().consumeUntilKeyup;
+        if (consumed && consumed[key]) delete consumed[key];
+      }, true);
       document.addEventListener("pointerdown", (event) => {
+        if (event.isTrusted !== false) tvWallpaperNoteUserActivity();
         if (tvBrowseActive() && event.target.closest && event.target.closest("#tvBrowse")) markHomeUserNavigation();
         if (homeUiRoute() === "secondary") cancelSecondaryMediaFocusRestore();
         const recentDelete = state.recentDelete;

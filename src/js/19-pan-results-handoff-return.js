@@ -1169,6 +1169,7 @@
           : null;
         restoreHomeReturn();
         scheduleUiSnapshotSave();
+        if (typeof tvWallpaperAfterHomeReturn === "function") tvWallpaperAfterHomeReturn();
         if (needBack) {
           // 保存当前主页滚动位置，history.back() 后 popstate 会重置它
           _pendingHomeScrollY = savedHomeScrollY != null
@@ -1206,6 +1207,7 @@
       sheet.setAttribute("aria-hidden", "true");
       scheduleUiSnapshotSave();
       if (!fromPopState && location.hash === "#sync") history.back();
+      if (typeof tvWallpaperAfterHomeReturn === "function") tvWallpaperAfterHomeReturn();
     }
 
     function nativeSearchReturnMarkerFor() {

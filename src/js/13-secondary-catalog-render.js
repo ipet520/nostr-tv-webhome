@@ -865,6 +865,7 @@
       state.homeV14.secondaryReturn = null;
       state.activeList = "all";
       renderAll({ deferContent: false });
+      if (typeof tvWallpaperAfterHomeReturn === "function") tvWallpaperAfterHomeReturn();
       const restore = () => {
         applyHomeScrollTop(Math.max(0, Number(saved.scrollY || 0)));
         let target = saved.focus ? findHomeReturnTarget({ focus: saved.focus }) : null;

@@ -285,6 +285,7 @@
       const opts = options || {};
       if (opts.fromPopState !== true) clearConnectionHistoryEntry();
       setConnectionPanelOpen(false);
+      if (typeof tvWallpaperAfterHomeReturn === "function") tvWallpaperAfterHomeReturn();
     }
 
     function shortRelay(url) {
