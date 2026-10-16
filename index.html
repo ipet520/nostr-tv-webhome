@@ -27812,7 +27812,7 @@ utils.encode = function encode(arr, enc) {
         previewKey: "", backdropToken: 0, backdropSlot: 0, backdropUrl: "",
         focusIntent: null, retryFocusIntent: null, railCache: {}, railCacheOrder: [], initialized: false
       });
-      if (!ui.wallpaper) ui.wallpaper = { active: false, timer: 0, timerToken: 0, moveToken: 0, movePending: false, paused: false, lastActivityAt: 0, historyEntry: false, pendingHistoryAction: null, currentKey: "", currentItem: null, consumeUntilKeyup: {}, phase: "idle" };
+      if (!ui.wallpaper) ui.wallpaper = { active: false, timer: 0, timerToken: 0, moveToken: 0, infoFrame: 0, movePending: false, paused: false, lastActivityAt: 0, historyEntry: false, pendingHistoryAction: null, currentKey: "", currentItem: null, consumeUntilKeyup: {}, phase: "idle" };
       return ui;
     }
 
@@ -28027,9 +28027,32 @@ utils.encode = function encode(arr, enc) {
       if (!rootRect.height || !infoRect.height) return;
       const targetTop = tvWallpaperInfoTargetTop(root, infoRect);
       if (targetTop === null) return;
-      const currentShift = Number.parseFloat(root.style.getPropertyValue("--tv-wallpaper-info-shift")) || 0;
-      const baseTop = infoRect.top - rootRect.top - currentShift;
-      root.style.setProperty("--tv-wallpaper-info-shift", Math.round(targetTop - baseTop) + "px");
+      const offsetParent = info.offsetParent;
+      if (!offsetParent || offsetParent !== root && !root.contains(offsetParent)) return;
+      const parentRect = offsetParent.getBoundingClientRect();
+      // offsetTop excludes the info element's in-flight transform. Measuring
+      // its visual rect and subtracting the target CSS variable is incorrect
+      // while the 400ms transition is still interpolating.
+      const baseTop = info.offsetTop + parentRect.top + offsetParent.clientTop - rootRect.top;
+      const shift = Math.round(targetTop - baseTop) + "px";
+      if (root.style.getPropertyValue("--tv-wallpaper-info-shift") !== shift) {
+        root.style.setProperty("--tv-wallpaper-info-shift", shift);
+      }
+    }
+
+    function tvWallpaperScheduleInfoShift(expectedKey, expectedMoveToken) {
+      const wall = tvWallpaperState(), root = $("tvBrowse");
+      if (!wall.active || !root) return false;
+      const key = expectedKey || wall.currentKey;
+      const token = expectedMoveToken == null ? wall.moveToken : expectedMoveToken;
+      if (wall.infoFrame) cancelAnimationFrame(wall.infoFrame);
+      wall.infoFrame = requestAnimationFrame(() => {
+        wall.infoFrame = 0;
+        if (!wall.active || wall.paused || wall.moveToken !== token || wall.currentKey !== key || !root.isConnected) return;
+        if (tvWallpaperCurrentSelection().key !== key) return;
+        tvWallpaperUpdateInfoShift();
+      });
+      return true;
     }
 
     function tvWallpaperEnter() {
@@ -28049,10 +28072,7 @@ utils.encode = function encode(arr, enc) {
       if (info) {
         root.style.setProperty("--tv-wallpaper-info-shift", "0px");
         root.classList.add("wallpaper-mode");
-        requestAnimationFrame(() => {
-          if (!wall.active || !root.isConnected) return;
-          tvWallpaperUpdateInfoShift();
-        });
+        tvWallpaperScheduleInfoShift(selection.key, wall.moveToken);
       } else root.classList.add("wallpaper-mode");
       tvWallpaperScheduleRotation();
       return true;
@@ -28089,6 +28109,8 @@ utils.encode = function encode(arr, enc) {
       const selection = tvWallpaperCurrentSelection();
       tvWallpaperStopTimer();
       wall.moveToken += 1; wall.movePending = false;
+      if (wall.infoFrame) cancelAnimationFrame(wall.infoFrame);
+      wall.infoFrame = 0;
       wall.active = false; wall.phase = "idle"; wall.currentKey = selection.key; wall.currentItem = selection.item;
       ui.focusIntent = null; ui.retryFocusIntent = null;
       if (selection.item) {
@@ -28194,11 +28216,11 @@ utils.encode = function encode(arr, enc) {
         const next = { query, items, index: nextIndex, item: nextItem, key: nextKey };
         tvWallpaperMaterialize(next);
         if (token !== wall.moveToken || !wall.active || wall.paused) return false;
-        tvBrowsePreview(nextItem);
         wall.currentKey = nextKey; wall.currentItem = nextItem;
+        tvBrowsePreview(nextItem);
         tvBrowseMaybeLoadMore(nextIndex);
         moved = true;
-        requestAnimationFrame(tvWallpaperUpdateInfoShift);
+        tvWallpaperScheduleInfoShift(nextKey, token);
         return true;
       } finally {
         if (token === wall.moveToken) wall.movePending = false;
@@ -28278,6 +28300,7 @@ utils.encode = function encode(arr, enc) {
         const index = (items || []).indexOf(selected), position = tvBrowsePosition();
         position.key = mediaDomKey(selected); position.index = Math.max(0, index);
         wall.currentKey = position.key; wall.currentItem = selected;
+        tvWallpaperScheduleInfoShift(position.key, wall.moveToken);
         if (!wall.timer && !wall.movePending) tvWallpaperScheduleRotation();
       } else if (ui.view === "home" && !(wall.pendingHistoryAction && wall.pendingHistoryAction.type === "detail")) {
         tvWallpaperScheduleIdle(false);
@@ -28341,7 +28364,10 @@ utils.encode = function encode(arr, enc) {
     function tvWallpaperResume() {
       const wall = tvWallpaperState();
       wall.paused = false; wall.moveToken += 1; wall.movePending = false;
-      if (wall.active) tvWallpaperScheduleRotation();
+      if (wall.active) {
+        tvWallpaperScheduleInfoShift(wall.currentKey, wall.moveToken);
+        tvWallpaperScheduleRotation();
+      }
       else {
         wall.lastActivityAt = Date.now();
         tvWallpaperScheduleIdle(true);
@@ -28673,7 +28699,7 @@ utils.encode = function encode(arr, enc) {
       const spare = upperHost.clientHeight - used - gap - parseFloat(root.style.getPropertyValue("--tv-preview-gap"));
       set("filter-overview-lines", String(height < 450 ? 0 : clamp(0, Math.floor(spare / (overviewFont * 1.5)), height >= 720 ? 3 : 2)));
       syncTvBrowseFilterOverview();
-      if (tvWallpaperIsActive()) tvWallpaperUpdateInfoShift();
+      if (tvWallpaperIsActive()) tvWallpaperScheduleInfoShift();
     }
 
     function initTvBrowse() {
@@ -29022,6 +29048,8 @@ utils.encode = function encode(arr, enc) {
       const labelOnly = item.source === "tmdb" && desc === (item.listTitle || "搜索") + " · " + (item.title || "");
       $("tvBrowseOverview").textContent = homeHeroPresentationOverview(item, detail) || (labelOnly || ui.view === "history" ? "" : desc);
       syncTvBrowseFilterOverview();
+      const wall = tvWallpaperState();
+      if (wall.active && wall.currentKey === key) tvWallpaperScheduleInfoShift(key, wall.moveToken);
       tvBrowseRenderLogo(item, detail);
       tvBrowseEnsurePreviewDetail(item, detail);
       tvBrowsePrepareAdjacentLogos(item);

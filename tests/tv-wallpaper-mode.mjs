@@ -135,16 +135,48 @@ try {
   await page.keyboard.press("ArrowLeft");
   assert.ok(await page.evaluate(() => testWallpaper.tvWallpaperState().lastActivityAt) > lastActivityBefore, "a physical remote key resets inactivity timing");
 
-  const before = await page.evaluate(() => ({
-    key: testWallpaper.tvBrowsePosition().key,
-    index: testWallpaper.tvBrowsePosition().index,
-    title: document.querySelector("#tvBrowseTitle").textContent,
-    backdrop: testWallpaper.tvBrowseState().backdropUrl,
-    infoTop: document.querySelector("#tvBrowseInfo").getBoundingClientRect().top
-  }));
+  const before = await page.evaluate(() => {
+    const selection = testWallpaper.tvWallpaperCurrentSelection();
+    selection.item.overview = "进入前已渲染的当前资源简介。";
+    testWallpaper.tvBrowsePreview(selection.item);
+    return {
+      key: testWallpaper.tvBrowsePosition().key,
+      index: testWallpaper.tvBrowsePosition().index,
+      title: document.querySelector("#tvBrowseTitle").textContent,
+      overview: document.querySelector("#tvBrowseOverview").textContent,
+      backdrop: testWallpaper.tvBrowseState().backdropUrl,
+      infoTop: document.querySelector("#tvBrowseInfo").getBoundingClientRect().top
+    };
+  });
+  const lateOverview = "异步补全后用于复测壁纸模式信息区高度和底部安全边界的长剧情简介。".repeat(18);
   await page.evaluate(() => testWallpaper.clock.fire(10000));
+  await page.evaluate(() => {
+    const item = testWallpaper.tvWallpaperCurrentSelection().item;
+    window.setTimeout(() => {
+      item.overview = "异步补全后用于复测壁纸模式信息区高度和底部安全边界的长剧情简介。".repeat(18);
+      testWallpaper.tvBrowsePreview(item);
+    }, 80);
+  });
   await page.waitForTimeout(450);
   assert.equal(await page.evaluate(() => testWallpaper.tvWallpaperState().active), true);
+  const firstEntry = await page.evaluate(() => {
+    const info = document.querySelector("#tvBrowseInfo"), title = document.querySelector("#tvBrowseTitle");
+    const overview = document.querySelector("#tvBrowseOverview"), logo = document.querySelector("#tvBrowseLogo");
+    return {
+      key: testWallpaper.tvWallpaperCurrentSelection().key,
+      title: title.textContent,
+      titleVisible: !title.hidden && getComputedStyle(title).visibility !== "hidden" || !logo.hidden && getComputedStyle(logo).visibility !== "hidden",
+      overview: overview.textContent,
+      overviewVisible: !overview.hidden && getComputedStyle(overview).display !== "none" && overview.getBoundingClientRect().height > 0,
+      infoVisible: !info.hidden && getComputedStyle(info).visibility !== "hidden" && Number(getComputedStyle(info).opacity) > 0
+    };
+  });
+  assert.equal(firstEntry.key, before.key, "first wallpaper frame keeps resource A before rotation");
+  assert.equal(firstEntry.title, before.title, "resource A title remains rendered on first wallpaper entry");
+  assert.equal(firstEntry.titleVisible, true, "resource A title or its current logo is visible before rotation");
+  assert.equal(firstEntry.overview, lateOverview, "asynchronous synopsis enrichment completes on resource A before rotation");
+  assert.equal(firstEntry.overviewVisible, true, "resource A synopsis remains visible before rotation");
+  assert.equal(firstEntry.infoVisible, true, "the wallpaper information area remains visible before rotation");
   const wallpaperInfoBounds = await page.evaluate(() => {
     const root = document.querySelector("#tvBrowse"), info = document.querySelector("#tvBrowseInfo");
     const foreground = root.querySelector(".tv-browse-foreground"), rootRect = root.getBoundingClientRect();
