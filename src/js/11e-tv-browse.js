@@ -58,7 +58,7 @@
         previewKey: "", backdropToken: 0, backdropSlot: 0, backdropUrl: "",
         focusIntent: null, retryFocusIntent: null, railCache: {}, railCacheOrder: [], initialized: false
       });
-      if (!ui.wallpaper) ui.wallpaper = { active: false, timer: 0, timerToken: 0, moveToken: 0, infoFrame: 0, movePending: false, paused: false, lastActivityAt: 0, historyEntry: false, pendingHistoryAction: null, currentKey: "", currentItem: null, consumeUntilKeyup: {}, phase: "idle" };
+      if (!ui.wallpaper) ui.wallpaper = { active: false, timer: 0, timerToken: 0, moveToken: 0, infoFrame: 0, movePending: false, paused: false, lastActivityAt: 0, historyEntry: false, pendingHistoryAction: null, currentKey: "", currentItem: null, consumeUntilKeyup: {}, detailPending: false, phase: "idle" };
       return ui;
     }
 
@@ -241,15 +241,18 @@
       const wall = tvWallpaperState();
       try {
         const baseState = history.state;
-        const current = baseState && typeof baseState === "object" ? baseState : {};
         wall.historyBaseState = baseState;
         wall.historyBaseUrl = location.href;
         // Preserve null exactly for the return check. A fresh page commonly
         // starts with history.state === null even though pushState needs an
         // object for the transient wallpaper marker.
         wall.historyBaseSerialized = JSON.stringify(baseState == null ? null : baseState);
-        history.pushState(Object.assign({}, current, { tvBrowseWallpaper: true }), "", location.href);
-        wall.historyEntry = true;
+        // Use the same URL-changing transient marker as TV filters. Native
+        // Back checks the WebView URL before it calls goBack(); a same-URL
+        // pushState is treated as the home boundary and falls through to the
+        // host's full-screen Back behavior without dispatching popstate here.
+        const markerHash = location.hash === "#tv-wallpaper" ? "#tv-wallpaper-active" : "#tv-wallpaper";
+        wall.historyEntry = ensureTvPanelHistoryEntry("wallpaper", markerHash);
       } catch (e) { wall.historyEntry = false; }
     }
 
@@ -310,9 +313,16 @@
       const position = tvBrowsePosition();
       position.key = selection.key; position.index = selection.index;
       wall.active = true; wall.phase = "wallpaper"; wall.currentKey = selection.key; wall.currentItem = selection.item;
-      wall.pendingHistoryAction = null; wall.movePending = false; wall.moveToken += 1;
+      wall.pendingHistoryAction = null; wall.detailPending = false; wall.movePending = false; wall.moveToken += 1;
       ui.focusIntent = null; ui.retryFocusIntent = null;
-      if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+      // The native TV host routes OK through dispatchFocusedClick(), not a
+      // DOM keydown. Keep a card as that click sink while wallpaper mode is
+      // active; click handling below resolves identity from Browse position.
+      const card = tvWallpaperCardFor(selection);
+      if (card && document.activeElement !== card) {
+        try { card.focus({ preventScroll: true }); }
+        catch (e) { card.focus(); }
+      }
       tvWallpaperHistoryPush();
       const info = $("tvBrowseInfo");
       if (info) {
@@ -410,13 +420,31 @@
         tvWallpaperExit({ reason: "user", userExit: true });
       } else if (key === "Enter") {
         consumed.Enter = true;
-        const selection = tvWallpaperCurrentSelection();
-        if (selection.item) tvWallpaperExit({ reason: "detail", deferFocus: true });
+        tvWallpaperOpenCurrentDetail();
       } else {
         const direction = key === "ArrowRight" ? 1 : -1;
         tvWallpaperStopTimer();
         tvWallpaperMove(direction, false).finally(() => tvWallpaperScheduleRotation());
       }
+      return true;
+    }
+
+    function tvWallpaperOpenCurrentDetail() {
+      const wall = tvWallpaperState();
+      if (!wall.active || wall.detailPending) return false;
+      const selection = tvWallpaperCurrentSelection();
+      if (!selection.item) return false;
+      wall.detailPending = true;
+      tvWallpaperExit({ reason: "detail", deferFocus: true });
+      return true;
+    }
+
+    function tvWallpaperHandleClick(event) {
+      const wall = tvWallpaperState();
+      if (!wall.active && !wall.detailPending) return false;
+      event.preventDefault(); event.stopPropagation();
+      if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+      if (wall.active) tvWallpaperOpenCurrentDetail();
       return true;
     }
 
@@ -515,6 +543,7 @@
     function tvWallpaperAfterHomeReturn() {
       const wall = tvWallpaperState();
       if (wall.active) tvWallpaperExit({ reason: "blocked" });
+      wall.detailPending = false;
       wall.lastActivityAt = Date.now();
       tvWallpaperScheduleIdle(true);
     }
@@ -1005,6 +1034,7 @@
       $("tvBrowseFunctions").appendChild(dock);
       window.addEventListener("blur", () => { ui.enterHeld = false; ui.confirm = null; if (ui.view === "history") cancelRecentDeleteArm(); });
       $("tvBrowse").addEventListener("click", (event) => {
+        if (tvWallpaperHandleClick(event)) return;
         if ((ui.enterHeld || Date.now() < ui.suppressClickUntil) && event.detail === 0) {
           event.preventDefault(); event.stopImmediatePropagation();
         }

@@ -16,7 +16,7 @@ function installHook() {
     syncBrowseDevicePresentation, bindActions, installRemoteKeys, tvBrowseBeginStartup, homeFocusUserEpoch,
     tvWallpaperState, tvWallpaperScheduleIdle, tvWallpaperEnter, tvWallpaperMove, tvWallpaperPause,
     tvWallpaperResume, tvWallpaperPreferencesChanged, tvWallpaperStopTimer, tvWallpaperCurrentSelection,
-    tvWallpaperHandleKey, tvWallpaperUpdateInfoShift, handleTvWallpaperPopState, renderUiPrefsControls, sanitizeUiPrefs,
+    tvWallpaperHandleKey, tvWallpaperUpdateInfoShift, handleTvWallpaperPopState, renderUiPrefsControls, sanitizeUiPrefs, normalizeRemoteKey,
     setTvWallpaperPreference, toggleConnectionPanel, closeConnectionPanel,
     tvBrowsePreview, openDetail, closeDetail, isVisibleFocusable
   };
@@ -72,7 +72,8 @@ function installHook() {
   };
   window.testWallpaper.stubDetail = () => {
     prepareDetailPlaybackForDetail = () => Promise.resolve(null);
-    renderDetailBase = () => {};
+    window.testWallpaper.detailRenderCount = 0;
+    renderDetailBase = () => { window.testWallpaper.detailRenderCount += 1; };
     clearDetailExtras = () => {};
     loadDetail = () => {};
     setNativeToolbarVisible = () => {};
@@ -111,6 +112,10 @@ async function pageAt(count = 8, index = 0) {
 
 try {
   const page = await pageAt();
+  assert.equal(await page.evaluate(() => normalizeRemoteKey({ key: "DPAD_CENTER" })), "Enter", "DPAD_CENTER key values normalize to OK");
+  assert.equal(await page.evaluate(() => normalizeRemoteKey({ key: "Enter" })), "Enter", "Enter remains the normalized OK key");
+  assert.equal(await page.evaluate(() => normalizeRemoteKey({ key: "", keyCode: 23 })), "Enter", "Android keyCode 23 normalizes to OK");
+  assert.equal(await page.evaluate(() => normalizeRemoteKey({ key: "", keyCode: 66 })), "Enter", "Android keyCode 66 normalizes to OK");
   const labels = await page.locator("[data-wallpaper-enter]").allTextContents();
   assert.deepEqual(labels.map(text => text.trim()), ["关闭", "10 秒", "30 秒", "60 秒"]);
   assert.deepEqual((await page.locator("[data-wallpaper-interval]").allTextContents()).map(text => text.trim()), ["10 秒", "20 秒", "无限"]);
@@ -275,7 +280,8 @@ try {
     title: document.querySelector("#tvBrowseTitle").textContent,
     backdrop: testWallpaper.tvBrowseState().backdropUrl,
     top: document.querySelector("#tvBrowseInfo").getBoundingClientRect().top,
-    marker: history.state && history.state.tvBrowseWallpaper
+    marker: history.state && history.state.wallpaperTransient,
+    hash: location.hash
   }));
   assert.equal(exit.active, false, "DOWN exits wallpaper mode");
   assert.equal(exit.key, wallBeforeExit.key);
@@ -284,12 +290,13 @@ try {
   assert.equal(exit.backdrop, wallBeforeExit.backdrop);
   assert.ok(Math.abs(exit.top - before.infoTop) < 2, "info reverses to its original position");
   assert.equal(exit.marker, undefined, "exit consumes only the wallpaper history entry");
+  assert.equal(exit.hash, "", "exit returns to the exact Home URL marker");
 
   await page.evaluate(() => { testWallpaper.tvWallpaperStopTimer(); testWallpaper.tvWallpaperEnter(); });
   await page.keyboard.press("Escape");
   await page.waitForTimeout(50);
   assert.equal(await page.evaluate(() => testWallpaper.tvWallpaperState().active), false, "BACK exits the wallpaper layer");
-  assert.equal(await page.evaluate(() => history.state && history.state.tvBrowseWallpaper), undefined);
+  assert.equal(await page.evaluate(() => history.state && history.state.wallpaperTransient), undefined);
   await page.evaluate(() => { testWallpaper.tvWallpaperStopTimer(); testWallpaper.tvWallpaperEnter(); });
   await page.keyboard.press("ArrowUp");
   await page.waitForTimeout(50);
@@ -308,11 +315,62 @@ try {
   assert.deepEqual(await page.evaluate(() => testWallpaper.clock.pending()), [10000], "detail return restarts the idle wait");
   await page.close();
 
+  const nativeOkInitial = await pageAt();
+  await nativeOkInitial.evaluate(() => {
+    testWallpaper.clock = testWallpaper.installFakeLongTimers();
+    testWallpaper.stubDetail();
+    testWallpaper.tvWallpaperEnter();
+    document.activeElement.click();
+  });
+  await nativeOkInitial.waitForFunction(() => document.querySelector("#detailSheet").classList.contains("active"));
+  assert.equal(await nativeOkInitial.evaluate(() => testWallpaper.state.selected.id), "wallpaper-0",
+    "native synthetic OK opens the first displayed wallpaper resource");
+  assert.equal(await nativeOkInitial.evaluate(() => testWallpaper.detailRenderCount), 1,
+    "first wallpaper OK opens one detail");
+  await nativeOkInitial.evaluate(() => testWallpaper.closeDetail());
+  await nativeOkInitial.waitForFunction(() => !document.querySelector("#detailSheet").classList.contains("active"));
+  await nativeOkInitial.close();
+
+  const nativeOk = await pageAt();
+  await nativeOk.evaluate(() => {
+    testWallpaper.clock = testWallpaper.installFakeLongTimers();
+    testWallpaper.stubDetail();
+    testWallpaper.tvWallpaperEnter();
+  });
+  assert.equal(await nativeOk.evaluate(() => document.activeElement.matches("#tvBrowseRail .card")), true,
+    "wallpaper entry preserves a focused card as the native OK click sink");
+  await nativeOk.evaluate(async () => testWallpaper.clock.fire(10000));
+  assert.equal(await nativeOk.locator("#tvBrowseTitle").textContent(), "壁纸影片1");
+  await nativeOk.evaluate(() => {
+    // The Android host dispatches OK as activeElement.click(), rather than a
+    // WebView keydown. This deliberately clicks the original card after the
+    // wallpaper resource has moved to B.
+    document.activeElement.click();
+    document.activeElement.click();
+  });
+  await nativeOk.waitForFunction(() => document.querySelector("#detailSheet").classList.contains("active"));
+  assert.equal(await nativeOk.evaluate(() => testWallpaper.state.selected.id), "wallpaper-1",
+    "native synthetic OK opens the currently displayed resource, not the focused card's old item");
+  assert.equal(await nativeOk.evaluate(() => testWallpaper.detailRenderCount), 1,
+    "duplicate native OK clicks open the detail once");
+  assert.equal(await nativeOk.evaluate(() => testWallpaper.tvWallpaperState().active), false);
+  await nativeOk.evaluate(() => testWallpaper.closeDetail());
+  await nativeOk.waitForFunction(() => !document.querySelector("#detailSheet").classList.contains("active"));
+  assert.equal(await nativeOk.evaluate(() => testWallpaper.tvWallpaperState().active), false);
+  assert.deepEqual(await nativeOk.evaluate(() => testWallpaper.clock.pending()), [10000],
+    "detail return starts a fresh wallpaper idle interval");
+  await nativeOk.close();
+
   const nativeBack = await pageAt();
+  const nativeBackBase = await nativeBack.evaluate(() => location.href);
   await nativeBack.evaluate(() => { testWallpaper.clock = testWallpaper.installFakeLongTimers(); testWallpaper.tvWallpaperStopTimer(); testWallpaper.tvWallpaperEnter(); });
+  assert.equal(await nativeBack.evaluate(() => location.hash), "#tv-wallpaper",
+    "wallpaper history entry changes the WebView URL like the filter panel marker");
+  assert.equal(await nativeBack.evaluate(() => history.state && history.state.wallpaperTransient), true);
   await nativeBack.evaluate(() => history.back());
   await nativeBack.waitForFunction(() => !testWallpaper.tvWallpaperState().active);
-  assert.equal(await nativeBack.evaluate(() => history.state && history.state.tvBrowseWallpaper), undefined, "Native popstate exits one wallpaper layer");
+  assert.equal(await nativeBack.evaluate(() => history.state && history.state.wallpaperTransient), undefined, "Native popstate exits one wallpaper layer");
+  assert.equal(await nativeBack.evaluate(() => location.href), nativeBackBase, "Native popstate returns exactly one layer to Home");
   await nativeBack.close();
 
   const batch = await pageAt(25, 0);

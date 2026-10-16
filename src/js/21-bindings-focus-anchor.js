@@ -1309,6 +1309,7 @@
     }
 
     function normalizeRemoteKey(event) {
+      if (["DPAD_CENTER", "Select", "NumpadEnter"].includes(event.key)) return "Enter";
       if (["Enter", "Escape", "Backspace", "BrowserBack", "GoBack", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Menu", "ContextMenu"].includes(event.key)) return event.key === "BrowserBack" || event.key === "GoBack" ? "Escape" : event.key === "ContextMenu" ? "Menu" : event.key;
       const map = { 37: "ArrowLeft", 38: "ArrowUp", 39: "ArrowRight", 40: "ArrowDown", 13: "Enter", 23: "Enter", 66: "Enter", 4: "Escape", 8: "Backspace", 27: "Escape", 82: "Menu", 10009: "Escape", 461: "Escape", 19: "ArrowUp", 20: "ArrowDown", 21: "ArrowLeft", 22: "ArrowRight" };
       return map[event.keyCode || event.which] || "";
