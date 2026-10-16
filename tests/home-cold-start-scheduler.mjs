@@ -8,6 +8,7 @@ const weeklyJs = readFileSync(new URL("../src/js/03a-home-weekly-ui-runtime.js",
 const hotJs = readFileSync(new URL("../src/js/04-nostr-hot-storage.js", import.meta.url), "utf8");
 const heroJs = readFileSync(new URL("../src/js/11a-home-render-core-hero.js", import.meta.url), "utf8");
 const categoryJs = readFileSync(new URL("../src/js/11b-home-category-render.js", import.meta.url), "utf8");
+const browseJs = readFileSync(new URL("../src/js/11e-tv-browse.js", import.meta.url), "utf8");
 const routeJs = readFileSync(new URL("../src/js/11c-home-render-search-route.js", import.meta.url), "utf8");
 const cardsJs = readFileSync(new URL("../src/js/14-grid-card-focus.js", import.meta.url), "utf8");
 const detailJs = readFileSync(new URL("../src/js/06-tmdb-history-model.js", import.meta.url), "utf8");
@@ -204,10 +205,64 @@ assert.equal(defaultPathDetail.number_of_episodes, 2);
 
 const observerSource = categoryJs.match(/    function ensureTvCardDetailObserver\(\) \{[\s\S]*?(?=\n    function observeTvCardEnrichment\()/)?.[0] || "";
 const observeCardsSource = categoryJs.match(/    function observeTvCardEnrichment\(root\) \{[\s\S]*?(?=\n    function isNostrMovieReleaseStatusCard\()/)?.[0] || "";
+const visibilityGateSource = categoryJs.match(/    function homeVisibilityEntryIntersects\(entry\) \{[\s\S]*?(?=\n    function ensureHomeImageObserver\()/)?.[0] || "";
 const flushTvSource = categoryJs.match(/    function flushTvCardDetailQueue\(\) \{[\s\S]*?(?=\n    function queueTvCardEpisodeEnrichment\()/)?.[0] || "";
 const focusPromoteSource = categoryJs.match(/    function promoteHomeTvCardStatusOnFocus\(card\) \{[\s\S]*?(?=\n    function ensureTvCardDetailObserver\()/)?.[0] || "";
-check(observerSource.includes("rootMargin: TV_CARD_DETAIL_ROOT_MARGIN") && observerSource.includes("if (!entry.isIntersecting) return") && observerSource.includes("queueTvCardEpisodeEnrichment(entry.target)"), "TV_STATUS_IO_GATE", "Home TV status work remains behind the existing IntersectionObserver near-viewport gate");
+check(observerSource.includes("rootMargin: TV_CARD_DETAIL_ROOT_MARGIN") && observerSource.includes("homeVisibilityEntryIntersects(entry)") && observerSource.includes("queueTvCardEpisodeEnrichment(entry.target)"), "TV_STATUS_IO_GATE", "Home TV status work remains behind the existing IntersectionObserver gate, with a logical Browse viewport while wallpaper hides the rail");
 check(observeCardsSource.includes("cards.filter(tvCardNearViewport).forEach(queueTvCardEpisodeEnrichment)"), "TV_STATUS_FALLBACK_NEAR_VIEWPORT", "without IntersectionObserver only cards passing the existing near-viewport check are queued");
+check(categoryJs.includes("function tvBrowseLogicalViewportIncludes(target, entry)") && visibilityGateSource.includes("tvBrowseWallpaperObservationKey(entry.target)") && visibilityGateSource.includes("tvBrowseLogicalViewportIncludes(entry.target, entry)") && categoryJs.includes("observer.unobserve(target)") && categoryJs.includes("observer.observe(target)"), "TV_WALLPAPER_SHARED_VISIBILITY", "wallpaper visibility uses the logical Browse position and each existing observer's root bounds");
+check((categoryJs.match(/if \(!homeVisibilityEntryIntersects\(entry\)\) return;/g) || []).length === 3, "TV_WALLPAPER_ALL_VISIBILITY_OBSERVERS", "poster images, TV episode status, and Movie release status share the same logical visibility gate");
+const wallpaperEnterSource = browseJs.match(/    function tvWallpaperEnter\(\) \{[\s\S]*?(?=\n    function tvWallpaperMaterialize\()/)?.[0] || "";
+const wallpaperMoveSource = browseJs.match(/    async function tvWallpaperMove\(direction, automatic\) \{[\s\S]*?(?=\n    function tvWallpaperScheduleRotation\()/)?.[0] || "";
+const wallpaperResumeSource = browseJs.match(/    function tvWallpaperResume\(\) \{[\s\S]*?(?=\n    function tvBrowseOpenHistory\()/)?.[0] || "";
+const browseLayoutSource = browseJs.match(/    function layoutTvBrowse\(\) \{[\s\S]*?(?=\n    function initTvBrowse\()/)?.[0] || "";
+check(wallpaperEnterSource.includes("observeHomeImages($(\"tvBrowseRail\"))") && wallpaperMoveSource.includes("observeMovieCardEnrichment($(\"tvBrowseRail\"))") && wallpaperResumeSource.includes("observeHomeImages($(\"tvBrowseRail\"))") && browseLayoutSource.includes("observeMovieCardEnrichment(rail)") && !browseJs.includes("tvWallpaperPrepareNearbyResources") && !browseJs.includes("queueTvCardEpisodeEnrichment(card)"), "TV_WALLPAPER_LOADING_CONTINUITY", "entry, position changes, resize, and lifecycle resume refresh only the existing observers; no wallpaper-specific loader is used");
+const logicalVisibilitySource = categoryJs.match(/    function tvBrowseWallpaperObservationKey\(target\) \{[\s\S]*?(?=\n    function ensureHomeImageObserver\()/)?.[0] || "";
+let logicalWallpaperActive = true;
+const logicalVisibilityChecks = vm.runInNewContext(`${logicalVisibilitySource}\n({ includes: tvBrowseLogicalViewportIncludes, intersects: homeVisibilityEntryIntersects })`, {
+  isTvLikeDevice: () => true,
+  tvWallpaperIsActive: () => logicalWallpaperActive,
+  tvBrowseQueryKey: () => "active-query",
+  tvBrowsePosition: () => logicalPosition,
+  tvWallpaperState: () => ({ moveToken: 1 }),
+  mediaDomKey: (item) => item.id,
+  getComputedStyle: () => ({ columnGap: "18px" }),
+  tvFocusSafeInsets: () => ({ left: 12, right: 12 }),
+  window: { visualViewport: null, innerWidth: 1280 },
+  document: { documentElement: { clientWidth: 1280 } }
+});
+const logicalViewportIncludes = logicalVisibilityChecks.includes;
+const logicalPosition = { key: "wallpaper-17", index: 17 };
+const logicalRail = {
+  dataset: { queryKey: "active-query" }, children: [], scrollLeft: 0, scrollWidth: 25 * 142, clientWidth: 1280,
+  getBoundingClientRect: () => ({ left: 0, right: 1280, width: 1280 })
+};
+const logicalCards = Array.from({ length: 25 }, (_, index) => {
+  const left = index * 142;
+  const card = { dataset: { cardIndex: String(index), mediaKey: `wallpaper-${index}` }, __mediaItem: { id: `wallpaper-${index}` } };
+  card.getBoundingClientRect = () => ({ left, right: left + 124, width: 124 });
+  card.closest = (selector) => selector === "#tvBrowseRail" ? logicalRail : selector === ".card" ? card : null;
+  card.matches = (selector) => selector === ".card";
+  logicalRail.children.push(card);
+  return card;
+});
+const logicalImage = (index) => {
+  const card = logicalCards[index];
+  return {
+    matches: () => false,
+    closest: (selector) => selector === ".card" ? card : selector === "#tvBrowseRail" ? logicalRail : null,
+    getBoundingClientRect: () => ({ left: index * 142 + 12, right: index * 142 + 112, width: 100 })
+  };
+};
+const imageObserverBounds = { left: -250, right: 1530 };
+check(logicalViewportIncludes(logicalImage(17), { rootBounds: imageObserverBounds }), "TV_WALLPAPER_LOGICAL_CURRENT_VISIBLE", "the active resource is evaluated in the normal viewport at its logical Browse position");
+check(logicalViewportIncludes(logicalImage(15), { rootBounds: imageObserverBounds }) && logicalViewportIncludes(logicalImage(19), { rootBounds: imageObserverBounds }), "TV_WALLPAPER_LOGICAL_NEIGHBORS_VISIBLE", "neighbor images use the existing image observer's viewport bounds");
+check(!logicalViewportIncludes(logicalImage(24), { rootBounds: imageObserverBounds }), "TV_WALLPAPER_LOGICAL_RANGE_BOUNDED", "items beyond the observer's logical viewport margin remain deferred");
+check(!logicalVisibilityChecks.intersects({ target: logicalImage(24), isIntersecting: true, rootBounds: imageObserverBounds }), "TV_WALLPAPER_IGNORES_STALE_GEOMETRY", "a stale physical hit cannot override the current logical Browse viewport while wallpaper is active");
+logicalPosition.key = "wallpaper-18"; logicalPosition.index = 18;
+check(logicalViewportIncludes(logicalImage(20), { rootBounds: imageObserverBounds }) && !logicalViewportIncludes(logicalImage(24), { rootBounds: imageObserverBounds }), "TV_WALLPAPER_LOGICAL_RANGE_MOVES", "a new Browse position applies the existing focus-reveal viewport before re-evaluating observer targets");
+logicalWallpaperActive = false;
+check(logicalVisibilityChecks.intersects({ target: logicalImage(24), isIntersecting: true, rootBounds: imageObserverBounds }), "TV_HOME_VISIBILITY_UNCHANGED", "ordinary visibility continues to use native IntersectionObserver geometry");
 check(flushTvSource.includes("const request = job.home") && flushTvSource.includes("homeTvStatusRequest(url, timeout, job.key)") && flushTvSource.includes(": requestJson;"), "HOME_TV_STATUS_CLASS_SCOPE", "only Home TV card jobs use the visible status class; other grids keep requestJson");
 check(!flushTvSource.includes("promoteHomeBudgetRequests") && focusPromoteSource.includes('promoteHomeBudgetRequests(key, "visible-status", "focus")') && focusPromoteSource.includes("queueTvCardEpisodeEnrichment(card)"), "FOCUSED_TV_STATUS_PROMOTION", "focus promotes a matching queued request while ordinary Hero/Weekly deep enrichment stays low priority");
 check(cardsJs.includes("button.addEventListener(\"focus\", () => promoteHomeTvCardStatusOnFocus(button))"), "HOME_TV_FOCUS_HOOK", "only generated Home TV cards opt into the focused-status promotion helper");

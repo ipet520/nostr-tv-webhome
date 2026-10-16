@@ -1,3 +1,5 @@
+    const TV_BROWSE_BACKDROP_TIMEOUT_MS = 8000;
+
     // TV presentation owns only selection, focus and viewport position. Catalog
     // results and filters remain owned by the shared catalog query service.
     function syncBrowseDevicePresentation() {
@@ -55,10 +57,11 @@
       const ui = state.tvBrowse || (state.tvBrowse = {
         column: "recommendation", view: "home", historyReturnFocus: null, positions: {}, filterOpen: false, filterFocusGroup: "",
         confirm: null, enterHeld: false, suppressClickUntil: 0,
-        previewKey: "", backdropToken: 0, backdropSlot: 0, backdropUrl: "",
+        previewKey: "", presentedKey: "", backdropToken: 0, backdropSlot: 0, backdropUrl: "",
+        pendingImage: null, pendingPreview: null, warmBackdrop: null,
         focusIntent: null, retryFocusIntent: null, railCache: {}, railCacheOrder: [], initialized: false
       });
-      if (!ui.wallpaper) ui.wallpaper = { active: false, timer: 0, timerToken: 0, moveToken: 0, infoFrame: 0, movePending: false, paused: false, lastActivityAt: 0, historyEntry: false, pendingHistoryAction: null, currentKey: "", currentItem: null, consumeUntilKeyup: {}, detailPending: false, phase: "idle" };
+      if (!ui.wallpaper) ui.wallpaper = { active: false, timer: 0, timerToken: 0, moveToken: 0, infoFrame: 0, movePending: false, paused: false, lastActivityAt: 0, historyEntry: false, pendingHistoryAction: null, currentKey: "", currentItem: null, consumeUntilKeyup: {}, detailPending: false, clickSinkPrepared: false, clickSinkTabIndex: null, clickSinkOutline: "", phase: "idle" };
       return ui;
     }
 
@@ -169,6 +172,37 @@
       return rail && Array.from(rail.children).find((card) => card.__mediaItem
         && mediaDomKey(card.__mediaItem) === selection.key
         && Number(card.dataset.cardIndex) === selection.index) || null;
+    }
+
+    function tvWallpaperFocusClickSink() {
+      const wall = tvWallpaperState(), root = $("tvBrowse");
+      if (!wall.active || !root) return false;
+      if (!wall.clickSinkPrepared) {
+        wall.clickSinkTabIndex = root.hasAttribute("tabindex") ? root.getAttribute("tabindex") : null;
+        wall.clickSinkOutline = root.style.outline;
+        wall.clickSinkPrepared = true;
+      }
+      // The TV host calls document.activeElement.click() for OK. Focus the
+      // persistent Browse root so rail reconciliation cannot detach its sink;
+      // the click handler resolves the current resource from the active query.
+      root.setAttribute("tabindex", "-1");
+      root.style.outline = "none";
+      if (document.activeElement !== root) {
+        try { root.focus({ preventScroll: true }); }
+        catch (e) { root.focus(); }
+      }
+      return document.activeElement === root;
+    }
+
+    function tvWallpaperRestoreClickSink() {
+      const wall = tvWallpaperState(), root = $("tvBrowse");
+      if (!wall.clickSinkPrepared) return;
+      if (root) {
+        if (wall.clickSinkTabIndex === null) root.removeAttribute("tabindex");
+        else root.setAttribute("tabindex", wall.clickSinkTabIndex);
+        root.style.outline = wall.clickSinkOutline;
+      }
+      wall.clickSinkPrepared = false; wall.clickSinkTabIndex = null; wall.clickSinkOutline = "";
     }
 
     function tvWallpaperRouteReady() {
@@ -315,14 +349,9 @@
       wall.active = true; wall.phase = "wallpaper"; wall.currentKey = selection.key; wall.currentItem = selection.item;
       wall.pendingHistoryAction = null; wall.detailPending = false; wall.movePending = false; wall.moveToken += 1;
       ui.focusIntent = null; ui.retryFocusIntent = null;
-      // The native TV host routes OK through dispatchFocusedClick(), not a
-      // DOM keydown. Keep a card as that click sink while wallpaper mode is
-      // active; click handling below resolves identity from Browse position.
-      const card = tvWallpaperCardFor(selection);
-      if (card && document.activeElement !== card) {
-        try { card.focus({ preventScroll: true }); }
-        catch (e) { card.focus(); }
-      }
+      // The native TV host routes OK through activeElement.click(). Keep a
+      // persistent sink focused while the rail is hidden and reconciled.
+      tvWallpaperFocusClickSink();
       tvWallpaperHistoryPush();
       const info = $("tvBrowseInfo");
       if (info) {
@@ -330,6 +359,9 @@
         root.classList.add("wallpaper-mode");
         tvWallpaperScheduleInfoShift(selection.key, wall.moveToken);
       } else root.classList.add("wallpaper-mode");
+      // Re-evaluate the existing Home visibility observers at this logical
+      // position; image loading and metadata work remain on their normal paths.
+      observeHomeImages($("tvBrowseRail")); observeMovieCardEnrichment($("tvBrowseRail"));
       tvWallpaperScheduleRotation();
       return true;
     }
@@ -373,6 +405,7 @@
         const position = tvBrowsePosition();
         position.key = selection.key; position.index = selection.index;
       }
+      tvWallpaperRestoreClickSink();
       if (root) {
         root.classList.remove("wallpaper-mode");
         root.style.setProperty("--tv-wallpaper-info-shift", "0px");
@@ -387,14 +420,16 @@
       if (wall.historyEntry && opts.historyAlreadyPopped !== true) {
         try { history.back(); }
         catch (e) {
+          clearTvPanelHistoryEntry("wallpaper", location.hash);
           wall.historyEntry = false; wall.pendingHistoryAction = null;
           wall.historyBaseState = null; wall.historyBaseUrl = ""; wall.historyBaseSerialized = "";
+          if (historyAction.type === "detail") tvWallpaperOpenDetailAction(historyAction);
         }
       } else {
         wall.historyEntry = false;
         wall.pendingHistoryAction = null;
         wall.historyBaseState = null; wall.historyBaseUrl = ""; wall.historyBaseSerialized = "";
-        if (historyAction.type === "detail" && historyAction.item) openDetail(historyAction.item, { returnTarget: historyAction.returnTarget });
+        if (historyAction.type === "detail") tvWallpaperOpenDetailAction(historyAction);
       }
       if (historyAction.type !== "detail") tvWallpaperScheduleIdle(!!opts.userExit);
       return true;
@@ -435,7 +470,38 @@
       const selection = tvWallpaperCurrentSelection();
       if (!selection.item) return false;
       wall.detailPending = true;
-      tvWallpaperExit({ reason: "detail", deferFocus: true });
+      return tvWallpaperExit({ reason: "detail", deferFocus: true });
+    }
+
+    function tvWallpaperOpenDetailAction(action) {
+      const wall = tvWallpaperState();
+      if (!action || !action.item) {
+        wall.detailPending = false;
+        return false;
+      }
+      try {
+        openDetail(action.item, { returnTarget: action.returnTarget });
+      } catch (e) {
+        const sheet = $("detailSheet");
+        if (!sheet || !sheet.classList.contains("active")) {
+          wall.detailPending = false; wall.pendingHistoryAction = null;
+          wall.historyEntry = false; wall.historyBaseState = null;
+          wall.historyBaseUrl = ""; wall.historyBaseSerialized = "";
+          wall.lastActivityAt = Date.now();
+          tvWallpaperScheduleIdle(true);
+        }
+        recordTvBrowseDiagnostic("TV_WALLPAPER_DETAIL_OPEN_FAILED", { error: String(e && e.message || e) });
+        return false;
+      }
+      const sheet = $("detailSheet");
+      if (!sheet || !sheet.classList.contains("active")) {
+        wall.detailPending = false; wall.pendingHistoryAction = null;
+        wall.lastActivityAt = Date.now();
+        tvWallpaperScheduleIdle(true);
+        recordTvBrowseDiagnostic("TV_WALLPAPER_DETAIL_OPEN_FAILED", { reason: "detail-sheet-not-active" });
+        return false;
+      }
+      recordTvBrowseDiagnostic("TV_WALLPAPER_DETAIL_OPEN", { mediaKey: mediaDomKey(action.item) });
       return true;
     }
 
@@ -492,6 +558,8 @@
         if (token !== wall.moveToken || !wall.active || wall.paused) return false;
         wall.currentKey = nextKey; wall.currentItem = nextItem;
         tvBrowsePreview(nextItem);
+        tvWallpaperFocusClickSink();
+        observeHomeImages($("tvBrowseRail")); observeMovieCardEnrichment($("tvBrowseRail"));
         tvBrowseMaybeLoadMore(nextIndex);
         moved = true;
         tvWallpaperScheduleInfoShift(nextKey, token);
@@ -608,13 +676,23 @@
       };
       if (wall.pendingHistoryAction) {
         if (!matchesBase()) {
+          if (wall.pendingHistoryAction.type === "detail") {
+            const action = wall.pendingHistoryAction;
+            // The marker may have been displaced before its Back traversal
+            // completed. Open the captured current resource from this state;
+            // do not leave Native OK locked behind an unreachable popstate.
+            if (location.hash === "#tv-wallpaper" || location.hash === "#tv-wallpaper-active") clearTvPanelHistoryEntry("wallpaper", location.hash);
+            wall.pendingHistoryAction = null; wall.historyEntry = false;
+            wall.historyBaseState = null; wall.historyBaseUrl = ""; wall.historyBaseSerialized = "";
+            return tvWallpaperOpenDetailAction(action);
+          }
           try { history.forward(); } catch (e) {}
           return true;
         }
         const action = wall.pendingHistoryAction;
         wall.pendingHistoryAction = null; wall.historyEntry = false;
         wall.historyBaseState = null; wall.historyBaseUrl = ""; wall.historyBaseSerialized = "";
-        if (action.type === "detail" && action.item) openDetail(action.item, { returnTarget: action.returnTarget });
+        if (action.type === "detail") tvWallpaperOpenDetailAction(action);
         return true;
       }
       if (wall.active) {
@@ -640,6 +718,8 @@
       const wall = tvWallpaperState();
       wall.paused = false; wall.moveToken += 1; wall.movePending = false;
       if (wall.active) {
+        tvWallpaperFocusClickSink();
+        observeHomeImages($("tvBrowseRail")); observeMovieCardEnrichment($("tvBrowseRail"));
         tvWallpaperScheduleInfoShift(wall.currentKey, wall.moveToken);
         tvWallpaperScheduleRotation();
       }
@@ -730,6 +810,11 @@
       if (!rail || rail.dataset.queryKey !== tvBrowseQueryKey()) return;
       const position = tvBrowsePosition();
       position.scrollLeft = Math.max(0, rail.scrollLeft || 0);
+      const wall = tvWallpaperState();
+      // Wallpaper selection is owned by the active-query position. Its DOM
+      // click sink intentionally is not a card, and a stale focused card must
+      // not replace the position while handing off to Detail.
+      if (wall.active || wall.detailPending) return;
       const card = document.activeElement && document.activeElement.closest("#tvBrowseRail .card");
       if (card) { position.key = card.dataset.mediaKey || ""; position.index = Number(card.dataset.cardIndex || 0); }
     }
@@ -974,7 +1059,10 @@
       const spare = upperHost.clientHeight - used - gap - parseFloat(root.style.getPropertyValue("--tv-preview-gap"));
       set("filter-overview-lines", String(height < 450 ? 0 : clamp(0, Math.floor(spare / (overviewFont * 1.5)), height >= 720 ? 3 : 2)));
       syncTvBrowseFilterOverview();
-      if (tvWallpaperIsActive()) tvWallpaperScheduleInfoShift();
+      if (tvWallpaperIsActive()) {
+        tvWallpaperScheduleInfoShift();
+        observeHomeImages(rail); observeMovieCardEnrichment(rail);
+      }
     }
 
     function initTvBrowse() {
@@ -1190,6 +1278,9 @@
       }
       // observeHomeImages already registers TV episode enrichment.
       observeHomeImages(rail); observeMovieCardEnrichment(rail);
+      if (tvWallpaperIsActive()) {
+        tvWallpaperFocusClickSink();
+      }
       if (focused && railChanged && !tvWallpaperIsActive() && focusScopeRoot() === document && !isSidebarOpen()) {
         const target = Array.from(rail.children).find((card) => card.dataset.mediaKey === focused) || (ui.filterOpen ? Array.from(rail.children).find(isVisibleFocusable) || tvBrowseFilterTarget() : tvBrowsePosterTarget());
         if (target) focusRemoteTarget(target);
@@ -1247,8 +1338,8 @@
 
     function tvBrowseClearPreview() {
       const ui = tvBrowseState();
-      ui.previewKey = ""; ui.backdropToken += 1; tvBrowseCancelLogo(); ui.logoKey = "";
-      if (ui.pendingImage) { ui.pendingImage.onload = ui.pendingImage.onerror = null; ui.pendingImage.src = ""; ui.pendingImage = null; }
+      ui.previewKey = ""; ui.presentedKey = ""; ui.backdropToken += 1; tvBrowseCancelLogo(); ui.logoKey = "";
+      tvBrowseCancelPendingPreview(); tvBrowseCancelWarmBackdrop();
       $("tvBrowseTitle").textContent = ""; $("tvBrowseMeta").textContent = "";
       $("tvBrowseOverview").textContent = ""; $("tvBrowseUpdate").textContent = "";
       syncTvBrowseFilterOverview();
@@ -1308,11 +1399,22 @@
       if (!detail) tvBrowsePrepareLogo(item, true);
     }
 
-    function tvBrowsePreview(item) {
-      const ui = tvBrowseState(), key = mediaDomKey(item);
+    function tvBrowsePreviewDetail(item) {
       const type = String(item.mediaType || item.media_type || "").toLowerCase();
-      const cachedDetail = (type === "movie" ? movieDetailCacheValue(item) || item.movieDetail : type === "tv" ? tvDetailCacheValue(item) || item.tvDetail : null) || item.weeklyDetail || item.heroDetail || null;
-      const detail = cachedDetail && String(cachedDetail.id || cachedDetail.tmdbId || "") === String(item.tmdbId || item.id || "") && (!cachedDetail.media_type || cachedDetail.media_type === type) ? cachedDetail : null;
+      const cached = (type === "movie" ? movieDetailCacheValue(item) || item.movieDetail : type === "tv" ? tvDetailCacheValue(item) || item.tvDetail : null) || item.weeklyDetail || item.heroDetail || null;
+      return cached && String(cached.id || cached.tmdbId || "") === String(item.tmdbId || item.id || "") && (!cached.media_type || cached.media_type === type) ? cached : null;
+    }
+
+    function tvBrowsePreviewBackgrounds(item, detail) {
+      const backdrop = item.landscape || item.backdrop || item.backdrop_path || detail && detail.backdrop_path;
+      const preferred = displayImage(backdrop || item.image || item.pic, { size: backdrop ? "w1280" : "w780" });
+      const fallback = backdrop ? displayImage(item.image || item.pic, { size: "w780" }) : "";
+      return { preferred, urls: [preferred, fallback].filter((url, index, list) => !!url && list.indexOf(url) === index) };
+    }
+
+    function tvBrowseCommitPreviewInfo(item, detail, key) {
+      const ui = tvBrowseState();
+      if (!item || key !== ui.previewKey) return false;
       $("tvBrowseTitle").textContent = item.title || item.name || "";
       const year = String(detail && (detail.release_date || detail.first_air_date) || item.releaseDate || item.first_air_date || item.release_date || "").slice(0, 4);
       const genres = homeHeroPresentationGenres(item, detail);
@@ -1327,29 +1429,155 @@
       const wall = tvWallpaperState();
       if (wall.active && wall.currentKey === key) tvWallpaperScheduleInfoShift(key, wall.moveToken);
       tvBrowseRenderLogo(item, detail);
-      tvBrowseEnsurePreviewDetail(item, detail);
-      tvBrowsePrepareAdjacentLogos(item);
-      const backdrop = item.landscape || item.backdrop || item.backdrop_path || detail && detail.backdrop_path;
-      const source = backdrop || item.image || item.pic;
-      const url = displayImage(source, { size: backdrop ? "w1280" : "w780" });
-      if (ui.previewKey === key && (url === ui.backdropUrl || ui.pendingImage && ui.pendingImage.src === url)) return;
-      ui.previewKey = key;
-      const token = ++ui.backdropToken;
-      if (!url || url === ui.backdropUrl) return;
-      // One pending decode, two resident layers, no unbounded image cache.
-      if (ui.pendingImage) { ui.pendingImage.onload = ui.pendingImage.onerror = null; ui.pendingImage.src = ""; }
-      const image = new Image(); ui.pendingImage = image;
-      image.onload = () => {
-        if (token !== ui.backdropToken || key !== ui.previewKey) return;
-        ui.pendingImage = null;
+      ui.presentedKey = key;
+      return true;
+    }
+
+    function tvBrowseCancelPendingPreview() {
+      const ui = tvBrowseState(), image = ui.pendingImage, pending = ui.pendingPreview;
+      if (pending && pending.timeoutId) clearTimeout(pending.timeoutId);
+      if (image) { image.onload = image.onerror = null; image.src = ""; }
+      ui.pendingImage = null; ui.pendingPreview = null;
+    }
+
+    function tvBrowseCancelWarmBackdrop() {
+      const ui = tvBrowseState(), warm = ui.warmBackdrop;
+      if (warm && warm.image) {
+        warm.image.onload = warm.image.onerror = null;
+        warm.image.src = "";
+      }
+      ui.warmBackdrop = null;
+    }
+
+    function tvBrowseFinishPreviewImage(pending, url) {
+      const ui = tvBrowseState();
+      if (ui.pendingPreview !== pending || pending.token !== ui.backdropToken || pending.key !== ui.previewKey) return false;
+      if (pending.timeoutId) clearTimeout(pending.timeoutId);
+      if (pending.image) pending.image.onload = pending.image.onerror = null;
+      ui.pendingImage = null; ui.pendingPreview = null;
+      if (url !== ui.backdropUrl) {
         const next = ui.backdropSlot ? $("tvBrowseBackdrop") : $("tvBrowseBackdropNext");
         const previous = ui.backdropSlot ? $("tvBrowseBackdropNext") : $("tvBrowseBackdrop");
         next.style.backgroundImage = "url(" + JSON.stringify(url) + ")";
         next.classList.add("visible"); previous.classList.remove("visible");
         ui.backdropSlot = ui.backdropSlot ? 0 : 1; ui.backdropUrl = url;
+      }
+      tvBrowseCommitPreviewInfo(pending.item, pending.detail, pending.key);
+      tvBrowseWarmNextBackground(pending.item);
+      return true;
+    }
+
+    function tvBrowseFailPreviewImage(pending) {
+      const ui = tvBrowseState();
+      if (ui.pendingPreview !== pending || pending.token !== ui.backdropToken || pending.key !== ui.previewKey) return false;
+      if (pending.timeoutId) clearTimeout(pending.timeoutId);
+      if (pending.image) pending.image.onload = pending.image.onerror = null;
+      ui.pendingImage = null; ui.pendingPreview = null;
+      // Neither the requested backdrop nor the same-item poster decoded.
+      // Clear the old image rather than leave a different movie behind text.
+      [$("tvBrowseBackdrop"), $("tvBrowseBackdropNext")].forEach((layer) => {
+        layer.style.backgroundImage = ""; layer.classList.remove("visible");
+      });
+      ui.backdropUrl = "";
+      tvBrowseCommitPreviewInfo(pending.item, pending.detail, pending.key);
+      tvBrowseWarmNextBackground(pending.item);
+      return true;
+    }
+
+    function tvBrowseLoadPreviewSource(pending, image) {
+      const ui = tvBrowseState(), url = pending.sources[pending.sourceIndex];
+      if (!url) return tvBrowseFailPreviewImage(pending);
+      if (url === ui.backdropUrl) return tvBrowseFinishPreviewImage(pending, url);
+      const target = image || new Image();
+      pending.image = target; ui.pendingImage = target;
+      const advance = () => {
+        if (ui.pendingPreview !== pending || pending.token !== ui.backdropToken || pending.key !== ui.previewKey) return;
+        target.onload = target.onerror = null;
+        pending.sourceIndex += 1;
+        tvBrowseLoadPreviewSource(pending, target);
       };
-      image.onerror = () => { if (token === ui.backdropToken) ui.pendingImage = null; };
-      image.src = url;
+      target.onload = () => tvBrowseFinishPreviewImage(pending, pending.sources[pending.sourceIndex]);
+      target.onerror = advance;
+      if (!pending.timeoutId) pending.timeoutId = setTimeout(() => tvBrowseFailPreviewImage(pending), TV_BROWSE_BACKDROP_TIMEOUT_MS);
+      if (target.src !== url) target.src = url;
+      return true;
+    }
+
+    function tvBrowseWarmNextBackground(item) {
+      const ui = tvBrowseState();
+      if (!tvBrowseActive() || !item || ui.view !== "home") { tvBrowseCancelWarmBackdrop(); return false; }
+      const query = secondaryGetQuery(ui.column), items = tvWallpaperCurrentItems(query);
+      const index = items.findIndex((candidate) => mediaDomKey(candidate) === mediaDomKey(item));
+      if (index < 0 || !items.length) { tvBrowseCancelWarmBackdrop(); return false; }
+      let nextItem = items[index + 1] || null;
+      if (!nextItem && tvWallpaperIsActive() && !query.hasMore && items.length > 1) nextItem = items[0];
+      if (!nextItem) { tvBrowseCancelWarmBackdrop(); return false; }
+      const nextKey = mediaDomKey(nextItem), nextDetail = tvBrowsePreviewDetail(nextItem);
+      const nextUrl = tvBrowsePreviewBackgrounds(nextItem, nextDetail).preferred;
+      if (!nextUrl || nextUrl === ui.backdropUrl || ui.pendingPreview && nextUrl === ui.pendingPreview.sources[0]) {
+        tvBrowseCancelWarmBackdrop(); return false;
+      }
+      if (ui.warmBackdrop && ui.warmBackdrop.key === nextKey && ui.warmBackdrop.url === nextUrl) return true;
+      tvBrowseCancelWarmBackdrop();
+      const image = new Image(), warm = { key: nextKey, url: nextUrl, image, loaded: false };
+      ui.warmBackdrop = warm;
+      image.onload = () => {
+        if (ui.warmBackdrop !== warm) return;
+        warm.loaded = true; image.onload = image.onerror = null;
+      };
+      image.onerror = () => { if (ui.warmBackdrop === warm) ui.warmBackdrop = null; };
+      image.src = nextUrl;
+      return true;
+    }
+
+    function tvBrowsePreview(item) {
+      if (!item) return;
+      const ui = tvBrowseState(), key = mediaDomKey(item);
+      const detail = tvBrowsePreviewDetail(item), background = tvBrowsePreviewBackgrounds(item, detail);
+      const url = background.preferred;
+      if (ui.previewKey === key && ui.pendingPreview && ui.pendingPreview.sources[0] === url) {
+        ui.pendingPreview.item = item; ui.pendingPreview.detail = detail;
+        if (ui.presentedKey === key) tvBrowseCommitPreviewInfo(item, detail, key);
+        tvBrowseWarmNextBackground(item);
+        return;
+      }
+      ui.previewKey = key;
+      const token = ++ui.backdropToken;
+      tvBrowseCancelPendingPreview();
+      const type = String(item.mediaType || item.media_type || "").toLowerCase();
+      const logoKey = (type === "movie" ? movieDetailCacheKey(item) : type === "tv" ? tvDetailCacheKey(item) : "") || String(key);
+      if (ui.logoKey !== logoKey) { tvBrowseCancelLogo(); ui.logoKey = logoKey; }
+      tvBrowseEnsurePreviewDetail(item, detail);
+      tvBrowsePrepareAdjacentLogos(item);
+      const wall = tvWallpaperState();
+      if (wall.active && wall.currentKey === key) tvWallpaperScheduleInfoShift(key, wall.moveToken);
+      if (!url) {
+        tvBrowseCancelWarmBackdrop();
+        [$("tvBrowseBackdrop"), $("tvBrowseBackdropNext")].forEach((layer) => {
+          layer.style.backgroundImage = ""; layer.classList.remove("visible");
+        });
+        ui.backdropUrl = "";
+        tvBrowseCommitPreviewInfo(item, detail, key);
+        return;
+      }
+      if (url === ui.backdropUrl) {
+        tvBrowseCommitPreviewInfo(item, detail, key);
+        tvBrowseWarmNextBackground(item);
+        return;
+      }
+      const pending = { key, token, item, detail, preferredUrl: url, sources: background.urls, sourceIndex: 0, image: null };
+      ui.pendingPreview = pending;
+      // At initial paint there is no old image to mismatch with. On later
+      // selections, keep the old text paired with its backdrop until decode.
+      if (!ui.backdropUrl) tvBrowseCommitPreviewInfo(item, detail, key);
+      const warm = ui.warmBackdrop;
+      if (warm && warm.url === url) {
+        ui.warmBackdrop = null;
+        pending.image = warm.image; ui.pendingImage = warm.image;
+        if (warm.loaded) tvBrowseFinishPreviewImage(pending, url);
+        else tvBrowseLoadPreviewSource(pending, warm.image);
+      } else tvBrowseLoadPreviewSource(pending);
+      tvBrowseWarmNextBackground(item);
     }
 
     function tvBrowsePrepareAdjacentLogos(item) {

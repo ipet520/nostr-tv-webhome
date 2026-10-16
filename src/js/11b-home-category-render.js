@@ -593,12 +593,86 @@
       state.homeV14.renderedSectionCount = Array.from(container.children).filter((entry) => entry.classList && entry.classList.contains("home-dynamic-section")).length;
     }
 
+    function tvBrowseWallpaperObservationKey(target) {
+      if (!target || !isTvLikeDevice() || typeof tvWallpaperIsActive !== "function" || !tvWallpaperIsActive()) return "";
+      const rail = target.closest && target.closest("#tvBrowseRail");
+      if (!rail || rail.dataset.queryKey !== tvBrowseQueryKey()) return "";
+      const position = tvBrowsePosition(), wall = tvWallpaperState();
+      if (!position.key || !Number.isFinite(Number(position.index))) return "";
+      const card = target.matches && target.matches(".card") ? target : target.closest(".card");
+      const cardWidth = card && card.getBoundingClientRect ? Math.round(card.getBoundingClientRect().width || 0) : 0;
+      return [rail.dataset.queryKey, position.key, position.index, wall.moveToken,
+        card && card.dataset.mediaKey || "", card && card.dataset.cardIndex || "", Math.round(rail.clientWidth || 0), cardWidth].join("|");
+    }
+
+    function observeHomeVisibilityTarget(observer, target) {
+      if (!observer || !target) return;
+      const logicalPosition = tvBrowseWallpaperObservationKey(target);
+      if (logicalPosition && target.dataset.tvBrowseObservedPosition !== logicalPosition) {
+        // Re-observing uses the same IntersectionObserver callback and its
+        // existing request queues. It gives a changed logical Browse position
+        // a fresh visibility evaluation while the rail is translated away.
+        observer.unobserve(target);
+        target.dataset.tvBrowseObservedPosition = logicalPosition;
+      }
+      observer.observe(target);
+    }
+
+    function tvBrowseLogicalViewportIncludes(target, entry) {
+      const rail = target && target.closest && target.closest("#tvBrowseRail");
+      if (!rail || !tvBrowseWallpaperObservationKey(target)) return false;
+      const position = tvBrowsePosition();
+      const targetCard = target.matches && target.matches(".card") ? target : target.closest(".card");
+      if (!targetCard || !targetCard.__mediaItem || targetCard.dataset.mediaKey !== mediaDomKey(targetCard.__mediaItem)) return false;
+      const index = Number(targetCard.dataset.cardIndex), currentIndex = Number(position.index);
+      if (!Number.isInteger(index) || !Number.isInteger(currentIndex)) return false;
+      const cards = Array.from(rail.children);
+      const currentCard = cards.find((card) => Number(card.dataset.cardIndex) === currentIndex
+        && card.dataset.mediaKey === position.key && card.__mediaItem && mediaDomKey(card.__mediaItem) === position.key);
+      if (!currentCard) return false;
+      const currentRect = currentCard.getBoundingClientRect(), targetRect = target.getBoundingClientRect();
+      const currentWidth = currentRect.width || currentCard.offsetWidth || 0;
+      if (!currentWidth || !targetRect.width) return false;
+      const adjacent = cards.find((card) => Number(card.dataset.cardIndex) === currentIndex + 1);
+      const adjacentRect = adjacent && adjacent.getBoundingClientRect();
+      const railStyle = getComputedStyle(rail);
+      const gap = parseFloat(railStyle.columnGap || railStyle.gap || "0") || 0;
+      const stride = adjacentRect && adjacentRect.left > currentRect.left
+        ? adjacentRect.left - currentRect.left : currentWidth + gap;
+      if (!stride) return false;
+      const railRect = rail.getBoundingClientRect();
+      const safe = typeof tvFocusSafeInsets === "function" ? tvFocusSafeInsets(rail) : { left: 12, right: 12 };
+      const leftLimit = railRect.left + (Number(safe.left) || 0);
+      const rightLimit = railRect.right - (Number(safe.right) || 0);
+      let revealDelta = 0;
+      if (currentWidth > rightLimit - leftLimit) revealDelta = currentRect.left - leftLimit;
+      else if (currentRect.left < leftLimit) revealDelta = currentRect.left - leftLimit;
+      else if (currentRect.right > rightLimit) revealDelta = currentRect.right - rightLimit;
+      const scrollBefore = Number(rail.scrollLeft || 0);
+      const scrollMax = Math.max(0, Number(rail.scrollWidth || 0) - Number(rail.clientWidth || 0));
+      const scrollAfter = Math.max(0, Math.min(scrollMax, scrollBefore + revealDelta));
+      const rootBounds = entry && entry.rootBounds;
+      const visibleLeft = rootBounds && Number.isFinite(rootBounds.left) ? rootBounds.left : 0;
+      const visibleRight = rootBounds && Number.isFinite(rootBounds.right) ? rootBounds.right : window.innerWidth || document.documentElement.clientWidth || 0;
+      const virtualCardLeft = currentRect.left - (scrollAfter - scrollBefore) + (index - currentIndex) * stride;
+      const targetOffset = targetRect.left - (targetCard.getBoundingClientRect().left || 0);
+      const logicalLeft = virtualCardLeft + targetOffset;
+      return logicalLeft + targetRect.width > visibleLeft && logicalLeft < visibleRight;
+    }
+
+    function homeVisibilityEntryIntersects(entry) {
+      if (!entry || !entry.target) return false;
+      return tvBrowseWallpaperObservationKey(entry.target)
+        ? tvBrowseLogicalViewportIncludes(entry.target, entry)
+        : !!entry.isIntersecting;
+    }
+
     function ensureHomeImageObserver() {
       const home = state.homeV14;
       if (home.imageObserver || !("IntersectionObserver" in window)) return home.imageObserver;
       home.imageObserver = new IntersectionObserver((entries) => {
         entries.forEach((entry) => {
-          if (!entry.isIntersecting) return;
+          if (!homeVisibilityEntryIntersects(entry)) return;
           const image = entry.target;
           const source = image.getAttribute("data-src");
           if (!source) return;
@@ -616,7 +690,7 @@
       if (!root) return;
       const observer = ensureHomeImageObserver();
       const images = Array.from(root.querySelectorAll("img[data-src]"));
-      if (observer) images.forEach((image) => observer.observe(image));
+      if (observer) images.forEach((image) => observeHomeVisibilityTarget(observer, image));
       else images.forEach((image) => {
         const source = image.getAttribute("data-src");
         if (!source) return;
@@ -682,6 +756,7 @@
     }
 
     function tvCardNearViewport(card) {
+      if (tvBrowseLogicalViewportIncludes(card, null)) return true;
       if (!card || !card.getBoundingClientRect) return false;
       const rect = card.getBoundingClientRect();
       const height = window.innerHeight || document.documentElement.clientHeight || 0;
@@ -758,7 +833,7 @@
       if (runtime.observer) return runtime.observer;
       runtime.observer = new IntersectionObserver((entries) => {
         entries.forEach((entry) => {
-          if (!entry.isIntersecting) return;
+          if (!homeVisibilityEntryIntersects(entry)) return;
           runtime.observer.unobserve(entry.target);
           queueTvCardEpisodeEnrichment(entry.target);
         });
@@ -770,7 +845,7 @@
       if (!root || !root.querySelectorAll) return;
       const cards = Array.from(root.querySelectorAll(".card")).filter(isTvEpisodeStatusCard);
       const observer = ensureTvCardDetailObserver();
-      if (observer) cards.forEach((card) => observer.observe(card));
+      if (observer) cards.forEach((card) => observeHomeVisibilityTarget(observer, card));
       else cards.filter(tvCardNearViewport).forEach(queueTvCardEpisodeEnrichment);
     }
 
@@ -871,7 +946,7 @@
       if (runtime.observer) return runtime.observer;
       runtime.observer = new IntersectionObserver((entries) => {
         entries.forEach((entry) => {
-          if (!entry.isIntersecting) return;
+          if (!homeVisibilityEntryIntersects(entry)) return;
           runtime.observer.unobserve(entry.target);
           queueMovieCardReleaseEnrichment(entry.target);
         });
@@ -883,7 +958,7 @@
       if (!root || !root.querySelectorAll) return;
       const cards = Array.from(root.querySelectorAll(".card")).filter(isNostrMovieReleaseStatusCard);
       const observer = ensureMovieCardDetailObserver();
-      if (observer) cards.forEach((card) => observer.observe(card));
+      if (observer) cards.forEach((card) => observeHomeVisibilityTarget(observer, card));
       else cards.filter(movieCardNearViewport).forEach(queueMovieCardReleaseEnrichment);
     }
 

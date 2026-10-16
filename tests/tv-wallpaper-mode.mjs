@@ -70,6 +70,29 @@ function installHook() {
       }
     };
   };
+  window.testWallpaper.installVisibilityProbe = () => {
+    const observers = [];
+    window.IntersectionObserver = class {
+      constructor(callback, options) {
+        this.callback = callback; this.options = options || {}; this.targets = new Set();
+        observers.push(this);
+      }
+      observe(target) { this.targets.add(target); }
+      unobserve(target) { this.targets.delete(target); }
+      disconnect() { this.targets.clear(); }
+      emitOutsideViewport() {
+        const parts = String(this.options.rootMargin || "0px").trim().split(/\s+/);
+        const horizontalMargin = parseFloat(parts[1] || parts[0]) || 0;
+        const width = window.visualViewport && window.visualViewport.width || window.innerWidth;
+        const rootBounds = { left: -horizontalMargin, right: width + horizontalMargin };
+        this.callback(Array.from(this.targets).map(target => ({ target, isIntersecting: false, rootBounds })), this);
+      }
+    };
+    window.testWallpaper.visibilityObservers = observers;
+  };
+  window.testWallpaper.emitOutsideViewport = () => {
+    (window.testWallpaper.visibilityObservers || []).forEach(observer => observer.emitOutsideViewport());
+  };
   window.testWallpaper.stubDetail = () => {
     prepareDetailPlaybackForDetail = () => Promise.resolve(null);
     window.testWallpaper.detailRenderCount = 0;
@@ -95,16 +118,23 @@ const browser = await playwright.chromium.launch({
     : { channel: process.env.WEBHOME_BROWSER_CHANNEL || "chrome" })
 });
 const pageErrors = [];
-async function pageAt(count = 8, index = 0) {
+async function pageAt(count = 8, index = 0, imageOptions = {}) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
   page.on("pageerror", error => pageErrors.push(error.message));
   await page.route("**/*", async route => {
     const url = route.request().url();
     if (url.startsWith("http://fixture.local/") && new URL(url).pathname === "/") return route.fulfill({ contentType: "text/html", body: html });
-    if (route.request().resourceType() === "image") return route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><rect width="1280" height="720" fill="#274538"/></svg>' });
+    if (route.request().resourceType() === "image") {
+      const pathname = new URL(url).pathname;
+      const delay = Number(imageOptions.delays && imageOptions.delays[pathname] || 0);
+      if (delay) await new Promise(resolve => setTimeout(resolve, delay));
+      if ((imageOptions.failures || []).includes(pathname)) return route.abort();
+      return route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><rect width="1280" height="720" fill="#274538"/></svg>' });
+    }
     return route.abort();
   });
   await page.goto("http://fixture.local/?_tv=1");
+  if (imageOptions.visibilityProbe) await page.evaluate(() => testWallpaper.installVisibilityProbe());
   await page.evaluate(([seedCount, seedIndex]) => testWallpaper.seed(seedCount, seedIndex), [count, index]);
   await page.waitForTimeout(100);
   return page;
@@ -337,14 +367,15 @@ try {
     testWallpaper.stubDetail();
     testWallpaper.tvWallpaperEnter();
   });
-  assert.equal(await nativeOk.evaluate(() => document.activeElement.matches("#tvBrowseRail .card")), true,
-    "wallpaper entry preserves a focused card as the native OK click sink");
+  assert.equal(await nativeOk.evaluate(() => document.activeElement.id), "tvBrowse",
+    "wallpaper entry focuses the persistent Browse root as the native OK click sink");
   await nativeOk.evaluate(async () => testWallpaper.clock.fire(10000));
   assert.equal(await nativeOk.locator("#tvBrowseTitle").textContent(), "壁纸影片1");
   await nativeOk.evaluate(() => {
+    renderTvBrowse({ append: true, reason: "wallpaper-test-batch-render" });
     // The Android host dispatches OK as activeElement.click(), rather than a
-    // WebView keydown. This deliberately clicks the original card after the
-    // wallpaper resource has moved to B.
+    // WebView keydown. A Browse reconciliation must leave the stable sink live.
+    if (document.activeElement.id !== "tvBrowse") throw new Error("wallpaper click sink lost focus during render");
     document.activeElement.click();
     document.activeElement.click();
   });
@@ -373,7 +404,7 @@ try {
   assert.equal(await nativeBack.evaluate(() => location.href), nativeBackBase, "Native popstate returns exactly one layer to Home");
   await nativeBack.close();
 
-  const batch = await pageAt(25, 0);
+  const batch = await pageAt(25, 0, { visibilityProbe: true });
   await batch.evaluate(() => {
     const query = secondaryGetQuery("recommendation");
     const position = testWallpaper.tvBrowsePosition();
@@ -386,7 +417,20 @@ try {
     testWallpaper.tvWallpaperEnter();
   });
   assert.equal(await batch.evaluate(() => testWallpaper.tvWallpaperState().active), true, "batch fixture enters at item 17");
+  await batch.evaluate(() => testWallpaper.emitOutsideViewport());
+  const nearbyImages = await batch.evaluate(() => Array.from(document.querySelectorAll("#tvBrowseRail .card")).map(card => ({
+    index: Number(card.dataset.cardIndex), deferred: !!card.querySelector("img[data-src]")
+  })));
+  assert.equal(nearbyImages.find(card => card.index === 17).deferred, false,
+    "the existing image observer loads the current logical Browse item while the rail is hidden");
+  assert.equal(nearbyImages.find(card => card.index === 15).deferred, false,
+    "the existing image observer loads a previous item inside its viewport margin");
+  assert.equal(nearbyImages.find(card => card.index === 19).deferred, false,
+    "the existing image observer loads a next item inside its viewport margin");
+  assert.equal(nearbyImages.find(card => card.index === 24).deferred, true,
+    "logical visibility does not bypass the existing observer's viewport range");
   await batch.evaluate(async () => testWallpaper.tvWallpaperMove(1, false));
+  await batch.evaluate(() => testWallpaper.emitOutsideViewport());
   const batchTarget = await batch.evaluate(() => ({
     key: testWallpaper.tvBrowsePosition().key,
     items: secondaryGetQuery("recommendation").items.length,
@@ -395,10 +439,89 @@ try {
   assert.equal(batchTarget.key, "wallpaper-18");
   assert.equal(batchTarget.items, 25, "wallpaper movement extends the current recommendation batch");
   assert.equal(batchTarget.rendered, true, "next resource card is materialized from the current Browse query");
-  await batch.keyboard.press("ArrowDown");
-  await batch.waitForFunction(() => !testWallpaper.tvWallpaperState().active);
-  assert.equal(await batch.evaluate(() => document.activeElement.dataset.mediaKey), "wallpaper-18", "exit focuses the materialized batch target");
+  assert.equal(await batch.locator('#tvBrowseRail > .card[data-card-index="20"] img').getAttribute("data-src"), null,
+    "a changed logical Browse position applies the existing focus-reveal viewport to newly adjacent posters");
+  assert.notEqual(await batch.locator('#tvBrowseRail > .card[data-card-index="24"] img').getAttribute("data-src"), null,
+    "poster loading remains bounded by the ordinary observer viewport after a logical position change");
+  await batch.evaluate(() => {
+    testWallpaper.stubDetail();
+    testWallpaper.batchCardBefore = Array.from(document.querySelectorAll("#tvBrowseRail .card"))
+      .find(card => card.__mediaItem && card.__mediaItem.id === "wallpaper-18");
+    testWallpaper.batchPosterBefore = testWallpaper.batchCardBefore && testWallpaper.batchCardBefore.querySelector("img");
+    state.hot.items.push({ id: "wallpaper-extra", tmdbId: 7999, title: "追加资源", mediaType: "movie",
+      source: "nostr-hot", people: 9, pic: "/poster-extra.jpg", landscape: "/backdrop-extra.jpg", overview: "追加的批次资源" });
+    renderTvBrowse({ append: true, reason: "wallpaper-test-append" });
+    const card = Array.from(document.querySelectorAll("#tvBrowseRail .card"))
+      .find(entry => entry.__mediaItem && entry.__mediaItem.id === "wallpaper-18");
+    testWallpaper.batchCardReused = !!card && card === testWallpaper.batchCardBefore
+      && card.querySelector("img") === testWallpaper.batchPosterBefore;
+  });
+  assert.equal(await batch.evaluate(() => document.activeElement.id), "tvBrowse",
+    "batch extension and card reconciliation preserve the Native OK sink");
+  assert.equal(await batch.evaluate(() => testWallpaper.batchCardReused), true,
+    "batch extension reuses the current card and poster node");
+  await batch.evaluate(() => document.activeElement.click());
+  await batch.waitForFunction(() => document.querySelector("#detailSheet").classList.contains("active"));
+  assert.equal(await batch.evaluate(() => testWallpaper.state.selected.id), "wallpaper-18",
+    "Native OK resolves the active-query resource after batch extension");
+  const returnSnapshot = await batch.evaluate(() => testWallpaper.state.homeReturn.tvBrowse.positions[testWallpaper.tvBrowseQueryKey()]);
+  assert.equal(returnSnapshot.key, "wallpaper-18", "the detail snapshot keeps the wallpaper position, not the stale card focus");
+  await batch.evaluate(() => testWallpaper.closeDetail());
+  await batch.waitForFunction(() => !document.querySelector("#detailSheet").classList.contains("active"));
+  assert.equal(await batch.evaluate(() => document.activeElement.dataset.mediaKey), "wallpaper-18",
+    "detail return focuses the currently displayed batch resource");
+  assert.equal(await batch.evaluate(() => testWallpaper.tvBrowsePosition().key), "wallpaper-18",
+    "detail return retains the same Browse preview position");
   await batch.close();
+
+  const quickSwitch = await pageAt();
+  await quickSwitch.waitForFunction(() => testWallpaper.tvBrowseState().backdropUrl.endsWith("/backdrop-0.jpg"));
+  await quickSwitch.evaluate(() => {
+    const ui = testWallpaper.tvBrowseState();
+    if (ui.warmBackdrop) { ui.warmBackdrop.image.onload = ui.warmBackdrop.image.onerror = null; ui.warmBackdrop = null; }
+    const OriginalImage = window.Image, images = [];
+    window.Image = function () {
+      let source = "";
+      const image = { onload: null, onerror: null };
+      Object.defineProperty(image, "src", { get: () => source, set: value => { source = String(value || ""); } });
+      images.push(image);
+      return image;
+    };
+    testWallpaper.previewImages = images;
+    testWallpaper.restoreImageConstructor = () => { window.Image = OriginalImage; };
+    testWallpaper.tvWallpaperStopTimer(); testWallpaper.tvWallpaperEnter();
+  });
+  await quickSwitch.evaluate(async () => {
+    await testWallpaper.tvWallpaperMove(1, false);
+    const b = testWallpaper.previewImages.find(image => image.src.endsWith("/backdrop-1.jpg"));
+    testWallpaper.staleWallpaperImageOnload = b && b.onload;
+    await testWallpaper.tvWallpaperMove(1, false);
+  });
+  assert.equal(await quickSwitch.evaluate(() => testWallpaper.tvWallpaperState().currentKey), "wallpaper-2",
+    "resource identity updates immediately while a backdrop is pending");
+  assert.equal(await quickSwitch.locator("#tvBrowseTitle").textContent(), "壁纸影片0",
+    "text stays paired with the previously displayed background while the next decode is pending");
+  await quickSwitch.evaluate(() => {
+    const c = testWallpaper.previewImages.find(image => image.src.endsWith("/backdrop-2.jpg"));
+    if (!c || !c.onload) throw new Error("current wallpaper backdrop was not staged for decode");
+    c.onload();
+  });
+  assert.equal(await quickSwitch.locator("#tvBrowseTitle").textContent(), "壁纸影片2",
+    "title commits with the current decoded backdrop");
+  await quickSwitch.evaluate(() => { if (testWallpaper.staleWallpaperImageOnload) testWallpaper.staleWallpaperImageOnload(); });
+  assert.equal(await quickSwitch.evaluate(() => testWallpaper.tvBrowseState().presentedKey), "wallpaper-2",
+    "a stale earlier image cannot replace the latest resource presentation");
+  await quickSwitch.close();
+
+  const imageFallback = await pageAt(8, 0, { failures: ["/backdrop-1.jpg"] });
+  await imageFallback.waitForFunction(() => testWallpaper.tvBrowseState().backdropUrl.endsWith("/backdrop-0.jpg"));
+  await imageFallback.evaluate(() => { testWallpaper.tvWallpaperStopTimer(); testWallpaper.tvWallpaperEnter(); });
+  await imageFallback.evaluate(() => testWallpaper.tvWallpaperMove(1, false));
+  await imageFallback.waitForFunction(() => testWallpaper.tvBrowseState().presentedKey === "wallpaper-1");
+  assert.equal(await imageFallback.evaluate(() => testWallpaper.tvBrowseState().backdropUrl.endsWith("/poster-1.jpg")), true,
+    "a failed landscape backdrop falls back to the same resource poster");
+  assert.equal(await imageFallback.locator("#tvBrowseTitle").textContent(), "壁纸影片1");
+  await imageFallback.close();
 
   const empty = await pageAt();
   await empty.evaluate(() => {

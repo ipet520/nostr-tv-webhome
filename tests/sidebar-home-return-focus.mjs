@@ -51,7 +51,7 @@ const openSidebarSource = functionSource(sidebarSource, "openSidebar");
 assert.ok(openSidebarSource.includes("state.homeV14.sidebarReturnTarget = target && target.isConnected ? target : null"));
 assert.ok(openSidebarSource.includes("state.homeV14.sidebarReturnFocus = target ? homeFocusSnapshot(target, target.__mediaItem || null) : null"));
 const mediaResolverSource = functionSource(homeReturnSource, "findHomeReturnMediaTarget");
-assert.ok(mediaResolverSource.includes("const key = focus.key || saved.mediaKey || \"\""));
+assert.ok(mediaResolverSource.includes("let key = focus.key || saved.mediaKey || \"\""));
 assert.ok(mediaResolverSource.includes("el.dataset.mediaKey || \"\""));
 assert.ok(mediaResolverSource.includes("Number(focus.cardIndex)"));
 
