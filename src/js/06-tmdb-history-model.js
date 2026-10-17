@@ -232,26 +232,47 @@
       const url = displayImage(source, { size: "w500" });
       const key = type + ":" + id;
       const entry = runtime.cache[key] || (runtime.cache[key] = { detail: null, fetchedAt: 0, promise: null });
-      if (!entry.logoAsset || entry.logoAsset.url !== url) entry.logoAsset = { url, ready: false, failed: false, promise: null };
+      if (!entry.logoAsset || entry.logoAsset.url !== url) entry.logoAsset = {
+        url, ready: false, failed: false, promise: null, state: "idle", loadState: "idle", decodeState: "idle", token: 0, image: null
+      };
       return entry.logoAsset;
     }
 
     function prepareArtLogo(asset) {
       if (!asset) return Promise.resolve(false);
+      if (asset.failed && asset.failedAt && Date.now() - asset.failedAt >= 60000) {
+        asset.failed = false; asset.failedAt = 0; asset.state = "idle"; asset.loadState = "idle"; asset.decodeState = "idle";
+      }
       if (asset.ready || asset.failed) return Promise.resolve(asset.ready);
       if (asset.promise) return asset.promise;
+      const token = Number(asset.token || 0) + 1;
+      asset.token = token; asset.state = "loading"; asset.loadState = "pending"; asset.decodeState = "pending";
       asset.promise = new Promise((resolve) => {
         const image = new Image();
-        const finish = (ready) => {
+        asset.image = image; asset.resolve = resolve;
+        const finish = (ready, decodeState) => {
+          if (asset.token !== token) return;
           image.onload = image.onerror = null;
+          asset.image = null; asset.resolve = null;
           asset.ready = ready; asset.failed = !ready; asset.promise = null;
+          asset.failedAt = ready ? 0 : Date.now();
+          asset.state = ready ? "ready" : "failed";
+          asset.loadState = ready || decodeState === "decode-failed" ? "loaded" : "failed";
+          asset.decodeState = decodeState || (ready ? "ready" : "failed");
           resolve(ready);
         };
+        image.decoding = "async";
         image.onload = () => {
-          if (typeof image.decode === "function") image.decode().then(() => finish(true), () => finish(false));
-          else finish(image.naturalWidth > 0);
+          if (!image.naturalWidth) return finish(false, "failed");
+          asset.loadState = "loaded"; asset.state = "decoding";
+          if (typeof image.decode === "function") {
+            let decoding;
+            try { decoding = image.decode(); } catch (error) { return finish(false, "decode-failed"); }
+            if (decoding && typeof decoding.then === "function") decoding.then(() => finish(true, "ready"), () => finish(false, "decode-failed"));
+            else finish(true, "loaded-no-decode");
+          } else finish(true, "loaded-no-decode");
         };
-        image.onerror = () => finish(false);
+        image.onerror = () => finish(false, "failed");
         image.src = asset.url;
       });
       return asset.promise;

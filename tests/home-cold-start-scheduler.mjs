@@ -363,15 +363,78 @@ check(railRender.includes("renderHomeDynamicSection(section, config)"), "HOME_RA
 check(categoryJs.includes("captureHomeRailFocus(rail)") && categoryJs.includes("replaceHomeRailChildren(rail"), "HOME_FOCUS_PRESERVED_DURING_ASYNC_UPDATE", "rail replacement reuses the existing focus identity capture");
 check(readFileSync(new URL("../src/js/11e-tv-browse.js", import.meta.url), "utf8").includes("tvBrowseDirectionalTarget"), "TV_SINGLE_RAIL_FOCUS_GRAPH", "TV browse replaces the obsolete vertical Home anchor");
 const browseImagePrep = browseJs.match(/    function tvBrowseSyncRailImagePreparation\(\) \{[\s\S]*?(?=\n    function tvBrowseReconcileRailNodes\()/)?.[0] || "";
-const browseLogoPrep = browseJs.match(/    function tvBrowsePrepareLogo\(item\) \{[\s\S]*?(?=\n    function tvBrowsePreviewDetail\()/)?.[0] || "";
-const browseLogoFinish = browseJs.match(/    function tvBrowseFinishLogoPreparation\(item, mediaKey, asset, inPreparationRange\) \{[\s\S]*?(?=\n    function tvBrowsePrepareLogo\()/)?.[0] || "";
+const browseCardPrep = browseJs.match(/    function tvBrowsePrepareCardResources\(item, options\) \{[\s\S]*?(?=\n    function tvBrowseCommitPreviewInfo\()/)?.[0] || "";
+const browseGatePoster = browseJs.match(/    function tvBrowsePrepareGatePoster\(card, record, gate\) \{[\s\S]*?(?=\n    function tvBrowseEnsureRailReadiness\()/)?.[0] || "";
+const browseDetailPrep = browseJs.match(/    function tvBrowsePrepareDetailResource\(item, requestClass, isCurrent\) \{[\s\S]*?(?=\n    function tvBrowseExpireLogoAsset\()/)?.[0] || "";
+const browseLogoPrep = browseJs.match(/    function tvBrowsePrepareLogo\(item, options\) \{[\s\S]*?(?=\n    function tvBrowsePreviewDetail\()/)?.[0] || "";
+const browseGate = browseJs.match(/    function tvBrowseEnsureRailReadiness\(query, items, cards, visibleCount, allowGate\) \{[\s\S]*?(?=\n    function historyViewUnavailable\()/)?.[0] || "";
+const browseGateFinish = browseJs.match(/    function tvBrowseFinishRailReadiness\(gate, timedOut\) \{[\s\S]*?(?=\n    function tvBrowseTrackRailReadinessTask\()/)?.[0] || "";
+const browseAsyncDetailGuard = browseJs.match(/    function tvBrowseShouldDeferAsyncDetailPreview\(item\) \{[\s\S]*?(?=\n    function tvBrowsePreviewDetail\()/)?.[0] || "";
+const browseColumnSelect = browseJs.match(/    function tvBrowseSelectColumn\(id, options\) \{[\s\S]*?(?=\n    function tvBrowseActivateColumn\()/)?.[0] || "";
+const browseBackgroundPrep = browseJs.match(/    function tvBrowsePrepareBackgroundURLs\(item, urls, gate, record\) \{[\s\S]*?(?=\n    function tvBrowseCancelWarmBackdrop\()/)?.[0] || "";
 const artTitleRender = artTitleJs.match(/    function renderArtTitle\(item, detail, img, title, wrap, valid, options\) \{[\s\S]*?(?=\n    function renderDetailBase\()/)?.[0] || "";
-check(browseImagePrep.includes("visibleLogoKeys") && browseImagePrep.includes("visible.forEach((card) => { if (card.__mediaItem) tvBrowsePrepareLogo(card.__mediaItem); })"), "TV_BROWSE_VISIBLE_LOGO_PREPARATION", "Logo detail and image preparation follows the existing measured visible-card set");
-check(browseImagePrep.includes("const targetIndex = lastVisibleIndex + 1") && browseImagePrep.includes("tvBrowsePrepareLogo(target.__mediaItem)"), "TV_BROWSE_SINGLE_OFFSCREEN_LOGO_PREPARATION", "only the existing one-card right-side poster target joins the Logo preparation window");
+check(browseImagePrep.includes("visibleLogoKeys") && browseImagePrep.includes('tvBrowsePrepareLogo(card.__mediaItem, { requestClass: "foreground" })'), "TV_BROWSE_VISIBLE_RESOURCE_PREPARATION", "all visible cards use the shared foreground resource-preparation path");
+check(browseImagePrep.includes("const targetIndex = lastVisibleIndex + 1") && browseImagePrep.includes('tvBrowsePrepareLogo(target.__mediaItem, { requestClass: "prefetch" })'), "TV_BROWSE_SINGLE_OFFSCREEN_RESOURCE_PREPARATION", "only the existing one-card right-side target uses the shared prefetch path");
 check(!browseJs.includes("tvBrowseEnsurePreviewDetail") && !browseJs.includes("tvBrowsePrepareAdjacentLogos"), "TV_BROWSE_NO_FOCUS_LOGO_QUEUE", "preview focus and directional-neighbor helpers no longer start separate Logo preparation");
-check(browseLogoPrep.includes("requestMovieDetailShared") && browseLogoPrep.includes("requestTvDetailShared") && browseLogoPrep.includes("scheduleHomeBudgetRequest(\"enrichment\""), "TV_BROWSE_LOGO_SHARED_DETAIL_PATH", "in-range Logo metadata uses existing shared detail requests and request budget");
-check(browseLogoFinish.includes("prepareArtLogo(asset)") && browseLogoFinish.includes("tvBrowseShowPreparedLogo"), "TV_BROWSE_LOGO_LOAD_AND_PRESENT", "Logo preparation completes through the shared load/decode cache before presentation");
+check(browseCardPrep.includes("tvBrowsePrepareDetailResource(item") && browseCardPrep.includes("prepareArtLogo(asset)") && browseCardPrep.includes("tvBrowsePrepareBackgroundURLs"), "TV_BROWSE_CARD_RESOURCE_BUNDLE", "poster, shared detail, Logo and background are prepared as one bounded card resource bundle");
+check(browseCardPrep.includes("const id = movieDetailCacheId(item)") && browseCardPrep.includes('"absent"'), "TV_BROWSE_NO_LOGO_AND_DETAIL_ABSENCE", "missing artwork and detail metadata settle without rejecting the card resource bundle");
+check(browseGatePoster.includes('const state = image && !source ? "absent" : "failed"') && browseGatePoster.includes('"ready", "absent", "failed"'), "TV_BROWSE_POSTER_ABSENCE_STATE", "a confirmed missing poster is terminal and distinct from an image load failure");
+check(browseDetailPrep.includes("requestMovieDetailShared") && browseDetailPrep.includes("requestTvDetailShared") && browseDetailPrep.includes("scheduleHomeBudgetRequest(requestClass || \"foreground\""), "TV_BROWSE_DETAIL_FOREGROUND_PRIORITY", "visible-card details use the existing shared detail cache and foreground request class");
+check(browseDetailPrep.includes("promoteHomeBudgetRequests(key, requestClass || \"foreground\""), "TV_BROWSE_SHARED_DETAIL_PROMOTION", "an existing queued shared detail request is promoted instead of duplicated");
+check(browseGate.includes("tvBrowsePrepareGatePoster(card, record, gate)") && browseGate.includes("tvBrowsePrepareCardResources(item, { requestClass: \"foreground\", gate, record, deferPresentation: true })")
+  && browseGateFinish.includes("tvBrowseRememberRailReady(gate.queryKey, gate.signature, gate.resources)")
+  && browseGateFinish.includes('entry[field] === "pending"') , "TV_BROWSE_FULL_RESOURCE_GATE", "cold rail readiness waits for terminal poster, detail, Logo and background states and caches the completed results");
+check(browseGate.includes("ui.coldRailPresentPreview = presentPreview") && browseGateFinish.includes("gate.presentPreview || ui.coldRailPresentPreview"),
+  "TV_BROWSE_DATA_EXTENSION_PREVIEW", "the pending first-card presentation intent survives pagination while the measured first screen fills");
+check(browseAsyncDetailGuard.includes('record.detailState') && browseAsyncDetailGuard.includes('"timed-out"')
+  && categoryJs.includes("tvBrowseShouldDeferAsyncDetailPreview(target.__mediaItem)"), "TV_BROWSE_LATE_DETAIL_STABILITY", "late enrichment cannot overwrite a timed-out first-screen detail fallback");
+check(browseColumnSelect.includes("const changedColumn = ui.column !== id") && browseColumnSelect.includes("if (changedColumn) {")
+  && browseColumnSelect.includes("position.key = \"\"; position.index = 0; position.scrollLeft = 0;")
+  && browseColumnSelect.includes("tvBrowseCancelRailScroll();"), "TV_BROWSE_CATEGORY_FIRST_CARD", "real column changes reset to the first card while same-column rerenders retain their position");
+check(browseBackgroundPrep.includes("tvBrowseWaitWarmBackdrop(warm)") && browseBackgroundPrep.includes("ui.backdropMediaKey === mediaKey"), "TV_BROWSE_BACKGROUND_READY_REUSE", "background readiness waits for the shared decoded image and reuses an already displayed matching resource");
+check(detailJs.includes("function prepareArtLogo(asset)") && detailJs.includes('asset.decodeState = decodeState || (ready ? "ready" : "failed")'), "TV_BROWSE_LOGO_LOAD_AND_DECODE_STATE", "the shared artwork cache records load and decode outcomes separately");
 check(artTitleRender.includes("asset.ready") && artTitleRender.includes("!opts.preparedOnly") && browseJs.includes("{ immediateFallback: true, preparedOnly: true }"), "TV_BROWSE_LOGO_READY_OR_TEXT", "Browse consumes a prepared Logo only and keeps its text fallback immediate");
+
+const prepareArtLogoSource = detailJs.match(/    function prepareArtLogo\(asset\) \{[\s\S]*?(?=\n    function tmdbRecommendationsUrl\()/)?.[0] || "";
+assert.ok(prepareArtLogoSource, "shared artwork preparation can be isolated for an executable decode test");
+const preparedImages = [];
+class PreparedLogoImage {
+  constructor() { this.onload = null; this.onerror = null; this.naturalWidth = 0; this.decoding = ""; preparedImages.push(this); }
+  set src(value) { this.url = value; }
+  get src() { return this.url; }
+}
+const prepareLogo = vm.runInNewContext(`${prepareArtLogoSource}\nprepareArtLogo`, { Image: PreparedLogoImage, Date });
+const logoReadyAsset = { url: "/logo-ready.png", ready: false, failed: false, promise: null };
+const logoReadyPromise = prepareLogo(logoReadyAsset);
+assert.equal(prepareLogo(logoReadyAsset), logoReadyPromise, "duplicate Logo preparation shares its in-flight promise");
+const logoReadyImage = preparedImages[0];
+let resolveLogoDecode;
+logoReadyImage.decode = () => new Promise((resolve) => { resolveLogoDecode = resolve; });
+logoReadyImage.naturalWidth = 100;
+logoReadyImage.onload();
+assert.equal(logoReadyAsset.loadState, "loaded", "image load is recorded before decode completes");
+assert.equal(logoReadyAsset.decodeState, "pending", "a loaded but undecoded Logo is not marked ready");
+resolveLogoDecode();
+assert.equal(await logoReadyPromise, true);
+assert.equal(logoReadyAsset.decodeState, "ready", "Logo readiness is recorded only after successful decode");
+
+const logoDecodeFailedAsset = { url: "/logo-decode-failed.png", ready: false, failed: false, promise: null };
+const logoDecodeFailedPromise = prepareLogo(logoDecodeFailedAsset);
+const logoDecodeFailedImage = preparedImages[1];
+logoDecodeFailedImage.decode = () => Promise.reject(new Error("decode failed"));
+logoDecodeFailedImage.naturalWidth = 100;
+logoDecodeFailedImage.onload();
+assert.equal(await logoDecodeFailedPromise, false);
+assert.equal(logoDecodeFailedAsset.loadState, "loaded", "a decode failure remains distinct from a network load failure");
+assert.equal(logoDecodeFailedAsset.decodeState, "decode-failed");
+
+const logoNoDecodeAsset = { url: "/logo-no-decode.png", ready: false, failed: false, promise: null };
+const logoNoDecodePromise = prepareLogo(logoNoDecodeAsset);
+const logoNoDecodeImage = preparedImages[2];
+logoNoDecodeImage.naturalWidth = 100;
+logoNoDecodeImage.onload();
+assert.equal(await logoNoDecodePromise, true);
+assert.equal(logoNoDecodeAsset.decodeState, "loaded-no-decode", "WebViews without Image.decode still settle through the load fallback");
 
 const homeNostrRender = routeJs.match(/    function scheduleHomeNostrRender\(\) \{[\s\S]*?(?=\n    function homeSectionDomId\()/)?.[0] || "";
 check(hotJs.includes("scheduleHomeNostrRender()") && !hotJs.includes("invalidateHomeCategoryFeeds()"), "NOSTR_RECOMMENDATION_PRESERVED", "Nostr updates do not invalidate TMDB category feeds");
@@ -417,11 +480,19 @@ console.log("NO_UNBOUNDED_COLD_START_REQUEST_BURST = PASS (active request cap en
 console.log("NO_HOME_WHOLE_RENDER_STORM = PASS");
 console.log("HOME_FOCUS_PRESERVED_DURING_ASYNC_UPDATE = PASS (static identity hook)");
 console.log("TV_SINGLE_RAIL_FOCUS_GRAPH = PASS (static hook; DOM coverage in tv-immersive-browse.mjs)");
-console.log("TV_BROWSE_VISIBLE_LOGO_PREPARATION = PASS (measured viewport range)");
-console.log("TV_BROWSE_SINGLE_OFFSCREEN_LOGO_PREPARATION = PASS (one right-side target)");
+console.log("TV_BROWSE_VISIBLE_RESOURCE_PREPARATION = PASS (measured viewport range)");
+console.log("TV_BROWSE_SINGLE_OFFSCREEN_RESOURCE_PREPARATION = PASS (one right-side target)");
 console.log("TV_BROWSE_NO_FOCUS_LOGO_QUEUE = PASS (preview no longer starts a separate Logo path)");
-console.log("TV_BROWSE_LOGO_SHARED_DETAIL_PATH = PASS (typed shared detail cache and enrichment budget)");
-console.log("TV_BROWSE_LOGO_LOAD_AND_PRESENT = PASS (shared image decode state consumed by Browse)");
+console.log("TV_BROWSE_CARD_RESOURCE_BUNDLE = PASS (poster, detail, Logo and background)");
+console.log("TV_BROWSE_NO_LOGO_AND_DETAIL_ABSENCE = PASS (missing metadata/artwork settles the card bundle)");
+console.log("TV_BROWSE_POSTER_ABSENCE_STATE = PASS (confirmed missing poster is distinct from failure)");
+console.log("TV_BROWSE_DETAIL_FOREGROUND_PRIORITY = PASS (existing shared detail cache and request budget)");
+console.log("TV_BROWSE_SHARED_DETAIL_PROMOTION = PASS (queued duplicate is promoted by shared request key)");
+console.log("TV_BROWSE_FULL_RESOURCE_GATE = PASS (all first-screen resource outcomes)");
+console.log("TV_BROWSE_DATA_EXTENSION_PREVIEW = PASS (first-card commit intent survives data pagination)");
+console.log("TV_BROWSE_BACKGROUND_READY_REUSE = PASS (decoded readiness and displayed reuse)");
+console.log("TV_BROWSE_LOGO_LOAD_AND_DECODE_STATE = PASS (shared artwork cache)");
+console.log("TV_BROWSE_LOGO_DECODE_RUNTIME = PASS (dedupe, decoded, decode-failed, and no-decode fallback)");
 console.log("TV_BROWSE_LOGO_READY_OR_TEXT = PASS (prepared-only Logo with immediate text fallback)");
 console.log("SECONDARY_SEMANTICS_PRESERVED = PASS (no Secondary query state persisted)");
 console.log("NOSTR_RECOMMENDATION_PRESERVED = PASS");
