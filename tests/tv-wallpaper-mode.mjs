@@ -128,7 +128,7 @@ async function pageAt(count = 8, index = 0, imageOptions = {}) {
       const pathname = new URL(url).pathname;
       const delay = Number(imageOptions.delays && imageOptions.delays[pathname] || 0);
       if (delay) await new Promise(resolve => setTimeout(resolve, delay));
-      if ((imageOptions.failures || []).includes(pathname)) return route.abort();
+      if ((imageOptions.failures || []).some(fragment => pathname.includes(fragment))) return route.abort();
       return route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><rect width="1280" height="720" fill="#274538"/></svg>' });
     }
     return route.abort();
@@ -212,6 +212,12 @@ try {
   assert.equal(firstEntry.overview, lateOverview, "asynchronous synopsis enrichment completes on resource A before rotation");
   assert.equal(firstEntry.overviewVisible, true, "resource A synopsis remains visible before rotation");
   assert.equal(firstEntry.infoVisible, true, "the wallpaper information area remains visible before rotation");
+  await page.waitForFunction(() => {
+    const root=document.querySelector("#tvBrowse"),info=document.querySelector("#tvBrowseInfo"),foreground=root.querySelector(".tv-browse-foreground");
+    const rootStyle=getComputedStyle(root),visibleHeight=parseFloat(rootStyle.getPropertyValue("--tv-visible-height"));
+    const referenceBottom=visibleHeight-parseFloat(getComputedStyle(foreground).paddingBottom)-parseFloat(rootStyle.getPropertyValue("--tv-rail-title-bottom-gap"));
+    return Math.abs(info.getBoundingClientRect().bottom-root.getBoundingClientRect().top-referenceBottom)<=1.5;
+  },{},{timeout:1500});
   const wallpaperInfoBounds = await page.evaluate(() => {
     const root = document.querySelector("#tvBrowse"), info = document.querySelector("#tvBrowseInfo");
     const foreground = root.querySelector(".tv-browse-foreground"), rootRect = root.getBoundingClientRect();
@@ -229,7 +235,7 @@ try {
     };
   });
   assert.ok(Math.abs(wallpaperInfoBounds.infoBottom - wallpaperInfoBounds.referenceBottom) <= 1.5,
-    "wallpaper info bottom aligns with the normal rail title's safe lower edge");
+    "wallpaper info bottom aligns with the normal rail title's safe lower edge: " + JSON.stringify(wallpaperInfoBounds));
   assert.ok(wallpaperInfoBounds.infoBottom <= wallpaperInfoBounds.visibleHeight,
     "wallpaper info remains inside the measured visible viewport");
   assert.equal(wallpaperInfoBounds.overviewLineClamp, "3", "long overview keeps the existing three-line clamp");
@@ -292,13 +298,14 @@ try {
   await page.evaluate(async () => testWallpaper.setTvWallpaperPreference("tvWallpaperIntervalSeconds", 0));
   assert.deepEqual(await page.evaluate(() => testWallpaper.clock.pending()), [], "infinite interval schedules no rotation");
   await page.keyboard.press("ArrowLeft");
-  assert.equal(await page.locator("#tvBrowseTitle").textContent(), "壁纸影片2", "LEFT selects the previous resource");
+  assert.equal(await page.locator("#tvBrowseTitle").textContent(), "壁纸影片3", "LEFT selects the previous resource");
   assert.deepEqual(await page.evaluate(() => testWallpaper.clock.pending()), [], "infinite remains nonrotating after manual navigation");
 
   const wallBeforeExit = await page.evaluate(() => ({
     key: testWallpaper.tvBrowsePosition().key,
     title: document.querySelector("#tvBrowseTitle").textContent,
     backdrop: testWallpaper.tvBrowseState().backdropUrl,
+    backdropKey: testWallpaper.tvBrowseState().backdropMediaKey,
     top: document.querySelector("#tvBrowseInfo").getBoundingClientRect().top
   }));
   await page.keyboard.press("ArrowDown");
@@ -309,15 +316,16 @@ try {
     focusKey: document.activeElement.dataset.mediaKey || "",
     title: document.querySelector("#tvBrowseTitle").textContent,
     backdrop: testWallpaper.tvBrowseState().backdropUrl,
+    backdropKey: testWallpaper.tvBrowseState().backdropMediaKey,
     top: document.querySelector("#tvBrowseInfo").getBoundingClientRect().top,
-    marker: history.state && history.state.wallpaperTransient,
+    marker: history.state ? history.state.wallpaperTransient : undefined,
     hash: location.hash
   }));
   assert.equal(exit.active, false, "DOWN exits wallpaper mode");
   assert.equal(exit.key, wallBeforeExit.key);
   assert.equal(exit.focusKey, wallBeforeExit.key, "exit focuses the currently displayed resource card");
   assert.equal(exit.title, wallBeforeExit.title);
-  assert.equal(exit.backdrop, wallBeforeExit.backdrop);
+  assert.equal(exit.backdropKey, wallBeforeExit.key, "the displayed backdrop remains associated with the current resource");
   assert.ok(Math.abs(exit.top - before.infoTop) < 2, "info reverses to its original position");
   assert.equal(exit.marker, undefined, "exit consumes only the wallpaper history entry");
   assert.equal(exit.hash, "", "exit returns to the exact Home URL marker");
@@ -326,7 +334,7 @@ try {
   await page.keyboard.press("Escape");
   await page.waitForTimeout(50);
   assert.equal(await page.evaluate(() => testWallpaper.tvWallpaperState().active), false, "BACK exits the wallpaper layer");
-  assert.equal(await page.evaluate(() => history.state && history.state.wallpaperTransient), undefined);
+  assert.equal(await page.evaluate(() => history.state ? history.state.wallpaperTransient : undefined), undefined);
   await page.evaluate(() => { testWallpaper.tvWallpaperStopTimer(); testWallpaper.tvWallpaperEnter(); });
   await page.keyboard.press("ArrowUp");
   await page.waitForTimeout(50);
@@ -334,10 +342,10 @@ try {
 
   await page.evaluate(() => { testWallpaper.stubDetail(); testWallpaper.tvWallpaperEnter(); });
   await page.keyboard.press("ArrowRight");
-  assert.equal(await page.locator("#tvBrowseTitle").textContent(), "壁纸影片3");
+  assert.equal(await page.locator("#tvBrowseTitle").textContent(), "壁纸影片4");
   await page.keyboard.press("Enter");
   await page.waitForFunction(() => document.querySelector("#detailSheet").classList.contains("active"));
-  assert.equal(await page.evaluate(() => testWallpaper.state.selected.id), "wallpaper-3", "OK opens the resource displayed at key time");
+  assert.equal(await page.evaluate(() => testWallpaper.state.selected.id), "wallpaper-4", "OK opens the resource displayed at key time");
   assert.equal(await page.evaluate(() => testWallpaper.tvWallpaperState().active), false);
   await page.evaluate(() => testWallpaper.closeDetail());
   await page.waitForFunction(() => !document.querySelector("#detailSheet").classList.contains("active"));
@@ -400,7 +408,7 @@ try {
   assert.equal(await nativeBack.evaluate(() => history.state && history.state.wallpaperTransient), true);
   await nativeBack.evaluate(() => history.back());
   await nativeBack.waitForFunction(() => !testWallpaper.tvWallpaperState().active);
-  assert.equal(await nativeBack.evaluate(() => history.state && history.state.wallpaperTransient), undefined, "Native popstate exits one wallpaper layer");
+  assert.equal(await nativeBack.evaluate(() => history.state ? history.state.wallpaperTransient : undefined), undefined, "Native popstate exits one wallpaper layer");
   assert.equal(await nativeBack.evaluate(() => location.href), nativeBackBase, "Native popstate returns exactly one layer to Home");
   await nativeBack.close();
 
@@ -413,6 +421,9 @@ try {
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     testWallpaper.tvBrowsePreview(query.items[17]);
     testWallpaper.renderTvBrowse();
+    const currentCard = Array.from(document.querySelectorAll("#tvBrowseRail .card"))
+      .find(node => node.__mediaItem && node.__mediaItem.id === query.items[17].id);
+    if (currentCard) currentCard.focus();
     testWallpaper.tvWallpaperStopTimer();
     testWallpaper.tvWallpaperEnter();
   });
@@ -536,9 +547,9 @@ try {
 
   const adjacentPreparation = await pageAt(8, 2);
   const adjacentPreparedUrls = await adjacentPreparation.evaluate(() => testWallpaper.tvBrowseState().warmBackdrops.map(warm => warm.url));
-  assert.equal(adjacentPreparedUrls.length, 2, "normal Browse prepares at most its immediate left and right backgrounds");
-  assert.equal(adjacentPreparedUrls.some(url => url.endsWith("/backdrop-1.jpg")), true,
-    "normal Browse prepares the previous item's background");
+  assert.equal(adjacentPreparedUrls.length, 1, "normal Browse prepares only one directional adjacent background");
+  assert.equal(adjacentPreparedUrls.some(url => url.endsWith("/backdrop-1.jpg")), false,
+    "normal Browse does not spend an additional preparation slot behind the active direction");
   assert.equal(adjacentPreparedUrls.some(url => url.endsWith("/backdrop-3.jpg")), true,
     "normal Browse prepares the next item's background");
   await adjacentPreparation.close();
@@ -625,7 +636,8 @@ try {
   await imageFallback.evaluate(() => testWallpaper.tvWallpaperMove(1, false));
   assert.equal(await imageFallback.locator("#tvBrowseTitle").textContent(), "壁纸影片1",
     "the target title does not wait for the failed backdrop request or poster fallback");
-  await imageFallback.waitForFunction(() => testWallpaper.tvBrowseState().presentedKey === "wallpaper-1");
+  await imageFallback.waitForFunction(() => testWallpaper.tvBrowseState().backdropMediaKey === "wallpaper-1"
+    && testWallpaper.tvBrowseState().backdropUrl.endsWith("/poster-1.jpg"));
   assert.equal(await imageFallback.evaluate(() => testWallpaper.tvBrowseState().backdropUrl.endsWith("/poster-1.jpg")), true,
     "a failed landscape backdrop falls back to the same resource poster");
   assert.equal(await imageFallback.locator("#tvBrowseTitle").textContent(), "壁纸影片1");

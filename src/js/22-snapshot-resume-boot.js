@@ -2,7 +2,8 @@
       if (!target) return;
       if (tvBrowseActive() && target.closest && target.closest("#tvBrowse")) {
         const container = target.closest(".rail,.tv-browse-columns,.secondary-filter-options");
-        if (container) revealHorizontalInContainer(target, container);
+        if (container === $("tvBrowseRail") && target.classList && target.classList.contains("card")) tvBrowseScheduleRailAnchor(target);
+        else if (container) revealHorizontalInContainer(target, container);
         const row = target.closest(".secondary-filter-row");
         if (row) revealVerticalInContainer(row, $("tvBrowseFilters"), 8, 8);
         return;

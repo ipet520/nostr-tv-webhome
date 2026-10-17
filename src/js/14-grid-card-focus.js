@@ -482,7 +482,7 @@
       const posterSrc = poster || "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
       const imageOpt = {
         loading: index < initialGridBatchSize(null) ? "eager" : "lazy",
-        fetchPriority: index < 8 ? "high" : "",
+        fetchPriority: opts.homePriority === true || index < 8 ? "high" : "",
         homeLazy: !!opts.homeLazy
       };
       const progress = Math.min(100, Math.max(0, Number(item.progress || 0)));

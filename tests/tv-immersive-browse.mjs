@@ -269,6 +269,7 @@ async function filterBackAcceptance() {
       await focus(p,'#tvBrowseFilters button[data-group="sort"][data-value="rating"]');
       await press(p,'ArrowDown');await press(p,'ArrowRight');
       await p.evaluate(()=>testBrowse.focusRemoteTarget(document.querySelectorAll('#tvBrowseRail .card')[9]));
+      await p.waitForFunction(()=>!testBrowse.tvBrowseState().railScroll?.frame,{},{timeout:5000});
       await p.evaluate(()=>{window.returnCard=document.activeElement;window.returnScroll=document.querySelector('#tvBrowseRail').scrollLeft;window.returnIndex=testBrowse.tvBrowseState().positions[testBrowse.secondaryActiveQuery('movie').key].index;});
       await press(p,'ArrowUp');assert.equal(await p.evaluate(()=>document.activeElement.dataset.value),'rating');await press(p,'ArrowDown');
     } else if(zone==='empty') {

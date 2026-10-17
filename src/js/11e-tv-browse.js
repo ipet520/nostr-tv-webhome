@@ -1,4 +1,5 @@
     const TV_BROWSE_BACKDROP_TIMEOUT_MS = 8000;
+    const TV_BROWSE_RAIL_READY_TIMEOUT_MS = 5000;
 
     // TV presentation owns only selection, focus and viewport position. Catalog
     // results and filters remain owned by the shared catalog query service.
@@ -57,11 +58,14 @@
       const ui = state.tvBrowse || (state.tvBrowse = {
         column: "recommendation", view: "home", historyReturnFocus: null, positions: {}, filterOpen: false, filterFocusGroup: "",
         confirm: null, enterHeld: false, suppressClickUntil: 0,
-        previewKey: "", presentedKey: "", backdropToken: 0, backdropSlot: 0, backdropUrl: "",
+        previewKey: "", presentedKey: "", backdropToken: 0, backdropSlot: 0, backdropUrl: "", backdropMediaKey: "",
         pendingImage: null, pendingPreview: null, warmBackdrops: [],
-        focusIntent: null, retryFocusIntent: null, railCache: {}, railCacheOrder: [], initialized: false
+        focusIntent: null, retryFocusIntent: null, railCache: {}, railCacheOrder: [], railReadyByQuery: {}, railReadyOrder: [], railReadiness: null, railReadinessToken: 0, coldRailQueryKey: "", initialized: false,
+        railScroll: { frame: 0, target: null, targetKey: "", lastFrameAt: 0 }, posterWarmTargetKey: "", navigationDirection: 0, previewDirection: 1
       });
       if (!ui.wallpaper) ui.wallpaper = { active: false, timer: 0, timerToken: 0, moveToken: 0, infoFrame: 0, movePending: false, paused: false, lastActivityAt: 0, historyEntry: false, pendingHistoryAction: null, currentKey: "", currentItem: null, consumeUntilKeyup: {}, detailPending: false, clickSinkPrepared: false, clickSinkTabIndex: null, clickSinkOutline: "", phase: "idle" };
+      if (!ui.railReadyByQuery || typeof ui.railReadyByQuery !== "object") ui.railReadyByQuery = {};
+      if (!Array.isArray(ui.railReadyOrder)) ui.railReadyOrder = [];
       return ui;
     }
 
@@ -342,6 +346,8 @@
       const wall = tvWallpaperState(), ui = tvBrowseState(), root = $("tvBrowse");
       if (wall.active || !root || !tvWallpaperCanEnter()) return false;
       tvWallpaperStopTimer();
+      tvBrowseCancelRailScroll();
+      tvBrowseCancelRailReadiness(); ui.coldRailQueryKey = "";
       const selection = tvWallpaperCurrentSelection();
       if (!selection.item) return false;
       const position = tvBrowsePosition();
@@ -396,6 +402,11 @@
       const opts = options || {}, wall = tvWallpaperState(), root = $("tvBrowse"), ui = tvBrowseState();
       if (!wall.active) return false;
       const selection = tvWallpaperCurrentSelection();
+      const selectedCard = tvWallpaperCardFor(selection);
+      // Resolve the wallpaper position against the centered Browse anchor
+      // while the rail is still visually hidden. Revealing it therefore never
+      // flashes the pre-wallpaper card position first.
+      if (selectedCard) tvBrowseSetRailAnchor(selectedCard);
       tvWallpaperStopTimer();
       wall.moveToken += 1; wall.movePending = false;
       if (wall.infoFrame) cancelAnimationFrame(wall.infoFrame);
@@ -558,9 +569,9 @@
         tvWallpaperMaterialize(next);
         if (token !== wall.moveToken || !wall.active || wall.paused) return false;
         wall.currentKey = nextKey; wall.currentItem = nextItem;
-        tvBrowsePreview(nextItem);
+        tvBrowsePreview(nextItem, { direction, wrap: automatic });
         tvWallpaperFocusClickSink();
-        observeHomeImages($("tvBrowseRail")); observeMovieCardEnrichment($("tvBrowseRail"));
+        tvBrowseSyncRailImagePreparation(); observeMovieCardEnrichment($("tvBrowseRail"));
         tvBrowseMaybeLoadMore(nextIndex);
         moved = true;
         tvWallpaperScheduleInfoShift(nextKey, token);
@@ -806,6 +817,434 @@
       return ui.positions[key] || (ui.positions[key] = { key: "", index: 0, scrollLeft: 0 });
     }
 
+    function tvBrowseRailTargetScrollLeft(card, rail) {
+      const target = card && card.closest && card.closest("#tvBrowseRail");
+      const container = rail || target;
+      if (!card || !container || !container.clientWidth || !card.getBoundingClientRect) return null;
+      const rect = container.getBoundingClientRect(), cardRect = card.getBoundingClientRect();
+      const style = getComputedStyle(container);
+      const paddingLeft = parseFloat(style.paddingLeft) || 0, paddingRight = parseFloat(style.paddingRight) || 0;
+      const contentLeft = rect.left + (container.clientLeft || 0);
+      const usableWidth = Math.max(0, container.clientWidth - paddingLeft - paddingRight);
+      const contentCenter = cardRect.left + cardRect.width / 2 - contentLeft + Number(container.scrollLeft || 0);
+      const desired = contentCenter - paddingLeft - usableWidth / 2;
+      const max = Math.max(0, Number(container.scrollWidth || 0) - Number(container.clientWidth || 0));
+      return Math.max(0, Math.min(max, desired));
+    }
+
+    function tvBrowseExpectedRailScrollLeft(rail) {
+      const container = rail || $("tvBrowseRail"), ui = tvBrowseState(), scroll = ui.railScroll || {};
+      if (!container) return 0;
+      if (tvWallpaperIsActive()) {
+        const selection = tvWallpaperCurrentSelection(), card = tvWallpaperCardFor(selection);
+        const target = card && tvBrowseRailTargetScrollLeft(card, container);
+        return target == null ? Number(container.scrollLeft || 0) : target;
+      }
+      if (Number.isFinite(Number(scroll.target)) && scroll.frame) return Number(scroll.target);
+      return Number(container.scrollLeft || 0);
+    }
+
+    function tvBrowseCancelRailScroll() {
+      const scroll = tvBrowseState().railScroll || (tvBrowseState().railScroll = { frame: 0, target: null, targetKey: "", lastFrameAt: 0 });
+      if (scroll.frame) cancelAnimationFrame(scroll.frame);
+      scroll.frame = 0; scroll.target = null; scroll.targetKey = ""; scroll.lastFrameAt = 0;
+      return true;
+    }
+
+    function tvBrowseScheduleRailAnchor(card) {
+      const rail = $("tvBrowseRail"), ui = tvBrowseState();
+      if (!tvBrowseActive() || tvWallpaperIsActive() || !card || !rail || !rail.contains(card) || !card.classList.contains("card")) return false;
+      const scroll = ui.railScroll || (ui.railScroll = { frame: 0, target: null, targetKey: "", lastFrameAt: 0 });
+      const target = tvBrowseRailTargetScrollLeft(card, rail);
+      if (target == null) return false;
+      scroll.target = target; scroll.targetKey = card.dataset.mediaKey || "";
+      if (scroll.frame) return true;
+      const step = (now) => {
+        const currentRail = $("tvBrowseRail"), state = tvBrowseState(), runtime = state.railScroll;
+        if (!runtime || !currentRail || !tvBrowseActive() || tvWallpaperIsActive() || runtime.target == null) {
+          if (runtime) { runtime.frame = 0; runtime.lastFrameAt = 0; }
+          return;
+        }
+        const activeCard = document.activeElement && document.activeElement.closest("#tvBrowseRail .card");
+        if (activeCard && activeCard.isConnected) {
+          const latest = tvBrowseRailTargetScrollLeft(activeCard, currentRail);
+          if (latest != null) { runtime.target = latest; runtime.targetKey = activeCard.dataset.mediaKey || ""; }
+        }
+        const goal = Math.max(0, Math.min(Math.max(0, currentRail.scrollWidth - currentRail.clientWidth), Number(runtime.target || 0)));
+        const before = Number(currentRail.scrollLeft || 0), delta = goal - before;
+        // Some WebViews quantize scrollLeft to whole CSS pixels. Snap the
+        // final couple of pixels so an exponential step cannot stall forever
+        // below the browser's scroll precision.
+        if (Math.abs(delta) <= 2.5) {
+          currentRail.scrollLeft = goal;
+          runtime.frame = 0; runtime.target = null; runtime.targetKey = ""; runtime.lastFrameAt = 0;
+          tvBrowseSyncRailImagePreparation();
+          return;
+        }
+        const elapsed = runtime.lastFrameAt ? Math.max(1, Math.min(48, now - runtime.lastFrameAt)) : 16;
+        runtime.lastFrameAt = now;
+        const fraction = 1 - Math.exp(-elapsed / 72);
+        currentRail.scrollLeft = before + delta * fraction;
+        runtime.frame = requestAnimationFrame(step);
+      };
+      scroll.frame = requestAnimationFrame(step);
+      tvBrowseSyncRailImagePreparation();
+      return true;
+    }
+
+    function tvBrowseSetRailAnchor(card) {
+      const rail = $("tvBrowseRail");
+      if (!rail || !card || !rail.contains(card)) return false;
+      const target = tvBrowseRailTargetScrollLeft(card, rail);
+      if (target == null) return false;
+      tvBrowseCancelRailScroll();
+      rail.scrollLeft = target;
+      tvBrowseState().railScroll.target = null;
+      return true;
+    }
+
+    function tvBrowseInitialVisibleCardCount(rail, itemCount) {
+      if (!rail) return Math.min(Math.max(1, Number(itemCount) || 1), 8);
+      const root = $("tvBrowse"), style = getComputedStyle(rail), rootStyle = root && getComputedStyle(root);
+      const width = Number(rail.clientWidth || root && root.clientWidth || window.innerWidth || 0);
+      const padding = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+      const cardWidth = parseFloat(rootStyle && rootStyle.getPropertyValue("--tv-poster-width"))
+        || Number(rail.querySelector(".card") && rail.querySelector(".card").offsetWidth) || 140;
+      const gap = parseFloat(style.columnGap || style.gap || "0") || 0;
+      const stride = Math.max(1, cardWidth + gap);
+      const count = Math.max(1, Math.ceil(Math.max(cardWidth, width - padding) / stride));
+      return Math.min(Math.max(1, Number(itemCount) || 1), count);
+    }
+
+    function tvBrowseSetRailLoading(visible, message, busy) {
+      const rail = $("tvBrowseRail"), host = $("tvBrowsePosters"), loader = $("tvBrowseRailLoader");
+      if (!rail || !host) return false;
+      const shown = !!visible, isBusy = busy == null ? shown : !!busy;
+      host.classList.toggle("rail-loading", shown);
+      host.classList.toggle("rail-unavailable", shown && !isBusy);
+      rail.setAttribute("aria-busy", String(isBusy));
+      if (loader) {
+        loader.hidden = !shown || !isBusy;
+        loader.setAttribute("aria-label", message || "正在准备首屏内容");
+      }
+      const status = $("tvBrowseStatus"), root = $("tvBrowse"), feedback = root && root.querySelector(".tv-browse-feedback");
+      if (status && isBusy && status.textContent.trim() === "加载中…") status.textContent = "";
+      if (status && shown && !isBusy && message) {
+        status.textContent = message;
+        if (feedback) feedback.hidden = false;
+      } else if (status && !shown && status.textContent.trim() === "首屏暂不可用") {
+        status.textContent = "";
+      }
+      return true;
+    }
+
+    function tvBrowsePosterSource(image) {
+      if (!image) return "";
+      const deferred = image.getAttribute("data-src");
+      const source = deferred || image.getAttribute("src") || image.src || "";
+      return /^data:image\/gif;base64,R0lGODlhAQABAAD/i.test(source) ? "" : source;
+    }
+
+    function tvBrowseMarkPosterState(card, image, stateName) {
+      if (image) image.dataset.tvBrowsePosterState = stateName;
+      if (card) {
+        card.dataset.posterState = stateName;
+        card.classList.toggle("poster-unavailable", stateName === "failed");
+      }
+    }
+
+    function tvBrowseRememberRailReady(queryKey, signature, imageNodes) {
+      const ui = tvBrowseState();
+      if (!queryKey || !signature) return;
+      ui.railReadyByQuery[queryKey] = { signature, imageNodes: Array.from(imageNodes || []) };
+      ui.railReadyOrder = (ui.railReadyOrder || []).filter((key) => key !== queryKey).concat(queryKey);
+      while (ui.railReadyOrder.length > 6) delete ui.railReadyByQuery[ui.railReadyOrder.shift()];
+    }
+
+    function tvBrowseCancelRailReadiness() {
+      const ui = tvBrowseState(), gate = ui.railReadiness;
+      if (gate && gate.timeoutId) clearTimeout(gate.timeoutId);
+      if (gate && gate.pending) gate.pending.forEach((entry) => {
+        entry.image.removeEventListener("load", entry.onLoad);
+        entry.image.removeEventListener("error", entry.onError);
+      });
+      ui.railReadiness = null;
+      ui.railReadinessToken = Number(ui.railReadinessToken || 0) + 1;
+      tvBrowseSetRailLoading(false);
+      return !!gate;
+    }
+
+    function tvBrowseFinishRailReadiness(gate, timedOut) {
+      const ui = tvBrowseState();
+      if (!gate || gate.settled || ui.railReadiness !== gate || gate.token !== ui.railReadinessToken
+        || gate.queryKey !== tvBrowseQueryKey()) return false;
+      gate.settled = true;
+      if (gate.timeoutId) clearTimeout(gate.timeoutId);
+      if (gate.pending) gate.pending.forEach((entry) => {
+        entry.image.removeEventListener("load", entry.onLoad);
+        entry.image.removeEventListener("error", entry.onError);
+        if (timedOut) tvBrowseMarkPosterState(entry.card, entry.image, "failed");
+      });
+      gate.pending = [];
+      ui.railReadiness = null;
+      const dataTimedOut = timedOut && gate.dataPending;
+      ui.coldRailQueryKey = dataTimedOut ? gate.queryKey : "";
+      ui.railReadinessTimedOutKey = timedOut ? gate.queryKey + "|" + gate.signature : "";
+      if (!dataTimedOut) tvBrowseRememberRailReady(gate.queryKey, gate.signature, gate.imageNodes);
+      if (dataTimedOut) tvBrowseSetRailLoading(true, "首屏暂不可用", false);
+      else {
+        tvBrowseSetRailLoading(false);
+        tvBrowseSyncRailImagePreparation();
+      }
+      return true;
+    }
+
+    function tvBrowseEnsureRailReadiness(query, items, cards, visibleCount, allowGate) {
+      const ui = tvBrowseState(), wall = tvWallpaperState(), queryKey = query && query.key || tvBrowseQueryKey();
+      const rail = $("tvBrowseRail"), expectedCount = tvBrowseInitialVisibleCardCount(rail, Number.MAX_SAFE_INTEGER);
+      const dataPending = !!(query && (
+        (items.length < expectedCount && query.hasMore)
+        || (!items.length && (query.loading || !query.loaded))
+      ));
+      const visibleCards = (cards || []).slice(0, Math.max(0, Number(visibleCount) || 0));
+      const signature = dataPending
+        ? "data-pending:" + String(items.length) + ":" + String(query.page || 0)
+        : visibleCards.map((card) => [card.dataset.mediaKey || "", tvBrowsePosterSource(card.querySelector("img.poster"))].join("\u001f")).join("\u001e")
+          || (!items.length ? "no-visible-cards" : "no-visible-cards");
+      const shouldManage = !!allowGate || !!(ui.coldRailQueryKey && ui.coldRailQueryKey === queryKey)
+        || !!(ui.railReadiness && ui.railReadiness.queryKey === queryKey);
+      if (!shouldManage) return false;
+      if (ui.view !== "home" || wall.active || historyViewUnavailable(query)) {
+        tvBrowseCancelRailReadiness(); ui.coldRailQueryKey = ""; return false;
+      }
+      if (dataPending) {
+        if (ui.railReadiness && ui.railReadiness.queryKey === queryKey && ui.railReadiness.signature === signature) return true;
+        const signatureKey = queryKey + "|" + signature;
+        if (ui.railReadinessTimedOutKey === signatureKey) {
+          ui.coldRailQueryKey = queryKey; tvBrowseSetRailLoading(true, "首屏暂不可用", false); return true;
+        }
+        if (ui.railReadiness) tvBrowseCancelRailReadiness();
+        const gate = { queryKey, signature, dataPending: true, imageNodes: [], token: ++ui.railReadinessToken, pending: [], timeoutId: 0, settled: false };
+        ui.railReadiness = gate; ui.coldRailQueryKey = queryKey; ui.railReadinessTimedOutKey = "";
+        tvBrowseSetRailLoading(true);
+        gate.timeoutId = setTimeout(() => tvBrowseFinishRailReadiness(gate, true), TV_BROWSE_RAIL_READY_TIMEOUT_MS);
+        if (query.hasMore && !query.loading && !query.error && !query.retryableError) {
+          loadSecondaryPage(ui.column, query, query.page + 1, { reason: "tv-browse-first-screen" }).catch(() => {});
+        }
+        return true;
+      }
+      if (!visibleCards.length) {
+        tvBrowseCancelRailReadiness(); ui.coldRailQueryKey = ""; return false;
+      }
+      const signatureKey = queryKey + "|" + signature;
+      const readyByImages = visibleCards.every((card) => {
+        const image = card.querySelector("img.poster"), stateName = image && image.dataset.tvBrowsePosterState;
+        if (stateName === "ready" || stateName === "failed") return true;
+        if (!image || !tvBrowsePosterSource(image)) { tvBrowseMarkPosterState(card, image, "failed"); return true; }
+        if (image.hasAttribute("data-src") || image.hasAttribute("data-home-deferred")) return false;
+        if (!image.complete) return false;
+        if (image.naturalWidth === 0) { tvBrowseMarkPosterState(card, image, "failed"); return true; }
+        return typeof image.decode !== "function" && (tvBrowseMarkPosterState(card, image, "ready"), true);
+      });
+      const imageNodes = visibleCards.map((card) => card.querySelector("img.poster"));
+      if (ui.railReadiness && ui.railReadiness.queryKey === queryKey && ui.railReadiness.signature === signature
+        && imageNodes.length === ui.railReadiness.imageNodes.length
+        && imageNodes.every((image, index) => image === ui.railReadiness.imageNodes[index])) return true;
+      if (ui.railReadiness) tvBrowseCancelRailReadiness();
+      const cachedReady = ui.railReadyByQuery[queryKey];
+      const cachedNodesMatch = !!cachedReady && cachedReady.signature === signature
+        && Array.isArray(cachedReady.imageNodes) && imageNodes.length === cachedReady.imageNodes.length
+        && imageNodes.every((image, index) => image === cachedReady.imageNodes[index]);
+      if (cachedNodesMatch || readyByImages) {
+        tvBrowseRememberRailReady(queryKey, signature, imageNodes);
+        ui.coldRailQueryKey = ""; ui.railReadinessTimedOutKey = "";
+        tvBrowseSetRailLoading(false);
+        return false;
+      }
+      if (ui.railReadinessTimedOutKey === signatureKey) {
+        ui.coldRailQueryKey = ""; tvBrowseSetRailLoading(false); return false;
+      }
+      const gate = { queryKey, signature, imageNodes, dataPending: false, token: ++ui.railReadinessToken, pending: [], timeoutId: 0, settled: false, initializing: true };
+      ui.railReadinessTimedOutKey = "";
+      ui.railReadiness = gate; ui.coldRailQueryKey = queryKey; tvBrowseSetRailLoading(true);
+      const settleImage = (entry, ready) => {
+        if (gate.settled || ui.railReadiness !== gate || !gate.pending.includes(entry)) return;
+        tvBrowseMarkPosterState(entry.card, entry.image, ready ? "ready" : "failed");
+        entry.image.removeEventListener("load", entry.onLoad);
+        entry.image.removeEventListener("error", entry.onError);
+        gate.pending = gate.pending.filter((candidate) => candidate !== entry);
+        if (!gate.pending.length && !gate.initializing) tvBrowseFinishRailReadiness(gate, false);
+      };
+      const imageLoaded = (entry) => {
+        const image = entry.image;
+        if (image.naturalWidth === 0) return settleImage(entry, false);
+        image.dataset.tvBrowseDecodePrepared = entry.card.dataset.mediaKey || "";
+        if (typeof image.decode !== "function") return settleImage(entry, true);
+        let decoding;
+        try { decoding = image.decode(); } catch (error) { return settleImage(entry, true); }
+        if (!decoding || typeof decoding.then !== "function") return settleImage(entry, true);
+        decoding.then(() => settleImage(entry, true), () => settleImage(entry, true));
+      };
+      visibleCards.forEach((card) => {
+        const image = card.querySelector("img.poster"), source = tvBrowsePosterSource(image);
+        if (!image || !source) { tvBrowseMarkPosterState(card, image, "failed"); return; }
+        if (image.dataset.tvBrowsePosterState === "ready" || image.dataset.tvBrowsePosterState === "failed") return;
+        image.loading = "eager";
+        if (image.hasAttribute("data-src")) activateHomeDeferredImage(image, { proactive: true, decode: false });
+        const entry = { card, image, onLoad: null, onError: null };
+        entry.onLoad = () => imageLoaded(entry);
+        entry.onError = () => settleImage(entry, false);
+        if (image.complete) {
+          if (image.naturalWidth > 0) { gate.pending.push(entry); imageLoaded(entry); }
+          else tvBrowseMarkPosterState(card, image, "failed");
+          return;
+        }
+        gate.pending.push(entry);
+        image.addEventListener("load", entry.onLoad);
+        image.addEventListener("error", entry.onError);
+      });
+      gate.initializing = false;
+      if (!gate.pending.length) tvBrowseFinishRailReadiness(gate, false);
+      else gate.timeoutId = setTimeout(() => tvBrowseFinishRailReadiness(gate, true), TV_BROWSE_RAIL_READY_TIMEOUT_MS);
+      return true;
+    }
+
+    function historyViewUnavailable(query) {
+      return !query || !query.key || tvBrowseState().view !== "home";
+    }
+
+    function tvBrowseDecodePoster(image) {
+      if (!image || typeof image.decode !== "function") return false;
+      const card = image.closest && image.closest(".card"), key = card && card.dataset.mediaKey || "";
+      if (image.dataset.tvBrowseDecodePrepared === key) return false;
+      image.dataset.tvBrowseDecodePrepared = key;
+      try {
+        const decoding = image.decode();
+        if (decoding && typeof decoding.then === "function") {
+          const markReady = () => {
+            if (image.dataset.tvBrowseDecodePrepared !== key || image.dataset.tvBrowsePosterState === "failed") return;
+            if (card && card.isConnected) tvBrowseMarkPosterState(card, image, "ready");
+          };
+          decoding.then(markReady, markReady);
+        } else if (image.complete && image.naturalWidth > 0 && card) tvBrowseMarkPosterState(card, image, "ready");
+      } catch (error) {
+        if (image.complete && image.naturalWidth > 0 && card) tvBrowseMarkPosterState(card, image, "ready");
+      }
+      return true;
+    }
+
+    function tvBrowseSyncRailImagePreparation() {
+      if (!tvBrowseActive() || tvBrowseState().view !== "home") return false;
+      const ui = tvBrowseState(), rail = $("tvBrowseRail");
+      if (!rail || rail.dataset.queryKey !== tvBrowseQueryKey()) return false;
+      observeHomeImages(rail);
+      const cards = Array.from(rail.children).filter((card) => card.classList && card.classList.contains("card"));
+      if (!cards.length) return false;
+      const style = getComputedStyle(rail), rect = rail.getBoundingClientRect();
+      const left = rect.left + (rail.clientLeft || 0) + (parseFloat(style.paddingLeft) || 0);
+      const right = rect.left + (rail.clientLeft || 0) + rail.clientWidth - (parseFloat(style.paddingRight) || 0);
+      const expectedScroll = tvBrowseExpectedRailScrollLeft(rail), liveScroll = Number(rail.scrollLeft || 0);
+      const visible = cards.filter((card) => {
+        const cardRect = card.getBoundingClientRect();
+        const shift = expectedScroll - liveScroll;
+        const projectedLeft = cardRect.left - shift, projectedRight = cardRect.right - shift;
+        return projectedRight > left + 0.5 && projectedLeft < right - 0.5;
+      });
+      visible.forEach((card) => {
+        const image = card.querySelector("img.poster");
+        if (!image) return;
+        if (image.hasAttribute("data-home-deferred") && image.getAttribute("data-src")) activateHomeDeferredImage(image);
+        if (!(ui.railReadiness && ui.railReadiness.queryKey === tvBrowseQueryKey())) tvBrowseDecodePoster(image);
+      });
+      if (ui.railReadiness && ui.railReadiness.queryKey === tvBrowseQueryKey()) return false;
+      const lastVisibleIndex = visible.reduce((last, card) => Math.max(last, cards.indexOf(card)), -1);
+      const targetIndex = lastVisibleIndex + 1;
+      let target = cards[targetIndex] || null;
+      if (!target && lastVisibleIndex >= cards.length - 1) {
+        const query = secondaryActiveQuery(tvBrowseState().column);
+        const rawItems = tvBrowseState().column === "recommendation" ? recommendationPoolItems()
+          : query && secondaryFilterItems(tvBrowseState().column, query.items || []);
+        if (rawItems && targetIndex < rawItems.length && !ui.railRangeExpansion) {
+          ui.railRangeExpansion = true;
+          try {
+            if (tvBrowseState().column === "recommendation") renderTvBrowse({ append: true, ensureIndex: targetIndex, reason: "browse-viewport-preparation" });
+            else tvBrowseMaybeLoadMore(cards.length - 1);
+          } finally { ui.railRangeExpansion = false; }
+          return tvBrowseSyncRailImagePreparation();
+        }
+        if (lastVisibleIndex >= cards.length - 1) tvBrowseMaybeLoadMore(lastVisibleIndex);
+      }
+      const image = target && target.querySelector("img.poster");
+      const targetKey = target && target.dataset.mediaKey || "";
+      ui.posterWarmTargetKey = image && targetKey ? targetKey : "";
+      if (!image) return false;
+      const isPlaceholder = image.hasAttribute("data-home-deferred") && image.getAttribute("data-src");
+      if (isPlaceholder) activateHomeDeferredImage(image, { proactive: true });
+      else if (image.complete && image.naturalWidth) tvBrowseDecodePoster(image);
+      return true;
+    }
+
+    function tvBrowseReconcileRailNodes(rail, nextNodes, queryChanged) {
+      const previous = Array.from(rail.children);
+      if (queryChanged) {
+        const fragment = document.createDocumentFragment();
+        nextNodes.forEach((card) => fragment.appendChild(card));
+        rail.replaceChildren(fragment);
+        return true;
+      }
+      const sharedLength = Math.min(previous.length, nextNodes.length);
+      const sameKeyOrder = previous.slice(0, sharedLength).every((card, index) =>
+        String(card.dataset.mediaKey || "") === String(nextNodes[index].dataset.mediaKey || ""));
+      if (!sameKeyOrder) {
+        const fragment = document.createDocumentFragment();
+        nextNodes.forEach((card) => fragment.appendChild(card));
+        rail.replaceChildren(fragment);
+        return true;
+      }
+      let changed = previous.length !== nextNodes.length;
+      for (let index = 0; index < sharedLength; index += 1) {
+        if (previous[index] === nextNodes[index]) continue;
+        tvBrowseReuseCardPoster(previous[index], nextNodes[index]);
+        rail.replaceChild(nextNodes[index], previous[index]);
+        changed = true;
+      }
+      while (rail.children.length > nextNodes.length) {
+        rail.removeChild(rail.lastElementChild);
+        changed = true;
+      }
+      for (let index = previous.length; index < nextNodes.length; index += 1) {
+        rail.appendChild(nextNodes[index]);
+        changed = true;
+      }
+      return changed;
+    }
+
+    function tvBrowseReuseCardPoster(previous, next) {
+      if (!previous || !next || previous.dataset.mediaKey !== next.dataset.mediaKey) return false;
+      const oldImage = previous.querySelector("img.poster"), newImage = next.querySelector("img.poster");
+      const oldSource = tvBrowsePosterSource(oldImage), newSource = tvBrowsePosterSource(newImage);
+      if (!oldImage || !newImage || !oldSource || oldSource !== newSource || !newImage.parentNode) return false;
+      const oldDeferred = oldImage.getAttribute("data-src"), newDeferred = newImage.getAttribute("data-src");
+      if (newDeferred && oldDeferred) {
+        oldImage.setAttribute("data-src", newDeferred);
+        oldImage.setAttribute("data-home-deferred", "1");
+      } else if (newDeferred && !oldDeferred) {
+        oldImage.removeAttribute("data-src"); oldImage.removeAttribute("data-home-deferred");
+      } else if (!newDeferred && oldDeferred) {
+        oldImage.loading = newImage.loading || "eager";
+        oldImage.removeAttribute("data-src"); oldImage.removeAttribute("data-home-deferred");
+        oldImage.src = newSource;
+      }
+      oldImage.className = newImage.className;
+      oldImage.alt = newImage.alt;
+      ["loading", "decoding", "fetchpriority"].forEach((name) => {
+        if (newImage.hasAttribute(name)) oldImage.setAttribute(name, newImage.getAttribute(name));
+        else oldImage.removeAttribute(name);
+      });
+      newImage.parentNode.replaceChild(oldImage, newImage);
+      return true;
+    }
+
     function tvBrowseSavePosition() {
       const rail = $("tvBrowseRail");
       if (!rail || rail.dataset.queryKey !== tvBrowseQueryKey()) return;
@@ -875,7 +1314,14 @@
       if (!opts.keepConfirm) ui.confirm = null;
       if (opts.afterPaint) {
         syncTvBrowseColumns();
-        scheduleHomeContentRender({ afterPaint: true });
+        const queryKey = focusedQuery && focusedQuery.key || tvBrowseQueryKey();
+        const hasReadyCache = !!(ui.railCache && ui.railCache[queryKey] && ui.railReadyByQuery && ui.railReadyByQuery[queryKey]);
+        if (hasReadyCache) renderTvBrowse();
+        else {
+          const host = $("tvBrowsePosters");
+          if (host) host.classList.add("rail-switch-pending");
+          scheduleHomeContentRender({ afterPaint: true });
+        }
       } else renderTvBrowse();
       scheduleUiSnapshotSave();
       return true;
@@ -1063,6 +1509,9 @@
       if (tvWallpaperIsActive()) {
         tvWallpaperScheduleInfoShift();
         observeHomeImages(rail); observeMovieCardEnrichment(rail);
+      } else {
+        const focusedCard = document.activeElement && document.activeElement.closest("#tvBrowseRail .card");
+        if (focusedCard) tvBrowseScheduleRailAnchor(focusedCard);
       }
     }
 
@@ -1072,9 +1521,10 @@
       ui.initialized = true;
       // One environment observer drives the foreground budget. Child grids
       // and filter transitions do not create competing size writers.
-      if (typeof ResizeObserver === "function") new ResizeObserver(layoutTvBrowse).observe($("tvBrowse"));
-      else window.addEventListener("resize", layoutTvBrowse);
-      if (window.visualViewport) window.visualViewport.addEventListener("resize", layoutTvBrowse);
+      const resizeBrowse = () => { layoutTvBrowse(); tvBrowseSyncRailImagePreparation(); };
+      if (typeof ResizeObserver === "function") new ResizeObserver(resizeBrowse).observe($("tvBrowse"));
+      else window.addEventListener("resize", resizeBrowse);
+      if (window.visualViewport) window.visualViewport.addEventListener("resize", resizeBrowse);
       const controls = $("recentManageControls");
       if (controls) $("tvBrowseRecentTools").appendChild(controls);
       const columns = $("tvBrowseColumns");
@@ -1141,7 +1591,9 @@
         }).catch(() => {});
       });
       $("tvHistoryContinue").addEventListener("click", () => tvBrowseContinueHistory());
-      $("tvBrowseRail").addEventListener("scroll", () => { tvBrowseSavePosition(); scheduleUiSnapshotSave(); }, { passive: true });
+      $("tvBrowseRail").addEventListener("scroll", () => {
+        tvBrowseSavePosition(); tvBrowseSyncRailImagePreparation(); scheduleUiSnapshotSave();
+      }, { passive: true });
     }
 
     function syncTvBrowseColumns() {
@@ -1161,6 +1613,8 @@
       }
       initTvBrowse();
       syncTvBrowseVisibility();
+      const postersHost = $("tvBrowsePosters");
+      if (postersHost) postersHost.classList.remove("rail-switch-pending");
       const ui = tvBrowseState(), rail = $("tvBrowseRail");
       const focusBefore = tvBrowseFocusLabel();
       const historyView = ui.view === "history";
@@ -1180,8 +1634,17 @@
       }
       const items = (historyView ? query.items : ui.column === "recommendation"
         ? filterBlocked(query.items || []) : secondaryFilterItems(ui.column, query.items || [])).filter((item) => historyView || hasPoster(item));
+      // Measure the actual TV rail before deciding which poster requests are
+      // part of the first viewport. A fixed index misses cards on wide screens.
+      layoutTvBrowse();
+      const eagerPosterCount = tvBrowseInitialVisibleCardCount(rail, items.length);
       const queryChanged = rail.dataset.queryKey !== query.key;
       const previousKey = rail.dataset.queryKey || "";
+      if (queryChanged) {
+        tvBrowseCancelRailScroll();
+        tvBrowseCancelRailReadiness();
+        if (previousKey && ui.view === "home" && !tvWallpaperIsActive()) ui.coldRailQueryKey = query.key;
+      }
       if (queryChanged && previousKey) {
         ui.railCache = ui.railCache && typeof ui.railCache === "object" ? ui.railCache : {};
         ui.railCacheOrder = Array.isArray(ui.railCacheOrder) ? ui.railCacheOrder : [];
@@ -1209,11 +1672,18 @@
         const signature = tvBrowseCardSignature(item);
         let card = identity && priorByKey.get(identity);
         if (!card || card.__tvBrowseRenderSignature !== signature) {
-          card = mediaCard(item, index, { home: true, history: historyView, homeLazy: index > 7, weeklyHome: !historyView && ui.column === "now-playing" });
+          card = mediaCard(item, index, {
+            home: true, history: historyView, homeLazy: index >= eagerPosterCount,
+            homePriority: index < eagerPosterCount, weeklyHome: !historyView && ui.column === "now-playing"
+          });
           card.addEventListener("focus", () => {
             const position = tvBrowsePosition(); position.key = card.dataset.mediaKey; position.index = Number(card.dataset.cardIndex || 0);
-            tvBrowsePreview(card.__mediaItem);
+            const direction = ui.navigationDirection < 0 ? -1 : 1;
+            ui.navigationDirection = 0; ui.previewDirection = direction;
+            tvBrowsePreview(card.__mediaItem, { direction });
+            tvBrowseScheduleRailAnchor(card);
             tvBrowseMaybeLoadMore(position.index);
+            tvBrowseSyncRailImagePreparation();
             scheduleUiSnapshotSave();
           });
           card.__tvBrowseRenderSignature = signature;
@@ -1233,9 +1703,7 @@
         rail.scrollLeft = tvBrowsePosition().scrollLeft;
       }
       if (railChanged) {
-        const fragment = document.createDocumentFragment();
-        nextNodes.forEach((card) => fragment.appendChild(card));
-        rail.replaceChildren(fragment);
+        tvBrowseReconcileRailNodes(rail, nextNodes, queryChanged);
       }
       if (queryChanged && ui.railCache) {
         delete ui.railCache[query.key];
@@ -1279,6 +1747,8 @@
       }
       // observeHomeImages already registers TV episode enrichment.
       observeHomeImages(rail); observeMovieCardEnrichment(rail);
+      tvBrowseEnsureRailReadiness(query, items, nextNodes, eagerPosterCount, queryChanged);
+      tvBrowseSyncRailImagePreparation();
       if (tvWallpaperIsActive()) {
         tvWallpaperFocusClickSink();
       }
@@ -1445,12 +1915,33 @@
     function tvBrowseCancelPendingPreview() {
       const ui = tvBrowseState(), image = ui.pendingImage, pending = ui.pendingPreview;
       if (pending && pending.timeoutId) clearTimeout(pending.timeoutId);
-      if (pending && pending.warmBackdrop) {
-        pending.warmBackdrop.cancelled = true;
-        pending.warmBackdrop.pendingPreview = null;
+      if (image) image.onload = image.onerror = null;
+      if (pending && image) {
+        const url = pending.sources[pending.sourceIndex] || pending.preferredUrl || "";
+        let warm = pending.warmBackdrop;
+        if (!warm && url) warm = { key: pending.key, url, image, state: "loading", pendingPreview: null, cancelled: false };
+        if (warm) {
+          warm.key = pending.key; warm.url = url || warm.url; warm.pendingPreview = null; warm.cancelled = false;
+          if ((ui.warmBackdrops || []).indexOf(warm) < 0) ui.warmBackdrops.push(warm);
+          tvBrowseStartWarmBackdrop(warm);
+          tvBrowseTrimWarmBackdrops([warm.url]);
+        }
       }
-      if (image) { image.onload = image.onerror = null; image.src = ""; }
       ui.pendingImage = null; ui.pendingPreview = null;
+    }
+
+    function tvBrowseTrimWarmBackdrops(preferredUrls) {
+      const ui = tvBrowseState(), warms = ui.warmBackdrops || [], preferred = new Set(preferredUrls || []);
+      while (warms.length > 2) {
+        let index = warms.findIndex((warm) => !preferred.has(warm.url) && (warm.state === "failed" || warm.state === "presented"));
+        if (index < 0) index = warms.findIndex((warm) => !preferred.has(warm.url) && warm.state === "ready");
+        if (index < 0) index = warms.findIndex((warm) => !preferred.has(warm.url) && !warm.pendingPreview);
+        if (index < 0) break;
+        const [warm] = warms.splice(index, 1);
+        warm.cancelled = true; warm.pendingPreview = null;
+        if (warm.image) warm.image.onload = warm.image.onerror = null;
+      }
+      ui.warmBackdrops = warms;
     }
 
     function tvBrowseCancelWarmBackdrop() {
@@ -1468,19 +1959,57 @@
       [$("tvBrowseBackdrop"), $("tvBrowseBackdropNext")].forEach((layer) => {
         layer.style.backgroundImage = "";
         layer.classList.remove("visible");
+        delete layer.dataset.tvBrowseBackdropUrl;
+        delete layer.dataset.tvBrowseBackdropKey;
       });
-      ui.backdropUrl = "";
+      ui.backdropUrl = ""; ui.backdropMediaKey = "";
     }
 
-    function tvBrowseSetDisplayedBackdrop(url) {
+    function tvBrowseSetDisplayedBackdrop(url, mediaKey) {
       const ui = tvBrowseState();
-      if (!url || url === ui.backdropUrl) return false;
+      if (!url) return false;
+      if (url === ui.backdropUrl) {
+        if (mediaKey) {
+          ui.backdropMediaKey = mediaKey;
+          const visible = ui.backdropSlot ? $("tvBrowseBackdrop") : $("tvBrowseBackdropNext");
+          if (visible) visible.dataset.tvBrowseBackdropKey = mediaKey;
+        }
+        return false;
+      }
       const next = ui.backdropSlot ? $("tvBrowseBackdrop") : $("tvBrowseBackdropNext");
       const previous = ui.backdropSlot ? $("tvBrowseBackdropNext") : $("tvBrowseBackdrop");
+      const previousUrl = previous.dataset.tvBrowseBackdropUrl || "";
+      const cleanupToken = Number(previous.__tvBrowseCleanupToken || 0) + 1;
+      previous.__tvBrowseCleanupToken = cleanupToken;
       next.style.backgroundImage = "url(" + JSON.stringify(url) + ")";
+      next.dataset.tvBrowseBackdropUrl = url;
+      next.dataset.tvBrowseBackdropKey = mediaKey || "";
       next.classList.add("visible"); previous.classList.remove("visible");
-      ui.backdropSlot = ui.backdropSlot ? 0 : 1; ui.backdropUrl = url;
+      if (previousUrl) {
+        const cleanup = (event) => {
+          if (event && (event.target !== previous || event.propertyName !== "opacity")) return;
+          previous.removeEventListener("transitionend", cleanup);
+          if (previous.__tvBrowseCleanupToken !== cleanupToken || previous.classList.contains("visible")
+            || previous.dataset.tvBrowseBackdropUrl !== previousUrl) return;
+          previous.style.backgroundImage = "";
+          delete previous.dataset.tvBrowseBackdropUrl;
+          delete previous.dataset.tvBrowseBackdropKey;
+        };
+        previous.addEventListener("transitionend", cleanup);
+        const transition = getComputedStyle(previous).transitionDuration.split(",").map((value) => parseFloat(value) || 0);
+        if (!previous.classList.contains("visible") && !transition.some((value) => value > 0)) cleanup();
+      }
+      ui.backdropSlot = ui.backdropSlot ? 0 : 1; ui.backdropUrl = url; ui.backdropMediaKey = mediaKey || ui.backdropMediaKey;
       return true;
+    }
+
+    function tvBrowseCardPosterSource(item) {
+      const key = mediaDomKey(item), card = Array.from($("tvBrowseRail").children)
+        .find((candidate) => candidate.__mediaItem && mediaDomKey(candidate.__mediaItem) === key);
+      const image = card && card.querySelector("img.poster");
+      if (!image || image.dataset.tvBrowsePosterState === "failed") return "";
+      if (image.complete && image.naturalWidth === 0 && !image.hasAttribute("data-src")) return "";
+      return tvBrowsePosterSource(image);
     }
 
     function tvBrowseReadyCardPoster(item) {
@@ -1513,8 +2042,9 @@
 
     function tvBrowseStartWarmBackdrop(warm) {
       if (!warm || !warm.image) return false;
+      if (warm.state === "ready" || warm.state === "decoding") return true;
       const image = warm.image;
-      image.onload = () => {
+      const loaded = () => {
         if (!tvBrowseWarmBackdropTracked(warm)) return;
         warm.state = "loaded";
         if (typeof image.decode !== "function") return tvBrowseWarmBackdropSettled(warm, true);
@@ -1527,8 +2057,12 @@
           () => tvBrowseWarmBackdropSettled(warm, true)
         );
       };
+      image.onload = loaded;
       image.onerror = () => tvBrowseWarmBackdropSettled(warm, false);
-      image.src = warm.url;
+      const currentSource = String(image.currentSrc || image.src || "");
+      if (image.complete && image.naturalWidth > 0) loaded();
+      else if (image.complete && currentSource && image.naturalWidth === 0) tvBrowseWarmBackdropSettled(warm, false);
+      else if (currentSource !== warm.url) image.src = warm.url;
       return true;
     }
 
@@ -1551,8 +2085,8 @@
         pending.warmBackdrop = null;
       }
       ui.pendingImage = null; ui.pendingPreview = null;
-      tvBrowseSetDisplayedBackdrop(url);
-      tvBrowseWarmNextBackground(pending.item);
+      tvBrowseSetDisplayedBackdrop(url, pending.key);
+      tvBrowseWarmNextBackground(pending.item, { direction: pending.direction, wrap: pending.wrap });
       return true;
     }
 
@@ -1567,12 +2101,12 @@
         pending.warmBackdrop = null;
       }
       ui.pendingImage = null; ui.pendingPreview = null;
-      // Text was committed at selection time. Reuse a still-ready card poster
-      // if its larger preview source failed; otherwise keep the neutral base.
-      const poster = tvBrowseReadyCardPoster(pending.item);
-      tvBrowseClearDisplayedBackdrop();
-      if (poster) tvBrowseSetDisplayedBackdrop(poster);
-      tvBrowseWarmNextBackground(pending.item);
+      // Text was committed at selection time. Reuse a same-resource poster if
+      // available; otherwise keep a neutral base instead of the previous item.
+      const poster = tvBrowseReadyCardPoster(pending.item) || tvBrowseCardPosterSource(pending.item);
+      if (poster) tvBrowseSetDisplayedBackdrop(poster, pending.key);
+      else tvBrowseClearDisplayedBackdrop();
+      tvBrowseWarmNextBackground(pending.item, { direction: pending.direction, wrap: pending.wrap });
       return true;
     }
 
@@ -1621,48 +2155,56 @@
       return true;
     }
 
-    function tvBrowseWarmNextBackground(item) {
+    function tvBrowseWarmNextBackground(item, options) {
       const ui = tvBrowseState();
       if (!tvBrowseActive() || !item || ui.view !== "home") { tvBrowseCancelWarmBackdrop(); return false; }
+      const opts = options || {}, direction = Number(opts.direction) < 0 ? -1 : Number(opts.direction) > 0 ? 1 : (Number(ui.previewDirection) < 0 ? -1 : 1);
       const query = secondaryGetQuery(ui.column), items = tvWallpaperCurrentItems(query);
       const index = items.findIndex((candidate) => mediaDomKey(candidate) === mediaDomKey(item));
       if (index < 0 || !items.length) { tvBrowseCancelWarmBackdrop(); return false; }
-      const wallpaper = tvWallpaperIsActive(), indices = wallpaper ? [index + 1] : [index - 1, index + 1];
-      if (wallpaper && indices[0] >= items.length && !query.hasMore && items.length > 1) indices[0] = 0;
-      const wanted = [];
-      indices.forEach((at) => {
-        const candidate = items[at];
-        if (!candidate || wanted.length >= (wallpaper ? 1 : 2)) return;
-        const detail = tvBrowsePreviewDetail(candidate), url = tvBrowsePreviewBackgrounds(candidate, detail).preferred;
-        if (!url || url === ui.backdropUrl || ui.pendingPreview && url === ui.pendingPreview.sources[0]
-          || wanted.some((entry) => entry.url === url)) return;
-        wanted.push({ key: mediaDomKey(candidate), url });
-      });
+      let nextIndex = index + direction;
+      if (nextIndex < 0 || nextIndex >= items.length) {
+        if (!opts.wrap || query.hasMore || query.loading || items.length < 2) nextIndex = -1;
+        else nextIndex = (nextIndex + items.length) % items.length;
+      }
+      const candidate = nextIndex >= 0 ? items[nextIndex] : null;
+      const nextDetail = candidate && tvBrowsePreviewDetail(candidate);
+      const nextUrl = candidate && tvBrowsePreviewBackgrounds(candidate, nextDetail).preferred;
+      const currentPreviewUrl = ui.pendingPreview && ui.pendingPreview.sources[0] || "";
+      const wanted = candidate && nextUrl && nextUrl !== ui.backdropUrl && nextUrl !== currentPreviewUrl
+        ? { key: mediaDomKey(candidate), url: nextUrl } : null;
       const previous = ui.warmBackdrops || [], next = [];
-      wanted.forEach((entry) => {
-        const existing = previous.find((warm) => !warm.cancelled && warm.url === entry.url);
-        if (existing) { existing.key = entry.key; next.push(existing); return; }
-        next.push({ key: entry.key, url: entry.url, image: new Image(), state: "loading", pendingPreview: null, cancelled: false });
-      });
+      if (wanted) {
+        const existing = previous.find((warm) => !warm.cancelled && warm.url === wanted.url);
+        const warm = existing || { key: wanted.key, url: wanted.url, image: new Image(), state: "loading", pendingPreview: null, cancelled: false };
+        warm.key = wanted.key; warm.cancelled = false;
+        if (!warm.image.decoding) warm.image.decoding = "async";
+        next.push(warm);
+      }
       previous.forEach((warm) => {
         if (next.indexOf(warm) >= 0) return;
         warm.cancelled = true; warm.pendingPreview = null;
-        if (warm.image) { warm.image.onload = warm.image.onerror = null; warm.image.src = ""; }
+        // Retire callbacks without resetting an in-flight request just because
+        // focus moved. The browser can finish it into its normal URL cache.
+        if (warm.image) warm.image.onload = warm.image.onerror = null;
       });
       ui.warmBackdrops = next;
       next.forEach((warm) => { if (warm.state === "loading" && !warm.image.src) tvBrowseStartWarmBackdrop(warm); });
       return next.length > 0;
     }
 
-    function tvBrowsePreview(item) {
+    function tvBrowsePreview(item, options) {
       if (!item) return;
-      const ui = tvBrowseState(), key = mediaDomKey(item);
+      const ui = tvBrowseState(), opts = options || {}, key = mediaDomKey(item);
+      const direction = Number(opts.direction) < 0 ? -1 : Number(opts.direction) > 0 ? 1 : (Number(ui.previewDirection) < 0 ? -1 : 1);
+      ui.previewDirection = direction;
       const detail = tvBrowsePreviewDetail(item), background = tvBrowsePreviewBackgrounds(item, detail);
       const url = background.preferred;
       if (ui.previewKey === key && ui.pendingPreview && ui.pendingPreview.sources[0] === url) {
         ui.pendingPreview.item = item; ui.pendingPreview.detail = detail;
+        ui.pendingPreview.direction = direction; ui.pendingPreview.wrap = !!opts.wrap;
         tvBrowseCommitPreviewInfo(item, detail, key);
-        tvBrowseWarmNextBackground(item);
+        tvBrowseWarmNextBackground(item, { direction, wrap: !!opts.wrap });
         return;
       }
       ui.previewKey = key;
@@ -1678,27 +2220,42 @@
       tvBrowseCommitPreviewInfo(item, detail, key);
       if (!url) {
         tvBrowseCancelWarmBackdrop();
-        tvBrowseClearDisplayedBackdrop();
+        if (ui.backdropMediaKey !== key) {
+          tvBrowseClearDisplayedBackdrop();
+          const poster = tvBrowseReadyCardPoster(item) || tvBrowseCardPosterSource(item);
+          if (poster) tvBrowseSetDisplayedBackdrop(poster, key);
+        }
         return;
       }
       if (url === ui.backdropUrl) {
-        tvBrowseWarmNextBackground(item);
+        tvBrowseSetDisplayedBackdrop(url, key);
+        tvBrowseWarmNextBackground(item, { direction, wrap: !!opts.wrap });
         return;
       }
-      tvBrowseClearDisplayedBackdrop();
-      tvBrowseSetDisplayedBackdrop(tvBrowseReadyCardPoster(item));
-      const pending = { key, token, item, detail, preferredUrl: url, sources: background.urls, sourceIndex: 0, sourceToken: 0, image: null, warmBackdrop: null };
-      ui.pendingPreview = pending;
       const warm = tvBrowseTakeWarmBackdrop(url);
+      if (warm && warm.state === "ready") {
+        const readyPending = { key, token, item, detail, preferredUrl: url, sources: background.urls, sourceIndex: 0, sourceToken: 1, image: warm.image, warmBackdrop: warm, direction, wrap: !!opts.wrap };
+        ui.pendingPreview = readyPending; warm.pendingPreview = readyPending;
+        tvBrowseFinishPreviewImage(readyPending, url, readyPending.sourceToken);
+        return;
+      }
+      const poster = tvBrowseReadyCardPoster(item) || tvBrowseCardPosterSource(item);
+      if (ui.backdropMediaKey !== key) {
+        // An unprepared selection immediately drops the previous resource image.
+        // Its own card poster is the first fallback; otherwise the base is neutral.
+        tvBrowseClearDisplayedBackdrop();
+        if (poster) tvBrowseSetDisplayedBackdrop(poster, key);
+      }
+      const pending = { key, token, item, detail, preferredUrl: url, sources: background.urls, sourceIndex: 0, sourceToken: 0, image: null, warmBackdrop: warm || null, direction, wrap: !!opts.wrap };
+      ui.pendingPreview = pending;
       if (warm && warm.url === url) {
         pending.image = warm.image; pending.warmBackdrop = warm; pending.sourceToken = 1;
         ui.pendingImage = warm.image; warm.pendingPreview = pending;
         const sourceToken = pending.sourceToken;
         pending.timeoutId = setTimeout(() => tvBrowseAdvancePreviewSource(pending, warm.image, sourceToken), TV_BROWSE_BACKDROP_TIMEOUT_MS);
-        if (warm.state === "ready") tvBrowseFinishPreviewImage(pending, url, pending.sourceToken);
-        else if (warm.state === "failed") tvBrowseAdvancePreviewSource(pending, warm.image, pending.sourceToken);
+        if (warm.state === "failed") tvBrowseAdvancePreviewSource(pending, warm.image, pending.sourceToken);
       } else tvBrowseLoadPreviewSource(pending);
-      tvBrowseWarmNextBackground(item);
+      tvBrowseWarmNextBackground(item, { direction, wrap: !!opts.wrap });
     }
 
     function tvBrowsePrepareAdjacentLogos(item) {
@@ -1793,7 +2350,11 @@
       }
       if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(key)) return false;
       event.preventDefault(); event.stopPropagation();
-      focusRemoteTarget(tvBrowseDirectionalTarget(key, active));
+      const target = tvBrowseDirectionalTarget(key, active);
+      if (active && active.closest("#tvBrowseRail .card") && target && target !== active && target.closest("#tvBrowseRail .card")) {
+        ui.navigationDirection = key === "ArrowLeft" ? -1 : 1;
+      }
+      focusRemoteTarget(target);
       return true;
     }
 

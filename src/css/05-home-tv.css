@@ -1212,7 +1212,24 @@
     html.tv-browse-active #tvHistoryTime { flex: 0 0 auto; }
     html.tv-browse-active .tv-history-progress { height: 3px; border-radius: 2px; background: rgba(255,255,255,.45); overflow: hidden; }
     html.tv-browse-active .tv-history-progress > span { display: block; height: 100%; background: #D95763; }
-    html.tv-browse-active .tv-browse-posters { grid-row: 3; min-height: 0; z-index: 3; }
+    html.tv-browse-active .tv-browse-posters { position: relative; grid-row: 3; min-height: 0; z-index: 3; }
+    html.tv-browse-active .tv-browse-posters.rail-switch-pending #tvBrowseRail > .card { visibility: hidden; }
+    html.tv-browse-active .tv-browse-posters.rail-loading #tvBrowseRail > .card { visibility: hidden; }
+    html.tv-browse-active .tv-browse-rail-loader {
+      position: absolute; inset: 0; z-index: 5; display: flex; justify-content: center; align-items: center; gap: 13px;
+      background: transparent; pointer-events: none;
+    }
+    html.tv-browse-active .tv-browse-rail-loader[hidden] { display: none !important; }
+    html.tv-browse-active .tv-browse-rail-dot { width: 12px; height: 12px; flex: 0 0 12px; border-radius: 50%; background: #35e07a; animation: tv-browse-rail-dot-bounce 900ms ease-in-out infinite; }
+    html.tv-browse-active .tv-browse-rail-dot:nth-child(2) { animation-delay: 130ms; }
+    html.tv-browse-active .tv-browse-rail-dot:nth-child(3) { animation-delay: 260ms; }
+    @keyframes tv-browse-rail-dot-bounce { 0%,70%,100% { transform: translateY(0); } 35% { transform: translateY(-7px); } }
+    html.tv-browse-active .tv-browse-rail > .card.poster-unavailable .poster-wrap { position: relative; background: linear-gradient(145deg,rgba(50,58,69,.96),rgba(20,24,30,.98)); }
+    html.tv-browse-active .tv-browse-rail > .card.poster-unavailable .poster-wrap::before {
+      content: "海报暂不可用"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      padding: 12px; color: rgba(255,255,255,.6); font-size: var(--tv-caption-font,15px); line-height: 1.35; text-align: center; white-space: normal;
+    }
+    html.tv-browse-active .tv-browse-rail > .card.poster-unavailable .poster { visibility: hidden; }
     html.tv-browse-active .tv-browse-rail { display: flex; align-items: flex-start; gap: var(--tv-card-gap,1.4vw); overflow-x: auto; overflow-y: hidden; height: 100%; padding: var(--tv-focus-space) var(--tv-gutter); box-sizing: border-box; scrollbar-width: none; }
     /* One measured height budget determines both dimensions at 2:3.
        No flex shrink may compress the image independently of its width. */

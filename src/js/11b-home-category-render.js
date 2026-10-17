@@ -640,20 +640,17 @@
       const stride = adjacentRect && adjacentRect.left > currentRect.left
         ? adjacentRect.left - currentRect.left : currentWidth + gap;
       if (!stride) return false;
-      const railRect = rail.getBoundingClientRect();
-      const safe = typeof tvFocusSafeInsets === "function" ? tvFocusSafeInsets(rail) : { left: 12, right: 12 };
-      const leftLimit = railRect.left + (Number(safe.left) || 0);
-      const rightLimit = railRect.right - (Number(safe.right) || 0);
-      let revealDelta = 0;
-      if (currentWidth > rightLimit - leftLimit) revealDelta = currentRect.left - leftLimit;
-      else if (currentRect.left < leftLimit) revealDelta = currentRect.left - leftLimit;
-      else if (currentRect.right > rightLimit) revealDelta = currentRect.right - rightLimit;
       const scrollBefore = Number(rail.scrollLeft || 0);
       const scrollMax = Math.max(0, Number(rail.scrollWidth || 0) - Number(rail.clientWidth || 0));
-      const scrollAfter = Math.max(0, Math.min(scrollMax, scrollBefore + revealDelta));
-      const rootBounds = entry && entry.rootBounds;
-      const visibleLeft = rootBounds && Number.isFinite(rootBounds.left) ? rootBounds.left : 0;
-      const visibleRight = rootBounds && Number.isFinite(rootBounds.right) ? rootBounds.right : window.innerWidth || document.documentElement.clientWidth || 0;
+      // Hidden wallpaper Browse follows the same center-anchor geometry as the
+      // visible rail. Do not derive logical visibility from the old edge-reveal
+      // behavior; the physical rail remains untouched while hidden.
+      const anchored = typeof tvBrowseRailTargetScrollLeft === "function"
+        ? tvBrowseRailTargetScrollLeft(currentCard, rail) : null;
+      const scrollAfter = anchored == null ? scrollBefore : Math.max(0, Math.min(scrollMax, anchored));
+      const railRect = rail.getBoundingClientRect();
+      const visibleLeft = railRect.left + (rail.clientLeft || 0) + (parseFloat(railStyle.paddingLeft) || 0);
+      const visibleRight = railRect.left + (rail.clientLeft || 0) + rail.clientWidth - (parseFloat(railStyle.paddingRight) || 0);
       const virtualCardLeft = currentRect.left - (scrollAfter - scrollBefore) + (index - currentIndex) * stride;
       const targetOffset = targetRect.left - (targetCard.getBoundingClientRect().left || 0);
       const logicalLeft = virtualCardLeft + targetOffset;
@@ -662,9 +659,42 @@
 
     function homeVisibilityEntryIntersects(entry) {
       if (!entry || !entry.target) return false;
-      return tvBrowseWallpaperObservationKey(entry.target)
-        ? tvBrowseLogicalViewportIncludes(entry.target, entry)
-        : !!entry.isIntersecting;
+      const logicalPosition = tvBrowseWallpaperObservationKey(entry.target);
+      if (logicalPosition) return tvBrowseLogicalViewportIncludes(entry.target, entry);
+      const rail = entry.target.closest && entry.target.closest("#tvBrowseRail");
+      if (rail) {
+        const card = entry.target.matches && entry.target.matches(".card") ? entry.target : entry.target.closest(".card");
+        if (!card) return false;
+        const railRect = rail.getBoundingClientRect(), cardRect = card.getBoundingClientRect();
+        const style = getComputedStyle(rail);
+        const left = railRect.left + (rail.clientLeft || 0) + (parseFloat(style.paddingLeft) || 0);
+        const right = railRect.left + (rail.clientLeft || 0) + rail.clientWidth - (parseFloat(style.paddingRight) || 0);
+        return cardRect.right > left && cardRect.left < right
+          && cardRect.bottom > 0 && cardRect.top < (window.innerHeight || document.documentElement.clientHeight || 0);
+      }
+      return !!entry.isIntersecting;
+    }
+
+    function activateHomeDeferredImage(image, options) {
+      if (!image || !image.getAttribute) return false;
+      const source = image.getAttribute("data-src");
+      if (!source) return false;
+      const opts = options || {};
+      if (opts.proactive) image.loading = "eager";
+      image.removeAttribute("data-src");
+      image.removeAttribute("data-home-deferred");
+      image.src = source;
+      const observer = state.homeV14 && state.homeV14.imageObserver;
+      if (observer && typeof observer.unobserve === "function") observer.unobserve(image);
+      if (opts.proactive && opts.decode !== false && typeof tvBrowseDecodePoster === "function") {
+        tvBrowseDecodePoster(image);
+      } else if (opts.proactive && opts.decode !== false && typeof image.decode === "function") {
+        try {
+          const decoding = image.decode();
+          if (decoding && typeof decoding.catch === "function") decoding.catch(() => {});
+        } catch (e) {}
+      }
+      return true;
     }
 
     function ensureHomeImageObserver() {
@@ -674,12 +704,7 @@
         entries.forEach((entry) => {
           if (!homeVisibilityEntryIntersects(entry)) return;
           const image = entry.target;
-          const source = image.getAttribute("data-src");
-          if (!source) return;
-          image.removeAttribute("data-src");
-          image.removeAttribute("data-home-deferred");
-          image.src = source;
-          home.imageObserver.unobserve(image);
+          if (activateHomeDeferredImage(image)) home.imageObserver.unobserve(image);
         });
         recordHomeV14Diag();
       }, { root: null, rootMargin: HOME_V14_IMAGE_ROOT_MARGIN, threshold: 0.01 });
@@ -691,13 +716,7 @@
       const observer = ensureHomeImageObserver();
       const images = Array.from(root.querySelectorAll("img[data-src]"));
       if (observer) images.forEach((image) => observeHomeVisibilityTarget(observer, image));
-      else images.forEach((image) => {
-        const source = image.getAttribute("data-src");
-        if (!source) return;
-        image.removeAttribute("data-src");
-        image.removeAttribute("data-home-deferred");
-        image.src = source;
-      });
+      else images.forEach((image) => activateHomeDeferredImage(image));
       observeTvCardEnrichment(root);
       recordHomeV14Diag();
     }
