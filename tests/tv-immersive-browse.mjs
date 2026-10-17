@@ -531,7 +531,8 @@ try {
     testBrowse.tvBrowsePreview(item); testBrowse.tvBrowsePreview(item);
     window.joinLogo = testBrowse.requestMovieDetailShared(item,testBrowse.homeEnrichmentRequest);
   });
-  assert.equal(await artwork.locator('#tvBrowseTitle').isVisible(),false,'bounded transition avoids immediate text flash');
+  assert.equal(await artwork.locator('#tvBrowseTitle').isVisible(),true,'the readable text title remains visible while its artwork is not ready');
+  assert.equal(await artwork.locator('#tvBrowseLogo').evaluate(img=>getComputedStyle(img).animationDuration),'0s','TV Browse artwork adds no reveal delay after preparation');
   await artwork.waitForFunction(()=>!document.querySelector('#tvBrowseLogo').hidden);
   assert.equal(await artwork.locator('#tvBrowseTitle').isVisible(),false);
   assert.ok(await artwork.locator('#tvBrowseLogo').getAttribute('src').then(src=>src.endsWith('/art-zh.png')));

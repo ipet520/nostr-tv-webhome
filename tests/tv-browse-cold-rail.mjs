@@ -244,6 +244,39 @@ try {
   await page.waitForTimeout(50);
   assert.equal(await page.evaluate(() => testRail.tvBrowseState().column),"variety","the latest selected category remains authoritative after late prior images finish");
   assert.equal(await page.locator("#tvBrowseRailLoader").isHidden(),true,"an obsolete readiness result cannot restore the loading overlay");
+
+  // All seven real TV Browse columns fit the bounded rail/readiness LRU. A
+  // complete first-screen revisit should reuse its nodes and image state.
+  const allColumns=["recommendation","now-playing","movie","tv","anime","documentary","variety"];
+  await page.evaluate(columns=>{
+    testRail.state.hot.items=Array.from({length:18},(_,i)=>({id:"roundtrip-recommendation-"+i,title:"推荐往返"+i,mediaType:"other",source:"fixture",pic:"/roundtrip-recommendation-poster-"+i+".jpg"}));
+    testRail.state.hot.ready=true;
+    columns.filter(id=>id!=="recommendation").forEach(id=>testRail.seed(id,12,"roundtrip-"+id,false));
+  },allColumns);
+  for(const column of allColumns){
+    await page.evaluate(id=>testRail.tvBrowseSelectColumn(id),column);
+    await page.waitForFunction(id=>{
+      const rail=document.querySelector("#tvBrowseRail"),count=testRail.visibleCount();
+      return testRail.tvBrowseState().column===id && rail.dataset.queryKey===testRail.tvBrowseQueryKey()
+        && document.querySelector("#tvBrowseRailLoader").hidden
+        && Array.from(rail.children).slice(0,count).every(card=>["ready","failed"].includes(card.querySelector("img.poster")?.dataset.tvBrowsePosterState));
+    },column,{timeout:5000});
+    await page.evaluate(id=>{
+      window.roundtripCachedNodes=window.roundtripCachedNodes||{};
+      window.roundtripCachedNodes[id]=document.querySelector("#tvBrowseRail > .card");
+    },column);
+  }
+  for(const column of allColumns.slice().reverse()){
+    await page.evaluate(id=>testRail.tvBrowseSelectColumn(id,{afterPaint:true}),column);
+    const revisit=await page.evaluate(id=>({
+      selected:testRail.tvBrowseState().column,
+      loaderHidden:document.querySelector("#tvBrowseRailLoader").hidden,
+      sameNode:window.roundtripCachedNodes[id]===document.querySelector("#tvBrowseRail > .card")
+    }),column);
+    assert.equal(revisit.selected,column);
+    assert.equal(revisit.loaderHidden,true,"a ready category revisit never replays the cold dots");
+    assert.equal(revisit.sameNode,true,"the bounded category rail node is reused on revisit");
+  }
   await page.close();
   console.log("TV Browse cold rail checks passed: dynamic first screen, atomic reveal, single poster handoff, hot reuse, bounded page fill, failure placeholder, stale category guard.");
 } finally {

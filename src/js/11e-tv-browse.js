@@ -61,7 +61,8 @@
         previewKey: "", presentedKey: "", backdropToken: 0, backdropSlot: 0, backdropUrl: "", backdropMediaKey: "",
         pendingImage: null, pendingPreview: null, warmBackdrops: [],
         focusIntent: null, retryFocusIntent: null, railCache: {}, railCacheOrder: [], railReadyByQuery: {}, railReadyOrder: [], railReadiness: null, railReadinessToken: 0, coldRailQueryKey: "", initialized: false,
-        railScroll: { frame: 0, target: null, targetKey: "", lastFrameAt: 0 }, posterWarmTargetKey: "", navigationDirection: 0, previewDirection: 1
+        railScroll: { frame: 0, target: null, targetKey: "", lastFrameAt: 0 }, railPrepareFrame: 0, posterWarmTargetKey: "", navigationDirection: 0, previewDirection: 1,
+        backdropTransition: null, backdropQueue: null
       });
       if (!ui.wallpaper) ui.wallpaper = { active: false, timer: 0, timerToken: 0, moveToken: 0, infoFrame: 0, movePending: false, paused: false, lastActivityAt: 0, historyEntry: false, pendingHistoryAction: null, currentKey: "", currentItem: null, consumeUntilKeyup: {}, detailPending: false, clickSinkPrepared: false, clickSinkTabIndex: null, clickSinkOutline: "", phase: "idle" };
       if (!ui.railReadyByQuery || typeof ui.railReadyByQuery !== "object") ui.railReadyByQuery = {};
@@ -137,6 +138,11 @@
 
     function tvBrowseColumns() {
       return browseColumnItems().filter((entry) => entry.listId !== "recent");
+    }
+
+    function tvBrowseRailCacheCapacity() {
+      // Keep one bounded rail/readiness entry for each actual TV Browse column.
+      return Math.max(1, tvBrowseColumns().length);
     }
 
     function tvBrowseQueryKey() {
@@ -857,7 +863,13 @@
       const scroll = ui.railScroll || (ui.railScroll = { frame: 0, target: null, targetKey: "", lastFrameAt: 0 });
       const target = tvBrowseRailTargetScrollLeft(card, rail);
       if (target == null) return false;
-      scroll.target = target; scroll.targetKey = card.dataset.mediaKey || "";
+      const targetKey = card.dataset.mediaKey || "";
+      if (scroll.targetKey === targetKey && scroll.target != null && Math.abs(scroll.target - target) < 0.5) return true;
+      if (!scroll.frame && Math.abs(Number(rail.scrollLeft || 0) - target) <= 1) {
+        scroll.target = null; scroll.targetKey = ""; scroll.lastFrameAt = 0;
+        return false;
+      }
+      scroll.target = target; scroll.targetKey = targetKey;
       if (scroll.frame) return true;
       const step = (now) => {
         const currentRail = $("tvBrowseRail"), state = tvBrowseState(), runtime = state.railScroll;
@@ -865,30 +877,35 @@
           if (runtime) { runtime.frame = 0; runtime.lastFrameAt = 0; }
           return;
         }
-        const activeCard = document.activeElement && document.activeElement.closest("#tvBrowseRail .card");
-        if (activeCard && activeCard.isConnected) {
-          const latest = tvBrowseRailTargetScrollLeft(activeCard, currentRail);
-          if (latest != null) { runtime.target = latest; runtime.targetKey = activeCard.dataset.mediaKey || ""; }
-        }
         const goal = Math.max(0, Math.min(Math.max(0, currentRail.scrollWidth - currentRail.clientWidth), Number(runtime.target || 0)));
         const before = Number(currentRail.scrollLeft || 0), delta = goal - before;
         // Some WebViews quantize scrollLeft to whole CSS pixels. Snap the
         // final couple of pixels so an exponential step cannot stall forever
         // below the browser's scroll precision.
-        if (Math.abs(delta) <= 2.5) {
+        if (Math.abs(delta) <= 1.25) {
           currentRail.scrollLeft = goal;
           runtime.frame = 0; runtime.target = null; runtime.targetKey = ""; runtime.lastFrameAt = 0;
-          tvBrowseSyncRailImagePreparation();
+          tvBrowseScheduleRailImagePreparation();
           return;
         }
         const elapsed = runtime.lastFrameAt ? Math.max(1, Math.min(48, now - runtime.lastFrameAt)) : 16;
         runtime.lastFrameAt = now;
-        const fraction = 1 - Math.exp(-elapsed / 72);
+        const fraction = 1 - Math.exp(-elapsed / 48);
         currentRail.scrollLeft = before + delta * fraction;
         runtime.frame = requestAnimationFrame(step);
       };
       scroll.frame = requestAnimationFrame(step);
-      tvBrowseSyncRailImagePreparation();
+      tvBrowseScheduleRailImagePreparation();
+      return true;
+    }
+
+    function tvBrowseScheduleRailImagePreparation() {
+      const ui = tvBrowseState();
+      if (ui.railPrepareFrame) return false;
+      ui.railPrepareFrame = requestAnimationFrame(() => {
+        ui.railPrepareFrame = 0;
+        tvBrowseSyncRailImagePreparation();
+      });
       return true;
     }
 
@@ -956,9 +973,9 @@
     function tvBrowseRememberRailReady(queryKey, signature, imageNodes) {
       const ui = tvBrowseState();
       if (!queryKey || !signature) return;
-      ui.railReadyByQuery[queryKey] = { signature, imageNodes: Array.from(imageNodes || []) };
+      ui.railReadyByQuery[queryKey] = { signature };
       ui.railReadyOrder = (ui.railReadyOrder || []).filter((key) => key !== queryKey).concat(queryKey);
-      while (ui.railReadyOrder.length > 6) delete ui.railReadyByQuery[ui.railReadyOrder.shift()];
+      while (ui.railReadyOrder.length > tvBrowseRailCacheCapacity()) delete ui.railReadyByQuery[ui.railReadyOrder.shift()];
     }
 
     function tvBrowseCancelRailReadiness() {
@@ -1037,6 +1054,8 @@
         tvBrowseCancelRailReadiness(); ui.coldRailQueryKey = ""; return false;
       }
       const signatureKey = queryKey + "|" + signature;
+      const cachedReady = ui.railReadyByQuery[queryKey];
+      const cachedSignatureMatch = !!cachedReady && cachedReady.signature === signature;
       const readyByImages = visibleCards.every((card) => {
         const image = card.querySelector("img.poster"), stateName = image && image.dataset.tvBrowsePosterState;
         if (stateName === "ready" || stateName === "failed") return true;
@@ -1044,18 +1063,19 @@
         if (image.hasAttribute("data-src") || image.hasAttribute("data-home-deferred")) return false;
         if (!image.complete) return false;
         if (image.naturalWidth === 0) { tvBrowseMarkPosterState(card, image, "failed"); return true; }
-        return typeof image.decode !== "function" && (tvBrowseMarkPosterState(card, image, "ready"), true);
+        if (typeof image.decode !== "function" || cachedSignatureMatch) {
+          image.dataset.tvBrowseDecodePrepared = card.dataset.mediaKey || "";
+          tvBrowseMarkPosterState(card, image, "ready");
+          return true;
+        }
+        return false;
       });
       const imageNodes = visibleCards.map((card) => card.querySelector("img.poster"));
       if (ui.railReadiness && ui.railReadiness.queryKey === queryKey && ui.railReadiness.signature === signature
         && imageNodes.length === ui.railReadiness.imageNodes.length
         && imageNodes.every((image, index) => image === ui.railReadiness.imageNodes[index])) return true;
       if (ui.railReadiness) tvBrowseCancelRailReadiness();
-      const cachedReady = ui.railReadyByQuery[queryKey];
-      const cachedNodesMatch = !!cachedReady && cachedReady.signature === signature
-        && Array.isArray(cachedReady.imageNodes) && imageNodes.length === cachedReady.imageNodes.length
-        && imageNodes.every((image, index) => image === cachedReady.imageNodes[index]);
-      if (cachedNodesMatch || readyByImages) {
+      if (readyByImages) {
         tvBrowseRememberRailReady(queryKey, signature, imageNodes);
         ui.coldRailQueryKey = ""; ui.railReadinessTimedOutKey = "";
         tvBrowseSetRailLoading(false);
@@ -1137,19 +1157,35 @@
       if (!tvBrowseActive() || tvBrowseState().view !== "home") return false;
       const ui = tvBrowseState(), rail = $("tvBrowseRail");
       if (!rail || rail.dataset.queryKey !== tvBrowseQueryKey()) return false;
-      observeHomeImages(rail);
-      const cards = Array.from(rail.children).filter((card) => card.classList && card.classList.contains("card"));
-      if (!cards.length) return false;
+      const cards = rail.children, cardCount = cards.length;
+      if (!cardCount) return false;
       const style = getComputedStyle(rail), rect = rail.getBoundingClientRect();
       const left = rect.left + (rail.clientLeft || 0) + (parseFloat(style.paddingLeft) || 0);
       const right = rect.left + (rail.clientLeft || 0) + rail.clientWidth - (parseFloat(style.paddingRight) || 0);
       const expectedScroll = tvBrowseExpectedRailScrollLeft(rail), liveScroll = Number(rail.scrollLeft || 0);
-      const visible = cards.filter((card) => {
-        const cardRect = card.getBoundingClientRect();
-        const shift = expectedScroll - liveScroll;
-        const projectedLeft = cardRect.left - shift, projectedRight = cardRect.right - shift;
-        return projectedRight > left + 0.5 && projectedLeft < right - 0.5;
-      });
+      const shift = expectedScroll - liveScroll;
+      const projected = (index) => {
+        const cardRect = cards[index].getBoundingClientRect();
+        return { left: cardRect.left - shift, right: cardRect.right - shift };
+      };
+      // Rail cards have a uniform layout stride. Binary search the actual card
+      // bounds so a long visited rail is not fully geometry-scanned per key.
+      let low = 0, high = cardCount;
+      while (low < high) {
+        const middle = (low + high) >> 1;
+        if (projected(middle).right > left + 0.5) high = middle;
+        else low = middle + 1;
+      }
+      const firstVisibleIndex = low;
+      low = firstVisibleIndex; high = cardCount;
+      while (low < high) {
+        const middle = (low + high) >> 1;
+        if (projected(middle).left < right - 0.5) low = middle + 1;
+        else high = middle;
+      }
+      const lastVisibleIndex = low - 1;
+      const visible = [];
+      for (let index = firstVisibleIndex; index <= lastVisibleIndex; index += 1) visible.push(cards[index]);
       visible.forEach((card) => {
         const image = card.querySelector("img.poster");
         if (!image) return;
@@ -1157,7 +1193,6 @@
         if (!(ui.railReadiness && ui.railReadiness.queryKey === tvBrowseQueryKey())) tvBrowseDecodePoster(image);
       });
       if (ui.railReadiness && ui.railReadiness.queryKey === tvBrowseQueryKey()) return false;
-      const lastVisibleIndex = visible.reduce((last, card) => Math.max(last, cards.indexOf(card)), -1);
       const targetIndex = lastVisibleIndex + 1;
       let target = cards[targetIndex] || null;
       if (!target && lastVisibleIndex >= cards.length - 1) {
@@ -1457,7 +1492,7 @@
       px("meta-font", metaFont); px("overview-font", overviewFont); px("title-font", titleFont);
       px("filter-height", clamp(28, height * 34 / 1080, 36));
       px("control-height", clamp(36, height * .045, 50)); px("control-icon", clamp(21, height * .025, 28));
-      px("column-font", clamp(16, height * 24 / 1080, 24));
+      px("column-font", clamp(16, height * 20 / 1080, 22));
       px("preview-gap", clamp(12, height * .03, 40));
       const feedback = root.querySelector(".tv-browse-feedback");
       // Feedback shares the upper row; loading cannot change the rail baseline.
@@ -1472,17 +1507,19 @@
         compact = profile === 1;
         core = metaFont * (compact ? 1.2 : 2.4) + infoGap * 4;
         set("core-columns", compact ? "minmax(0,1fr) minmax(0,1fr)" : "minmax(0,1fr)");
-        px("column-pad-y", compact ? 4 : 8); px("column-pad-x", clamp(10, height * 12 / 1080, 12));
+        px("column-pad-y", compact ? clamp(3, height * 3 / 1080, 4) : clamp(4, height * 4 / 1080, 6));
+        px("column-pad-x", clamp(10, height * 12 / 1080, 12));
         px("column-gap", clamp(10, height * 12 / 1080, 12)); px("function-gap", compact ? 6 : clamp(8, rect.width * .008, 16));
         px("resume-gap", compact ? 12 : 18);
         px("card-gap", clamp(12, rect.width * .014, 28));
         const minWidth = compact ? 96 : Math.max(96, captionFont * 6 + 16);
         poster = Math.max(minWidth * 1.5, height * .33);
-        // Each edge owns half the 4% centered scale plus rounding safety.
-        // Rail padding consumes these same edges; do not scale the slot again.
+        // Keep the measured rail breathing room and bottom safe position
+        // stable across displays while the focus itself remains unscaled.
         focusSpace = Math.ceil((poster + caption) * .02) + 2;
         railSlot = Math.ceil(poster + caption) + focusSpace * 2;
-        // Project the real 1.04-scaled title edge into the visible viewport.
+        // Preserve the established title edge budget while removing the
+        // transform that made the focused card visually pulse during travel.
         // CSS resolves system safe-area insets on this one foreground.
         const titleEdge = railSlot - focusSpace - (poster + caption) * 1.02 + 6 * 1.04;
         px("rail-title-bottom-gap", titleEdge);
@@ -1592,7 +1629,9 @@
       });
       $("tvHistoryContinue").addEventListener("click", () => tvBrowseContinueHistory());
       $("tvBrowseRail").addEventListener("scroll", () => {
-        tvBrowseSavePosition(); tvBrowseSyncRailImagePreparation(); scheduleUiSnapshotSave();
+        tvBrowseSavePosition();
+        if (!tvBrowseState().railScroll.frame) tvBrowseScheduleRailImagePreparation();
+        scheduleUiSnapshotSave();
       }, { passive: true });
     }
 
@@ -1650,7 +1689,7 @@
         ui.railCacheOrder = Array.isArray(ui.railCacheOrder) ? ui.railCacheOrder : [];
         ui.railCache[previousKey] = { keys: (rail.__renderKeys || []).slice(), nodes: Array.from(rail.children) };
         ui.railCacheOrder = ui.railCacheOrder.filter((key) => key !== previousKey).concat(previousKey);
-        while (ui.railCacheOrder.length > 6) delete ui.railCache[ui.railCacheOrder.shift()];
+        while (ui.railCacheOrder.length > tvBrowseRailCacheCapacity()) delete ui.railCache[ui.railCacheOrder.shift()];
       }
       const cachedRail = queryChanged && ui.railCache && ui.railCache[query.key] || null;
       const oldNodes = queryChanged ? cachedRail && cachedRail.nodes || [] : Array.from(rail.children);
@@ -1683,7 +1722,7 @@
             tvBrowsePreview(card.__mediaItem, { direction });
             tvBrowseScheduleRailAnchor(card);
             tvBrowseMaybeLoadMore(position.index);
-            tvBrowseSyncRailImagePreparation();
+            tvBrowseScheduleRailImagePreparation();
             scheduleUiSnapshotSave();
           });
           card.__tvBrowseRenderSignature = signature;
@@ -1720,6 +1759,8 @@
       $("tvBrowseBlockHint").hidden = !state.blocked.selecting;
       const status = query.error || query.retryableError || (query.loading && !items.length ? "加载中…" : !items.length ? "暂无内容" : "");
       $("tvBrowseStatus").textContent = status;
+      const feedback = $("tvBrowse").querySelector(".tv-browse-feedback");
+      if (feedback) feedback.hidden = !Array.from(feedback.children).some((child) => !child.hidden && child.textContent.trim());
       const retry = $("tvBrowseRetry");
       retry.hidden = !!query.loading || !(query.error || query.retryableError || !items.length && query.loaded);
       if (document.activeElement === retry && retry.hidden) {
@@ -1731,8 +1772,11 @@
           if (ui.retryFocusIntent) ui.retryFocusIntent.fallbackId = fallback.id || "";
         }
       }
-      if (ui.filterOpen) renderTvBrowseFilters();
-      layoutTvBrowse();
+      if (ui.filterOpen) {
+        const previousFilterSchema = $("tvBrowseFilters").dataset.schema || "";
+        renderTvBrowseFilters();
+        if (($("tvBrowseFilters").dataset.schema || "") !== previousFilterSchema) layoutTvBrowse();
+      }
       const position = tvBrowsePosition();
       const selected = (historyView ? historyRecordFocusItem(items, position.key)
         : items.find((item) => mediaDomKey(item) === position.key)) || items[Math.min(position.index, items.length - 1)];
@@ -1741,8 +1785,7 @@
       else tvBrowseClearPreview();
       tvWallpaperOnBrowseRendered(selected, items);
       if (historyView && !selected) {
-        ui.backdropUrl = "";
-        [$("tvBrowseBackdrop"), $("tvBrowseBackdropNext")].forEach((layer) => { layer.style.backgroundImage = ""; layer.classList.remove("visible"); });
+        tvBrowseClearDisplayedBackdrop();
         if (document.activeElement === $("tvHistoryContinue")) focusRemoteTarget(tvBrowsePosterTarget());
       }
       // observeHomeImages already registers TV episode enrichment.
@@ -1810,7 +1853,7 @@
     function tvBrowseClearPreview() {
       const ui = tvBrowseState();
       ui.previewKey = ""; ui.presentedKey = ""; ui.backdropToken += 1; tvBrowseCancelLogo(); ui.logoKey = "";
-      tvBrowseCancelPendingPreview(); tvBrowseCancelWarmBackdrop();
+      tvBrowseCancelPendingPreview(); tvBrowseCancelWarmBackdrop(); ui.backdropQueue = null;
       $("tvBrowseTitle").textContent = ""; $("tvBrowseMeta").textContent = "";
       $("tvBrowseOverview").textContent = ""; $("tvBrowseUpdate").textContent = "";
       syncTvBrowseFilterOverview();
@@ -1829,7 +1872,8 @@
       const type = String(item.mediaType || item.media_type || "").toLowerCase();
       const key = (type === "movie" ? movieDetailCacheKey(item) : type === "tv" ? tvDetailCacheKey(item) : "") || String(mediaDomKey(item));
       if (ui.logoKey !== key) { tvBrowseCancelLogo(); ui.logoKey = key; }
-      renderArtTitle(item, detail, $("tvBrowseLogo"), $("tvBrowseTitle"), null, () => tvBrowseActive() && ui.logoKey === key);
+      renderArtTitle(item, detail, $("tvBrowseLogo"), $("tvBrowseTitle"), null,
+        () => tvBrowseActive() && ui.logoKey === key, { immediateFallback: true });
     }
 
     function tvBrowsePrepareLogo(item, foreground) {
@@ -1954,52 +1998,126 @@
       });
     }
 
+    function tvBrowseBackdropLayers() {
+      return [$("tvBrowseBackdrop"), $("tvBrowseBackdropNext")].filter(Boolean);
+    }
+
+    function tvBrowseClearBackdropLayer(layer) {
+      if (!layer) return;
+      layer.style.backgroundImage = "";
+      layer.style.zIndex = "";
+      delete layer.dataset.tvBrowseBackdropUrl;
+      delete layer.dataset.tvBrowseBackdropKey;
+    }
+
+    function tvBrowseBackdropTransitionMs(layer) {
+      if (!layer) return 0;
+      const style = getComputedStyle(layer);
+      const toMs = (value) => {
+        const number = parseFloat(value) || 0;
+        return /ms\s*$/i.test(value) ? number : number * 1000;
+      };
+      const durations = String(style.transitionDuration || "0s").split(",").map(toMs);
+      const delays = String(style.transitionDelay || "0s").split(",").map(toMs);
+      return Math.max(0, ...durations.map((duration, index) => duration + (delays[index % Math.max(1, delays.length)] || 0)));
+    }
+
+    function tvBrowseFinishDisplayedBackdropTransition(record) {
+      const ui = tvBrowseState();
+      if (!record || ui.backdropTransition !== record || record.finished) return false;
+      record.finished = true;
+      if (record.timer) clearTimeout(record.timer);
+      (record.watch || []).forEach((layer) => {
+        layer.removeEventListener("transitionend", record.onTransition);
+        layer.removeEventListener("transitioncancel", record.onTransition);
+      });
+      if (record.type === "set") {
+        if (record.outgoing && !record.outgoing.classList.contains("visible")) tvBrowseClearBackdropLayer(record.outgoing);
+      } else {
+        tvBrowseBackdropLayers().forEach((layer) => {
+          layer.classList.remove("visible");
+          tvBrowseClearBackdropLayer(layer);
+        });
+      }
+      ui.backdropTransition = null;
+      const queued = ui.backdropQueue;
+      ui.backdropQueue = null;
+      if (queued && queued.type === "set") tvBrowseSetDisplayedBackdrop(queued.url, queued.mediaKey);
+      else if (queued && queued.type === "clear") tvBrowseClearDisplayedBackdrop();
+      return true;
+    }
+
+    function tvBrowseStartDisplayedBackdropTransition(type, incoming, outgoing) {
+      const ui = tvBrowseState();
+      const watch = incoming ? [incoming] : (outgoing || []).filter(Boolean);
+      const record = { type, incoming: incoming || null, outgoing: outgoing || null, watch, onTransition: null, timer: 0, finished: false };
+      record.onTransition = (event) => {
+        if (event && (watch.indexOf(event.target) < 0 || event.propertyName !== "opacity")) return;
+        tvBrowseFinishDisplayedBackdropTransition(record);
+      };
+      watch.forEach((layer) => {
+        layer.addEventListener("transitionend", record.onTransition);
+        layer.addEventListener("transitioncancel", record.onTransition);
+      });
+      ui.backdropTransition = record;
+      const duration = Math.max(0, ...watch.map(tvBrowseBackdropTransitionMs));
+      if (!duration) tvBrowseFinishDisplayedBackdropTransition(record);
+      else {
+        // transitionend is authoritative; computed CSS timing is a bounded
+        // cleanup fallback for WebViews that omit it when backgrounded.
+        record.timer = setTimeout(() => tvBrowseFinishDisplayedBackdropTransition(record), duration + 80);
+      }
+      return record;
+    }
+
     function tvBrowseClearDisplayedBackdrop() {
       const ui = tvBrowseState();
-      [$("tvBrowseBackdrop"), $("tvBrowseBackdropNext")].forEach((layer) => {
-        layer.style.backgroundImage = "";
-        layer.classList.remove("visible");
-        delete layer.dataset.tvBrowseBackdropUrl;
-        delete layer.dataset.tvBrowseBackdropKey;
-      });
+      if (ui.backdropTransition) {
+        ui.backdropQueue = { type: "clear" };
+        return true;
+      }
+      const visible = tvBrowseBackdropLayers().filter((layer) => layer.classList.contains("visible"));
       ui.backdropUrl = ""; ui.backdropMediaKey = "";
+      if (!visible.length) {
+        tvBrowseBackdropLayers().forEach((layer) => {
+          layer.classList.remove("visible");
+          tvBrowseClearBackdropLayer(layer);
+        });
+        return true;
+      }
+      visible.forEach((layer) => layer.classList.remove("visible"));
+      tvBrowseStartDisplayedBackdropTransition("clear", null, visible);
+      return true;
     }
 
     function tvBrowseSetDisplayedBackdrop(url, mediaKey) {
       const ui = tvBrowseState();
       if (!url) return false;
+      const visible = ui.backdropSlot ? $("tvBrowseBackdrop") : $("tvBrowseBackdropNext");
       if (url === ui.backdropUrl) {
+        ui.backdropQueue = null;
         if (mediaKey) {
           ui.backdropMediaKey = mediaKey;
-          const visible = ui.backdropSlot ? $("tvBrowseBackdrop") : $("tvBrowseBackdropNext");
           if (visible) visible.dataset.tvBrowseBackdropKey = mediaKey;
         }
         return false;
       }
+      if (ui.backdropTransition) {
+        ui.backdropQueue = { type: "set", url, mediaKey: mediaKey || "" };
+        return true;
+      }
       const next = ui.backdropSlot ? $("tvBrowseBackdrop") : $("tvBrowseBackdropNext");
       const previous = ui.backdropSlot ? $("tvBrowseBackdropNext") : $("tvBrowseBackdrop");
-      const previousUrl = previous.dataset.tvBrowseBackdropUrl || "";
-      const cleanupToken = Number(previous.__tvBrowseCleanupToken || 0) + 1;
-      previous.__tvBrowseCleanupToken = cleanupToken;
+      if (!next || !previous) return false;
       next.style.backgroundImage = "url(" + JSON.stringify(url) + ")";
       next.dataset.tvBrowseBackdropUrl = url;
       next.dataset.tvBrowseBackdropKey = mediaKey || "";
+      next.style.zIndex = "1";
+      previous.style.zIndex = "0";
       next.classList.add("visible"); previous.classList.remove("visible");
-      if (previousUrl) {
-        const cleanup = (event) => {
-          if (event && (event.target !== previous || event.propertyName !== "opacity")) return;
-          previous.removeEventListener("transitionend", cleanup);
-          if (previous.__tvBrowseCleanupToken !== cleanupToken || previous.classList.contains("visible")
-            || previous.dataset.tvBrowseBackdropUrl !== previousUrl) return;
-          previous.style.backgroundImage = "";
-          delete previous.dataset.tvBrowseBackdropUrl;
-          delete previous.dataset.tvBrowseBackdropKey;
-        };
-        previous.addEventListener("transitionend", cleanup);
-        const transition = getComputedStyle(previous).transitionDuration.split(",").map((value) => parseFloat(value) || 0);
-        if (!previous.classList.contains("visible") && !transition.some((value) => value > 0)) cleanup();
-      }
-      ui.backdropSlot = ui.backdropSlot ? 0 : 1; ui.backdropUrl = url; ui.backdropMediaKey = mediaKey || ui.backdropMediaKey;
+      ui.backdropSlot = ui.backdropSlot ? 0 : 1;
+      ui.backdropUrl = url; ui.backdropMediaKey = mediaKey || "";
+      tvBrowseStartDisplayedBackdropTransition("set", next, previous);
       return true;
     }
 
@@ -2221,9 +2339,9 @@
       if (!url) {
         tvBrowseCancelWarmBackdrop();
         if (ui.backdropMediaKey !== key) {
-          tvBrowseClearDisplayedBackdrop();
           const poster = tvBrowseReadyCardPoster(item) || tvBrowseCardPosterSource(item);
           if (poster) tvBrowseSetDisplayedBackdrop(poster, key);
+          else tvBrowseClearDisplayedBackdrop();
         }
         return;
       }
@@ -2241,10 +2359,10 @@
       }
       const poster = tvBrowseReadyCardPoster(item) || tvBrowseCardPosterSource(item);
       if (ui.backdropMediaKey !== key) {
-        // An unprepared selection immediately drops the previous resource image.
-        // Its own card poster is the first fallback; otherwise the base is neutral.
-        tvBrowseClearDisplayedBackdrop();
+        // Crossfade directly to this resource's poster when it is available.
+        // Only use the neutral base when no same-resource image can be shown.
         if (poster) tvBrowseSetDisplayedBackdrop(poster, key);
+        else tvBrowseClearDisplayedBackdrop();
       }
       const pending = { key, token, item, detail, preferredUrl: url, sources: background.urls, sourceIndex: 0, sourceToken: 0, image: null, warmBackdrop: warm || null, direction, wrap: !!opts.wrap };
       ui.pendingPreview = pending;
@@ -2260,11 +2378,11 @@
 
     function tvBrowsePrepareAdjacentLogos(item) {
       const cards = Array.from($("tvBrowseRail").children), index = cards.findIndex((card) => mediaDomKey(card.__mediaItem) === mediaDomKey(item));
-      // Two neighbours only; shared typed metadata and image promises.
-      [index - 1, index + 1].forEach((at) => {
-        const adjacent = cards[at] && cards[at].__mediaItem;
-        if (adjacent) tvBrowsePrepareLogo(adjacent, false);
-      });
+      // Prepare only the next likely title in the navigation direction; the
+      // shared typed detail/logo cache serves revisits and reverse navigation.
+      const direction = Number(tvBrowseState().previewDirection) < 0 ? -1 : 1;
+      const adjacent = cards[index + direction] && cards[index + direction].__mediaItem;
+      if (adjacent) tvBrowsePrepareLogo(adjacent, false);
     }
 
     function tvBrowseDirectionalTarget(key, active) {

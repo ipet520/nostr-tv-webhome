@@ -218,17 +218,19 @@ const wallpaperResumeSource = browseJs.match(/    function tvWallpaperResume\(\)
 const browseLayoutSource = browseJs.match(/    function layoutTvBrowse\(\) \{[\s\S]*?(?=\n    function initTvBrowse\()/)?.[0] || "";
 check(wallpaperEnterSource.includes("observeHomeImages($(\"tvBrowseRail\"))") && wallpaperMoveSource.includes("observeMovieCardEnrichment($(\"tvBrowseRail\"))") && wallpaperResumeSource.includes("observeHomeImages($(\"tvBrowseRail\"))") && browseLayoutSource.includes("observeMovieCardEnrichment(rail)") && !browseJs.includes("tvWallpaperPrepareNearbyResources") && !browseJs.includes("queueTvCardEpisodeEnrichment(card)"), "TV_WALLPAPER_LOADING_CONTINUITY", "entry, position changes, resize, and lifecycle resume refresh only the existing observers; no wallpaper-specific loader is used");
 const logicalVisibilitySource = categoryJs.match(/    function tvBrowseWallpaperObservationKey\(target\) \{[\s\S]*?(?=\n    function ensureHomeImageObserver\()/)?.[0] || "";
+const railTargetSource = browseJs.match(/    function tvBrowseRailTargetScrollLeft\(card, rail\) \{[\s\S]*?(?=\n    function tvBrowseExpectedRailScrollLeft\()/)?.[0] || "";
+assert.ok(railTargetSource, "wallpaper logical visibility uses the actual center-anchor geometry helper");
 let logicalWallpaperActive = true;
-const logicalVisibilityChecks = vm.runInNewContext(`${logicalVisibilitySource}\n({ includes: tvBrowseLogicalViewportIncludes, intersects: homeVisibilityEntryIntersects })`, {
+const logicalVisibilityChecks = vm.runInNewContext(`${railTargetSource}\n${logicalVisibilitySource}\n({ includes: tvBrowseLogicalViewportIncludes, intersects: homeVisibilityEntryIntersects })`, {
   isTvLikeDevice: () => true,
   tvWallpaperIsActive: () => logicalWallpaperActive,
   tvBrowseQueryKey: () => "active-query",
   tvBrowsePosition: () => logicalPosition,
   tvWallpaperState: () => ({ moveToken: 1 }),
   mediaDomKey: (item) => item.id,
-  getComputedStyle: () => ({ columnGap: "18px" }),
+  getComputedStyle: () => ({ columnGap: "18px", paddingLeft: "0px", paddingRight: "0px" }),
   tvFocusSafeInsets: () => ({ left: 12, right: 12 }),
-  window: { visualViewport: null, innerWidth: 1280 },
+  window: { visualViewport: null, innerWidth: 1280, innerHeight: 720 },
   document: { documentElement: { clientWidth: 1280 } }
 });
 const logicalViewportIncludes = logicalVisibilityChecks.includes;
@@ -240,7 +242,7 @@ const logicalRail = {
 const logicalCards = Array.from({ length: 25 }, (_, index) => {
   const left = index * 142;
   const card = { dataset: { cardIndex: String(index), mediaKey: `wallpaper-${index}` }, __mediaItem: { id: `wallpaper-${index}` } };
-  card.getBoundingClientRect = () => ({ left, right: left + 124, width: 124 });
+  card.getBoundingClientRect = () => ({ left, right: left + 124, top: 100, bottom: 300, width: 124, height: 200 });
   card.closest = (selector) => selector === "#tvBrowseRail" ? logicalRail : selector === ".card" ? card : null;
   card.matches = (selector) => selector === ".card";
   logicalRail.children.push(card);
@@ -262,7 +264,7 @@ check(!logicalVisibilityChecks.intersects({ target: logicalImage(24), isIntersec
 logicalPosition.key = "wallpaper-18"; logicalPosition.index = 18;
 check(logicalViewportIncludes(logicalImage(20), { rootBounds: imageObserverBounds }) && !logicalViewportIncludes(logicalImage(24), { rootBounds: imageObserverBounds }), "TV_WALLPAPER_LOGICAL_RANGE_MOVES", "a new Browse position applies the existing focus-reveal viewport before re-evaluating observer targets");
 logicalWallpaperActive = false;
-check(logicalVisibilityChecks.intersects({ target: logicalImage(24), isIntersecting: true, rootBounds: imageObserverBounds }), "TV_HOME_VISIBILITY_UNCHANGED", "ordinary visibility continues to use native IntersectionObserver geometry");
+check(logicalVisibilityChecks.intersects({ target: logicalImage(5), isIntersecting: false, rootBounds: imageObserverBounds }), "TV_HOME_VISIBILITY_UNCHANGED", "ordinary rail visibility continues to use current card geometry rather than a stale observer flag");
 check(flushTvSource.includes("const request = job.home") && flushTvSource.includes("homeTvStatusRequest(url, timeout, job.key)") && flushTvSource.includes(": requestJson;"), "HOME_TV_STATUS_CLASS_SCOPE", "only Home TV card jobs use the visible status class; other grids keep requestJson");
 check(!flushTvSource.includes("promoteHomeBudgetRequests") && focusPromoteSource.includes('promoteHomeBudgetRequests(key, "visible-status", "focus")') && focusPromoteSource.includes("queueTvCardEpisodeEnrichment(card)"), "FOCUSED_TV_STATUS_PROMOTION", "focus promotes a matching queued request while ordinary Hero/Weekly deep enrichment stays low priority");
 check(cardsJs.includes("button.addEventListener(\"focus\", () => promoteHomeTvCardStatusOnFocus(button))"), "HOME_TV_FOCUS_HOOK", "only generated Home TV cards opt into the focused-status promotion helper");

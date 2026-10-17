@@ -123,8 +123,9 @@
       img.__artTitle = null; img.onerror = null;
     }
 
-    function renderArtTitle(item, detail, img, title, wrap, valid) {
+    function renderArtTitle(item, detail, img, title, wrap, valid, options) {
       if (!img || !title) return;
+      const opts = options || {};
       const asset = artLogoResource(item, detail);
       const key = String(item.mediaType || item.media_type || "") + ":" + movieDetailCacheId(item);
       if (img.__artTitle && img.__artTitle.key === key && img.__artTitle.asset === asset && img.__artTitle.valid()) { img.alt = title.textContent || item.title || ""; return; }
@@ -154,7 +155,7 @@
       if (asset && asset.failed || !asset && (known || !movieDetailCacheId(item) || !/^(movie|tv)$/.test(type))) { fallback(); return; }
       title.style.visibility = run.fallbackShown ? "" : "hidden";
       const remaining = run.deadline - Date.now();
-      if (run.fallbackShown || remaining <= 0) fallback();
+      if (opts.immediateFallback || run.fallbackShown || remaining <= 0) fallback();
       else run.timer = setTimeout(fallback, remaining);
       if (asset) prepareArtLogo(asset).then((ready) => ready ? show() : fallback());
     }

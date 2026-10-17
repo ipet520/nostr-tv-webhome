@@ -8,7 +8,7 @@ import {renderIndex,validateRenderedArtifact} from '../scripts/build-core.mjs';
 const require=createRequire(import.meta.url);
 const {chromium}=require(process.env.WEBHOME_PLAYWRIGHT_PATH||join(process.env.USERPROFILE,'.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright'));
 const baseline='b29ebba1ca46c2c9e6406b6bcf1eb19c721ad9c1';
-const hook=`window.testBackdrop={state,buildHotItemsFromIndex,displayImage,tvBrowsePreview,tvBrowsePrepareLogo,tvBrowseState,storeMovieDetailCache,storeTvDetailCache,secondaryGetQuery,renderTvBrowse,tvBrowseSelectColumn};
+const hook=`window.testBackdrop={state,buildHotItemsFromIndex,displayImage,tvBrowsePreview,tvBrowsePrepareLogo,tvBrowseState,tvBrowseSetDisplayedBackdrop,tvBrowseClearDisplayedBackdrop,storeMovieDetailCache,storeTvDetailCache,secondaryGetQuery,renderTvBrowse,tvBrowseSelectColumn};
 window.testBackdrop.setup=()=>{state.previewMode=true;document.documentElement.classList.add('tv-preview','tv-mode');state.hot.ready=true;state.hot.items=[];state.recent.loaded=true;syncBrowseDevicePresentation();bindActions();installRemoteKeys();renderTvBrowse();};
 window.imageDecodes=[];
 const OriginalImage=window.Image;
@@ -133,6 +133,43 @@ async function checks(version){
  assert.ok(requestIds.length>0&&requestIds.length<40,'background repair never fetches the whole recommendation list');
  assert.equal(new Set(requestIds).size,requestIds.length,'artwork and status share each metadata request');
  await p.close();
+
+ if(version==='after'){
+   ({p,requests}=await pageAt(version));
+   await p.evaluate(async()=>{
+     const makeUrl=color=>'data:image/svg+xml,'+encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><rect width="100%" height="100%" fill="${color}"/></svg>`);
+     const urls=['#183527','#355b43','#5e7657'].map(makeUrl);
+     await Promise.all(urls.map(url=>new Promise((resolve,reject)=>{
+       const image=new Image();image.onload=()=>typeof image.decode==='function'?image.decode().then(resolve,reject):resolve();
+       image.onerror=reject;image.src=url;
+     })));
+     window.backdropTransitions=[];
+     [document.querySelector('#tvBrowseBackdrop'),document.querySelector('#tvBrowseBackdropNext')].forEach(layer=>{
+       layer.addEventListener('transitionrun',event=>{if(event.propertyName==='opacity')backdropTransitions.push({type:'run',url:layer.dataset.tvBrowseBackdropUrl||''});});
+       layer.addEventListener('transitionend',event=>{if(event.propertyName==='opacity')backdropTransitions.push({type:'end',url:layer.dataset.tvBrowseBackdropUrl||''});});
+     });
+     const set=testBackdrop.tvBrowseSetDisplayedBackdrop;
+     urls.forEach((url,index)=>set(url,'transition-'+String.fromCharCode(97+index)));
+   });
+   await p.waitForFunction(()=>testBackdrop.tvBrowseState().backdropMediaKey==='transition-c'
+     && !testBackdrop.tvBrowseState().backdropTransition && !testBackdrop.tvBrowseState().backdropQueue,{},{timeout:2000});
+   const crossfade=await p.evaluate(()=>({
+     url:testBackdrop.tvBrowseState().backdropUrl,
+     mediaKey:testBackdrop.tvBrowseState().backdropMediaKey,
+     visible:Array.from(document.querySelectorAll('.tv-browse-backdrop')).filter(layer=>layer.classList.contains('visible')).map(layer=>({url:layer.dataset.tvBrowseBackdropUrl,key:layer.dataset.tvBrowseBackdropKey,opacity:getComputedStyle(layer).opacity})),
+     transitions:backdropTransitions,
+     staleLayerHasImage:Array.from(document.querySelectorAll('.tv-browse-backdrop')).some(layer=>layer.dataset.tvBrowseBackdropKey==='transition-b')
+   }));
+   assert.equal(crossfade.mediaKey,'transition-c','latest rapid selection owns the final background');
+   assert.equal(crossfade.visible.length,1,'two image layers settle to one visible prepared image');
+   assert.equal(crossfade.visible[0].url,crossfade.url,'the visible layer identity matches the latest background');
+   assert.equal(crossfade.visible[0].key,crossfade.mediaKey,'the visible layer media identity matches the latest selection');
+   assert.equal(crossfade.staleLayerHasImage,false,'an intermediate queued image is never painted over the latest selection');
+   assert.ok(crossfade.transitions.some(event=>event.type==='run')&&crossfade.transitions.some(event=>event.type==='end'),
+     'CSS opacity transition events confirm an actual crossfade lifecycle');
+   report.results.push({name:'queued-crossfade-latest-wins',version,mediaKey:crossfade.mediaKey,transitionEvents:crossfade.transitions.length,budgetMax:0});
+   await p.close();
+ }
 }
 try{
  await checks('before');await checks('after');

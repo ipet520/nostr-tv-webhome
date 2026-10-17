@@ -32,6 +32,7 @@ testBrowse.readRect = () => {
     resume:rect(document.querySelector('#tvHistoryResume')),overview:rect(document.querySelector('#tvBrowseFilterOverview')),
     feedback:rect(document.querySelector('.tv-browse-feedback')),feedbackHidden:document.querySelector('.tv-browse-feedback').hidden,
     info:rect(document.querySelector('#tvBrowseInfo')),columns:rect(document.querySelector('#tvBrowseColumns')),
+    columnPill:rect(document.querySelector('#tvColumn-'+testBrowse.tvBrowseState().column)),
     filters:rect(document.querySelector('#tvBrowseFilters')),scrollY,railScroll:rail.scrollLeft,root:rect(document.querySelector('#tvBrowse')),
     active:document.activeElement.id||document.activeElement.dataset.mediaKey||'',cardTransform:card?getComputedStyle(card).transform:null,query:rail.dataset.queryKey};
 };
@@ -76,6 +77,14 @@ async function geometry(version,viewport,host=false){
  await p.locator('#tvBrowseRail .card').first().focus();await pause(p,300);
  const home=await p.evaluate(()=>testBrowse.readRect());
  if(artifactDir)await p.screenshot({path:join(artifactDir,`${viewport.width}x${viewport.height}${host?'-host':''}-home-${version}.png`)});
+ if(version==='after'&&check){
+   const pillSizes=await p.locator('#tvColumn-movie').evaluate(button=>{
+     const size=()=>{const rect=button.getBoundingClientRect();return {width:rect.width,height:rect.height};};
+     const normal=size();button.focus();const focused=size();return {normal,focused};
+   });
+   assert.deepEqual(pillSizes.focused,pillSizes.normal,'selected category pill keeps the same dimensions when focused');
+   await p.locator('#tvBrowseRail .card').first().focus();await pause(p,200);
+ }
  await p.locator('#tvColumn-movie').focus();await p.keyboard.press('Enter');await p.keyboard.press('Enter');
  await p.locator('#tvBrowseRail .card').first().focus();await pause(p,300);
  const filter=await p.evaluate(()=>testBrowse.readRect());
@@ -188,6 +197,71 @@ async function switching(version){
  report.results.push({version,rapid,savedIndex:saved.positions[Object.keys(saved.positions).find(k=>k.includes('movie'))]?.index,discoverRequests:discover.length});
  await p.close();
 }
+async function railMotionStability(){
+ const p=await pageAt('after',{width:1280,height:720});await pause(p,120);
+ await p.evaluate(()=>{
+   const q=testBrowse.seed('movie',50);q.hasMore=false;
+   q.items=q.items.map((item,index)=>Object.assign(item,{mediaType:'other',source:'fixture',pic:'/motion-poster-'+index+'.jpg'}));
+   testBrowse.tvBrowseSelectColumn('movie');
+ });
+ await p.waitForFunction(()=>document.querySelectorAll('#tvBrowseRail > .card').length>=18);
+ await p.evaluate(()=>{
+   const rail=document.querySelector('#tvBrowseRail'),cards=Array.from(rail.children);
+   rail.scrollLeft=0;
+   testBrowse.focusRemoteTarget(cards[0]);
+   for(let index=1;index<=8;index++)testBrowse.focusRemoteTarget(cards[index]);
+   const active=document.activeElement,expectedTarget=testBrowse.tvBrowseState().railScroll.target;
+   const started=performance.now();window.railMotionTrace=[];window.railMotionDone=false;
+   const sample=()=>{
+     const railRect=rail.getBoundingClientRect(),cardRect=active.getBoundingClientRect(),style=getComputedStyle(rail);
+     const center=railRect.left+rail.clientLeft+(parseFloat(style.paddingLeft)||0)
+       +(rail.clientWidth-(parseFloat(style.paddingLeft)||0)-(parseFloat(style.paddingRight)||0))/2;
+     window.railMotionTrace.push({at:performance.now()-started,scroll:rail.scrollLeft,error:cardRect.left+cardRect.width/2-center,
+       frame:!!testBrowse.tvBrowseState().railScroll.frame,transform:getComputedStyle(active).transform});
+     if(testBrowse.tvBrowseState().railScroll.frame||performance.now()-started<260)requestAnimationFrame(sample);
+     else window.railMotionDone=true;
+   };
+   window.railMotionExpectedTarget=expectedTarget;requestAnimationFrame(sample);
+ });
+ await p.waitForFunction(()=>window.railMotionDone,{},{timeout:1200});
+ const motion=await p.evaluate(()=>({trace:window.railMotionTrace,expected:window.railMotionExpectedTarget,
+   focusedIndex:Number(document.activeElement.dataset.cardIndex),running:!!testBrowse.tvBrowseState().railScroll.frame}));
+ const trace=motion.trace,scroll=trace.map(sample=>sample.scroll),last=trace.slice(-6),firstMoved=trace.find(sample=>Math.abs(sample.scroll)>.5);
+ assert.equal(motion.focusedIndex,8,'the real focused card remains the selected navigation target');
+ assert.ok(firstMoved&&firstMoved.at<=80,'the rail begins following the new target within the immediate animation frames');
+ assert.ok(scroll.every((value,index)=>!index||value>=scroll[index-1]-1.25),'rightward anchor motion never corrects back toward an older target');
+ assert.ok(Math.abs(scroll.at(-1)-motion.expected)<=1.25,'the latest target is reached without a corrective second anchor');
+ assert.ok(Math.abs(trace.at(-1).error)<=2,'the focused card settles on the visual center anchor');
+ assert.ok(Math.max(...last.map(sample=>sample.scroll))-Math.min(...last.map(sample=>sample.scroll))<=.5,'the settled rail does not micro-jitter');
+ assert.ok(trace.every(sample=>sample.transform==='none'),'focused cards do not scale during rail travel');
+ assert.equal(motion.running,false,'only one coalesced animation remains and it is cleared at rest');
+ await p.evaluate(()=>{
+   const rail=document.querySelector('#tvBrowseRail'),cards=Array.from(rail.children);
+   testBrowse.focusRemoteTarget(cards[7]);testBrowse.focusRemoteTarget(cards[6]);testBrowse.focusRemoteTarget(cards[5]);
+   const active=document.activeElement,expectedTarget=testBrowse.tvBrowseState().railScroll.target;
+   const started=performance.now();window.reverseMotionTrace=[];window.reverseMotionDone=false;
+   const sample=()=>{
+     const railRect=rail.getBoundingClientRect(),cardRect=active.getBoundingClientRect(),style=getComputedStyle(rail);
+     const center=railRect.left+rail.clientLeft+(parseFloat(style.paddingLeft)||0)
+       +(rail.clientWidth-(parseFloat(style.paddingLeft)||0)-(parseFloat(style.paddingRight)||0))/2;
+     window.reverseMotionTrace.push({at:performance.now()-started,scroll:rail.scrollLeft,error:cardRect.left+cardRect.width/2-center,
+       frame:!!testBrowse.tvBrowseState().railScroll.frame});
+     if(testBrowse.tvBrowseState().railScroll.frame||performance.now()-started<260)requestAnimationFrame(sample);
+     else window.reverseMotionDone=true;
+   };
+   window.reverseMotionExpectedTarget=expectedTarget;requestAnimationFrame(sample);
+ });
+ await p.waitForFunction(()=>window.reverseMotionDone,{},{timeout:1200});
+ const reverse=await p.evaluate(()=>({trace:window.reverseMotionTrace,expected:window.reverseMotionExpectedTarget,
+   focusedIndex:Number(document.activeElement.dataset.cardIndex)}));
+ const reverseTrace=reverse.trace,reverseScroll=reverseTrace.map(sample=>sample.scroll),reverseLast=reverseTrace.slice(-6);
+ assert.equal(reverse.focusedIndex,5,'reverse input immediately selects the latest leftward card');
+ assert.ok(reverseScroll.every((value,index)=>!index||value<=reverseScroll[index-1]+1.25),'leftward anchor motion does not jump back toward the previous rightward target');
+ assert.ok(Math.abs(reverseScroll.at(-1)-reverse.expected)<=1.25&&Math.abs(reverseTrace.at(-1).error)<=2,'reverse motion settles on its latest visual anchor');
+ assert.ok(Math.max(...reverseLast.map(sample=>sample.scroll))-Math.min(...reverseLast.map(sample=>sample.scroll))<=.5,'reverse motion also settles without micro-jitter');
+ report.results.push({version:'after',motion:{firstMoveMs:firstMoved.at,finalOffset:trace.at(-1).error,settledRange:Math.max(...last.map(sample=>sample.scroll))-Math.min(...last.map(sample=>sample.scroll)),reverseOffset:reverseTrace.at(-1).error,reverseSettledRange:Math.max(...reverseLast.map(sample=>sample.scroll))-Math.min(...reverseLast.map(sample=>sample.scroll)),samples:trace.length+reverseTrace.length}});
+ await p.close();
+}
 try{
  for(const version of ['before','after']){
    for(const viewport of [{width:1920,height:1080},{width:1280,height:720},{width:1280,height:400}])await geometry(version,viewport);
@@ -196,9 +270,12 @@ try{
    for(const count of [20,180])await performanceRun(version,count);
    await switching(version);
  }
+ if(check)await railMotionStability();
  if(check)for(const after of report.results.filter(x=>x.version==='after'&&x.home)){
    const before=report.results.find(x=>x.version==='before'&&x.home&&x.host===after.host&&x.viewport.width===after.viewport.width&&x.viewport.height===after.viewport.height);
-   for(const field of ['info','columns','rail','poster','title'])assert.deepEqual(after.home[field],before.home[field],`normal Home ${field} must not change`);
+   for(const field of ['info','rail','poster','title'])assert.deepEqual(after.home[field],before.home[field],`the established Browse ${field} geometry must not change`);
+   assert.ok(after.home.columnPill.height<before.home.columnPill.height,'TV Browse category pills are shorter than the previous short-fat layout');
+   assert.deepEqual(after.home.columns.width,before.home.columns.width,'the category strip keeps its existing horizontal layout width');
  }
  assert.deepEqual(report.errors,[]);
  console.log(JSON.stringify({geometry:report.results.filter(x=>x.home).map(x=>({version:x.version,viewport:x.viewport,host:x.host,railY:x.home.rail.y,historyGap:x.home.poster.y-x.history.resume.bottom,filterGap:x.home.poster.y-x.filter.overview.bottom})),cold:report.results.filter(x=>x.trace).map(x=>({version:x.version,iteration:x.coldIteration,spread:x.spread})),performance:report.performance},null,2));
