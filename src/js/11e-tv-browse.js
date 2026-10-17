@@ -58,7 +58,7 @@
         column: "recommendation", view: "home", historyReturnFocus: null, positions: {}, filterOpen: false, filterFocusGroup: "",
         confirm: null, enterHeld: false, suppressClickUntil: 0,
         previewKey: "", presentedKey: "", backdropToken: 0, backdropSlot: 0, backdropUrl: "",
-        pendingImage: null, pendingPreview: null, warmBackdrop: null,
+        pendingImage: null, pendingPreview: null, warmBackdrops: [],
         focusIntent: null, retryFocusIntent: null, railCache: {}, railCacheOrder: [], initialized: false
       });
       if (!ui.wallpaper) ui.wallpaper = { active: false, timer: 0, timerToken: 0, moveToken: 0, infoFrame: 0, movePending: false, paused: false, lastActivityAt: 0, historyEntry: false, pendingHistoryAction: null, currentKey: "", currentItem: null, consumeUntilKeyup: {}, detailPending: false, clickSinkPrepared: false, clickSinkTabIndex: null, clickSinkOutline: "", phase: "idle" };
@@ -362,6 +362,7 @@
       // Re-evaluate the existing Home visibility observers at this logical
       // position; image loading and metadata work remain on their normal paths.
       observeHomeImages($("tvBrowseRail")); observeMovieCardEnrichment($("tvBrowseRail"));
+      tvBrowseWarmNextBackground(selection.item);
       tvWallpaperScheduleRotation();
       return true;
     }
@@ -1389,8 +1390,16 @@
       }, key)).then((detail) => {
         if (!tvBrowseActive() || tvBrowseQueryKey() !== session || String(detail && detail.id || "") !== id) return false;
         const ready = prepareArtLogo(artLogoResource(item, detail));
-        const current = Array.from($("tvBrowseRail").children).find((card) => mediaDomKey(card.__mediaItem) === mediaDomKey(item));
+        const cards = Array.from($("tvBrowseRail").children);
+        const current = cards.find((card) => mediaDomKey(card.__mediaItem) === mediaDomKey(item));
         if (foreground && ui.logoKey === key && ui.previewKey === mediaDomKey(item)) tvBrowsePreview(current ? current.__mediaItem : item);
+        if (!foreground && ui.previewKey) {
+          const previewIndex = cards.findIndex((card) => mediaDomKey(card.__mediaItem) === ui.previewKey);
+          const detailIndex = cards.findIndex((card) => mediaDomKey(card.__mediaItem) === mediaDomKey(item));
+          if (previewIndex >= 0 && detailIndex >= 0 && Math.abs(previewIndex - detailIndex) <= 1) {
+            tvBrowseWarmNextBackground(cards[previewIndex].__mediaItem);
+          }
+        }
         return ready;
       }).catch((error) => { const failed = runtime.cache[key]; if (failed && !error.staleArtwork) failed.logoMetadataFailedAt = Date.now(); return false; });
     }
@@ -1436,33 +1445,113 @@
     function tvBrowseCancelPendingPreview() {
       const ui = tvBrowseState(), image = ui.pendingImage, pending = ui.pendingPreview;
       if (pending && pending.timeoutId) clearTimeout(pending.timeoutId);
+      if (pending && pending.warmBackdrop) {
+        pending.warmBackdrop.cancelled = true;
+        pending.warmBackdrop.pendingPreview = null;
+      }
       if (image) { image.onload = image.onerror = null; image.src = ""; }
       ui.pendingImage = null; ui.pendingPreview = null;
     }
 
     function tvBrowseCancelWarmBackdrop() {
-      const ui = tvBrowseState(), warm = ui.warmBackdrop;
-      if (warm && warm.image) {
-        warm.image.onload = warm.image.onerror = null;
-        warm.image.src = "";
-      }
-      ui.warmBackdrop = null;
+      const ui = tvBrowseState(), warms = ui.warmBackdrops || [];
+      ui.warmBackdrops = [];
+      warms.forEach((warm) => {
+        warm.cancelled = true;
+        warm.pendingPreview = null;
+        if (warm.image) { warm.image.onload = warm.image.onerror = null; warm.image.src = ""; }
+      });
     }
 
-    function tvBrowseFinishPreviewImage(pending, url) {
+    function tvBrowseClearDisplayedBackdrop() {
       const ui = tvBrowseState();
-      if (ui.pendingPreview !== pending || pending.token !== ui.backdropToken || pending.key !== ui.previewKey) return false;
+      [$("tvBrowseBackdrop"), $("tvBrowseBackdropNext")].forEach((layer) => {
+        layer.style.backgroundImage = "";
+        layer.classList.remove("visible");
+      });
+      ui.backdropUrl = "";
+    }
+
+    function tvBrowseSetDisplayedBackdrop(url) {
+      const ui = tvBrowseState();
+      if (!url || url === ui.backdropUrl) return false;
+      const next = ui.backdropSlot ? $("tvBrowseBackdrop") : $("tvBrowseBackdropNext");
+      const previous = ui.backdropSlot ? $("tvBrowseBackdropNext") : $("tvBrowseBackdrop");
+      next.style.backgroundImage = "url(" + JSON.stringify(url) + ")";
+      next.classList.add("visible"); previous.classList.remove("visible");
+      ui.backdropSlot = ui.backdropSlot ? 0 : 1; ui.backdropUrl = url;
+      return true;
+    }
+
+    function tvBrowseReadyCardPoster(item) {
+      const key = mediaDomKey(item), card = Array.from($("tvBrowseRail").children)
+        .find((candidate) => candidate.__mediaItem && mediaDomKey(candidate.__mediaItem) === key);
+      const image = card && card.querySelector("img.poster");
+      if (!image || !image.complete || !image.naturalWidth) return "";
+      const url = image.currentSrc || image.src || "";
+      return /^data:image\//i.test(url) ? "" : url;
+    }
+
+    function tvBrowseWarmBackdropTracked(warm) {
+      const ui = tvBrowseState(), pending = warm && warm.pendingPreview;
+      return !!warm && !warm.cancelled && ((ui.warmBackdrops || []).indexOf(warm) >= 0
+        || !!(pending && ui.pendingPreview === pending && pending.warmBackdrop === warm));
+    }
+
+    function tvBrowseWarmBackdropSettled(warm, ready) {
+      if (!tvBrowseWarmBackdropTracked(warm)) return false;
+      const ui = tvBrowseState();
+      warm.state = ready ? "ready" : "failed";
+      if (warm.image) warm.image.onload = warm.image.onerror = null;
+      const pending = warm.pendingPreview;
+      if (pending && ui.pendingPreview === pending && pending.warmBackdrop === warm) {
+        if (ready) tvBrowseFinishPreviewImage(pending, warm.url, pending.sourceToken);
+        else tvBrowseAdvancePreviewSource(pending, warm.image, pending.sourceToken);
+      }
+      return true;
+    }
+
+    function tvBrowseStartWarmBackdrop(warm) {
+      if (!warm || !warm.image) return false;
+      const image = warm.image;
+      image.onload = () => {
+        if (!tvBrowseWarmBackdropTracked(warm)) return;
+        warm.state = "loaded";
+        if (typeof image.decode !== "function") return tvBrowseWarmBackdropSettled(warm, true);
+        let decoding;
+        try { decoding = image.decode(); } catch (error) { return tvBrowseWarmBackdropSettled(warm, true); }
+        if (!decoding || typeof decoding.then !== "function") return tvBrowseWarmBackdropSettled(warm, true);
+        warm.state = "decoding";
+        decoding.then(
+          () => tvBrowseWarmBackdropSettled(warm, true),
+          () => tvBrowseWarmBackdropSettled(warm, true)
+        );
+      };
+      image.onerror = () => tvBrowseWarmBackdropSettled(warm, false);
+      image.src = warm.url;
+      return true;
+    }
+
+    function tvBrowseTakeWarmBackdrop(url) {
+      const ui = tvBrowseState(), warms = ui.warmBackdrops || [];
+      const index = warms.findIndex((warm) => !warm.cancelled && warm.url === url);
+      if (index < 0) return null;
+      return warms.splice(index, 1)[0];
+    }
+
+    function tvBrowseFinishPreviewImage(pending, url, sourceToken) {
+      const ui = tvBrowseState();
+      if (ui.pendingPreview !== pending || pending.token !== ui.backdropToken || pending.key !== ui.previewKey
+        || sourceToken !== pending.sourceToken) return false;
       if (pending.timeoutId) clearTimeout(pending.timeoutId);
       if (pending.image) pending.image.onload = pending.image.onerror = null;
-      ui.pendingImage = null; ui.pendingPreview = null;
-      if (url !== ui.backdropUrl) {
-        const next = ui.backdropSlot ? $("tvBrowseBackdrop") : $("tvBrowseBackdropNext");
-        const previous = ui.backdropSlot ? $("tvBrowseBackdropNext") : $("tvBrowseBackdrop");
-        next.style.backgroundImage = "url(" + JSON.stringify(url) + ")";
-        next.classList.add("visible"); previous.classList.remove("visible");
-        ui.backdropSlot = ui.backdropSlot ? 0 : 1; ui.backdropUrl = url;
+      if (pending.warmBackdrop) {
+        pending.warmBackdrop.pendingPreview = null;
+        pending.warmBackdrop.state = "presented";
+        pending.warmBackdrop = null;
       }
-      tvBrowseCommitPreviewInfo(pending.item, pending.detail, pending.key);
+      ui.pendingImage = null; ui.pendingPreview = null;
+      tvBrowseSetDisplayedBackdrop(url);
       tvBrowseWarmNextBackground(pending.item);
       return true;
     }
@@ -1472,33 +1561,62 @@
       if (ui.pendingPreview !== pending || pending.token !== ui.backdropToken || pending.key !== ui.previewKey) return false;
       if (pending.timeoutId) clearTimeout(pending.timeoutId);
       if (pending.image) pending.image.onload = pending.image.onerror = null;
+      if (pending.warmBackdrop) {
+        pending.warmBackdrop.pendingPreview = null;
+        pending.warmBackdrop.cancelled = true;
+        pending.warmBackdrop = null;
+      }
       ui.pendingImage = null; ui.pendingPreview = null;
-      // Neither the requested backdrop nor the same-item poster decoded.
-      // Clear the old image rather than leave a different movie behind text.
-      [$("tvBrowseBackdrop"), $("tvBrowseBackdropNext")].forEach((layer) => {
-        layer.style.backgroundImage = ""; layer.classList.remove("visible");
-      });
-      ui.backdropUrl = "";
-      tvBrowseCommitPreviewInfo(pending.item, pending.detail, pending.key);
+      // Text was committed at selection time. Reuse a still-ready card poster
+      // if its larger preview source failed; otherwise keep the neutral base.
+      const poster = tvBrowseReadyCardPoster(pending.item);
+      tvBrowseClearDisplayedBackdrop();
+      if (poster) tvBrowseSetDisplayedBackdrop(poster);
       tvBrowseWarmNextBackground(pending.item);
       return true;
+    }
+
+    function tvBrowseWaitForPreviewDecode(pending, image, url, sourceToken) {
+      const isCurrent = () => {
+        const ui = tvBrowseState();
+        return ui.pendingPreview === pending && pending.token === ui.backdropToken
+          && pending.key === ui.previewKey && pending.sourceToken === sourceToken;
+      };
+      const finish = () => { if (isCurrent()) tvBrowseFinishPreviewImage(pending, url, sourceToken); };
+      if (typeof image.decode !== "function") return finish();
+      let decoding;
+      try { decoding = image.decode(); } catch (error) { return finish(); }
+      if (!decoding || typeof decoding.then !== "function") return finish();
+      decoding.then(finish, finish);
+    }
+
+    function tvBrowseAdvancePreviewSource(pending, image, sourceToken) {
+      const ui = tvBrowseState();
+      if (ui.pendingPreview !== pending || pending.token !== ui.backdropToken || pending.key !== ui.previewKey
+        || pending.sourceToken !== sourceToken) return false;
+      if (pending.timeoutId) clearTimeout(pending.timeoutId);
+      pending.timeoutId = null;
+      if (image) image.onload = image.onerror = null;
+      if (pending.warmBackdrop) {
+        pending.warmBackdrop.pendingPreview = null;
+        pending.warmBackdrop = null;
+      }
+      pending.sourceIndex += 1;
+      if (!pending.sources[pending.sourceIndex]) return tvBrowseFailPreviewImage(pending);
+      return tvBrowseLoadPreviewSource(pending, image);
     }
 
     function tvBrowseLoadPreviewSource(pending, image) {
       const ui = tvBrowseState(), url = pending.sources[pending.sourceIndex];
       if (!url) return tvBrowseFailPreviewImage(pending);
-      if (url === ui.backdropUrl) return tvBrowseFinishPreviewImage(pending, url);
+      const sourceToken = ++pending.sourceToken;
       const target = image || new Image();
       pending.image = target; ui.pendingImage = target;
-      const advance = () => {
-        if (ui.pendingPreview !== pending || pending.token !== ui.backdropToken || pending.key !== ui.previewKey) return;
-        target.onload = target.onerror = null;
-        pending.sourceIndex += 1;
-        tvBrowseLoadPreviewSource(pending, target);
-      };
-      target.onload = () => tvBrowseFinishPreviewImage(pending, pending.sources[pending.sourceIndex]);
-      target.onerror = advance;
-      if (!pending.timeoutId) pending.timeoutId = setTimeout(() => tvBrowseFailPreviewImage(pending), TV_BROWSE_BACKDROP_TIMEOUT_MS);
+      if (url === ui.backdropUrl) return tvBrowseFinishPreviewImage(pending, url, sourceToken);
+      target.onload = () => tvBrowseWaitForPreviewDecode(pending, target, url, sourceToken);
+      target.onerror = () => tvBrowseAdvancePreviewSource(pending, target, sourceToken);
+      if (pending.timeoutId) clearTimeout(pending.timeoutId);
+      pending.timeoutId = setTimeout(() => tvBrowseAdvancePreviewSource(pending, target, sourceToken), TV_BROWSE_BACKDROP_TIMEOUT_MS);
       if (target.src !== url) target.src = url;
       return true;
     }
@@ -1509,25 +1627,31 @@
       const query = secondaryGetQuery(ui.column), items = tvWallpaperCurrentItems(query);
       const index = items.findIndex((candidate) => mediaDomKey(candidate) === mediaDomKey(item));
       if (index < 0 || !items.length) { tvBrowseCancelWarmBackdrop(); return false; }
-      let nextItem = items[index + 1] || null;
-      if (!nextItem && tvWallpaperIsActive() && !query.hasMore && items.length > 1) nextItem = items[0];
-      if (!nextItem) { tvBrowseCancelWarmBackdrop(); return false; }
-      const nextKey = mediaDomKey(nextItem), nextDetail = tvBrowsePreviewDetail(nextItem);
-      const nextUrl = tvBrowsePreviewBackgrounds(nextItem, nextDetail).preferred;
-      if (!nextUrl || nextUrl === ui.backdropUrl || ui.pendingPreview && nextUrl === ui.pendingPreview.sources[0]) {
-        tvBrowseCancelWarmBackdrop(); return false;
-      }
-      if (ui.warmBackdrop && ui.warmBackdrop.key === nextKey && ui.warmBackdrop.url === nextUrl) return true;
-      tvBrowseCancelWarmBackdrop();
-      const image = new Image(), warm = { key: nextKey, url: nextUrl, image, loaded: false };
-      ui.warmBackdrop = warm;
-      image.onload = () => {
-        if (ui.warmBackdrop !== warm) return;
-        warm.loaded = true; image.onload = image.onerror = null;
-      };
-      image.onerror = () => { if (ui.warmBackdrop === warm) ui.warmBackdrop = null; };
-      image.src = nextUrl;
-      return true;
+      const wallpaper = tvWallpaperIsActive(), indices = wallpaper ? [index + 1] : [index - 1, index + 1];
+      if (wallpaper && indices[0] >= items.length && !query.hasMore && items.length > 1) indices[0] = 0;
+      const wanted = [];
+      indices.forEach((at) => {
+        const candidate = items[at];
+        if (!candidate || wanted.length >= (wallpaper ? 1 : 2)) return;
+        const detail = tvBrowsePreviewDetail(candidate), url = tvBrowsePreviewBackgrounds(candidate, detail).preferred;
+        if (!url || url === ui.backdropUrl || ui.pendingPreview && url === ui.pendingPreview.sources[0]
+          || wanted.some((entry) => entry.url === url)) return;
+        wanted.push({ key: mediaDomKey(candidate), url });
+      });
+      const previous = ui.warmBackdrops || [], next = [];
+      wanted.forEach((entry) => {
+        const existing = previous.find((warm) => !warm.cancelled && warm.url === entry.url);
+        if (existing) { existing.key = entry.key; next.push(existing); return; }
+        next.push({ key: entry.key, url: entry.url, image: new Image(), state: "loading", pendingPreview: null, cancelled: false });
+      });
+      previous.forEach((warm) => {
+        if (next.indexOf(warm) >= 0) return;
+        warm.cancelled = true; warm.pendingPreview = null;
+        if (warm.image) { warm.image.onload = warm.image.onerror = null; warm.image.src = ""; }
+      });
+      ui.warmBackdrops = next;
+      next.forEach((warm) => { if (warm.state === "loading" && !warm.image.src) tvBrowseStartWarmBackdrop(warm); });
+      return next.length > 0;
     }
 
     function tvBrowsePreview(item) {
@@ -1537,7 +1661,7 @@
       const url = background.preferred;
       if (ui.previewKey === key && ui.pendingPreview && ui.pendingPreview.sources[0] === url) {
         ui.pendingPreview.item = item; ui.pendingPreview.detail = detail;
-        if (ui.presentedKey === key) tvBrowseCommitPreviewInfo(item, detail, key);
+        tvBrowseCommitPreviewInfo(item, detail, key);
         tvBrowseWarmNextBackground(item);
         return;
       }
@@ -1551,31 +1675,28 @@
       tvBrowsePrepareAdjacentLogos(item);
       const wall = tvWallpaperState();
       if (wall.active && wall.currentKey === key) tvWallpaperScheduleInfoShift(key, wall.moveToken);
+      tvBrowseCommitPreviewInfo(item, detail, key);
       if (!url) {
         tvBrowseCancelWarmBackdrop();
-        [$("tvBrowseBackdrop"), $("tvBrowseBackdropNext")].forEach((layer) => {
-          layer.style.backgroundImage = ""; layer.classList.remove("visible");
-        });
-        ui.backdropUrl = "";
-        tvBrowseCommitPreviewInfo(item, detail, key);
+        tvBrowseClearDisplayedBackdrop();
         return;
       }
       if (url === ui.backdropUrl) {
-        tvBrowseCommitPreviewInfo(item, detail, key);
         tvBrowseWarmNextBackground(item);
         return;
       }
-      const pending = { key, token, item, detail, preferredUrl: url, sources: background.urls, sourceIndex: 0, image: null };
+      tvBrowseClearDisplayedBackdrop();
+      tvBrowseSetDisplayedBackdrop(tvBrowseReadyCardPoster(item));
+      const pending = { key, token, item, detail, preferredUrl: url, sources: background.urls, sourceIndex: 0, sourceToken: 0, image: null, warmBackdrop: null };
       ui.pendingPreview = pending;
-      // At initial paint there is no old image to mismatch with. On later
-      // selections, keep the old text paired with its backdrop until decode.
-      if (!ui.backdropUrl) tvBrowseCommitPreviewInfo(item, detail, key);
-      const warm = ui.warmBackdrop;
+      const warm = tvBrowseTakeWarmBackdrop(url);
       if (warm && warm.url === url) {
-        ui.warmBackdrop = null;
-        pending.image = warm.image; ui.pendingImage = warm.image;
-        if (warm.loaded) tvBrowseFinishPreviewImage(pending, url);
-        else tvBrowseLoadPreviewSource(pending, warm.image);
+        pending.image = warm.image; pending.warmBackdrop = warm; pending.sourceToken = 1;
+        ui.pendingImage = warm.image; warm.pendingPreview = pending;
+        const sourceToken = pending.sourceToken;
+        pending.timeoutId = setTimeout(() => tvBrowseAdvancePreviewSource(pending, warm.image, sourceToken), TV_BROWSE_BACKDROP_TIMEOUT_MS);
+        if (warm.state === "ready") tvBrowseFinishPreviewImage(pending, url, pending.sourceToken);
+        else if (warm.state === "failed") tvBrowseAdvancePreviewSource(pending, warm.image, pending.sourceToken);
       } else tvBrowseLoadPreviewSource(pending);
       tvBrowseWarmNextBackground(item);
     }

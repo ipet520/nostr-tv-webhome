@@ -18,7 +18,7 @@ function installHook() {
     tvWallpaperResume, tvWallpaperPreferencesChanged, tvWallpaperStopTimer, tvWallpaperCurrentSelection,
     tvWallpaperHandleKey, tvWallpaperUpdateInfoShift, handleTvWallpaperPopState, renderUiPrefsControls, sanitizeUiPrefs, normalizeRemoteKey,
     setTvWallpaperPreference, toggleConnectionPanel, closeConnectionPanel,
-    tvBrowsePreview, openDetail, closeDetail, isVisibleFocusable
+    tvBrowsePreview, tvBrowseWarmNextBackground, tvBrowseCancelWarmBackdrop, openDetail, closeDetail, isVisibleFocusable
   };
   window.testWallpaper.setup = () => { syncBrowseDevicePresentation(); bindActions(); installRemoteKeys(); };
   window.testWallpaper.seed = (count = 8, index = 0) => {
@@ -477,8 +477,7 @@ try {
   const quickSwitch = await pageAt();
   await quickSwitch.waitForFunction(() => testWallpaper.tvBrowseState().backdropUrl.endsWith("/backdrop-0.jpg"));
   await quickSwitch.evaluate(() => {
-    const ui = testWallpaper.tvBrowseState();
-    if (ui.warmBackdrop) { ui.warmBackdrop.image.onload = ui.warmBackdrop.image.onerror = null; ui.warmBackdrop = null; }
+    testWallpaper.tvBrowseCancelWarmBackdrop();
     const OriginalImage = window.Image, images = [];
     window.Image = function () {
       let source = "";
@@ -495,33 +494,155 @@ try {
     await testWallpaper.tvWallpaperMove(1, false);
     const b = testWallpaper.previewImages.find(image => image.src.endsWith("/backdrop-1.jpg"));
     testWallpaper.staleWallpaperImageOnload = b && b.onload;
+    testWallpaper.firstPendingFrame = {
+      key: testWallpaper.tvWallpaperState().currentKey,
+      title: document.querySelector("#tvBrowseTitle").textContent,
+      overview: document.querySelector("#tvBrowseOverview").textContent,
+      backdrop: testWallpaper.tvBrowseState().backdropUrl,
+      rootFocused: document.activeElement.id === "tvBrowse"
+    };
     await testWallpaper.tvWallpaperMove(1, false);
   });
+  assert.equal(await quickSwitch.evaluate(() => testWallpaper.firstPendingFrame.key), "wallpaper-1");
+  assert.equal(await quickSwitch.evaluate(() => testWallpaper.firstPendingFrame.title), "壁纸影片1",
+    "title updates in the selection turn without waiting for the background");
+  assert.ok(await quickSwitch.evaluate(() => testWallpaper.firstPendingFrame.overview.includes("安全边界")),
+    "the selected item's existing synopsis is immediate while its background is pending");
+  assert.equal(await quickSwitch.evaluate(() => testWallpaper.firstPendingFrame.backdrop.includes("/backdrop-0.jpg")), false,
+    "the prior resource background is cleared instead of appearing under the new text");
+  assert.equal(await quickSwitch.evaluate(() => testWallpaper.firstPendingFrame.backdrop.endsWith("/poster-1.jpg")), true,
+    "while B's backdrop loads, its already-loaded poster is shown instead of a neutral frame or A's background");
+  assert.equal(await quickSwitch.evaluate(() => testWallpaper.firstPendingFrame.rootFocused), true,
+    "immediate text/background handling leaves the Native OK sink focused");
   assert.equal(await quickSwitch.evaluate(() => testWallpaper.tvWallpaperState().currentKey), "wallpaper-2",
     "resource identity updates immediately while a backdrop is pending");
-  assert.equal(await quickSwitch.locator("#tvBrowseTitle").textContent(), "壁纸影片0",
-    "text stays paired with the previously displayed background while the next decode is pending");
+  assert.equal(await quickSwitch.locator("#tvBrowseTitle").textContent(), "壁纸影片2",
+    "latest title is immediate while the latest background is pending");
+  assert.equal(await quickSwitch.evaluate(() => testWallpaper.tvBrowseState().backdropUrl.endsWith("/poster-2.jpg")), true,
+    "rapid selection uses only C's already-loaded poster while C's background is pending");
   await quickSwitch.evaluate(() => {
     const c = testWallpaper.previewImages.find(image => image.src.endsWith("/backdrop-2.jpg"));
     if (!c || !c.onload) throw new Error("current wallpaper backdrop was not staged for decode");
     c.onload();
   });
   assert.equal(await quickSwitch.locator("#tvBrowseTitle").textContent(), "壁纸影片2",
-    "title commits with the current decoded backdrop");
+    "decoded background completion does not delay or revert the title");
+  assert.equal(await quickSwitch.evaluate(() => testWallpaper.tvBrowseState().backdropUrl.endsWith("/backdrop-2.jpg")), true,
+    "the current resource background is presented after its load fallback completes");
   await quickSwitch.evaluate(() => { if (testWallpaper.staleWallpaperImageOnload) testWallpaper.staleWallpaperImageOnload(); });
   assert.equal(await quickSwitch.evaluate(() => testWallpaper.tvBrowseState().presentedKey), "wallpaper-2",
     "a stale earlier image cannot replace the latest resource presentation");
   await quickSwitch.close();
 
+  const adjacentPreparation = await pageAt(8, 2);
+  const adjacentPreparedUrls = await adjacentPreparation.evaluate(() => testWallpaper.tvBrowseState().warmBackdrops.map(warm => warm.url));
+  assert.equal(adjacentPreparedUrls.length, 2, "normal Browse prepares at most its immediate left and right backgrounds");
+  assert.equal(adjacentPreparedUrls.some(url => url.endsWith("/backdrop-1.jpg")), true,
+    "normal Browse prepares the previous item's background");
+  assert.equal(adjacentPreparedUrls.some(url => url.endsWith("/backdrop-3.jpg")), true,
+    "normal Browse prepares the next item's background");
+  await adjacentPreparation.close();
+
+  const prepared = await pageAt();
+  await prepared.evaluate(() => {
+    testWallpaper.tvBrowseCancelWarmBackdrop();
+    const images = [];
+    window.Image = function () {
+      let source = "";
+      const image = {
+        onload: null, onerror: null, complete: false, sourceAssignments: 0,
+        decode() {
+          return new Promise(resolve => {
+            this.finishDecode = () => { this.complete = true; resolve(); };
+          });
+        }
+      };
+      Object.defineProperty(image, "src", {
+        get: () => source,
+        set: value => { source = String(value || ""); if (source) image.sourceAssignments += 1; }
+      });
+      images.push(image);
+      return image;
+    };
+    testWallpaper.previewImages = images;
+    testWallpaper.tvBrowseWarmNextBackground(testWallpaper.tvWallpaperCurrentSelection().item);
+    testWallpaper.preparedNextWarm = testWallpaper.tvBrowseState().warmBackdrops.find(warm => warm.url.endsWith("/backdrop-1.jpg"));
+    testWallpaper.preparedNextImage = testWallpaper.preparedNextWarm.image;
+    if (!testWallpaper.preparedNextImage.onload) throw new Error("neighbor backdrop was not started");
+    testWallpaper.preparedNextImage.onload();
+    testWallpaper.preparedStateAfterLoad = testWallpaper.preparedNextWarm.state;
+    testWallpaper.tvWallpaperStopTimer();
+    testWallpaper.tvWallpaperEnter();
+  });
+  assert.equal(await prepared.evaluate(() => testWallpaper.preparedStateAfterLoad), "decoding",
+    "Image.onload alone does not count as completed decode preparation");
+  await prepared.evaluate(() => testWallpaper.preparedNextImage.finishDecode());
+  assert.equal(await prepared.evaluate(() => testWallpaper.preparedNextWarm.state), "ready",
+    "a prepared neighbor becomes reusable after Image.decode resolves");
+  await prepared.evaluate(() => testWallpaper.tvWallpaperMove(1, false));
+  assert.equal(await prepared.locator("#tvBrowseTitle").textContent(), "壁纸影片1",
+    "a prepared neighbor updates text immediately on selection");
+  assert.equal(await prepared.evaluate(() => testWallpaper.tvBrowseState().backdropUrl.endsWith("/backdrop-1.jpg")), true,
+    "a decoded neighbor background is presented in the same selection turn");
+  assert.equal(await prepared.evaluate(() => testWallpaper.preparedNextImage.sourceAssignments), 1,
+    "selection reuses the prepared image without assigning its source a second time");
+  assert.equal(await prepared.evaluate(() => testWallpaper.preparedNextWarm.state === "presented"
+    && testWallpaper.tvBrowseState().pendingPreview === null), true,
+  "prepared image load/decode is reused without another foreground image request");
+  await prepared.close();
+
+  const decodeFallback = await pageAt();
+  await decodeFallback.waitForFunction(() => testWallpaper.tvBrowseState().backdropUrl.endsWith("/backdrop-0.jpg"));
+  await decodeFallback.evaluate(() => {
+    testWallpaper.tvBrowseCancelWarmBackdrop();
+    const images = [];
+    window.Image = function () {
+      let source = "";
+      const image = { onload: null, onerror: null, decode: () => Promise.reject(new Error("decode unavailable")) };
+      Object.defineProperty(image, "src", { get: () => source, set: value => { source = String(value || ""); } });
+      images.push(image);
+      return image;
+    };
+    testWallpaper.previewImages = images;
+    testWallpaper.tvWallpaperStopTimer();
+    testWallpaper.tvWallpaperEnter();
+  });
+  await decodeFallback.evaluate(() => testWallpaper.tvWallpaperMove(1, false));
+  assert.equal(await decodeFallback.locator("#tvBrowseTitle").textContent(), "壁纸影片1",
+    "decode rejection does not delay the selected resource title");
+  await decodeFallback.evaluate(async () => {
+    const image = testWallpaper.previewImages.find(candidate => candidate.src.endsWith("/backdrop-1.jpg"));
+    image.onload();
+    await Promise.resolve(); await Promise.resolve();
+  });
+  assert.equal(await decodeFallback.evaluate(() => testWallpaper.tvBrowseState().backdropUrl.endsWith("/backdrop-1.jpg")), true,
+    "decode rejection falls back to the existing successful load event");
+  await decodeFallback.close();
+
   const imageFallback = await pageAt(8, 0, { failures: ["/backdrop-1.jpg"] });
   await imageFallback.waitForFunction(() => testWallpaper.tvBrowseState().backdropUrl.endsWith("/backdrop-0.jpg"));
   await imageFallback.evaluate(() => { testWallpaper.tvWallpaperStopTimer(); testWallpaper.tvWallpaperEnter(); });
   await imageFallback.evaluate(() => testWallpaper.tvWallpaperMove(1, false));
+  assert.equal(await imageFallback.locator("#tvBrowseTitle").textContent(), "壁纸影片1",
+    "the target title does not wait for the failed backdrop request or poster fallback");
   await imageFallback.waitForFunction(() => testWallpaper.tvBrowseState().presentedKey === "wallpaper-1");
   assert.equal(await imageFallback.evaluate(() => testWallpaper.tvBrowseState().backdropUrl.endsWith("/poster-1.jpg")), true,
     "a failed landscape backdrop falls back to the same resource poster");
   assert.equal(await imageFallback.locator("#tvBrowseTitle").textContent(), "壁纸影片1");
   await imageFallback.close();
+
+  const neutralFallback = await pageAt(8, 0, { failures: ["/backdrop-1.jpg", "/poster-1.jpg"] });
+  await neutralFallback.waitForFunction(() => testWallpaper.tvBrowseState().backdropUrl.endsWith("/backdrop-0.jpg"));
+  await neutralFallback.evaluate(() => { testWallpaper.tvWallpaperStopTimer(); testWallpaper.tvWallpaperEnter(); });
+  await neutralFallback.evaluate(() => testWallpaper.tvWallpaperMove(1, false));
+  assert.equal(await neutralFallback.locator("#tvBrowseTitle").textContent(), "壁纸影片1",
+    "all background failure paths preserve the selected item's immediate text");
+  await neutralFallback.waitForFunction(() => !testWallpaper.tvBrowseState().pendingPreview);
+  assert.equal(await neutralFallback.evaluate(() => testWallpaper.tvBrowseState().backdropUrl), "",
+    "a failed backdrop and failed same-item poster leave the neutral background");
+  assert.equal(await neutralFallback.locator("#tvBrowseTitle").textContent(), "壁纸影片1",
+    "image failure never delays or reverts title and synopsis");
+  await neutralFallback.close();
 
   const empty = await pageAt();
   await empty.evaluate(() => {
