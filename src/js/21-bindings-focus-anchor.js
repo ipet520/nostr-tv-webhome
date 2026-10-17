@@ -673,7 +673,7 @@
 
     function closePanSearchToDetail() {
       const returnTarget = $("panSearchBtn") || detailPrimaryActionButton();
-      resetPanSearchState(true);
+      resetPanSearchState(true, { reason: "manual_return", preserveHealth: true });
       if (returnTarget) requestAnimationFrame(() => {
         if (isTvLikeDevice() && isDetailPrimaryAction(returnTarget)) {
           restoreDetailTopAnchor({ reason: "pan_return", target: returnTarget });

@@ -1095,6 +1095,21 @@
       }
     }
 
+    function terminateSupersededDetailDirectLaneForManualSearch(item, lifecycle) {
+      const run = state.detailPlayback;
+      const current = lifecycle || getPanSearchLifecycleFor(item);
+      if (!item || state.selected !== item || !run || run.item !== item
+        || !detailPlaybackIsCurrent(run) || run.providerCommitted || !run.raceActive
+        || run.directTerminal || !current.sameSession || current.origin !== "direct" || !current.active) return false;
+      const action = run.directAction || (typeof _directPlayPending !== "undefined" ? _directPlayPending : null);
+      if (!action || action.item !== item || action.detailRun !== run || !action.raceMode) return false;
+      // The manual search replaces this Direct session below. Report that
+      // superseded lane to the existing race coordinator before the token
+      // changes, so the Curated lane can still finish the same race normally.
+      action.cancelReason = "manual_search_started";
+      return reportDetailDirectRaceResult(action, null, "MANUAL_SEARCH_STARTED");
+    }
+
     async function searchPanResources(item, opts) {
       const options = opts || {};
       if (!item) return;
@@ -1111,17 +1126,19 @@
       const lifecycle = getPanSearchLifecycleFor(item);
       if (state.pan.loading && !forceNewSession) return;
       if (lifecycle.sameSession && !forceNewSession) return;
+      if (origin === "manual") terminateSupersededDetailDirectLaneForManualSearch(item, lifecycle);
       const hadResults = state.pan.results.length > 0 && $("panSearchBlock") && $("panSearchBlock").classList.contains("active");
       // A forced Direct/Foreground lifecycle is allowed to replace execution
       // state for the same item without deleting reusable results, health cache,
       // focus state, or playback return data.
       const preserveSessionData = !!(lifecycle.sameSession && forceNewSession
         && (origin === "direct" || origin === "foreground_recovery"));
+      const preserveHealth = preserveSessionData || origin === "manual";
       const lifecycleBefore = String(state.pan.progress && state.pan.progress.phase || "");
       resetPanSearchState(false, {
         reason: options.reason || "new_session",
         preserveResults: preserveSessionData,
-        preserveHealth: preserveSessionData,
+        preserveHealth,
         preserveFocus: preserveSessionData,
         preservePlaybackReturn: preserveSessionData
       });
@@ -1138,7 +1155,7 @@
       state.pan.directTransportExhausted = false;
       if (!preserveSessionData) state.pan.results = [];
       state.pan.activeType = "";
-      if (!preserveSessionData) state.pan.health = {};
+      if (!preserveHealth) state.pan.health = {};
       state.pan.pending = {};
       state.pan.queued.clear();
       state.pan.inFlight.clear();

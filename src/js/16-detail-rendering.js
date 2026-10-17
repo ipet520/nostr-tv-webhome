@@ -21,6 +21,11 @@
       if (isConnectionPanelOpen()) closeConnectionPanel();
       const detailWasActive = $("detailSheet") && $("detailSheet").classList.contains("active");
       const sameSelected = state.selected === item;
+      const nativeSearchReturn = opts.restore === true && typeof nativeSearchReturnMarkerFor === "function"
+        ? nativeSearchReturnMarkerFor()
+        : null;
+      const preserveNativeSearchReturn = !!(nativeSearchReturn
+        && nativeSearchReturn.itemKey === panSearchItemKey(item));
       if (state.selected && state.selected !== item) {
         clearDirectPlayStatus(0, "selected_change");
         cancelPendingDirectPlay("selected_change");
@@ -42,7 +47,7 @@
       }
       else if (opts.playerReturnRestore !== true && !detailWasActive) {
         state.detailPlayerReturn = null;
-        if (typeof clearNativeSearchReturnMarker === "function") clearNativeSearchReturnMarker();
+        if (!preserveNativeSearchReturn && typeof clearNativeSearchReturnMarker === "function") clearNativeSearchReturnMarker();
       }
       if (opts.episodeTarget || opts.historyContext) setDetailPlaybackTarget(item, opts.episodeTarget || opts.historyContext);
       else if (!sameSelected && !opts.restore) state.detailEpisodeTarget = null;
