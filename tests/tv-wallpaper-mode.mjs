@@ -18,7 +18,8 @@ function installHook() {
     tvWallpaperResume, tvWallpaperPreferencesChanged, tvWallpaperStopTimer, tvWallpaperCurrentSelection,
     tvWallpaperHandleKey, tvWallpaperUpdateInfoShift, handleTvWallpaperPopState, renderUiPrefsControls, sanitizeUiPrefs, normalizeRemoteKey,
     setTvWallpaperPreference, toggleConnectionPanel, closeConnectionPanel,
-    tvBrowsePreview, tvBrowseWarmNextBackground, tvBrowseCancelWarmBackdrop, openDetail, closeDetail, isVisibleFocusable
+    tvBrowsePreview, tvBrowseWarmNextBackground, tvBrowseCancelWarmBackdrop, tvBrowsePrepareCardResources,
+    openDetail, closeDetail, isVisibleFocusable
   };
   window.testWallpaper.setup = () => { syncBrowseDevicePresentation(); bindActions(); installRemoteKeys(); };
   window.testWallpaper.seed = (count = 8, index = 0) => {
@@ -120,10 +121,25 @@ const browser = await playwright.chromium.launch({
 const pageErrors = [];
 async function pageAt(count = 8, index = 0, imageOptions = {}) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+  page.wallpaperTestRequests = { images: [], details: [] };
+  page.on("request", request => {
+    const url = new URL(request.url());
+    if (request.resourceType() === "image") page.wallpaperTestRequests.images.push(url.pathname);
+    if (url.pathname.startsWith("/tmdb/movie/")) page.wallpaperTestRequests.details.push(url.pathname);
+  });
   page.on("pageerror", error => pageErrors.push(error.message));
   await page.route("**/*", async route => {
     const url = route.request().url();
     if (url.startsWith("http://fixture.local/") && new URL(url).pathname === "/") return route.fulfill({ contentType: "text/html", body: html });
+    const parsedUrl = new URL(url);
+    const movieDetail = parsedUrl.pathname.match(/^\/tmdb\/movie\/(\d+)$/);
+    if (imageOptions.movieDetails && parsedUrl.origin === "http://fixture.local" && movieDetail) {
+      const id = movieDetail[1];
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify({
+        id: Number(id), media_type: "movie", title: `壁纸测试影片${id}`, overview: `同一资源详情${id}`,
+        release_date: "2025-01-01", images: { logos: [{ file_path: `/wallpaper-logo-${id}.png`, iso_639_1: "zh-CN", vote_average: 10 }] }
+      }) });
+    }
     if (route.request().resourceType() === "image") {
       const pathname = new URL(url).pathname;
       const delay = Number(imageOptions.delays && imageOptions.delays[pathname] || 0);
@@ -134,6 +150,9 @@ async function pageAt(count = 8, index = 0, imageOptions = {}) {
     return route.abort();
   });
   await page.goto("http://fixture.local/?_tv=1");
+  if (imageOptions.movieDetails) {
+    await page.evaluate(() => { window.WEBHOME_CONFIG.tmdb.apiBase = "http://fixture.local/tmdb"; });
+  }
   if (imageOptions.visibilityProbe) await page.evaluate(() => testWallpaper.installVisibilityProbe());
   await page.evaluate(([seedCount, seedIndex]) => testWallpaper.seed(seedCount, seedIndex), [count, index]);
   await page.waitForTimeout(100);
@@ -141,6 +160,52 @@ async function pageAt(count = 8, index = 0, imageOptions = {}) {
 }
 
 try {
+  const sharedLogoPath = await pageAt(8, 0, { movieDetails: true, delays: { "/t/p/w1280/backdrop-0.jpg": 5000 } });
+  await sharedLogoPath.waitForFunction(() => {
+    const logo = document.querySelector("#tvBrowseLogo");
+    return logo && !logo.hidden && logo.classList.contains("loaded") && logo.src.includes("wallpaper-logo-7000.png");
+  }, null, { timeout: 3000 });
+  const ordinaryLogoReady = await sharedLogoPath.evaluate(() => {
+    const selection = testWallpaper.tvWallpaperCurrentSelection();
+    const ui = testWallpaper.tvBrowseState();
+    const warm = ui.warmBackdrops.find(entry => entry.url.includes("/backdrop-0.jpg"));
+    return { key: selection.key, previewKey: ui.previewKey, warmState: warm && warm.state,
+      logoVisible: !document.querySelector("#tvBrowseLogo").hidden };
+  });
+  assert.equal(ordinaryLogoReady.key, ordinaryLogoReady.previewKey, "ordinary Browse Logo belongs to the currently selected resource");
+  assert.equal(ordinaryLogoReady.logoVisible, true, "the Logo is visible as soon as its own image preparation completes");
+  assert.equal(ordinaryLogoReady.warmState === "ready" || ordinaryLogoReady.warmState === "presented", false,
+    "Logo presentation does not wait for the same resource's deliberately held background");
+  const sharedLogoRequestCount = sharedLogoPath.wallpaperTestRequests.images.filter(path => path.includes("wallpaper-logo-7000.png")).length;
+  const sharedBackdropRequestCount = sharedLogoPath.wallpaperTestRequests.images.filter(path => path.includes("/backdrop-0.jpg")).length;
+  const sharedDetailRequestCount = sharedLogoPath.wallpaperTestRequests.details.filter(path => path === "/tmdb/movie/7000").length;
+  const wallpaperReuse = await sharedLogoPath.evaluate(async () => {
+    testWallpaper.tvWallpaperStopTimer();
+    const entered = testWallpaper.tvWallpaperEnter();
+    const selection = testWallpaper.tvWallpaperCurrentSelection();
+    const item = selection.item;
+    const before = !document.querySelector("#tvBrowseLogo").hidden;
+    const prepared = testWallpaper.tvBrowsePrepareCardResources(item, { requestClass: "foreground" });
+    await Promise.resolve(); await Promise.resolve();
+    const during = !document.querySelector("#tvBrowseLogo").hidden;
+    testWallpaper.tvBrowsePreview(item);
+    const immediatePreview = !document.querySelector("#tvBrowseLogo").hidden;
+    testWallpaper.sharedWallpaperPreparation = prepared;
+    return { entered, key: selection.key, previewKey: testWallpaper.tvBrowseState().previewKey,
+      before, during, immediatePreview };
+  });
+  assert.equal(wallpaperReuse.entered, true, "the same resource can enter wallpaper presentation without rebuilding its resource preparation");
+  assert.equal(wallpaperReuse.key, wallpaperReuse.previewKey, "wallpaper retains the ordinary Browse resource identity");
+  assert.equal(wallpaperReuse.before && wallpaperReuse.during && wallpaperReuse.immediatePreview, true,
+    "a previously prepared Logo is consumed immediately in wallpaper mode and by the existing preview renderer");
+  assert.equal(sharedLogoPath.wallpaperTestRequests.images.filter(path => path.includes("wallpaper-logo-7000.png")).length, sharedLogoRequestCount,
+    "re-entering the same resource in wallpaper mode does not reload its cached Logo");
+  assert.equal(sharedLogoPath.wallpaperTestRequests.details.filter(path => path === "/tmdb/movie/7000").length, sharedDetailRequestCount,
+    "wallpaper reuses the same TMDB detail result as ordinary Browse");
+  assert.equal(sharedLogoPath.wallpaperTestRequests.images.filter(path => path.includes("/backdrop-0.jpg")).length, sharedBackdropRequestCount,
+    "wallpaper reuses the pending same-resource background preparation instead of starting another image request");
+  await sharedLogoPath.close();
+
   const page = await pageAt();
   assert.equal(await page.evaluate(() => normalizeRemoteKey({ key: "DPAD_CENTER" })), "Enter", "DPAD_CENTER key values normalize to OK");
   assert.equal(await page.evaluate(() => normalizeRemoteKey({ key: "Enter" })), "Enter", "Enter remains the normalized OK key");

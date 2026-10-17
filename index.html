@@ -30056,10 +30056,17 @@ utils.encode = function encode(arr, enc) {
         opts.record.logoAsset = knownLogo;
         opts.record.logoUrl = knownLogo && knownLogo.url || "";
       }
-      const knownLogoPromise = knownLogo ? prepareArtLogo(knownLogo).then((ready) => ({
+      const presentLogoWhenReady = (promise) => Promise.resolve(promise).then((result) => {
+        const asset = result && result.asset;
+        if (!opts.deferPresentation && active() && asset && asset.ready && ui.previewKey === mediaKey) {
+          tvBrowseShowPreparedLogo(tvBrowseCurrentPreparedItem(item, mediaKey), asset);
+        }
+        return result;
+      });
+      const knownLogoPromise = knownLogo ? presentLogoWhenReady(prepareArtLogo(knownLogo).then((ready) => ({
         asset: knownLogo, state: ready ? knownLogo.decodeState === "loaded-no-decode" ? "loaded-no-decode" : "ready"
           : knownLogo.decodeState === "decode-failed" ? "decode-failed" : "failed"
-      })) : Promise.resolve(null);
+      }))) : Promise.resolve(null);
       const knownBackgrounds = tvBrowsePreviewBackgrounds(item, cached);
       if (opts.record) opts.record.backgroundSignature = knownBackgrounds.urls.join("\u001f");
       const knownBackgroundPromise = knownBackgrounds.urls.length
@@ -30079,10 +30086,10 @@ utils.encode = function encode(arr, enc) {
           opts.record.backgroundSignature = backgrounds.urls.join("\u001f");
         }
         const logoPromise = asset
-          ? (knownLogo && knownLogo.url === asset.url ? knownLogoPromise : prepareArtLogo(asset).then((ready) => ({
+          ? (knownLogo && knownLogo.url === asset.url ? knownLogoPromise : presentLogoWhenReady(prepareArtLogo(asset).then((ready) => ({
             asset, state: ready ? asset.decodeState === "loaded-no-decode" ? "loaded-no-decode" : "ready"
               : asset.decodeState === "decode-failed" ? "decode-failed" : "failed"
-          })))
+          }))))
           : Promise.resolve({ asset: null, state: /^(movie|tv)$/.test(type) && id && detailResult.state !== "ready" ? "failed" : "absent" });
         const backgroundPromise = backgrounds.urls.length
           ? (knownBackgrounds.urls.join("\u001f") === backgrounds.urls.join("\u001f")
@@ -30101,9 +30108,6 @@ utils.encode = function encode(arr, enc) {
           }
           if (!opts.deferPresentation && active() && detailResult.state === "ready" && ui.previewKey === mediaKey) {
             tvBrowsePreview(preparedItem);
-          }
-          if (!opts.deferPresentation && active() && logo.state === "ready" && ui.previewKey === mediaKey) {
-            tvBrowseShowPreparedLogo(preparedItem, logo.asset);
           }
           return {
             detailState: detailResult.state,

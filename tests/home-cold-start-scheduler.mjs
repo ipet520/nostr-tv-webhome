@@ -377,6 +377,8 @@ check(browseImagePrep.includes("visibleLogoKeys") && browseImagePrep.includes('t
 check(browseImagePrep.includes("const targetIndex = lastVisibleIndex + 1") && browseImagePrep.includes('tvBrowsePrepareLogo(target.__mediaItem, { requestClass: "prefetch" })'), "TV_BROWSE_SINGLE_OFFSCREEN_RESOURCE_PREPARATION", "only the existing one-card right-side target uses the shared prefetch path");
 check(!browseJs.includes("tvBrowseEnsurePreviewDetail") && !browseJs.includes("tvBrowsePrepareAdjacentLogos"), "TV_BROWSE_NO_FOCUS_LOGO_QUEUE", "preview focus and directional-neighbor helpers no longer start separate Logo preparation");
 check(browseCardPrep.includes("tvBrowsePrepareDetailResource(item") && browseCardPrep.includes("prepareArtLogo(asset)") && browseCardPrep.includes("tvBrowsePrepareBackgroundURLs"), "TV_BROWSE_CARD_RESOURCE_BUNDLE", "poster, shared detail, Logo and background are prepared as one bounded card resource bundle");
+check(browseCardPrep.includes("presentLogoWhenReady(prepareArtLogo") && !browseCardPrep.includes("if (!opts.deferPresentation && active() && logo.state === \"ready\""),
+  "TV_BROWSE_LOGO_INDEPENDENT_PRESENTATION", "ready Logos present from their own preparation promise rather than waiting for the card background");
 check(browseCardPrep.includes("const id = movieDetailCacheId(item)") && browseCardPrep.includes('"absent"'), "TV_BROWSE_NO_LOGO_AND_DETAIL_ABSENCE", "missing artwork and detail metadata settle without rejecting the card resource bundle");
 check(browseGatePoster.includes('const state = image && !source ? "absent" : "failed"') && browseGatePoster.includes('"ready", "absent", "failed"'), "TV_BROWSE_POSTER_ABSENCE_STATE", "a confirmed missing poster is terminal and distinct from an image load failure");
 check(browseDetailPrep.includes("requestMovieDetailShared") && browseDetailPrep.includes("requestTvDetailShared") && browseDetailPrep.includes("scheduleHomeBudgetRequest(requestClass || \"foreground\""), "TV_BROWSE_DETAIL_FOREGROUND_PRIORITY", "visible-card details use the existing shared detail cache and foreground request class");
@@ -394,6 +396,111 @@ check(browseColumnSelect.includes("const changedColumn = ui.column !== id") && b
 check(browseBackgroundPrep.includes("tvBrowseWaitWarmBackdrop(warm)") && browseBackgroundPrep.includes("ui.backdropMediaKey === mediaKey"), "TV_BROWSE_BACKGROUND_READY_REUSE", "background readiness waits for the shared decoded image and reuses an already displayed matching resource");
 check(detailJs.includes("function prepareArtLogo(asset)") && detailJs.includes('asset.decodeState = decodeState || (ready ? "ready" : "failed")'), "TV_BROWSE_LOGO_LOAD_AND_DECODE_STATE", "the shared artwork cache records load and decode outcomes separately");
 check(artTitleRender.includes("asset.ready") && artTitleRender.includes("!opts.preparedOnly") && browseJs.includes("{ immediateFallback: true, preparedOnly: true }"), "TV_BROWSE_LOGO_READY_OR_TEXT", "Browse consumes a prepared Logo only and keeps its text fallback immediate");
+
+const makeDeferred = () => {
+  let resolve;
+  const promise = new Promise((done) => { resolve = done; });
+  return { promise, resolve };
+};
+function createCardResourceHarness() {
+  const ui = { view: "home", logoPreparationKeys: [], previewKey: "", mode: "browse" };
+  const counts = { detail: 0, logo: 0, background: 0 };
+  const shows = [], previews = [];
+  const detailJobs = new Map(), logoJobs = new Map(), backgroundJobs = new Map(), assets = new Map();
+  const assetFor = (item) => {
+    const key = String(item.tmdbId);
+    if (!assets.has(key)) assets.set(key, {
+      url: `/logo-${key}.png`, ready: false, failed: false, promise: null,
+      state: "idle", loadState: "idle", decodeState: "idle", token: 0
+    });
+    return assets.get(key);
+  };
+  const prepareCardResources = vm.runInNewContext(`${browseCardPrep}\ntvBrowsePrepareCardResources`, {
+    Promise,
+    tvBrowseState: () => ui,
+    tvBrowseActive: () => true,
+    tvBrowseQueryKey: () => "movie-query",
+    mediaDomKey: (item) => String(item.id),
+    movieDetailCacheId: (item) => String(item && item.tmdbId || ""),
+    movieDetailCacheValue: () => null,
+    artLogoResource: assetFor,
+    prepareArtLogo: (asset) => {
+      if (!logoJobs.has(asset.url)) { counts.logo += 1; logoJobs.set(asset.url, makeDeferred()); }
+      return logoJobs.get(asset.url).promise;
+    },
+    tvBrowsePreviewBackgrounds: (item) => ({ urls: [item.landscape] }),
+    tvBrowsePrepareBackgroundURLs: (_item, urls) => {
+      const key = urls.join("\u001f");
+      if (!backgroundJobs.has(key)) { counts.background += 1; backgroundJobs.set(key, makeDeferred()); }
+      return backgroundJobs.get(key).promise;
+    },
+    tvBrowsePrepareDetailResource: (item) => {
+      const key = String(item.tmdbId);
+      if (!detailJobs.has(key)) { counts.detail += 1; detailJobs.set(key, makeDeferred()); }
+      return detailJobs.get(key).promise;
+    },
+    tvBrowseShowPreparedLogo: (item, asset) => shows.push({ mode: ui.mode, key: item.id, ready: asset.ready }),
+    tvBrowseCurrentPreparedItem: (item) => item,
+    tvBrowsePreview: (item) => previews.push({ mode: ui.mode, key: item.id })
+  });
+  return {
+    ui, counts, shows, previews, assets, logoJobs, backgroundJobs, detailJobs,
+    prepareCardResources, assetFor
+  };
+}
+
+const sharedCardResources = createCardResourceHarness();
+const cardSharedItem = { id: "same-resource", tmdbId: 8123, mediaType: "movie", landscape: "/same-backdrop.jpg" };
+sharedCardResources.ui.logoPreparationKeys = [cardSharedItem.id];
+sharedCardResources.ui.previewKey = cardSharedItem.id;
+const ordinaryResourcePromise = sharedCardResources.prepareCardResources(cardSharedItem, { requestClass: "foreground" });
+await tick();
+sharedCardResources.detailJobs.get("8123").resolve({ state: "ready", detail: { id: 8123, media_type: "movie" } });
+await tick();
+assert.equal(sharedCardResources.counts.background, 1, "background preparation starts independently of the pending Logo");
+sharedCardResources.assetFor(cardSharedItem).ready = true;
+sharedCardResources.assetFor(cardSharedItem).decodeState = "ready";
+sharedCardResources.logoJobs.get("/logo-8123.png").resolve(true);
+await tick();
+assert.deepEqual(sharedCardResources.shows, [{ mode: "browse", key: "same-resource", ready: true }],
+  "a Logo that finishes before its background is presented immediately in ordinary Browse");
+assert.equal(sharedCardResources.previews.length, 0, "the card bundle still waits for background readiness before its shared completion callback");
+sharedCardResources.ui.mode = "wallpaper";
+const wallpaperResourcePromise = sharedCardResources.prepareCardResources(cardSharedItem, { requestClass: "foreground" });
+await tick();
+assert.equal(sharedCardResources.shows.at(-1).mode, "wallpaper", "the same shared preparation path immediately consumes the ready Logo in wallpaper presentation");
+assert.deepEqual(sharedCardResources.counts, { detail: 1, logo: 1, background: 1 },
+  "Browse and wallpaper reuse the same detail, Logo, and background preparation results for an identical media resource");
+assert.equal(sharedCardResources.previews.length, 0, "wallpaper Logo presentation does not wait on or alter the still-pending background");
+sharedCardResources.backgroundJobs.get("/same-backdrop.jpg").resolve({ state: "ready", url: "/same-backdrop.jpg", warms: [] });
+await Promise.all([ordinaryResourcePromise, wallpaperResourcePromise]);
+assert.deepEqual(sharedCardResources.previews.map((entry) => entry.key), ["same-resource", "same-resource"]);
+
+const staleLogoResources = createCardResourceHarness();
+const staleA = { id: "resource-a", tmdbId: 8201, mediaType: "movie", landscape: "/backdrop-a.jpg" };
+const currentB = { id: "resource-b", tmdbId: 8202, mediaType: "movie", landscape: "/backdrop-b.jpg" };
+staleLogoResources.ui.logoPreparationKeys = [staleA.id, currentB.id];
+staleLogoResources.ui.previewKey = staleA.id;
+const staleAPromise = staleLogoResources.prepareCardResources(staleA, { requestClass: "foreground" });
+staleLogoResources.ui.previewKey = currentB.id;
+const currentBPromise = staleLogoResources.prepareCardResources(currentB, { requestClass: "foreground" });
+await tick();
+staleLogoResources.detailJobs.get("8201").resolve({ state: "ready", detail: { id: 8201, media_type: "movie" } });
+staleLogoResources.detailJobs.get("8202").resolve({ state: "ready", detail: { id: 8202, media_type: "movie" } });
+await tick();
+staleLogoResources.assetFor(staleA).ready = true;
+staleLogoResources.logoJobs.get("/logo-8201.png").resolve(true);
+await tick();
+assert.equal(staleLogoResources.shows.some((entry) => entry.key === staleA.id), false,
+  "a late earlier-resource Logo cannot replace the latest Browse or wallpaper preview");
+staleLogoResources.assetFor(currentB).ready = true;
+staleLogoResources.logoJobs.get("/logo-8202.png").resolve(true);
+await tick();
+assert.equal(staleLogoResources.shows.some((entry) => entry.key === currentB.id), true,
+  "the latest resource Logo remains eligible for immediate presentation");
+for (const [key, job] of staleLogoResources.backgroundJobs) job.resolve({ state: "ready", url: key, warms: [] });
+await Promise.all([staleAPromise, currentBPromise]);
+check(true, "TV_BROWSE_SHARED_LOGO_TIMING_VM", "identical resources reuse shared preparation, Logo display precedes background readiness, and stale callbacks are rejected");
 
 const prepareArtLogoSource = detailJs.match(/    function prepareArtLogo\(asset\) \{[\s\S]*?(?=\n    function tmdbRecommendationsUrl\()/)?.[0] || "";
 assert.ok(prepareArtLogoSource, "shared artwork preparation can be isolated for an executable decode test");
@@ -484,6 +591,7 @@ console.log("TV_BROWSE_VISIBLE_RESOURCE_PREPARATION = PASS (measured viewport ra
 console.log("TV_BROWSE_SINGLE_OFFSCREEN_RESOURCE_PREPARATION = PASS (one right-side target)");
 console.log("TV_BROWSE_NO_FOCUS_LOGO_QUEUE = PASS (preview no longer starts a separate Logo path)");
 console.log("TV_BROWSE_CARD_RESOURCE_BUNDLE = PASS (poster, detail, Logo and background)");
+console.log("TV_BROWSE_LOGO_INDEPENDENT_PRESENTATION = PASS (Logo readiness no longer waits for background readiness)");
 console.log("TV_BROWSE_NO_LOGO_AND_DETAIL_ABSENCE = PASS (missing metadata/artwork settles the card bundle)");
 console.log("TV_BROWSE_POSTER_ABSENCE_STATE = PASS (confirmed missing poster is distinct from failure)");
 console.log("TV_BROWSE_DETAIL_FOREGROUND_PRIORITY = PASS (existing shared detail cache and request budget)");
@@ -494,6 +602,7 @@ console.log("TV_BROWSE_BACKGROUND_READY_REUSE = PASS (decoded readiness and disp
 console.log("TV_BROWSE_LOGO_LOAD_AND_DECODE_STATE = PASS (shared artwork cache)");
 console.log("TV_BROWSE_LOGO_DECODE_RUNTIME = PASS (dedupe, decoded, decode-failed, and no-decode fallback)");
 console.log("TV_BROWSE_LOGO_READY_OR_TEXT = PASS (prepared-only Logo with immediate text fallback)");
+console.log("TV_BROWSE_SHARED_LOGO_TIMING_VM = PASS (Browse/wallpaper cache reuse, independent Logo presentation, stale-result guard)");
 console.log("SECONDARY_SEMANTICS_PRESERVED = PASS (no Secondary query state persisted)");
 console.log("NOSTR_RECOMMENDATION_PRESERVED = PASS");
 console.log("WEEKLY_SEMANTICS_PRESERVED = PASS");
