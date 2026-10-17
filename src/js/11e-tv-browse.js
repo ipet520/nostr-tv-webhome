@@ -2285,14 +2285,21 @@
       ui.pendingImage = null; ui.pendingPreview = null;
     }
 
+    function tvBrowseTouchWarmBackdrop(warm) {
+      const warms = tvBrowseState().warmBackdrops || [], index = warms.indexOf(warm);
+      if (index >= 0 && index < warms.length - 1) warms.push(warms.splice(index, 1)[0]);
+      return warm;
+    }
+
     function tvBrowseTrimWarmBackdrops(preferredUrls) {
-      const ui = tvBrowseState(), warms = ui.warmBackdrops || [], preferred = new Set(preferredUrls || []);
+      const ui = tvBrowseState(), warms = ui.warmBackdrops || [], preferred = new Set([ui.backdropUrl].concat(preferredUrls || []));
       // One preferred background and its same-card fallback may both be
       // retained for each visible card plus the single offscreen target.
       const capacity = Math.max(2, (tvBrowseInitialVisibleCardCount($("tvBrowseRail"), Number.MAX_SAFE_INTEGER) + 1) * 2);
       while (warms.length > capacity) {
-        let index = warms.findIndex((warm) => !preferred.has(warm.url) && (warm.state === "failed" || warm.state === "presented"));
-        if (index < 0) index = warms.findIndex((warm) => !preferred.has(warm.url) && warm.state === "ready");
+        let index = warms.findIndex((warm) => !preferred.has(warm.url) && !warm.pendingPreview && warm.state === "failed");
+        if (index < 0) index = warms.findIndex((warm) => !preferred.has(warm.url) && !warm.pendingPreview
+          && (warm.state === "ready" || warm.state === "presented"));
         if (index < 0) index = warms.findIndex((warm) => !preferred.has(warm.url) && !warm.pendingPreview);
         if (index < 0) break;
         const [warm] = warms.splice(index, 1);
@@ -2325,6 +2332,7 @@
         warms.push(warm);
       }
       warm.key = mediaDomKey(item); warm.cancelled = false;
+      tvBrowseTouchWarmBackdrop(warm);
       if (record) {
         record.warmBackdrops = record.warmBackdrops || [];
         if (record.warmBackdrops.indexOf(warm) < 0) record.warmBackdrops.push(warm);
@@ -2567,7 +2575,8 @@
 
     function tvBrowseTakeWarmBackdrop(url) {
       const warms = tvBrowseState().warmBackdrops || [];
-      return warms.find((warm) => !warm.cancelled && warm.url === url) || null;
+      const warm = warms.find((entry) => !entry.cancelled && entry.url === url) || null;
+      return warm ? tvBrowseTouchWarmBackdrop(warm) : null;
     }
 
     function tvBrowseFinishPreviewImage(pending, url, sourceToken) {
@@ -2579,6 +2588,7 @@
       if (pending.warmBackdrop) {
         pending.warmBackdrop.pendingPreview = null;
         pending.warmBackdrop.state = "presented";
+        tvBrowseTouchWarmBackdrop(pending.warmBackdrop);
         pending.warmBackdrop = null;
       }
       ui.pendingImage = null; ui.pendingPreview = null;
@@ -2607,20 +2617,6 @@
       return true;
     }
 
-    function tvBrowseWaitForPreviewDecode(pending, image, url, sourceToken) {
-      const isCurrent = () => {
-        const ui = tvBrowseState();
-        return ui.pendingPreview === pending && pending.token === ui.backdropToken
-          && pending.key === ui.previewKey && pending.sourceToken === sourceToken;
-      };
-      const finish = () => { if (isCurrent()) tvBrowseFinishPreviewImage(pending, url, sourceToken); };
-      if (typeof image.decode !== "function") return finish();
-      let decoding;
-      try { decoding = image.decode(); } catch (error) { return finish(); }
-      if (!decoding || typeof decoding.then !== "function") return finish();
-      decoding.then(finish, finish);
-    }
-
     function tvBrowseAdvancePreviewSource(pending, image, sourceToken) {
       const ui = tvBrowseState();
       if (ui.pendingPreview !== pending || pending.token !== ui.backdropToken || pending.key !== ui.previewKey
@@ -2634,34 +2630,28 @@
       }
       pending.sourceIndex += 1;
       if (!pending.sources[pending.sourceIndex]) return tvBrowseFailPreviewImage(pending);
-      return tvBrowseLoadPreviewSource(pending, image);
+      return tvBrowseLoadPreviewSource(pending);
     }
 
-    function tvBrowseLoadPreviewSource(pending, image) {
+    function tvBrowseLoadPreviewSource(pending) {
       const ui = tvBrowseState(), url = pending.sources[pending.sourceIndex];
       if (!url) return tvBrowseFailPreviewImage(pending);
       const cachedWarm = pending.warmBackdrop && pending.warmBackdrop.url === url
         ? pending.warmBackdrop : tvBrowseTakeWarmBackdrop(url);
-      if (cachedWarm) {
-        pending.image = cachedWarm.image; pending.warmBackdrop = cachedWarm; ui.pendingImage = cachedWarm.image;
-        cachedWarm.pendingPreview = pending;
+      if (!cachedWarm && url === ui.backdropUrl) {
         const sourceToken = ++pending.sourceToken;
-        if (cachedWarm.state === "ready" || cachedWarm.state === "presented") return tvBrowseFinishPreviewImage(pending, url, sourceToken);
-        if (cachedWarm.state === "failed") return tvBrowseAdvancePreviewSource(pending, cachedWarm.image, sourceToken);
-        if (pending.timeoutId) clearTimeout(pending.timeoutId);
-        pending.timeoutId = setTimeout(() => tvBrowseAdvancePreviewSource(pending, cachedWarm.image, sourceToken), TV_BROWSE_BACKDROP_TIMEOUT_MS);
-        tvBrowseStartWarmBackdrop(cachedWarm);
-        return true;
+        return tvBrowseFinishPreviewImage(pending, url, sourceToken);
       }
+      const warm = cachedWarm || tvBrowseEnsureWarmBackdrop(pending.item, url);
+      if (!warm) return tvBrowseFailPreviewImage(pending);
+      pending.image = warm.image; pending.warmBackdrop = warm; ui.pendingImage = warm.image;
+      warm.pendingPreview = pending;
       const sourceToken = ++pending.sourceToken;
-      const target = image || new Image();
-      pending.image = target; ui.pendingImage = target;
-      if (url === ui.backdropUrl) return tvBrowseFinishPreviewImage(pending, url, sourceToken);
-      target.onload = () => tvBrowseWaitForPreviewDecode(pending, target, url, sourceToken);
-      target.onerror = () => tvBrowseAdvancePreviewSource(pending, target, sourceToken);
+      if (warm.state === "ready" || warm.state === "presented") return tvBrowseFinishPreviewImage(pending, url, sourceToken);
+      if (warm.state === "failed") return tvBrowseAdvancePreviewSource(pending, warm.image, sourceToken);
       if (pending.timeoutId) clearTimeout(pending.timeoutId);
-      pending.timeoutId = setTimeout(() => tvBrowseAdvancePreviewSource(pending, target, sourceToken), TV_BROWSE_BACKDROP_TIMEOUT_MS);
-      if (target.src !== url) target.src = url;
+      pending.timeoutId = setTimeout(() => tvBrowseAdvancePreviewSource(pending, warm.image, sourceToken), TV_BROWSE_BACKDROP_TIMEOUT_MS);
+      if (cachedWarm) tvBrowseStartWarmBackdrop(warm);
       return true;
     }
 
@@ -2688,7 +2678,9 @@
       const previous = ui.warmBackdrops || [], next = [];
       const preparationKeys = new Set(ui.logoPreparationKeys || []);
       previous.forEach((warm) => {
-        if (!warm.cancelled && preparationKeys.has(warm.key) && warm.url !== currentPreviewUrl) next.push(warm);
+        const reusable = warm.state === "ready" || warm.state === "presented";
+        const currentPending = !!ui.pendingPreview && warm.pendingPreview === ui.pendingPreview;
+        if (!warm.cancelled && (preparationKeys.has(warm.key) || reusable || currentPending)) next.push(warm);
         else if (!ui.pendingPreview || warm.pendingPreview !== ui.pendingPreview) {
           warm.cancelled = true; warm.pendingPreview = null;
           if (warm.image) warm.image.onload = warm.image.onerror = null;
@@ -2745,7 +2737,7 @@
         return;
       }
       const warm = tvBrowseTakeWarmBackdrop(url);
-      if (warm && warm.state === "ready") {
+      if (warm && (warm.state === "ready" || warm.state === "presented")) {
         const readyPending = { key, token, item, detail, preferredUrl: url, sources: background.urls, sourceIndex: 0, sourceToken: 1, image: warm.image, warmBackdrop: warm, direction, wrap: !!opts.wrap };
         ui.pendingPreview = readyPending; warm.pendingPreview = readyPending;
         tvBrowseFinishPreviewImage(readyPending, url, readyPending.sourceToken);
