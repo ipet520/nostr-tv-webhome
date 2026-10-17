@@ -12,11 +12,13 @@ const { output } = renderIndex();
 validateRenderedArtifact(output);
 const hook = `window.testRail = {
   state, secondaryGetQuery, secondaryActiveQuery, renderTvBrowse, tvBrowseState, tvBrowseSelectColumn,
-  tvBrowseInitialVisibleCardCount, tvBrowsePosition, tvBrowseQueryKey, bindActions, installRemoteKeys,
+  tvBrowseInitialVisibleCardCount, tvBrowsePosition, tvBrowseQueryKey, tvBrowsePreview, tvBrowseSyncRailImagePreparation,
+  tvBrowseCancelRailScroll, bindActions, installRemoteKeys,
   syncBrowseDevicePresentation, focusRemoteTarget, isVisibleFocusable, observeHomeImages
 };
 window.testRail.setup = () => {
   state.deviceMode = "leanback"; state.previewMode = true; state.activeList = "all";
+  window.WEBHOME_CONFIG.tmdb.apiBase = "http://fixture.local/tmdb";
   state.homeV14.route = "home"; state.hot.ready = true;
   state.hot.items = Array.from({length: 18}, (_, i) => ({id:"recommend-"+i,title:"推荐"+i,mediaType:"other",source:"fixture",pic:"/recommend-poster-"+i+".jpg",landscape:"/recommend-backdrop-"+i+".jpg"}));
   state.recent.loaded = true; state.recent.items = [];
@@ -31,8 +33,19 @@ window.testRail.seed = (id, count, prefix, hasMore=false) => {
   }));
   query.page=1;query.loaded=true;query.loading=false;query.hasMore=hasMore;query.error="";query.retryableError="";return query;
 };
+window.testRail.seedMovies = (id, count, prefix, firstTmdbId) => {
+  const query=secondaryGetQuery(id);query.items=Array.from({length:count},(_,i)=>({
+    id:prefix+"-"+i,tmdbId:firstTmdbId+i,title:prefix+" item "+i,mediaType:"movie",media_type:"movie",source:"tmdb",
+    pic:"/"+prefix+"-poster-"+i+".jpg",landscape:"/"+prefix+"-backdrop-"+i+".jpg",overview:"fixture"
+  }));
+  query.page=1;query.loaded=true;query.loading=false;query.hasMore=false;query.error="";query.retryableError="";return query;
+};
 window.testRail.setPageLoader = loader => { loadSecondaryPage=loader; };
 window.testRail.visibleCount = () => tvBrowseInitialVisibleCardCount(document.querySelector("#tvBrowseRail"),Number.MAX_SAFE_INTEGER);
+window.testRail.artworkState = id => {
+  const entry=state.movieDetail.cache["movie:"+id],asset=entry&&entry.logoAsset;
+  return {detail:!!(entry&&entry.detail),hasLogo:!!asset,url:asset&&asset.url||"",ready:!!(asset&&asset.ready),failed:!!(asset&&asset.failed),pending:!!(asset&&asset.promise)};
+};
 `;
 const html = output.replace(/boot\(\)\.catch\(function\(e\) \{[\s\S]*?\n    \}\);/, hook);
 assert.notEqual(html, output, "test hook replaces production boot");
@@ -45,8 +58,12 @@ const browser = await playwright.chromium.launch({
 });
 const held = new Map();
 const requested = [];
+const detailRequested = [];
+const logoRequested = [];
 const failedPaths = new Set();
 let holdPrefix = "";
+const holdFragments = new Set();
+const noLogoIds = new Set();
 async function openPage() {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
   page.on("pageerror", error => { throw error; });
@@ -55,10 +72,24 @@ async function openPage() {
     if (url.origin === "http://fixture.local" && url.pathname === "/") {
       return route.fulfill({ contentType: "text/html", body: html });
     }
+    const detailMatch = url.pathname.match(/^\/tmdb\/movie\/(\d+)$/);
+    if (url.origin === "http://fixture.local" && detailMatch) {
+      const id = detailMatch[1];
+      detailRequested.push(id);
+      const logos = noLogoIds.has(id) ? [] : [{ file_path: `/logo-${id}.png`, iso_639_1: "en", vote_average: 5 }];
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify({
+        id: Number(id), media_type: "movie", title: `Fixture ${id}`, overview: `Overview ${id}`,
+        release_date: "2024-01-01", backdrop_path: null, images: { logos }
+      }) });
+    }
     if (route.request().resourceType() === "image") {
       const path = url.pathname;
       requested.push(path);
-      if (holdPrefix && path.includes(holdPrefix)) await new Promise(resolve => held.set(path, resolve));
+      const logoMatch = path.match(/logo-(\d+)\.png/);
+      if (logoMatch) logoRequested.push(logoMatch[1]);
+      if (holdPrefix && path.includes(holdPrefix) || Array.from(holdFragments).some(fragment => path.includes(fragment))) {
+        await new Promise(resolve => held.set(path, resolve));
+      }
       if (Array.from(failedPaths).some(fragment => path.includes(fragment))) return route.abort();
       return route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="360"><rect width="240" height="360" fill="#31513f"/></svg>' });
     }
@@ -69,10 +100,15 @@ async function openPage() {
   await page.waitForFunction(() => document.querySelectorAll("#tvBrowseRail > .card").length > 0);
   return page;
 }
-function releaseHeld() {
-  const callbacks = Array.from(held.values());
-  held.clear();
+function releaseHeld(fragment = "") {
+  const callbacks = [];
+  for (const [path, resolve] of held) {
+    if (!fragment || path.includes(fragment)) { callbacks.push(resolve); held.delete(path); }
+  }
   callbacks.forEach(resolve => resolve());
+}
+function heldCount(fragment) {
+  return Array.from(held.keys()).filter(path => !fragment || path.includes(fragment)).length;
 }
 async function waitUntil(predicate, timeoutMs = 2000) {
   const end = Date.now() + timeoutMs;
@@ -88,8 +124,11 @@ try {
   assert.ok(visibleCount >= 1 && visibleCount < 18, "first-screen count is measured from the rendered rail");
 
   testRailHoldMoviePosters();
+  holdFragments.add("logo-62000.png");
+  noLogoIds.add("62001");
+  failedPaths.add("logo-62002.png");
   const coldSwitch = await page.evaluate(() => {
-    testRail.seed("movie", 18, "cold-movie");
+    testRail.seedMovies("movie", 18, "cold-movie", 62000);
     testRail.tvBrowseSelectColumn("movie",{afterPaint:true});
     const host=document.querySelector("#tvBrowsePosters");
     return {pending:host.classList.contains("rail-switch-pending"),oldCardsHidden:Array.from(document.querySelectorAll("#tvBrowseRail > .card")).every(card=>getComputedStyle(card).visibility==="hidden"),loaderHidden:document.querySelector("#tvBrowseRailLoader").hidden};
@@ -100,8 +139,16 @@ try {
   await page.waitForFunction(() => testRail.tvBrowseState().railReadiness && !document.querySelector("#tvBrowseRailLoader").hidden);
   await page.waitForFunction(() => Array.from(document.querySelectorAll("#tvBrowseRail > .card img.poster"))
     .filter(image => image.src.includes("cold-movie-poster")).length >= testRail.visibleCount());
-  await waitUntil(() => held.size >= visibleCount);
-  assert.equal(held.size,visibleCount,"the extra offscreen poster must wait until the first-screen gate releases");
+  await waitUntil(() => heldCount("cold-movie-poster-") >= visibleCount);
+  assert.equal(heldCount("cold-movie-poster-"),visibleCount,"the extra offscreen poster must wait until the first-screen gate releases");
+  await waitUntil(() => new Set(detailRequested).size >= visibleCount);
+  assert.deepEqual(new Set(detailRequested),new Set(Array.from({length:visibleCount},(_,index)=>String(62000+index))),
+    "Logo detail preparation follows only the dynamically measured first screen while its poster gate is pending");
+  assert.equal(detailRequested.includes(String(62000+visibleCount)),false,
+    "the right-side Logo target does not start before the first-screen poster gate releases");
+  await waitUntil(() => logoRequested.includes("62000"));
+  const heldLogoPath = Array.from(held.keys()).find(path => path.includes("logo-62000.png"));
+  assert.ok(heldLogoPath,"the first card's Logo image is independently held after its detail metadata is ready");
   const coldState = await page.evaluate(() => ({
     count:testRail.visibleCount(),
     physicalVisibleCount:Array.from(document.querySelectorAll("#tvBrowseRail > .card")).filter(card=>{
@@ -134,7 +181,7 @@ try {
   assert.equal(coldState.cards.every(card=>card.hidden),true,"no new-category poster is revealed one by one");
   assert.equal(coldState.cards.every(card=>!card.src.includes("recommend-poster")),true,"old-category posters are not retained as new content");
 
-  releaseHeld();
+  releaseHeld("cold-movie-poster-");
   holdPrefix="";
   await page.waitForFunction(() => document.querySelector("#tvBrowseRailLoader").hidden
     && Array.from(document.querySelectorAll("#tvBrowseRail > .card")).slice(0,testRail.visibleCount())
@@ -155,6 +202,114 @@ try {
   assert.equal(requested.filter(path=>path.includes("cold-movie-poster-")).length,ready.count+1,
     "the extra active poster request is limited to the first offscreen card");
 
+  const logoWaitState=await page.evaluate(()=>({
+    title:document.querySelector("#tvBrowseTitle").textContent,
+    titleVisible:!document.querySelector("#tvBrowseTitle").hidden&&getComputedStyle(document.querySelector("#tvBrowseTitle")).visibility!=="hidden",
+    logoVisible:!document.querySelector("#tvBrowseLogo").hidden,
+    state:testRail.artworkState(62000),
+    preparationKeys:testRail.tvBrowseState().logoPreparationKeys.slice()
+  }));
+  assert.equal(logoWaitState.title,"cold-movie item 0","ordinary title remains immediately visible while its Logo is still loading");
+  assert.equal(logoWaitState.titleVisible,true,"Logo preparation does not introduce an empty title interval");
+  assert.equal(logoWaitState.logoVisible,false,"a Logo is not presented before image load and decode complete");
+  assert.equal(logoWaitState.state.pending,true,"the shared Logo asset records its in-flight preparation state");
+  assert.equal(logoWaitState.preparationKeys.includes("cold-movie-"+ready.count),true,
+    "the one right-side poster warm target also enters the same Logo preparation window after the gate");
+  await waitUntil(()=>detailRequested.includes(String(62000+ready.count)));
+  assert.equal(detailRequested.includes(String(62000+ready.count+1)),false,
+    "Logo detail preparation does not extend beyond the one right-side target");
+  assert.equal(logoRequested.filter(id=>id===String(62000+ready.count)).length,1,
+    "the single offscreen card's prepared Logo is requested once");
+
+  const requestsBeforeFocus=logoRequested.length;
+  await page.evaluate(()=>{
+    const card=document.querySelectorAll("#tvBrowseRail > .card")[0];
+    card.focus();tvBrowsePosition().key=card.dataset.mediaKey;tvBrowsePosition().index=0;
+    tvBrowsePreview(card.__mediaItem);
+  });
+  assert.equal(await page.locator("#tvBrowseTitle").isVisible(),true,
+    "focusing a card whose Logo is still in flight keeps its text fallback visible");
+  assert.equal(logoRequested.length,requestsBeforeFocus,
+    "focus presentation consumes the active preparation result and does not start a second Logo request");
+
+  const noLogoCard=await page.evaluate(()=>({
+    key:document.querySelectorAll("#tvBrowseRail > .card")[1].dataset.mediaKey,
+    title:document.querySelectorAll("#tvBrowseRail > .card .card-title")[1].textContent
+  }));
+  await page.evaluate(()=>{
+    const card=document.querySelectorAll("#tvBrowseRail > .card")[1];card.focus();
+    tvBrowsePosition().key=card.dataset.mediaKey;tvBrowsePosition().index=1;tvBrowsePreview(card.__mediaItem);
+  });
+  await page.waitForFunction(()=>testRail.artworkState(62001).detail);
+  assert.equal(await page.locator("#tvBrowseTitle").textContent(),noLogoCard.title,
+    "a detail response with no Logo uses the ordinary title without waiting");
+  assert.equal(await page.locator("#tvBrowseLogo").isHidden(),true,
+    "a media item without Logo artwork keeps the standard text title");
+  assert.equal(await page.evaluate(()=>testRail.artworkState(62001).hasLogo),false,
+    "no Logo URL creates no image task");
+
+  await page.waitForFunction(()=>testRail.artworkState(62002).failed);
+  await page.evaluate(()=>{
+    const card=document.querySelectorAll("#tvBrowseRail > .card")[2];card.focus();
+    tvBrowsePosition().key=card.dataset.mediaKey;tvBrowsePosition().index=2;tvBrowsePreview(card.__mediaItem);
+  });
+  assert.equal(await page.locator("#tvBrowseTitle").isVisible(),true,
+    "a failed Logo request retains the ordinary title without waiting");
+  assert.equal(await page.locator("#tvBrowseLogo").isHidden(),true,
+    "a failed Logo image falls back to text instead of leaving an empty artwork slot");
+
+  // A rapid viewport jump updates the shared preparation window without
+  // creating a focus-direction Logo queue or widening the single-card lead.
+  const quickWindow=await page.evaluate(()=>{
+    const rail=document.querySelector("#tvBrowseRail"),cards=Array.from(rail.children);
+    testRail.tvBrowseCancelRailScroll();
+    [9,3,13,7].forEach(index=>{
+      rail.scrollLeft=Math.max(0,cards[index].offsetLeft-rail.offsetLeft);
+      testRail.tvBrowseSyncRailImagePreparation();
+    });
+    const style=getComputedStyle(rail),rect=rail.getBoundingClientRect();
+    const left=rect.left+rail.clientLeft+(parseFloat(style.paddingLeft)||0),right=rect.left+rail.clientLeft+rail.clientWidth-(parseFloat(style.paddingRight)||0);
+    const visible=cards.filter(card=>{const r=card.getBoundingClientRect();return r.right>left+.5&&r.left<right-.5;});
+    return {keys:testRail.tvBrowseState().logoPreparationKeys.slice(),expected:visible.map(card=>card.dataset.mediaKey),cards:cards.length};
+  });
+  const expectedQuickKeys=quickWindow.expected.slice();
+  const rightmostIndex=await page.evaluate(keys=>Math.max(...keys.map(key=>Array.from(document.querySelectorAll("#tvBrowseRail > .card")).findIndex(card=>card.dataset.mediaKey===key))),expectedQuickKeys);
+  if(rightmostIndex+1<quickWindow.cards) expectedQuickKeys.push(await page.locator(`#tvBrowseRail > .card:nth-child(${rightmostIndex+2})`).getAttribute("data-media-key"));
+  assert.deepEqual(quickWindow.keys,expectedQuickKeys,"quick scrolling prepares the current visible cards plus only the next screen-edge card");
+  assert.ok(quickWindow.keys.length<=quickWindow.expected.length+1,"rapid viewport updates keep the Logo preparation window bounded");
+  releaseHeld("logo-62000.png");holdFragments.clear();
+  await page.waitForFunction(()=>testRail.artworkState(62000).ready,
+    {},{timeout:5000});
+  await page.evaluate(()=>{
+    const rail=document.querySelector("#tvBrowseRail"),card=rail.children[0];rail.scrollLeft=0;
+    testRail.tvBrowseSyncRailImagePreparation();card.focus();testRail.tvBrowsePosition().key=card.dataset.mediaKey;
+    testRail.tvBrowsePosition().index=0;testRail.tvBrowsePreview(card.__mediaItem);
+  });
+  await page.waitForFunction(()=>!document.querySelector("#tvBrowseLogo").hidden);
+  const logoPresented=await page.evaluate(()=>({
+    state:testRail.artworkState(62000),visible:!document.querySelector("#tvBrowseLogo").hidden,
+    titleVisibility:getComputedStyle(document.querySelector("#tvBrowseTitle")).visibility,
+    decodeSupported:typeof HTMLImageElement.prototype.decode==="function"
+  }));
+  assert.equal(logoPresented.state.ready,true,"the shared detail entry records its Logo only after preparation completes");
+  assert.equal(logoPresented.visible,true,"the prepared Logo is presented after its decode-ready result");
+  assert.equal(logoPresented.titleVisibility,"hidden","prepared artwork replaces the fallback title without a blank interval");
+
+  await page.waitForFunction(count=>{
+    for(let index=0;index<count;index++){
+      const state=testRail.artworkState(62000+index);
+      if(index===1){if(!state.detail||state.hasLogo)return false;}
+      else if(index===2){if(!state.detail||!state.failed)return false;}
+      else if(!state.ready)return false;
+    }
+    return testRail.artworkState(62000+count).ready;
+  },ready.count);
+  await page.evaluate(()=>{
+    const rail=document.querySelector("#tvBrowseRail");rail.scrollLeft=0;
+    testRail.tvBrowseSyncRailImagePreparation();
+  });
+
+  const detailCountBeforeHotReturn=new Set(detailRequested).size,logoCountBeforeHotReturn=logoRequested.length;
   await page.evaluate(() => {
     window.movieNodes=Array.from(document.querySelectorAll("#tvBrowseRail > .card"));
     testRail.tvBrowseSelectColumn("recommendation");
@@ -163,6 +318,10 @@ try {
   assert.equal(await page.locator("#tvBrowseRailLoader").isHidden(),true,"a hot category restore does not replay the cold loader");
   assert.equal(await page.evaluate(() => window.movieNodes[0]===document.querySelector("#tvBrowseRail > .card")),true,
     "a hot category restore reuses the same card node");
+  assert.equal(new Set(detailRequested).size,detailCountBeforeHotReturn,
+    "returning to a hot movie category does not re-request its detail metadata");
+  assert.equal(logoRequested.length,logoCountBeforeHotReturn,
+    "a hot category revisit does not re-request Logo images");
 
   // The existing query/pagination path supplies only the missing first-screen
   // records. A later page must not be fetched just to release the rail.

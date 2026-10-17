@@ -12,6 +12,7 @@ const browseJs = readFileSync(new URL("../src/js/11e-tv-browse.js", import.meta.
 const routeJs = readFileSync(new URL("../src/js/11c-home-render-search-route.js", import.meta.url), "utf8");
 const cardsJs = readFileSync(new URL("../src/js/14-grid-card-focus.js", import.meta.url), "utf8");
 const detailJs = readFileSync(new URL("../src/js/06-tmdb-history-model.js", import.meta.url), "utf8");
+const artTitleJs = readFileSync(new URL("../src/js/16-detail-rendering.js", import.meta.url), "utf8");
 
 const check = (condition, name, detail) => assert.ok(condition, `${name}: ${detail}`);
 const requestClassLimits = configJs.match(/HOME_REQUEST_CLASS_MAX_ACTIVE\s*=\s*(\{[^}]+\})/);
@@ -361,6 +362,16 @@ check(pumpLoads.includes("recordHomeV14Diag()") && !pumpLoads.includes("renderHo
 check(railRender.includes("renderHomeDynamicSection(section, config)"), "HOME_RAIL_LOCAL_UPDATE", "category refresh renders only its own rail");
 check(categoryJs.includes("captureHomeRailFocus(rail)") && categoryJs.includes("replaceHomeRailChildren(rail"), "HOME_FOCUS_PRESERVED_DURING_ASYNC_UPDATE", "rail replacement reuses the existing focus identity capture");
 check(readFileSync(new URL("../src/js/11e-tv-browse.js", import.meta.url), "utf8").includes("tvBrowseDirectionalTarget"), "TV_SINGLE_RAIL_FOCUS_GRAPH", "TV browse replaces the obsolete vertical Home anchor");
+const browseImagePrep = browseJs.match(/    function tvBrowseSyncRailImagePreparation\(\) \{[\s\S]*?(?=\n    function tvBrowseReconcileRailNodes\()/)?.[0] || "";
+const browseLogoPrep = browseJs.match(/    function tvBrowsePrepareLogo\(item\) \{[\s\S]*?(?=\n    function tvBrowsePreviewDetail\()/)?.[0] || "";
+const browseLogoFinish = browseJs.match(/    function tvBrowseFinishLogoPreparation\(item, mediaKey, asset, inPreparationRange\) \{[\s\S]*?(?=\n    function tvBrowsePrepareLogo\()/)?.[0] || "";
+const artTitleRender = artTitleJs.match(/    function renderArtTitle\(item, detail, img, title, wrap, valid, options\) \{[\s\S]*?(?=\n    function renderDetailBase\()/)?.[0] || "";
+check(browseImagePrep.includes("visibleLogoKeys") && browseImagePrep.includes("visible.forEach((card) => { if (card.__mediaItem) tvBrowsePrepareLogo(card.__mediaItem); })"), "TV_BROWSE_VISIBLE_LOGO_PREPARATION", "Logo detail and image preparation follows the existing measured visible-card set");
+check(browseImagePrep.includes("const targetIndex = lastVisibleIndex + 1") && browseImagePrep.includes("tvBrowsePrepareLogo(target.__mediaItem)"), "TV_BROWSE_SINGLE_OFFSCREEN_LOGO_PREPARATION", "only the existing one-card right-side poster target joins the Logo preparation window");
+check(!browseJs.includes("tvBrowseEnsurePreviewDetail") && !browseJs.includes("tvBrowsePrepareAdjacentLogos"), "TV_BROWSE_NO_FOCUS_LOGO_QUEUE", "preview focus and directional-neighbor helpers no longer start separate Logo preparation");
+check(browseLogoPrep.includes("requestMovieDetailShared") && browseLogoPrep.includes("requestTvDetailShared") && browseLogoPrep.includes("scheduleHomeBudgetRequest(\"enrichment\""), "TV_BROWSE_LOGO_SHARED_DETAIL_PATH", "in-range Logo metadata uses existing shared detail requests and request budget");
+check(browseLogoFinish.includes("prepareArtLogo(asset)") && browseLogoFinish.includes("tvBrowseShowPreparedLogo"), "TV_BROWSE_LOGO_LOAD_AND_PRESENT", "Logo preparation completes through the shared load/decode cache before presentation");
+check(artTitleRender.includes("asset.ready") && artTitleRender.includes("!opts.preparedOnly") && browseJs.includes("{ immediateFallback: true, preparedOnly: true }"), "TV_BROWSE_LOGO_READY_OR_TEXT", "Browse consumes a prepared Logo only and keeps its text fallback immediate");
 
 const homeNostrRender = routeJs.match(/    function scheduleHomeNostrRender\(\) \{[\s\S]*?(?=\n    function homeSectionDomId\()/)?.[0] || "";
 check(hotJs.includes("scheduleHomeNostrRender()") && !hotJs.includes("invalidateHomeCategoryFeeds()"), "NOSTR_RECOMMENDATION_PRESERVED", "Nostr updates do not invalidate TMDB category feeds");
@@ -406,6 +417,12 @@ console.log("NO_UNBOUNDED_COLD_START_REQUEST_BURST = PASS (active request cap en
 console.log("NO_HOME_WHOLE_RENDER_STORM = PASS");
 console.log("HOME_FOCUS_PRESERVED_DURING_ASYNC_UPDATE = PASS (static identity hook)");
 console.log("TV_SINGLE_RAIL_FOCUS_GRAPH = PASS (static hook; DOM coverage in tv-immersive-browse.mjs)");
+console.log("TV_BROWSE_VISIBLE_LOGO_PREPARATION = PASS (measured viewport range)");
+console.log("TV_BROWSE_SINGLE_OFFSCREEN_LOGO_PREPARATION = PASS (one right-side target)");
+console.log("TV_BROWSE_NO_FOCUS_LOGO_QUEUE = PASS (preview no longer starts a separate Logo path)");
+console.log("TV_BROWSE_LOGO_SHARED_DETAIL_PATH = PASS (typed shared detail cache and enrichment budget)");
+console.log("TV_BROWSE_LOGO_LOAD_AND_PRESENT = PASS (shared image decode state consumed by Browse)");
+console.log("TV_BROWSE_LOGO_READY_OR_TEXT = PASS (prepared-only Logo with immediate text fallback)");
 console.log("SECONDARY_SEMANTICS_PRESERVED = PASS (no Secondary query state persisted)");
 console.log("NOSTR_RECOMMENDATION_PRESERVED = PASS");
 console.log("WEEKLY_SEMANTICS_PRESERVED = PASS");

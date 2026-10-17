@@ -61,12 +61,13 @@
         previewKey: "", presentedKey: "", backdropToken: 0, backdropSlot: 0, backdropUrl: "", backdropMediaKey: "",
         pendingImage: null, pendingPreview: null, warmBackdrops: [],
         focusIntent: null, retryFocusIntent: null, railCache: {}, railCacheOrder: [], railReadyByQuery: {}, railReadyOrder: [], railReadiness: null, railReadinessToken: 0, coldRailQueryKey: "", initialized: false,
-        railScroll: { frame: 0, target: null, targetKey: "", lastFrameAt: 0 }, railPrepareFrame: 0, posterWarmTargetKey: "", navigationDirection: 0, previewDirection: 1,
+        railScroll: { frame: 0, target: null, targetKey: "", lastFrameAt: 0 }, railPrepareFrame: 0, posterWarmTargetKey: "", logoPreparationKeys: [], navigationDirection: 0, previewDirection: 1,
         backdropTransition: null, backdropQueue: null
       });
       if (!ui.wallpaper) ui.wallpaper = { active: false, timer: 0, timerToken: 0, moveToken: 0, infoFrame: 0, movePending: false, paused: false, lastActivityAt: 0, historyEntry: false, pendingHistoryAction: null, currentKey: "", currentItem: null, consumeUntilKeyup: {}, detailPending: false, clickSinkPrepared: false, clickSinkTabIndex: null, clickSinkOutline: "", phase: "idle" };
       if (!ui.railReadyByQuery || typeof ui.railReadyByQuery !== "object") ui.railReadyByQuery = {};
       if (!Array.isArray(ui.railReadyOrder)) ui.railReadyOrder = [];
+      if (!Array.isArray(ui.logoPreparationKeys)) ui.logoPreparationKeys = [];
       return ui;
     }
 
@@ -1186,12 +1187,15 @@
       const lastVisibleIndex = low - 1;
       const visible = [];
       for (let index = firstVisibleIndex; index <= lastVisibleIndex; index += 1) visible.push(cards[index]);
+      const visibleLogoKeys = visible.map((card) => mediaDomKey(card.__mediaItem)).filter(Boolean);
+      ui.logoPreparationKeys = visibleLogoKeys;
       visible.forEach((card) => {
         const image = card.querySelector("img.poster");
         if (!image) return;
         if (image.hasAttribute("data-home-deferred") && image.getAttribute("data-src")) activateHomeDeferredImage(image);
         if (!(ui.railReadiness && ui.railReadiness.queryKey === tvBrowseQueryKey())) tvBrowseDecodePoster(image);
       });
+      visible.forEach((card) => { if (card.__mediaItem) tvBrowsePrepareLogo(card.__mediaItem); });
       if (ui.railReadiness && ui.railReadiness.queryKey === tvBrowseQueryKey()) return false;
       const targetIndex = lastVisibleIndex + 1;
       let target = cards[targetIndex] || null;
@@ -1212,6 +1216,10 @@
       const image = target && target.querySelector("img.poster");
       const targetKey = target && target.dataset.mediaKey || "";
       ui.posterWarmTargetKey = image && targetKey ? targetKey : "";
+      if (target && target.__mediaItem) {
+        ui.logoPreparationKeys = visibleLogoKeys.concat(targetKey && visibleLogoKeys.indexOf(targetKey) < 0 ? [targetKey] : []);
+        if (targetKey && visibleLogoKeys.indexOf(targetKey) < 0) tvBrowsePrepareLogo(target.__mediaItem);
+      }
       if (!image) return false;
       const isPlaceholder = image.hasAttribute("data-home-deferred") && image.getAttribute("data-src");
       if (isPlaceholder) activateHomeDeferredImage(image, { proactive: true });
@@ -1873,53 +1881,67 @@
       const key = (type === "movie" ? movieDetailCacheKey(item) : type === "tv" ? tvDetailCacheKey(item) : "") || String(mediaDomKey(item));
       if (ui.logoKey !== key) { tvBrowseCancelLogo(); ui.logoKey = key; }
       renderArtTitle(item, detail, $("tvBrowseLogo"), $("tvBrowseTitle"), null,
-        () => tvBrowseActive() && ui.logoKey === key, { immediateFallback: true });
+        () => tvBrowseActive() && ui.logoKey === key, { immediateFallback: true, preparedOnly: true });
     }
 
-    function tvBrowsePrepareLogo(item, foreground) {
-      const ui = tvBrowseState(), session = tvBrowseQueryKey();
+    function tvBrowseShowPreparedLogo(item, asset) {
+      const ui = tvBrowseState(), key = mediaDomKey(item), image = $("tvBrowseLogo"), run = image && image.__artTitle;
+      if (!asset || !asset.ready || ui.previewKey !== key || !image) return false;
+      if (run && run.asset === asset && !image.hidden && image.classList.contains("loaded")) return true;
+      tvBrowseRenderLogo(item, tvBrowsePreviewDetail(item));
+      return true;
+    }
+
+    function tvBrowseCurrentPreparedItem(item, mediaKey) {
+      if (tvBrowseState().previewKey !== mediaKey) return item;
+      const cards = $("tvBrowseRail").children;
+      for (let index = 0; index < cards.length; index += 1) {
+        if (mediaDomKey(cards[index].__mediaItem) === mediaKey) return cards[index].__mediaItem;
+      }
+      return item;
+    }
+
+    function tvBrowseFinishLogoPreparation(item, mediaKey, asset, inPreparationRange) {
+      if (!asset) return Promise.resolve(false);
+      return prepareArtLogo(asset).then((ready) => {
+        if (ready && inPreparationRange()) tvBrowseShowPreparedLogo(tvBrowseCurrentPreparedItem(item, mediaKey), asset);
+        return ready;
+      });
+    }
+
+    function tvBrowsePrepareLogo(item) {
+      const ui = tvBrowseState(), session = tvBrowseQueryKey(), mediaKey = mediaDomKey(item);
       const type = String(item.mediaType || item.media_type || "").toLowerCase();
       const id = movieDetailCacheId(item), key = type + ":" + id;
       if (!/^(movie|tv)$/.test(type) || !id) return Promise.resolve(false);
+      const inPreparationRange = () => {
+        const current = tvBrowseState();
+        return tvBrowseActive() && current.view === "home" && tvBrowseQueryKey() === session
+          && Array.isArray(current.logoPreparationKeys) && current.logoPreparationKeys.indexOf(mediaKey) >= 0;
+      };
       const runtime = type === "movie" ? state.movieDetail : state.tvDetail;
       const cached = type === "movie" ? movieDetailCacheValue(item) : tvDetailCacheValue(item);
       const asset = artLogoResource(item, cached);
-      if (asset) prepareArtLogo(asset);
-      if (cached) return prepareArtLogo(asset);
+      if (cached) return tvBrowseFinishLogoPreparation(item, mediaKey, asset, inPreparationRange);
+      // A list item may already carry a usable Logo URL. Prepare it in
+      // parallel with shared detail enrichment instead of serializing image
+      // readiness behind the detail response.
+      if (asset) tvBrowseFinishLogoPreparation(item, mediaKey, asset, inPreparationRange);
       const entry = runtime.cache[key];
       if (entry && entry.logoMetadataFailedAt && Date.now() - entry.logoMetadataFailedAt < 60000) return Promise.resolve(false);
-      if (foreground) { ui.previewDetailRequestKey = key; promoteHomeBudgetRequests(key, "foreground", "focus"); }
       const shared = type === "movie" ? requestMovieDetailShared : requestTvDetailShared;
-      return shared(item, (url, timeout) => scheduleHomeBudgetRequest(foreground ? "foreground" : "enrichment", () => {
-        if (foreground && (!tvBrowseActive() || tvBrowseQueryKey() !== session || ui.logoKey !== key)) {
-          const stale = new Error("Stale artwork preview"); stale.staleArtwork = true; throw stale;
-        }
-        if (!foreground) {
-          const cards = Array.from($("tvBrowseRail").children), at = cards.findIndex((card) => mediaDomKey(card.__mediaItem) === ui.previewKey);
-          if (!tvBrowseActive() || tvBrowseQueryKey() !== session || !cards.slice(Math.max(0, at - 1), at + 2).some((card) => mediaDomKey(card.__mediaItem) === mediaDomKey(item))) {
-            const stale = new Error("Stale artwork candidate"); stale.staleArtwork = true; throw stale;
-          }
+      return shared(item, (url, timeout) => scheduleHomeBudgetRequest("enrichment", () => {
+        if (!inPreparationRange()) {
+          const stale = new Error("Stale artwork preparation window"); stale.staleArtwork = true; throw stale;
         }
         return requestJson(url, timeout);
       }, key)).then((detail) => {
-        if (!tvBrowseActive() || tvBrowseQueryKey() !== session || String(detail && detail.id || "") !== id) return false;
-        const ready = prepareArtLogo(artLogoResource(item, detail));
-        const cards = Array.from($("tvBrowseRail").children);
-        const current = cards.find((card) => mediaDomKey(card.__mediaItem) === mediaDomKey(item));
-        if (foreground && ui.logoKey === key && ui.previewKey === mediaDomKey(item)) tvBrowsePreview(current ? current.__mediaItem : item);
-        if (!foreground && ui.previewKey) {
-          const previewIndex = cards.findIndex((card) => mediaDomKey(card.__mediaItem) === ui.previewKey);
-          const detailIndex = cards.findIndex((card) => mediaDomKey(card.__mediaItem) === mediaDomKey(item));
-          if (previewIndex >= 0 && detailIndex >= 0 && Math.abs(previewIndex - detailIndex) <= 1) {
-            tvBrowseWarmNextBackground(cards[previewIndex].__mediaItem);
-          }
-        }
-        return ready;
+        if (!inPreparationRange() || String(detail && detail.id || "") !== id) return false;
+        const preparedItem = tvBrowseCurrentPreparedItem(item, mediaKey);
+        if (ui.previewKey === mediaKey) tvBrowsePreview(preparedItem);
+        const preparedAsset = artLogoResource(preparedItem, detail);
+        return tvBrowseFinishLogoPreparation(preparedItem, mediaKey, preparedAsset, inPreparationRange);
       }).catch((error) => { const failed = runtime.cache[key]; if (failed && !error.staleArtwork) failed.logoMetadataFailedAt = Date.now(); return false; });
-    }
-
-    function tvBrowseEnsurePreviewDetail(item, detail) {
-      if (!detail) tvBrowsePrepareLogo(item, true);
     }
 
     function tvBrowsePreviewDetail(item) {
@@ -2331,8 +2353,6 @@
       const type = String(item.mediaType || item.media_type || "").toLowerCase();
       const logoKey = (type === "movie" ? movieDetailCacheKey(item) : type === "tv" ? tvDetailCacheKey(item) : "") || String(key);
       if (ui.logoKey !== logoKey) { tvBrowseCancelLogo(); ui.logoKey = logoKey; }
-      tvBrowseEnsurePreviewDetail(item, detail);
-      tvBrowsePrepareAdjacentLogos(item);
       const wall = tvWallpaperState();
       if (wall.active && wall.currentKey === key) tvWallpaperScheduleInfoShift(key, wall.moveToken);
       tvBrowseCommitPreviewInfo(item, detail, key);
@@ -2374,15 +2394,6 @@
         if (warm.state === "failed") tvBrowseAdvancePreviewSource(pending, warm.image, pending.sourceToken);
       } else tvBrowseLoadPreviewSource(pending);
       tvBrowseWarmNextBackground(item, { direction, wrap: !!opts.wrap });
-    }
-
-    function tvBrowsePrepareAdjacentLogos(item) {
-      const cards = Array.from($("tvBrowseRail").children), index = cards.findIndex((card) => mediaDomKey(card.__mediaItem) === mediaDomKey(item));
-      // Prepare only the next likely title in the navigation direction; the
-      // shared typed detail/logo cache serves revisits and reverse navigation.
-      const direction = Number(tvBrowseState().previewDirection) < 0 ? -1 : 1;
-      const adjacent = cards[index + direction] && cards[index + direction].__mediaItem;
-      if (adjacent) tvBrowsePrepareLogo(adjacent, false);
     }
 
     function tvBrowseDirectionalTarget(key, active) {

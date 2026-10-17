@@ -128,7 +128,10 @@
       const opts = options || {};
       const asset = artLogoResource(item, detail);
       const key = String(item.mediaType || item.media_type || "") + ":" + movieDetailCacheId(item);
-      if (img.__artTitle && img.__artTitle.key === key && img.__artTitle.asset === asset && img.__artTitle.valid()) { img.alt = title.textContent || item.title || ""; return; }
+      if (img.__artTitle && img.__artTitle.key === key && img.__artTitle.asset === asset && img.__artTitle.valid()) {
+        img.alt = title.textContent || item.title || "";
+        if (!(asset && asset.ready && img.hidden)) return;
+      }
       const previous = img.__artTitle && img.__artTitle.key === key ? img.__artTitle : null;
       const flowTitle = !!(wrap && wrap.parentElement.classList.contains("detail-title-slot"));
       cancelArtTitle(img);
@@ -157,7 +160,7 @@
       const remaining = run.deadline - Date.now();
       if (opts.immediateFallback || run.fallbackShown || remaining <= 0) fallback();
       else run.timer = setTimeout(fallback, remaining);
-      if (asset) prepareArtLogo(asset).then((ready) => ready ? show() : fallback());
+      if (asset && !opts.preparedOnly) prepareArtLogo(asset).then((ready) => ready ? show() : fallback());
     }
 
     function renderDetailBase(item) {
