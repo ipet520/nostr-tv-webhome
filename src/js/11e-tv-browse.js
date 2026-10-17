@@ -956,6 +956,15 @@
       return true;
     }
 
+    function tvBrowseReleaseInitialColumns() {
+      const columns = $("tvBrowseColumns");
+      if (!columns || !columns.classList.contains("tv-browse-columns-pending") || tvWallpaperIsActive()) return false;
+      columns.classList.remove("tv-browse-columns-pending");
+      syncTvBrowseVisibility();
+      tvBrowseTryFocus();
+      return true;
+    }
+
     function tvBrowsePosterSource(image) {
       if (!image) return "";
       const deferred = image.getAttribute("data-src");
@@ -1102,6 +1111,7 @@
         tvBrowseSetRailLoading(false);
         tvBrowseSyncRailImagePreparation();
       }
+      tvBrowseReleaseInitialColumns();
       return true;
     }
 
@@ -1203,7 +1213,7 @@
       const signature = dataPending ? "data-pending:" + String(items.length) + ":" + String(query.page || 0) : tvBrowseRailReadinessSignature(visibleCards);
       const shouldManage = !!allowGate || !!(ui.coldRailQueryKey && ui.coldRailQueryKey === queryKey)
         || !!(ui.railReadiness && ui.railReadiness.queryKey === queryKey);
-      if (!shouldManage) return false;
+      if (!shouldManage) { tvBrowseReleaseInitialColumns(); return false; }
       const presentPreview = !!allowGate || !!ui.coldRailPresentPreview
         || !!(ui.railReadiness && ui.railReadiness.queryKey === queryKey && ui.railReadiness.presentPreview);
       if (ui.view !== "home" || wall.active || historyViewUnavailable(query)) {
@@ -1232,7 +1242,7 @@
         return true;
       }
       if (!visibleCards.length) {
-        tvBrowseCancelRailReadiness(); ui.coldRailQueryKey = ""; return false;
+        tvBrowseCancelRailReadiness(); ui.coldRailQueryKey = ""; tvBrowseReleaseInitialColumns(); return false;
       }
       const signatureKey = queryKey + "|" + signature;
       const cachedReady = ui.railReadyByQuery[queryKey];
@@ -1245,10 +1255,11 @@
         ui.railReadyOrder = (ui.railReadyOrder || []).filter((key) => key !== queryKey).concat(queryKey);
         ui.coldRailQueryKey = ""; ui.railReadinessTimedOutKey = ""; ui.coldRailPresentPreview = false;
         tvBrowseSetRailLoading(false);
+        tvBrowseReleaseInitialColumns();
         return false;
       }
       if (ui.railReadinessTimedOutKey === signatureKey) {
-        ui.coldRailQueryKey = ""; ui.coldRailPresentPreview = false; tvBrowseSetRailLoading(false); return false;
+        ui.coldRailQueryKey = ""; ui.coldRailPresentPreview = false; tvBrowseSetRailLoading(false); tvBrowseReleaseInitialColumns(); return false;
       }
       ui.coldRailPresentPreview = presentPreview;
       const gate = { queryKey, signature, cards: visibleCards, resources: [], dataPending: false, presentPreview,
@@ -1644,9 +1655,11 @@
       $("tvBrowseInfo").hidden = ui.filterOpen;
       $("tvBrowseFilters").hidden = !ui.filterOpen;
       // Visibility reserves the column row so filter toggles never move the rail.
-      $("tvBrowseColumns").setAttribute("aria-hidden", String(ui.filterOpen || ui.view === "history"));
+      const columnsPending = !tvWallpaperIsActive() && $("tvBrowseColumns").classList.contains("tv-browse-columns-pending");
+      const columnsHidden = ui.filterOpen || ui.view === "history" || columnsPending;
+      $("tvBrowseColumns").setAttribute("aria-hidden", String(columnsHidden));
       if (tvBrowseActive() && ui.filterOpen && location.hash !== "#detail" && uiSnapshotRoute() === "home") ensureTvPanelHistoryEntry("filters", "#tv-filters");
-      root.querySelectorAll("#tvBrowseColumns button").forEach((button) => button.setAttribute("tabindex", ui.filterOpen || ui.view === "history" ? "-1" : "0"));
+      root.querySelectorAll("#tvBrowseColumns button").forEach((button) => button.setAttribute("tabindex", columnsHidden ? "-1" : "0"));
       document.documentElement.classList.toggle("tv-browse-active", tvBrowseActive());
     }
 
@@ -2841,6 +2854,8 @@
       if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(key)) return false;
       event.preventDefault(); event.stopPropagation();
       const target = tvBrowseDirectionalTarget(key, active);
+      if (!tvWallpaperIsActive() && $("tvBrowseColumns").classList.contains("tv-browse-columns-pending")
+        && target && target.closest && target.closest("#tvBrowseColumns")) return true;
       if (active && active.closest("#tvBrowseRail .card") && target && target !== active && target.closest("#tvBrowseRail .card")) {
         ui.navigationDirection = key === "ArrowLeft" ? -1 : 1;
       }

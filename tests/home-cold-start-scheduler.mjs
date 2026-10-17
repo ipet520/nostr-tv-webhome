@@ -9,6 +9,8 @@ const hotJs = readFileSync(new URL("../src/js/04-nostr-hot-storage.js", import.m
 const heroJs = readFileSync(new URL("../src/js/11a-home-render-core-hero.js", import.meta.url), "utf8");
 const categoryJs = readFileSync(new URL("../src/js/11b-home-category-render.js", import.meta.url), "utf8");
 const browseJs = readFileSync(new URL("../src/js/11e-tv-browse.js", import.meta.url), "utf8");
+const browseTemplate = readFileSync(new URL("../src/index.template.html", import.meta.url), "utf8");
+const browseCss = readFileSync(new URL("../src/css/05-home-tv.css", import.meta.url), "utf8");
 const routeJs = readFileSync(new URL("../src/js/11c-home-render-search-route.js", import.meta.url), "utf8");
 const cardsJs = readFileSync(new URL("../src/js/14-grid-card-focus.js", import.meta.url), "utf8");
 const detailJs = readFileSync(new URL("../src/js/06-tmdb-history-model.js", import.meta.url), "utf8");
@@ -369,6 +371,7 @@ const browseDetailPrep = browseJs.match(/    function tvBrowsePrepareDetailResou
 const browseLogoPrep = browseJs.match(/    function tvBrowsePrepareLogo\(item, options\) \{[\s\S]*?(?=\n    function tvBrowsePreviewDetail\()/)?.[0] || "";
 const browseGate = browseJs.match(/    function tvBrowseEnsureRailReadiness\(query, items, cards, visibleCount, allowGate\) \{[\s\S]*?(?=\n    function historyViewUnavailable\()/)?.[0] || "";
 const browseGateFinish = browseJs.match(/    function tvBrowseFinishRailReadiness\(gate, timedOut\) \{[\s\S]*?(?=\n    function tvBrowseTrackRailReadinessTask\()/)?.[0] || "";
+const browseKeyHandler = browseJs.match(/    function handleTvBrowseKey\(event, key, active\) \{[\s\S]*?(?=\n    function tvBrowseSnapshot\()/)?.[0] || "";
 const browseAsyncDetailGuard = browseJs.match(/    function tvBrowseShouldDeferAsyncDetailPreview\(item\) \{[\s\S]*?(?=\n    function tvBrowsePreviewDetail\()/)?.[0] || "";
 const browseColumnSelect = browseJs.match(/    function tvBrowseSelectColumn\(id, options\) \{[\s\S]*?(?=\n    function tvBrowseActivateColumn\()/)?.[0] || "";
 const browseBackgroundPrep = browseJs.match(/    function tvBrowsePrepareBackgroundURLs\(item, urls, gate, record\) \{[\s\S]*?(?=\n    function tvBrowseCancelWarmBackdrop\()/)?.[0] || "";
@@ -386,6 +389,54 @@ check(browseDetailPrep.includes("promoteHomeBudgetRequests(key, requestClass || 
 check(browseGate.includes("tvBrowsePrepareGatePoster(card, record, gate)") && browseGate.includes("tvBrowsePrepareCardResources(item, { requestClass: \"foreground\", gate, record, deferPresentation: true })")
   && browseGateFinish.includes("tvBrowseRememberRailReady(gate.queryKey, gate.signature, gate.resources)")
   && browseGateFinish.includes('entry[field] === "pending"') , "TV_BROWSE_FULL_RESOURCE_GATE", "cold rail readiness waits for terminal poster, detail, Logo and background states and caches the completed results");
+const browseColumns = browseJs.match(/    function tvBrowseReleaseInitialColumns\(\) \{[\s\S]*?(?=\n    function tvBrowsePosterSource\()/)?.[0] || "";
+const browseVisibility = browseJs.match(/    function syncTvBrowseVisibility\(\) \{[\s\S]*?(?=\n    function layoutTvBrowse\()/)?.[0] || "";
+const initialColumnsNode = browseTemplate.match(/<nav id="tvBrowseColumns" class="([^"]+)"/);
+const initialColumnsRule = browseCss.match(/html\.tv-browse-active \.tv-browse:not\(\.wallpaper-mode\) #tvBrowseColumns\.tv-browse-columns-pending \{([^}]+)\}/);
+check(initialColumnsNode && initialColumnsNode[1].split(/\s+/).includes("tv-browse-columns-pending")
+  && initialColumnsRule && /visibility:\s*hidden/.test(initialColumnsRule[1]) && /pointer-events:\s*none/.test(initialColumnsRule[1])
+  && !/display\s*:/.test(initialColumnsRule[1]), "TV_BROWSE_INITIAL_COLUMNS_FIRST_PAINT", "the initial template marker hides only the columns visually while preserving their grid-row layout and excludes wallpaper mode");
+check(browseVisibility.includes("classList.contains(\"tv-browse-columns-pending\")")
+  && browseVisibility.includes('$("tvBrowseColumns").setAttribute("aria-hidden", String(columnsHidden))')
+  && browseVisibility.includes("setAttribute(\"tabindex\", columnsHidden ? \"-1\" : \"0\")")
+  && browseGateFinish.includes("tvBrowseReleaseInitialColumns()")
+  && browseGate.includes("tvBrowseReleaseInitialColumns()")
+  && browseGateFinish.indexOf("if (dataTimedOut)") < browseGateFinish.indexOf("tvBrowseReleaseInitialColumns()")
+  && browseGateFinish.indexOf("tvBrowseReleaseInitialColumns()") < browseGateFinish.indexOf("return true;"), "TV_BROWSE_INITIAL_COLUMNS_GATE_REUSE", "the existing readiness completion and timeout share one release point; cache and no-gate paths release synchronously and exclude hidden category buttons from focus");
+check(browseKeyHandler.includes('target.closest("#tvBrowseColumns")') && browseKeyHandler.includes('classList.contains("tv-browse-columns-pending")')
+  && !browseJs.includes('classList.add("tv-browse-columns-pending")'), "TV_BROWSE_INITIAL_COLUMNS_NO_REARM", "only the static initial marker exists; hidden columns cannot receive directional focus and ordinary later category changes do not re-arm it");
+const columnsReleaseRuntime = (() => {
+  const classes = new Set(["tv-browse-columns-pending"]);
+  let syncCount = 0, focusCount = 0, wallpaperActive = false;
+  const element = { classList: {
+    contains: (name) => classes.has(name),
+    remove: (name) => classes.delete(name)
+  } };
+  const runtime = {
+    $: (id) => id === "tvBrowseColumns" ? element : null,
+    tvWallpaperIsActive: () => wallpaperActive,
+    syncTvBrowseVisibility: () => { syncCount += 1; },
+    tvBrowseTryFocus: () => { focusCount += 1; },
+    classes, element, getCounts: () => [syncCount, focusCount],
+    setWallpaperActive: (active) => { wallpaperActive = active; }
+  };
+  vm.runInNewContext(`${browseColumns}\nglobalThis.releaseInitialColumns = tvBrowseReleaseInitialColumns`, runtime);
+  return runtime;
+})();
+check(columnsReleaseRuntime.releaseInitialColumns() === true
+  && !columnsReleaseRuntime.classes.has("tv-browse-columns-pending")
+  && columnsReleaseRuntime.getCounts().join(",") === "1,1"
+  && columnsReleaseRuntime.releaseInitialColumns() === false
+  && columnsReleaseRuntime.getCounts().join(",") === "1,1", "TV_BROWSE_INITIAL_COLUMNS_RELEASE_ONCE", "release restores existing visibility and focus synchronization once and ignores stale repeat callbacks");
+const wallpaperColumnsRuntime = (() => {
+  const classes = new Set(["tv-browse-columns-pending"]);
+  const element = { classList: { contains: (name) => classes.has(name), remove: (name) => classes.delete(name) } };
+  const runtime = { $: () => element, tvWallpaperIsActive: () => true, syncTvBrowseVisibility() { throw new Error("wallpaper visibility changed"); }, tvBrowseTryFocus() { throw new Error("wallpaper focus changed"); }, classes };
+  vm.runInNewContext(`${browseColumns}\nglobalThis.releaseInitialColumns = tvBrowseReleaseInitialColumns`, runtime);
+  return runtime;
+})();
+check(wallpaperColumnsRuntime.releaseInitialColumns() === false
+  && wallpaperColumnsRuntime.classes.has("tv-browse-columns-pending"), "TV_BROWSE_WALLPAPER_VISIBILITY_UNCHANGED", "the initial Home-only visual marker does not mutate active wallpaper presentation");
 check(browseGate.includes("ui.coldRailPresentPreview = presentPreview") && browseGateFinish.includes("gate.presentPreview || ui.coldRailPresentPreview"),
   "TV_BROWSE_DATA_EXTENSION_PREVIEW", "the pending first-card presentation intent survives pagination while the measured first screen fills");
 check(browseAsyncDetailGuard.includes('record.detailState') && browseAsyncDetailGuard.includes('"timed-out"')
@@ -597,6 +648,11 @@ console.log("TV_BROWSE_POSTER_ABSENCE_STATE = PASS (confirmed missing poster is 
 console.log("TV_BROWSE_DETAIL_FOREGROUND_PRIORITY = PASS (existing shared detail cache and request budget)");
 console.log("TV_BROWSE_SHARED_DETAIL_PROMOTION = PASS (queued duplicate is promoted by shared request key)");
 console.log("TV_BROWSE_FULL_RESOURCE_GATE = PASS (all first-screen resource outcomes)");
+console.log("TV_BROWSE_INITIAL_COLUMNS_FIRST_PAINT = PASS (static pending marker; visibility preserves layout)");
+console.log("TV_BROWSE_INITIAL_COLUMNS_GATE_REUSE = PASS (completion, timeout, cache and no-gate release paths)");
+console.log("TV_BROWSE_INITIAL_COLUMNS_FOCUS = PASS (hidden controls excluded; existing focus recovery retried on release)");
+console.log("TV_BROWSE_INITIAL_COLUMNS_NO_REARM = PASS (ordinary category changes remain visible)");
+console.log("TV_BROWSE_WALLPAPER_COLUMNS_UNCHANGED = PASS (wallpaper selector and release path excluded)");
 console.log("TV_BROWSE_DATA_EXTENSION_PREVIEW = PASS (first-card commit intent survives data pagination)");
 console.log("TV_BROWSE_BACKGROUND_READY_REUSE = PASS (decoded readiness and displayed reuse)");
 console.log("TV_BROWSE_LOGO_LOAD_AND_DECODE_STATE = PASS (shared artwork cache)");

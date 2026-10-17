@@ -1200,6 +1200,7 @@
     html.tv-browse-active .tv-browse-columns { grid-row: 2; min-width: 0; margin: 0 var(--tv-gutter); display: flex; gap: var(--tv-column-gap,18px); overflow-x: auto; white-space: nowrap; padding: 0; scrollbar-width: none; z-index: 3; }
     /* Preserve the measured column row while filters hide it; posters do not jump. */
     html.tv-browse-active .tv-browse.filter-open .tv-browse-columns { visibility: hidden; pointer-events: none; }
+    html.tv-browse-active .tv-browse:not(.wallpaper-mode) #tvBrowseColumns.tv-browse-columns-pending { visibility: hidden; pointer-events: none; }
     html.tv-browse-active .tv-browse-columns::-webkit-scrollbar, html.tv-browse-active .tv-browse-rail::-webkit-scrollbar { display: none; }
     html.tv-browse-active .tv-browse-column { flex: 0 0 auto; padding: var(--tv-column-pad-y,8px) var(--tv-column-pad-x,18px); font-size: var(--tv-column-font); font-weight: 600; }
     html.tv-browse-active .tv-browse-column[aria-pressed="true"] { font-weight: 600; }

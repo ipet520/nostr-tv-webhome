@@ -137,7 +137,45 @@ async function waitUntil(predicate, timeoutMs = 2000) {
 }
 
 try {
+  holdPrefix="recommend-poster-";
   const page = await openPage();
+  await page.waitForFunction(() => testRail.tvBrowseState().railReadiness
+    && !document.querySelector("#tvBrowseRailLoader").hidden);
+  const initialColumns = await page.evaluate(() => {
+    const columns=document.querySelector("#tvBrowseColumns"),first=columns.querySelector("button"),rect=columns.getBoundingClientRect();
+    return {pending:columns.classList.contains("tv-browse-columns-pending"),visibility:getComputedStyle(columns).visibility,
+      ariaHidden:columns.getAttribute("aria-hidden"),tabIndex:first&&first.getAttribute("tabindex"),height:rect.height,
+      focusable:first&&testRail.isVisibleFocusable(first),loaderHidden:document.querySelector("#tvBrowseRailLoader").hidden};
+  });
+  assert.equal(initialColumns.pending,true,"the initial TV Browse template carries its pre-paint cold-readiness marker");
+  assert.equal(initialColumns.visibility,"hidden","the first-frame columns stay visually hidden while the existing first-screen gate is pending");
+  assert.equal(initialColumns.ariaHidden,"true","hidden initial category controls are excluded from accessibility focus");
+  assert.equal(initialColumns.tabIndex,"-1","hidden initial category controls cannot receive remote focus");
+  assert.equal(initialColumns.focusable,false,"the existing focusability check rejects the hidden category control");
+  assert.ok(initialColumns.height>0,"visibility hiding preserves the measured category-row layout slot");
+  assert.equal(initialColumns.loaderHidden,false,"the existing rail gate, rather than a second timer, controls the initial wait state");
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => resolve())));
+  assert.equal(await page.locator("#tvBrowseColumns").evaluate(node=>getComputedStyle(node).visibility),"hidden",
+    "the category row remains hidden at the first animation frame after the Browse activation task");
+  await page.evaluate(() => testRail.focusRemoteTarget(document.querySelector("#tvFunction-search")));
+  await page.keyboard.press("ArrowDown");
+  assert.equal(await page.evaluate(() => document.activeElement.id),"tvFunction-search",
+    "directional input cannot move focus into the temporarily invisible category row");
+  releaseHeld("recommend-poster-");
+  holdPrefix="";
+  await page.waitForFunction(() => !document.querySelector("#tvBrowseColumns").classList.contains("tv-browse-columns-pending")
+    && document.querySelector("#tvBrowseRailLoader").hidden);
+  const releasedColumns = await page.evaluate(() => {
+    const columns=document.querySelector("#tvBrowseColumns"),first=columns.querySelector("button"),rect=columns.getBoundingClientRect();
+    return {visibility:getComputedStyle(columns).visibility,ariaHidden:columns.getAttribute("aria-hidden"),tabIndex:first&&first.getAttribute("tabindex"),
+      height:rect.height,focusId:document.activeElement.id};
+  });
+  assert.equal(releasedColumns.visibility,"visible","the existing gate completion reveals the category row in the same presentation phase");
+  assert.equal(releasedColumns.ariaHidden,"false","category accessibility visibility is restored with the row");
+  assert.equal(releasedColumns.tabIndex,"0","existing category focusability is restored after readiness");
+  assert.ok(Math.abs(releasedColumns.height-initialColumns.height)<0.5,"revealing the row does not change its measured layout height");
+  assert.equal(releasedColumns.focusId,"tvFunction-search","revealing columns does not steal focus after the user moves it");
+  requested.length=0; detailRequested.length=0; logoRequested.length=0; backdropRequested.length=0;
   const visibleCount = await page.evaluate(() => testRail.visibleCount());
   assert.ok(visibleCount >= 1 && visibleCount < 18, "first-screen count is measured from the rendered rail");
   await page.evaluate(() => testRail.clearDecodeProbe());
@@ -153,8 +191,12 @@ try {
     testRail.tvBrowseSelectColumn("movie",{afterPaint:true});
     const host=document.querySelector("#tvBrowsePosters");
     return {previousTitle,presentedTitle:document.querySelector("#tvBrowseTitle").textContent,previewKey:testRail.tvBrowseState().previewKey,
-      pending:host.classList.contains("rail-switch-pending"),oldCardsHidden:Array.from(document.querySelectorAll("#tvBrowseRail > .card")).every(card=>getComputedStyle(card).visibility==="hidden"),loaderHidden:document.querySelector("#tvBrowseRailLoader").hidden};
+      pending:host.classList.contains("rail-switch-pending"),columnsPending:document.querySelector("#tvBrowseColumns").classList.contains("tv-browse-columns-pending"),
+      columnsVisible:getComputedStyle(document.querySelector("#tvBrowseColumns")).visibility==="visible",
+      oldCardsHidden:Array.from(document.querySelectorAll("#tvBrowseRail > .card")).every(card=>getComputedStyle(card).visibility==="hidden"),loaderHidden:document.querySelector("#tvBrowseRailLoader").hidden};
   });
+  assert.equal(coldSwitch.columnsPending,false,"ordinary category changes do not re-arm the one-time initial columns marker");
+  assert.equal(coldSwitch.columnsVisible,true,"ordinary category changes keep the category row visible while their existing rail gate runs");
   assert.equal(coldSwitch.pending,true,"old-category cards are hidden immediately while the cold selection render is queued");
   assert.equal(coldSwitch.oldCardsHidden,true,"previous-category cards cannot masquerade as the newly selected category");
   assert.equal(coldSwitch.loaderHidden,true,"the wait animation appears only after the current first-screen gate confirms work is pending");

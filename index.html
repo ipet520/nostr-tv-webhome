@@ -7063,6 +7063,7 @@
     html.tv-browse-active .tv-browse-columns { grid-row: 2; min-width: 0; margin: 0 var(--tv-gutter); display: flex; gap: var(--tv-column-gap,18px); overflow-x: auto; white-space: nowrap; padding: 0; scrollbar-width: none; z-index: 3; }
     /* Preserve the measured column row while filters hide it; posters do not jump. */
     html.tv-browse-active .tv-browse.filter-open .tv-browse-columns { visibility: hidden; pointer-events: none; }
+    html.tv-browse-active .tv-browse:not(.wallpaper-mode) #tvBrowseColumns.tv-browse-columns-pending { visibility: hidden; pointer-events: none; }
     html.tv-browse-active .tv-browse-columns::-webkit-scrollbar, html.tv-browse-active .tv-browse-rail::-webkit-scrollbar { display: none; }
     html.tv-browse-active .tv-browse-column { flex: 0 0 auto; padding: var(--tv-column-pad-y,8px) var(--tv-column-pad-x,18px); font-size: var(--tv-column-font); font-weight: 600; }
     html.tv-browse-active .tv-browse-column[aria-pressed="true"] { font-weight: 600; }
@@ -7714,7 +7715,7 @@
       <div id="tvBrowseFilters" class="tv-browse-filters" role="dialog" aria-modal="true" aria-label="栏目筛选" hidden></div>
       </div>
       <p id="tvBrowseFilterOverview" class="tv-browse-filter-overview" hidden></p>
-      <nav id="tvBrowseColumns" class="tv-browse-columns" aria-label="栏目"></nav>
+      <nav id="tvBrowseColumns" class="tv-browse-columns tv-browse-columns-pending" aria-label="栏目"></nav>
       <div id="tvHistoryResume" class="tv-history-resume" hidden>
         <button id="tvHistoryContinue" class="btn focusable" type="button"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3L21 12L6 21Z"></path></svg><span>继续观看</span></button>
         <div class="tv-history-progress-info"><div class="tv-history-progress-label"><span id="tvHistoryEpisode"></span><span id="tvHistoryTime"></span></div><div id="tvHistoryProgress" class="tv-history-progress" aria-hidden="true" hidden><span></span></div></div>
@@ -28848,6 +28849,15 @@ utils.encode = function encode(arr, enc) {
       return true;
     }
 
+    function tvBrowseReleaseInitialColumns() {
+      const columns = $("tvBrowseColumns");
+      if (!columns || !columns.classList.contains("tv-browse-columns-pending") || tvWallpaperIsActive()) return false;
+      columns.classList.remove("tv-browse-columns-pending");
+      syncTvBrowseVisibility();
+      tvBrowseTryFocus();
+      return true;
+    }
+
     function tvBrowsePosterSource(image) {
       if (!image) return "";
       const deferred = image.getAttribute("data-src");
@@ -28994,6 +29004,7 @@ utils.encode = function encode(arr, enc) {
         tvBrowseSetRailLoading(false);
         tvBrowseSyncRailImagePreparation();
       }
+      tvBrowseReleaseInitialColumns();
       return true;
     }
 
@@ -29095,7 +29106,7 @@ utils.encode = function encode(arr, enc) {
       const signature = dataPending ? "data-pending:" + String(items.length) + ":" + String(query.page || 0) : tvBrowseRailReadinessSignature(visibleCards);
       const shouldManage = !!allowGate || !!(ui.coldRailQueryKey && ui.coldRailQueryKey === queryKey)
         || !!(ui.railReadiness && ui.railReadiness.queryKey === queryKey);
-      if (!shouldManage) return false;
+      if (!shouldManage) { tvBrowseReleaseInitialColumns(); return false; }
       const presentPreview = !!allowGate || !!ui.coldRailPresentPreview
         || !!(ui.railReadiness && ui.railReadiness.queryKey === queryKey && ui.railReadiness.presentPreview);
       if (ui.view !== "home" || wall.active || historyViewUnavailable(query)) {
@@ -29124,7 +29135,7 @@ utils.encode = function encode(arr, enc) {
         return true;
       }
       if (!visibleCards.length) {
-        tvBrowseCancelRailReadiness(); ui.coldRailQueryKey = ""; return false;
+        tvBrowseCancelRailReadiness(); ui.coldRailQueryKey = ""; tvBrowseReleaseInitialColumns(); return false;
       }
       const signatureKey = queryKey + "|" + signature;
       const cachedReady = ui.railReadyByQuery[queryKey];
@@ -29137,10 +29148,11 @@ utils.encode = function encode(arr, enc) {
         ui.railReadyOrder = (ui.railReadyOrder || []).filter((key) => key !== queryKey).concat(queryKey);
         ui.coldRailQueryKey = ""; ui.railReadinessTimedOutKey = ""; ui.coldRailPresentPreview = false;
         tvBrowseSetRailLoading(false);
+        tvBrowseReleaseInitialColumns();
         return false;
       }
       if (ui.railReadinessTimedOutKey === signatureKey) {
-        ui.coldRailQueryKey = ""; ui.coldRailPresentPreview = false; tvBrowseSetRailLoading(false); return false;
+        ui.coldRailQueryKey = ""; ui.coldRailPresentPreview = false; tvBrowseSetRailLoading(false); tvBrowseReleaseInitialColumns(); return false;
       }
       ui.coldRailPresentPreview = presentPreview;
       const gate = { queryKey, signature, cards: visibleCards, resources: [], dataPending: false, presentPreview,
@@ -29536,9 +29548,11 @@ utils.encode = function encode(arr, enc) {
       $("tvBrowseInfo").hidden = ui.filterOpen;
       $("tvBrowseFilters").hidden = !ui.filterOpen;
       // Visibility reserves the column row so filter toggles never move the rail.
-      $("tvBrowseColumns").setAttribute("aria-hidden", String(ui.filterOpen || ui.view === "history"));
+      const columnsPending = !tvWallpaperIsActive() && $("tvBrowseColumns").classList.contains("tv-browse-columns-pending");
+      const columnsHidden = ui.filterOpen || ui.view === "history" || columnsPending;
+      $("tvBrowseColumns").setAttribute("aria-hidden", String(columnsHidden));
       if (tvBrowseActive() && ui.filterOpen && location.hash !== "#detail" && uiSnapshotRoute() === "home") ensureTvPanelHistoryEntry("filters", "#tv-filters");
-      root.querySelectorAll("#tvBrowseColumns button").forEach((button) => button.setAttribute("tabindex", ui.filterOpen || ui.view === "history" ? "-1" : "0"));
+      root.querySelectorAll("#tvBrowseColumns button").forEach((button) => button.setAttribute("tabindex", columnsHidden ? "-1" : "0"));
       document.documentElement.classList.toggle("tv-browse-active", tvBrowseActive());
     }
 
@@ -30733,6 +30747,8 @@ utils.encode = function encode(arr, enc) {
       if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(key)) return false;
       event.preventDefault(); event.stopPropagation();
       const target = tvBrowseDirectionalTarget(key, active);
+      if (!tvWallpaperIsActive() && $("tvBrowseColumns").classList.contains("tv-browse-columns-pending")
+        && target && target.closest && target.closest("#tvBrowseColumns")) return true;
       if (active && active.closest("#tvBrowseRail .card") && target && target !== active && target.closest("#tvBrowseRail .card")) {
         ui.navigationDirection = key === "ArrowLeft" ? -1 : 1;
       }
