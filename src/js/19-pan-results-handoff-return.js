@@ -700,23 +700,42 @@
       try { return JSON.parse(JSON.stringify(item)); } catch (e) { return null; }
     }
 
-    function markDetailPlayerHandoff(item) {
+    function markDetailPlayerHandoff(item, nativeHistory) {
       const detail = $("detailSheet");
       if (!item || state.selected !== item || !detail || !detail.classList.contains("active")) return null;
       const previous = state.detailPlayerReturn;
       const previousHistoryKey = previous && previous.itemKey === panSearchItemKey(item) && !previous.handoffStarted
         ? String(previous.nativeHistoryKey || "").trim() : "";
+      const previousSearchTitle = String(previous && previous.nativeSearchTitle || "").trim();
+      const previousSearchItemKey = String(previous && (previous.nativeSearchItemKey || previous.itemKey) || "").trim();
+      const previousMatchOptions = previousSearchTitle ? {
+        nativeSearchTitle: previousSearchTitle,
+        nativeSearchItemKey: previousSearchItemKey
+      } : null;
+      const exactHandoffKey = typeof detailNativeHistoryKey === "function" ? detailNativeHistoryKey(nativeHistory) : "";
+      const confirmedPreviousHistory = previousHistoryKey && nativeHistory && exactHandoffKey === previousHistoryKey
+        && typeof detailReturnedNativeHistoryFor === "function" ? detailReturnedNativeHistoryFor(item) : null;
+      const preservePreviousHistory = !!(confirmedPreviousHistory
+        && detailNativeHistoryKey(confirmedPreviousHistory) === previousHistoryKey
+        && detailHasAuthoritativeNativeHistory(nativeHistory)
+        && detailHistoryMatches(item, nativeHistory, previousMatchOptions)
+        && nativeHistoryRecordCanPlayExact(nativeHistory)
+        && (!previousSearchTitle || previousSearchItemKey === previous.itemKey));
       // A new concrete player handoff supersedes a still-open Native Search
       // return probe. The player's committed History event uses this return path.
       if (typeof clearNativeSearchReturnMarker === "function") clearNativeSearchReturnMarker();
-      state.detailPlayerReturn = {
+      const marker = state.detailPlayerReturn = {
         itemKey: panSearchItemKey(item),
         handoffStarted: true,
         startedAt: Date.now(),
         returnedAt: 0,
-        nativeHistoryKey: previousHistoryKey
+        nativeHistoryKey: preservePreviousHistory ? previousHistoryKey : ""
       };
-      return state.detailPlayerReturn;
+      if (preservePreviousHistory && previousSearchTitle) {
+        marker.nativeSearchTitle = previousSearchTitle;
+        marker.nativeSearchItemKey = previousSearchItemKey;
+      }
+      return marker;
     }
 
     async function persistPlaybackBeforeNativeHandoff(item, episodeTarget, panItem, handoffAction) {

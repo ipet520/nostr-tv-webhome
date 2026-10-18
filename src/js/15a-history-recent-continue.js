@@ -39,7 +39,7 @@
       const watchItem = opts.watchItem || item;
       if (opts.detail) rememberDetailReturn(opts.button || $("detailContinueBtn"));
       else rememberHomeReturn(item, opts.returnTarget || document.activeElement, { origin: "recent_native_player" });
-      const detailPlayerReturn = opts.detail ? markDetailPlayerHandoff(state.selected) : null;
+      const detailPlayerReturn = opts.detail ? markDetailPlayerHandoff(state.selected, item) : null;
       saveUiSnapshotNow();
       rememberWatchIntent(watchItem, "view", context, nativeIdentity);
       // 用 localStorage 持久化标记，WebView 被挂起后 JS 内存会丢失

@@ -165,7 +165,7 @@ await test('player return refreshes the committed exact Native record after a st
  // Clicking that state must dispatch the exact Native reference and preserve
  // the actual A route, episode and saved position through the bridge payload.
  const handoffSource=source('19-pan-results-handoff-return.js');
- const markerStart=handoffSource.indexOf('    function markDetailPlayerHandoff(item) {');
+ const markerStart=handoffSource.indexOf('    function markDetailPlayerHandoff(');
  const markerEnd=handoffSource.indexOf('\n    async function persistPlaybackBeforeNativeHandoff',markerStart);
  assert.ok(markerStart>=0&&markerEnd>markerStart,'the production detail handoff marker is extractable');
  vm.runInContext(handoffSource.slice(markerStart,markerEnd).trim(),c);
@@ -361,7 +361,7 @@ await test('HTML Pan Search play and repeated history_exact returns stay on the 
   return sourceText.slice(start,end).trim();
  };
  vm.runInContext(extract(handoffSource,'    function clearNativeSearchReturnMarker() {','\n    async function nativeSearch','clear Native Search marker'),c);
- vm.runInContext(extract(handoffSource,'    function markDetailPlayerHandoff(item) {','\n    async function persistPlaybackBeforeNativeHandoff','player handoff marker'),c);
+ vm.runInContext(extract(handoffSource,'    function markDetailPlayerHandoff(','\n    async function persistPlaybackBeforeNativeHandoff','player handoff marker'),c);
  const playPan=vm.runInContext('('+extract(handoffSource,'    async function playPanResult(item, options) {','\n    function handlePanPlayFailure','Pan playback entry')+')',c);
  const panCandidate={url:panUrl,title:'Example selected file',diskType:'quark',fileName:'Episode 4'};
  await playPan(panCandidate,{prechecked:true});

@@ -81,6 +81,13 @@ function install(startMarker, endMarker) {
 install('    function nativeSearchReturnMarkerFor() {', '\n    async function nativeSearch');
 install('    function retireDetailPreparedPlaybackAfterNativeSearch(item, marker, reason) {', '\n    // 滚动恢复：closeDetail(needBack)');
 install('    async function nativeSearch(title) {', '\n    async function openLiveHome');
+install('    function markDetailPlayerHandoff(', '\n    async function persistPlaybackBeforeNativeHandoff');
+const productionPlayNativeHistoryExact = c.playNativeHistoryExact;
+const playerReturnSource = source('22-snapshot-resume-boot.js');
+const rearmStart = playerReturnSource.indexOf('    async function rearmDetailPlaybackAfterPlayerReturn(options) {');
+const rearmEnd = playerReturnSource.indexOf('\n    async function handleWebHomeResume(options)', rearmStart);
+assert.ok(rearmStart >= 0 && rearmEnd > rearmStart, 'production player-return rearm path is extractable');
+vm.runInContext(playerReturnSource.slice(rearmStart, rearmEnd).trim(), c, { filename: '22-snapshot-resume-boot.js' });
 
 function putHistory(...rows) {
   const loaded = c.normalizeRecentWatchingItems(rows.map((row) => ({
@@ -209,6 +216,103 @@ async function runNativeSearchReturn(item, searchTitle, beforeRows, afterRows, r
   assert.equal(exactCalls[0].nativeHistoryKey, 'push_agent@@@vod-7@@@7');
   assert.equal(exactCalls[0].historyRecordRef.historyKey, 'push_agent@@@vod-7@@@7', 'the button action uses the exact Native reference that matched the detail');
   console.log('English detail + Chinese Native Search + exact Chinese History = PASS');
+}
+
+{
+  const item = makeItem();
+  const { continueText, reconciled } = await runNativeSearchReturn(
+    item,
+    '可信中文名',
+    [],
+    [rawHistory('push_agent', '可信中文名', { position: 90_000, createTime: 2_100 })]
+  );
+  assert.equal(reconciled, true, 'the first Native Search playback establishes the continuation marker');
+  assert.equal(continueText.textContent, '续播');
+
+  c.playNativeHistoryExact = productionPlayNativeHistoryExact;
+  c.rememberDetailReturn = () => {};
+  c.saveUiSnapshotNow = async () => {};
+  c.rememberWatchIntent = () => {};
+  c.saveHistoryPlaybackContext = async () => {};
+  c.startWatchTracking = () => {};
+  c.playbackOriginForNativeIdentity = () => 'pan-push';
+  const vodCalls = [];
+  c.sdk = () => ({ vod: async (...args) => { vodCalls.push(args); } });
+  let nextHistory = null;
+  c.loadRecentList = async () => { putHistory(nextHistory); };
+
+  const playbackSource = source('07-detail-playback-race.js');
+  const requestStart = playbackSource.indexOf('    async function requestDetailPlayback(item) {');
+  const requestEnd = playbackSource.indexOf('\n    function handleDetailPrimaryAction()', requestStart);
+  assert.ok(requestStart >= 0 && requestEnd > requestStart, 'production exact-resume button action is extractable');
+  const requestPlayback = vm.runInContext(`(${playbackSource.slice(requestStart, requestEnd).trim()})`, c);
+
+  for (const round of [
+    { position: 112_000, createTime: 2_200 },
+    { position: 137_000, createTime: 2_300 }
+  ]) {
+    assert.equal(await requestPlayback(item), true, 'the detail primary action dispatches exact Native History resume');
+    assert.equal(vodCalls.length, round.createTime === 2_200 ? 1 : 2);
+    assert.equal(vodCalls[vodCalls.length - 1][4].intent, 'history_exact');
+    assert.equal(vodCalls[vodCalls.length - 1][4].historyRecordRef.historyKey, 'push_agent@@@vod-7@@@7');
+    assert.equal(c.state.detailPlayerReturn.nativeHistoryKey, 'push_agent@@@vod-7@@@7');
+
+    nextHistory = rawHistory('push_agent', '可信中文名', round);
+    assert.equal(await c.rearmDetailPlaybackAfterPlayerReturn({ playerReturn: true }), true,
+      'production player-return rearm refreshes Native History after the exact handoff');
+    c.updateDetailContinueButton();
+    assert.equal(c.state.detailPlayerReturn.nativeHistoryKey, 'push_agent@@@vod-7@@@7');
+    assert.equal(c.state.detailPlayerReturn.nativeSearchTitle, '可信中文名');
+    assert.equal(c.state.detailPlayerReturn.nativeSearchItemKey, c.panSearchItemKey(item));
+    assert.equal(c.detailReturnedNativeHistoryFor(item).position, round.position);
+    assert.equal(continueText.textContent, '续播', 'each exact resume return keeps the continuation action');
+  }
+  console.log('English detail + Chinese Search + repeated exact resume returns = PASS');
+  delete c.loadRecentList;
+}
+
+{
+  const item = makeItem();
+  const { reconciled } = await runNativeSearchReturn(
+    item,
+    '可信中文名',
+    [],
+    [rawHistory('push_agent', '可信中文名', { position: 92_000, createTime: 2_400 })]
+  );
+  assert.equal(reconciled, true);
+  const originalMarker = { ...c.state.detailPlayerReturn };
+  const differentHistory = putHistory(rawHistory('other-site', '可信中文名', {
+    vodId: 'different-vod', position: 105_000, createTime: 2_450
+  }))[0];
+  const otherResourceHandoff = c.markDetailPlayerHandoff(item, differentHistory);
+  assert.equal(otherResourceHandoff.nativeHistoryKey, '', 'a different Native History key cannot inherit the prior continuation');
+  assert.equal(otherResourceHandoff.nativeSearchTitle, undefined);
+  assert.equal(otherResourceHandoff.nativeSearchItemKey, undefined);
+
+  const notExactHistory = putHistory(rawHistory('push_agent', '可信中文名', {
+    position: 105_000, exactAllowed: false, createTime: 2_460
+  }))[0];
+  c.state.detailPlayerReturn = originalMarker;
+  const notExactHandoff = c.markDetailPlayerHandoff(item, notExactHistory);
+  assert.equal(notExactHandoff.nativeHistoryKey, '', 'a same-key row without legal exact restore cannot inherit continuation');
+  assert.equal(notExactHandoff.nativeSearchTitle, undefined);
+
+  const zeroProgressHistory = putHistory(rawHistory('push_agent', '可信中文名', {
+    position: 0, exactAllowed: true, createTime: 2_470
+  }))[0];
+  c.state.detailPlayerReturn = originalMarker;
+  const zeroProgressHandoff = c.markDetailPlayerHandoff(item, zeroProgressHistory);
+  assert.equal(zeroProgressHandoff.nativeHistoryKey, '', 'a same-key row without valid progress cannot inherit continuation');
+  assert.equal(zeroProgressHandoff.nativeSearchTitle, undefined);
+
+  const otherMovie = makeItem('99');
+  setupDetail(otherMovie);
+  c.state.detailPlayerReturn = originalMarker;
+  const otherMovieHandoff = c.markDetailPlayerHandoff(otherMovie, differentHistory);
+  assert.equal(otherMovieHandoff.nativeHistoryKey, '', 'a different TMDB item cannot inherit the prior Native History key');
+  assert.equal(otherMovieHandoff.nativeSearchTitle, undefined);
+  assert.equal(otherMovieHandoff.nativeSearchItemKey, undefined);
+  console.log('same item/different Native record and different movie do not inherit continuation = PASS');
 }
 
 {
@@ -379,6 +483,15 @@ async function runNativeSearchReturn(item, searchTitle, beforeRows, afterRows, r
     [rawHistory('site-a', '可信中文名', { position: 110_000, createTime: 7_000 })]
   );
   assert.equal(reconciled, true);
+  const pinnedHistory = c.detailReturnedNativeHistoryFor(item);
+  assert.equal(pinnedHistory.title, '可信中文名');
+  c.markDetailPlayerHandoff(item, pinnedHistory);
+  c.loadRecentList = async () => {
+    putHistory(rawHistory('site-a', '可信中文名', { position: 125_000, createTime: 7_100 }));
+  };
+  assert.equal(await c.rearmDetailPlaybackAfterPlayerReturn({ playerReturn: true }), true,
+    'a second exact resume return retains its scoped identity before snapshot capture');
+  delete c.loadRecentList;
   const snapshotSource = source('22-snapshot-resume-boot.js');
   const extractFunction = (text, start, end) => {
     const begin = text.indexOf(start);
@@ -431,11 +544,29 @@ async function runNativeSearchReturn(item, searchTitle, beforeRows, afterRows, r
   const snapshot = buildSnapshot();
   assert.equal(snapshot.selected.resourceSearchTitle, '可信中文名');
   assert.equal(snapshot.detailPlayerReturn.nativeSearchTitle, '可信中文名');
+  assert.equal(snapshot.detailPlayerReturn.nativeSearchItemKey, c.panSearchItemKey(item));
   c.state.selected = null;
   c.state.detailPlayerReturn = null;
   assert.equal(await restoreSnapshot(snapshot), true);
   assert.equal(c.state.selected.tmdbId, '42');
   assert.equal(c.state.detailPlayerReturn.nativeHistoryKey, 'site-a@@@vod-7@@@7');
+  assert.equal(c.state.detailPlayerReturn.nativeSearchTitle, '可信中文名');
+  assert.equal(c.state.detailPlayerReturn.nativeSearchItemKey, c.panSearchItemKey(item));
   assert.equal(c.detailReturnedNativeHistoryFor(c.state.selected).title, '可信中文名');
+  const snapshotContinueText = { textContent: '' };
+  const snapshotButton = {
+    style: {}, dataset: {}, classList: { toggle() {} },
+    closest: () => ({ classList: { toggle() {} } }),
+    setAttribute() {}
+  };
+  c.$ = (id) => ({
+    detailContinueBtn: snapshotButton,
+    detailContinueText: snapshotContinueText,
+    detailSearchText: { textContent: '' }
+  })[id] || null;
+  c.detailDirectPlayReadyFor = () => false;
+  c.detailContinuePlayStateFor = (candidate) => c.detailReturnedNativeHistoryFor(candidate) ? 'ready' : 'idle';
+  c.updateDetailContinueButton();
+  assert.equal(snapshotContinueText.textContent, '续播', 'snapshot restoration exposes the exact cross-language continuation action');
   console.log('WebView UI snapshot restore preserves scoped cross-language Native History = PASS');
 }
