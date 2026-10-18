@@ -478,9 +478,7 @@
       const peopleBadgeHtml = hasNostrPeople
         ? `<span class="card-people" aria-label="Nostr 热度 ${escapeAttr(String(people))}"><svg class="badge-icon people-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 11a3.4 3.4 0 1 0 0-6.8 3.4 3.4 0 0 0 0 6.8zm-6.2 8.3c0-3 2.7-5 6.2-5s6.2 2 6.2 5v.7H5.8v-.7z"></path></svg><span class="badge-value">${escapeHtml(people)}</span></span>`
         : "";
-      const posterSource = landscape ? item.landscape || item.image || item.pic
-        : opts.history === true && item.source === "history" ? tvBrowseHistoryPosterSource(item) : item.pic;
-      const poster = displayImage(posterSource, { size: landscape ? "w780" : "w342" });
+      const poster = displayImage(landscape ? item.landscape || item.image || item.pic : item.pic, { size: landscape ? "w780" : "w342" });
       const posterSrc = poster || "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
       const imageOpt = {
         loading: index < initialGridBatchSize(null) ? "eager" : "lazy",

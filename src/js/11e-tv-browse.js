@@ -1379,9 +1379,8 @@
     }
 
     function tvBrowseSyncRailImagePreparation() {
-      if (!tvBrowseActive()) return false;
+      if (!tvBrowseActive() || tvBrowseState().view !== "home") return false;
       const ui = tvBrowseState(), rail = $("tvBrowseRail");
-      if (ui.view !== "home" && ui.view !== "history") return false;
       if (!rail || rail.dataset.queryKey !== tvBrowseQueryKey()) return false;
       const cards = rail.children, cardCount = cards.length;
       if (!cardCount) return false;
@@ -1416,14 +1415,9 @@
       visible.forEach((card) => {
         const image = card.querySelector("img.poster");
         if (!image) return;
-        if (ui.view === "history" && !tvBrowseHistoryPosterSource(card.__mediaItem)) return;
         if (image.hasAttribute("data-home-deferred") && image.getAttribute("data-src")) activateHomeDeferredImage(image);
         if (!(ui.railReadiness && ui.railReadiness.queryKey === tvBrowseQueryKey())) tvBrowseDecodePoster(image);
       });
-      if (ui.view === "history") {
-        visible.forEach((card) => tvBrowsePrepareHistoryCardPoster(card));
-        return true;
-      }
       const targetIndex = lastVisibleIndex + 1;
       let target = cards[targetIndex] || null;
       if (!target && lastVisibleIndex >= cards.length - 1) {
@@ -2207,120 +2201,6 @@
       const candidates = [item && item.landscape, item && item.backdrop, item && item.backdrop_path, raw.wallPic, detail && detail.backdrop_path];
       return candidates.map((value) => String(value || "").trim()).find((candidate) => candidate
         && !posterSources.some((poster) => artworkKey(poster) && artworkKey(poster) === artworkKey(candidate))) || "";
-    }
-
-    function tvBrowseHistoryPosterIsUsable(source) {
-      const value = String(source || "").trim();
-      if (!value || /^data:image\/gif;base64,R0lGODlhAQABAAD\/ACwAAAAAAQABAAACADs=/i.test(value)) return false;
-      const path = value.split(/[?#]/, 1)[0].toLowerCase();
-      return !/(?:^|[\/_.-])(?:no[._-]?(?:poster|image|img|cover)|(?:poster|image|cover)[._-]?(?:default|placeholder|none)|placeholder|default|blank|empty|unknown|icons?|logo|ic_launcher)(?:$|[\/_.-])/i.test(path);
-    }
-
-    function tvBrowseHistoryPosterSource(item) {
-      if (!item || item.source !== "history") return "";
-      const raw = item.nativeHistoryRaw || {};
-      const candidates = [raw.vodPic, raw.pic, raw.poster, item.pic, item.image, item.vodPic];
-      const poster = candidates.map((value) => String(value || "").trim()).find(tvBrowseHistoryPosterIsUsable);
-      if (poster) return poster;
-
-      // Reuse the existing trusted push-playback context match. The matched context
-      // already carries the TMDB poster captured before Native handoff; do
-      // not force another detail request just because Native stored an icon.
-      const identity = tvBrowseHistoryTmdbIdentity(item);
-      if (!identity || typeof historyPlaybackContextHint !== "function"
-        || typeof historyKeyParts !== "function" || typeof historyTitleValue !== "function") return "";
-      const hint = historyPlaybackContextHint(raw, historyKeyParts(raw), historyTitleValue(raw));
-      if (!hint || String(hint.tmdbId || "").trim() !== identity.tmdbId
-        || String(hint.mediaType || "").toLowerCase() !== identity.mediaType) return "";
-      const savedPoster = String(hint.poster || "").trim();
-      return tvBrowseHistoryPosterIsUsable(savedPoster) ? savedPoster : "";
-    }
-
-    function tvBrowseApplyHistoryPoster(card, item, posterUrl) {
-      if (!card || !item || !posterUrl || !card.querySelector) return false;
-      const image = card.querySelector("img.poster");
-      if (!image || tvBrowseHistoryPosterSource(item)) return false;
-      item.pic = posterUrl;
-      card.__mediaItem = item;
-      card.__tvBrowseRenderSignature = tvBrowseCardSignature(item);
-      image.loading = "eager";
-      image.decoding = "async";
-      delete image.dataset.tvBrowsePosterState;
-      delete image.dataset.tvBrowsePosterReadySource;
-      delete image.dataset.tvBrowsePosterDecodeState;
-      delete image.dataset.tvBrowsePosterFailedAt;
-      delete image.dataset.tvBrowseDecodePrepared;
-      delete image.dataset.tvBrowseDecodePreparedSource;
-      card.classList.remove("poster-unavailable");
-      image.setAttribute("data-src", posterUrl);
-      activateHomeDeferredImage(image, { proactive: true, decode: false });
-      tvBrowseMarkPosterState(card, image, "pending", posterUrl);
-      tvBrowseDecodePoster(image);
-      return true;
-    }
-
-    function tvBrowsePrepareHistoryCardPoster(card) {
-      const item = card && card.__mediaItem;
-      if (!card || !item || tvBrowseHistoryPosterSource(item)) return Promise.resolve(false);
-      const key = String(card.dataset.mediaKey || mediaDomKey(item));
-      const historyKey = String(item.historyStableKey || item.historyKey || key);
-      const queryKey = tvBrowseQueryKey();
-      const isCurrent = () => {
-        const ui = tvBrowseState();
-        const current = (state.recent.items || []).find((entry) => mediaDomKey(entry) === key);
-        const cardItem = card.__mediaItem;
-        return tvBrowseActive() && ui.view === "history" && tvBrowseQueryKey() === queryKey
-          && card.isConnected !== false && String(card.dataset.mediaKey || "") === key
-          && cardItem && mediaDomKey(cardItem) === key
-          && String(cardItem.historyStableKey || cardItem.historyKey || key) === historyKey
-          && current && String(current.historyStableKey || current.historyKey || key) === historyKey;
-      };
-      const identity = tvBrowseHistoryTmdbIdentity(item);
-      if (!identity) {
-        const store = state.historyContexts;
-        if (store && !store.loaded && typeof loadHistoryContextIndex === "function"
-          && typeof historyRecordReference === "function" && historyRecordReference(item)) {
-          const pending = card.__tvBrowseHistoryIdentityLookup;
-          if (pending && pending.queryKey === queryKey && pending.historyKey === historyKey) return pending.promise;
-          const promise = loadHistoryContextIndex().then(() => {
-            if (!isCurrent() || tvBrowseHistoryPosterSource(card.__mediaItem)) return false;
-            delete card.__tvBrowseHistoryIdentityLookup;
-            return tvBrowsePrepareHistoryCardPoster(card);
-          }).catch(() => false);
-          card.__tvBrowseHistoryIdentityLookup = { queryKey, historyKey, promise };
-          return promise;
-        }
-        const image = card.querySelector("img.poster");
-        if (image) tvBrowseMarkPosterState(card, image, "absent", "");
-        return Promise.resolve(false);
-      }
-      const sameIdentity = (candidate) => {
-        const resolved = tvBrowseHistoryTmdbIdentity(candidate);
-        return !!resolved && resolved.mediaType === identity.mediaType && resolved.tmdbId === identity.tmdbId;
-      };
-      const isIdentityCurrent = () => isCurrent() && sameIdentity(card.__mediaItem)
-        && sameIdentity((state.recent.items || []).find((entry) => mediaDomKey(entry) === key));
-      const detailItem = tvBrowseHistoryDetailItem(item, identity);
-      return tvBrowsePrepareDetailResource(detailItem, "foreground", isIdentityCurrent).then((result) => {
-        if (!isIdentityCurrent()) return false;
-        const detail = result && result.detail;
-        if (!detail || String(detail.id || detail.tmdbId || "") !== identity.tmdbId
-          || (detail.media_type && String(detail.media_type).toLowerCase() !== identity.mediaType)
-          || !tvBrowseHistoryPosterIsUsable(detail.poster_path)) {
-          const image = card.querySelector("img.poster");
-          if (image && !tvBrowseHistoryPosterSource(card.__mediaItem)) {
-            tvBrowseMarkPosterState(card, image, detail && detail.poster_path ? "failed" : "absent", "");
-          }
-          return false;
-        }
-        const posterUrl = displayImage(detail.poster_path, { size: "w342" });
-        if (!tvBrowseApplyHistoryPoster(card, card.__mediaItem, posterUrl)) {
-          const image = card.querySelector("img.poster");
-          if (image && !tvBrowseHistoryPosterSource(card.__mediaItem)) tvBrowseMarkPosterState(card, image, "failed", "");
-          return false;
-        }
-        return true;
-      }).catch(() => false);
     }
 
     function tvBrowsePrepareDetailResource(item, requestClass, isCurrent) {
