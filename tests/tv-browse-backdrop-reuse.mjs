@@ -9,7 +9,7 @@ const names = [
   "tvBrowseBackdropLayers", "tvBrowseClearBackdropLayer", "tvBrowseBackdropTransitionMs",
   "tvBrowseFinishDisplayedBackdropTransition", "tvBrowseStartDisplayedBackdropTransition",
   "tvBrowseClearDisplayedBackdrop", "tvBrowseSetDisplayedBackdrop", "tvBrowseHistoryTmdbIdentity",
-  "tvBrowsePreviewDetail", "tvBrowsePreviewBackgrounds", "tvBrowseCardPosterSource",
+  "tvBrowsePreviewDetail", "tvBrowsePreviewBackgrounds", "tvBrowseHistoryBackdropSource", "tvBrowseCardPosterSource",
   "tvBrowseReadyCardPoster", "tvBrowseWarmBackdropTracked", "tvBrowseWarmBackdropSettled",
   "tvBrowseStartWarmBackdrop", "tvBrowseTakeWarmBackdrop", "tvBrowseFinishPreviewImage",
   "tvBrowsePreviewFallbackImage", "tvBrowseEnsureHistoryBackdropDetail", "tvBrowseFailPreviewImage",
@@ -295,6 +295,33 @@ async function show(harness, item, prepKeys = [item.key]) {
   assert.equal(harness.stats.requests.get(item.posterUrl) || 0, 0, "the vertical poster is not requested as a background");
   assert.ok(!harness.displayWrites.some(entry => entry.url === item.posterUrl), "no poster URL is submitted to a background layer");
   console.log("TV_HISTORY_TRUSTED_BACKDROP_SOURCE = PASS");
+}
+
+// Native History's wallPic is retained as a candidate when its TMDB identity
+// is verified; a wallPic that resolves to the same TMDB image as vodPic is
+// rejected as a poster variant.
+{
+  const item = makeHistoryItem("native-wall-pic", 4111);
+  const wallPic = "https://image.tmdb.org/t/p/w1280/4111-wide.jpg";
+  item.nativeHistoryRaw.wallPic = wallPic;
+  const harness = makeHarness([item]);
+  harness.api.setView("history");
+  harness.api.tvBrowsePreview(item);
+  await waitFor(() => harness.api.ui().backdropMediaKey === item.key, "native wallPic displayed");
+  assert.equal(harness.api.ui().backdropUrl, wallPic, "verified native wallPic becomes the full-screen landscape source");
+
+  const sameArtwork = makeHistoryItem("poster-wall-pic", 4112);
+  sameArtwork.pic = "https://image.tmdb.org/t/p/w500/4112.jpg";
+  sameArtwork.image = sameArtwork.pic;
+  sameArtwork.nativeHistoryRaw.vodPic = sameArtwork.pic;
+  sameArtwork.nativeHistoryRaw.wallPic = "https://image.tmdb.org/t/p/w1280/4112.jpg";
+  const posterHarness = makeHarness([sameArtwork]);
+  posterHarness.api.setView("history");
+  posterHarness.api.tvBrowsePreview(sameArtwork);
+  await new Promise(resolve => setTimeout(resolve, 5));
+  assert.equal(posterHarness.api.ui().backdropUrl, "", "same TMDB artwork at a different size is not promoted from poster to backdrop");
+  assert.equal(posterHarness.stats.requests.get(sameArtwork.nativeHistoryRaw.wallPic) || 0, 0);
+  console.log("TV_HISTORY_NATIVE_WALLPIC_AND_POSTER_GUARD = PASS");
 }
 
 // A trusted History identity can reuse the existing shared detail path to

@@ -2177,11 +2177,20 @@
       const historyView = item && item.source === "history";
       const historyIdentity = historyView ? tvBrowseHistoryTmdbIdentity(item) : null;
       const backdrop = historyView
-        ? historyIdentity && (item.landscape || item.backdrop || item.backdrop_path || detail && detail.backdrop_path)
+        ? historyIdentity && tvBrowseHistoryBackdropSource(item, detail)
         : item.landscape || item.backdrop || item.backdrop_path || detail && detail.backdrop_path;
       const preferred = displayImage(backdrop || (!historyView && (item.image || item.pic)), { size: backdrop ? "w1280" : "w780" });
       const fallback = backdrop && !historyView ? displayImage(item.image || item.pic, { size: "w780" }) : "";
       return { preferred, urls: [preferred, fallback].filter((url, index, list) => !!url && list.indexOf(url) === index) };
+    }
+
+    function tvBrowseHistoryBackdropSource(item, detail) {
+      const raw = item && item.nativeHistoryRaw || {};
+      const artworkKey = (value) => String(value || "").trim().replace(/\/t\/p\/(?:w\d+|original)\//i, "/t/p/{size}/");
+      const posterSources = [item && item.image, item && item.pic, raw.vodPic];
+      const candidates = [item && item.landscape, item && item.backdrop, item && item.backdrop_path, raw.wallPic, detail && detail.backdrop_path];
+      return candidates.map((value) => String(value || "").trim()).find((candidate) => candidate
+        && !posterSources.some((poster) => artworkKey(poster) && artworkKey(poster) === artworkKey(candidate))) || "";
     }
 
     function tvBrowsePrepareDetailResource(item, requestClass, isCurrent) {
