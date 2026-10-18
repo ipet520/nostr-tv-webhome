@@ -17380,7 +17380,7 @@ utils.encode = function encode(arr, enc) {
       pan: { config: null, configDirty: false, loading: false, keyword: "", activeType: "", results: [], health: {}, pending: {}, queued: new Map(), inFlight: new Set(), observer: null, flushTimer: 0, pollTimers: [], pollRound: 0, pollRoundStarted: {}, panSnapshotSeq: 0, requestSeq: 0, actualRequestAttempts: 0, lifecycleSeq: 0, sessionId: 0, sessionOrigin: "", sessionItemKey: "", sessionStartedAt: 0, sessionTerminal: false, sessionTerminalReason: "", sessionEndRecorded: false, sessionStartCount: 0, sessionEndCount: 0, sessionTimer: 0, initialAttempts: 0, pollRoundsStarted: 0, pollRoundsCompleted: 0, foregroundRecoveryCount: 0, viewToken: "", searchMode: "", initialSucceeded: false, initialResultState: "", lastFailureKind: "", retryRemaining: 0, finalFailure: false, directTransportExhausted: false, renderKeys: "", tabKeys: "", checkEnabled: false, focusKey: "", focusMode: "", playbackReturn: null, progress: { active: false, phase: "", round: 0, totalRounds: 0 }, preflight: null, directReady: null, directFailure: null, sessionDiag: null, isPlaying: false },
       directPlayStatus: { active: false, actionId: 0, phase: "", text: "", startedAt: 0, clearTimer: 0 },
       watch: { item: null, timer: 0, bestMs: 0, durationMs: 0, lastAt: 0, published: false, intentAction: "", playbackTarget: null, playbackOrigin: "", nativeHistoryIdentity: null },
-      historyContexts: { loaded: false, loading: false, promise: null, entries: [], diag: null },
+      historyContexts: { loaded: false, loading: false, promise: null, entries: [], artworkLinks: [], diag: null },
       continueIndex: { loaded: false, loading: false, promise: null, entries: [], diag: null },
       recentDelete: { armedKey: "", armedCard: null, pendingKey: "", pendingCard: null, pendingTimer: 0, remotePressLocked: false, remotePressCard: null, remotePressKey: "" },
       recentManage: { active: false, selectedKeys: {}, deleting: false, deleteArmed: false, deleteArmTimer: 0 },
@@ -30086,23 +30086,33 @@ utils.encode = function encode(arr, enc) {
 
     function tvBrowsePreviewDetail(item) {
       if (!item || (item.source !== "history" && tvBrowseShouldDeferAsyncDetailPreview(item))) return null;
-      const type = String(item.mediaType || item.media_type || "").toLowerCase();
       const historyIdentity = item.source === "history" ? tvBrowseHistoryTmdbIdentity(item) : null;
       if (item.source === "history" && !historyIdentity) return null;
+      const type = String(historyIdentity && historyIdentity.mediaType || item.mediaType || item.media_type || "").toLowerCase();
+      const detailItem = historyIdentity ? Object.assign({}, item, historyIdentity) : item;
       const expectedId = historyIdentity ? historyIdentity.tmdbId : String(item.tmdbId || item.id || "");
-      const cached = (type === "movie" ? movieDetailCacheValue(item) || item.movieDetail : type === "tv" ? tvDetailCacheValue(item) || item.tvDetail : null) || item.weeklyDetail || item.heroDetail || null;
+      const cached = (type === "movie" ? movieDetailCacheValue(detailItem) || item.movieDetail : type === "tv" ? tvDetailCacheValue(detailItem) || item.tvDetail : null) || item.weeklyDetail || item.heroDetail || null;
       return cached && String(cached.id || cached.tmdbId || "") === expectedId && (!cached.media_type || cached.media_type === type) ? cached : null;
     }
 
     function tvBrowseHistoryTmdbIdentity(item) {
       if (!item || item.source !== "history") return null;
-      const type = String(item.mediaType || item.media_type || "").toLowerCase();
-      const id = movieDetailCacheId(item);
-      if (!/^(movie|tv)$/.test(type) || !id) return null;
-      const context = historyPlaybackContext(item.nativeHistoryRaw || item);
-      return context && String(context.tmdbId || "") === id && String(context.mediaType || "").toLowerCase() === type
-        ? { mediaType: type, tmdbId: id }
-        : null;
+      const context = historyPlaybackContext(item.nativeHistoryRaw || item) || {};
+      const type = String(item.mediaType || item.media_type || context.mediaType || "").toLowerCase();
+      const id = String(item.tmdbId || context.tmdbId || "").trim();
+      const direct = /^(movie|tv)$/.test(type) && /^\d+$/.test(id) ? { mediaType: type, tmdbId: id } : null;
+      const contextType = String(context.mediaType || "").toLowerCase();
+      const contextId = String(context.tmdbId || "").trim();
+      if (direct && (contextType && contextType !== direct.mediaType || contextId && contextId !== direct.tmdbId)) return null;
+      const linked = typeof historyArtworkIdentityFor === "function" ? historyArtworkIdentityFor(item) : null;
+      if (direct && linked && (direct.mediaType !== linked.mediaType || direct.tmdbId !== linked.tmdbId)) return null;
+      if (direct) return direct;
+      if (linked && (!type || type === linked.mediaType) && (!id || id === linked.tmdbId)) return linked;
+      return null;
+    }
+
+    function tvBrowseHistoryDetailItem(item, identity) {
+      return identity ? Object.assign({}, item, { mediaType: identity.mediaType, tmdbId: identity.tmdbId }) : item;
     }
 
     function tvBrowsePreviewBackgrounds(item, detail) {
@@ -30165,19 +30175,9 @@ utils.encode = function encode(arr, enc) {
     function tvBrowsePrepareHistoryCardPoster(card) {
       const item = card && card.__mediaItem;
       if (!card || !item || tvBrowseHistoryPosterSource(item)) return Promise.resolve(false);
-      const identity = tvBrowseHistoryTmdbIdentity(item);
-      if (!identity) {
-        const image = card.querySelector("img.poster");
-        if (image) tvBrowseMarkPosterState(card, image, "absent", "");
-        return Promise.resolve(false);
-      }
       const key = String(card.dataset.mediaKey || mediaDomKey(item));
       const historyKey = String(item.historyStableKey || item.historyKey || key);
       const queryKey = tvBrowseQueryKey();
-      const sameIdentity = (candidate) => {
-        const resolved = tvBrowseHistoryTmdbIdentity(candidate);
-        return !!resolved && resolved.mediaType === identity.mediaType && resolved.tmdbId === identity.tmdbId;
-      };
       const isCurrent = () => {
         const ui = tvBrowseState();
         const current = (state.recent.items || []).find((entry) => mediaDomKey(entry) === key);
@@ -30186,11 +30186,36 @@ utils.encode = function encode(arr, enc) {
           && card.isConnected !== false && String(card.dataset.mediaKey || "") === key
           && cardItem && mediaDomKey(cardItem) === key
           && String(cardItem.historyStableKey || cardItem.historyKey || key) === historyKey
-          && current && String(current.historyStableKey || current.historyKey || key) === historyKey
-          && sameIdentity(cardItem) && sameIdentity(current);
+          && current && String(current.historyStableKey || current.historyKey || key) === historyKey;
       };
-      return tvBrowsePrepareDetailResource(item, "foreground", isCurrent).then((result) => {
-        if (!isCurrent()) return false;
+      const identity = tvBrowseHistoryTmdbIdentity(item);
+      if (!identity) {
+        const store = state.historyContexts;
+        if (store && !store.loaded && typeof loadHistoryContextIndex === "function"
+          && typeof historyRecordReference === "function" && historyRecordReference(item)) {
+          const pending = card.__tvBrowseHistoryIdentityLookup;
+          if (pending && pending.queryKey === queryKey && pending.historyKey === historyKey) return pending.promise;
+          const promise = loadHistoryContextIndex().then(() => {
+            if (!isCurrent() || tvBrowseHistoryPosterSource(card.__mediaItem)) return false;
+            delete card.__tvBrowseHistoryIdentityLookup;
+            return tvBrowsePrepareHistoryCardPoster(card);
+          }).catch(() => false);
+          card.__tvBrowseHistoryIdentityLookup = { queryKey, historyKey, promise };
+          return promise;
+        }
+        const image = card.querySelector("img.poster");
+        if (image) tvBrowseMarkPosterState(card, image, "absent", "");
+        return Promise.resolve(false);
+      }
+      const sameIdentity = (candidate) => {
+        const resolved = tvBrowseHistoryTmdbIdentity(candidate);
+        return !!resolved && resolved.mediaType === identity.mediaType && resolved.tmdbId === identity.tmdbId;
+      };
+      const isIdentityCurrent = () => isCurrent() && sameIdentity(card.__mediaItem)
+        && sameIdentity((state.recent.items || []).find((entry) => mediaDomKey(entry) === key));
+      const detailItem = tvBrowseHistoryDetailItem(item, identity);
+      return tvBrowsePrepareDetailResource(detailItem, "foreground", isIdentityCurrent).then((result) => {
+        if (!isIdentityCurrent()) return false;
         const detail = result && result.detail;
         if (!detail || String(detail.id || detail.tmdbId || "") !== identity.tmdbId
           || (detail.media_type && String(detail.media_type).toLowerCase() !== identity.mediaType)
@@ -30244,11 +30269,23 @@ utils.encode = function encode(arr, enc) {
 
     function tvBrowseEnsureHistoryBackdropDetail(item, key, previewToken) {
       const identity = tvBrowseHistoryTmdbIdentity(item);
-      if (!identity) return false;
       const ui = tvBrowseState(), queryKey = tvBrowseQueryKey();
       const isCurrent = () => tvBrowseActive() && ui.view === "history" && tvBrowseQueryKey() === queryKey
         && ui.previewKey === key && ui.backdropToken === previewToken;
-      tvBrowsePrepareDetailResource(item, "foreground", isCurrent).then((result) => {
+      if (!identity) {
+        const store = state.historyContexts;
+        if (!store || store.loaded || typeof loadHistoryContextIndex !== "function"
+          || typeof historyRecordReference !== "function" || !historyRecordReference(item)) return false;
+        const pending = item.__tvBrowseHistoryIdentityLookup;
+        if (pending && pending.queryKey === queryKey && pending.key === key) return true;
+        const promise = loadHistoryContextIndex().then(() => {
+          if (isCurrent() && tvBrowseHistoryTmdbIdentity(item)) tvBrowsePreview(item, { direction: ui.previewDirection });
+        }).catch(() => {});
+        item.__tvBrowseHistoryIdentityLookup = { queryKey, key, promise };
+        return true;
+      }
+      const detailItem = tvBrowseHistoryDetailItem(item, identity);
+      tvBrowsePrepareDetailResource(detailItem, "foreground", isCurrent).then((result) => {
         const detail = result && result.detail;
         if (!isCurrent() || !detail || !detail.backdrop_path
           || String(detail.id || detail.tmdbId || "") !== identity.tmdbId
@@ -33389,7 +33426,7 @@ utils.encode = function encode(arr, enc) {
     }
 
     async function loadHistoryContextIndex() {
-      const store = state.historyContexts || (state.historyContexts = { loaded: false, loading: false, promise: null, entries: [], diag: null });
+      const store = state.historyContexts || (state.historyContexts = { loaded: false, loading: false, promise: null, entries: [], artworkLinks: [], diag: null });
       if (store.loaded) return store;
       if (store.loading && store.promise) return store.promise;
       store.loading = true;
@@ -33399,10 +33436,13 @@ utils.encode = function encode(arr, enc) {
           const entries = saved && Array.isArray(saved.entries) ? saved.entries : [];
           const pruned = pruneRecentWatchingEntries(entries, Date.now());
           store.entries = pruned.entries;
+          const artwork = pruneHistoryArtworkLinks(saved && saved.artworkLinks, Date.now());
+          store.artworkLinks = artwork.links;
           store.diag = pruned;
-          if (pruned.changed) await persistHistoryContextEntries(store.entries);
+          if (pruned.changed || artwork.changed) await persistHistoryContextEntries(store.entries);
         } catch (e) {
           store.entries = [];
+          store.artworkLinks = [];
           store.diag = { rawCount: 0, keptCount: 0, mediaCount: 0, changed: false, error: String(e && e.message || "") };
         }
         store.loaded = true;
@@ -33411,6 +33451,91 @@ utils.encode = function encode(arr, enc) {
         return store;
       })();
       return store.promise;
+    }
+
+    function historyArtworkReferenceKey(value) {
+      const ref = value && value.historyRecordRef ? historyRecordReference(value) : historyRecordReference({ historyRecordRef: value });
+      if (!ref) return "";
+      return JSON.stringify([ref.version, ref.kind, ref.historyKey, ref.cid, ref.siteKey, ref.vodId,
+        ref.kind === "SEASON" ? ref.mediaType : "", ref.kind === "SEASON" ? ref.tmdbId : 0,
+        ref.kind === "SEASON" ? ref.seasonNumber : -1]);
+    }
+
+    function pruneHistoryArtworkLinks(links, now) {
+      const timestamp = Number(now || Date.now());
+      const raw = Array.isArray(links) ? links : [];
+      const byAssociation = new Map();
+      raw.forEach((entry, index) => {
+        if (!entry || typeof entry !== "object") return;
+        const ref = historyRecordReference({ historyRecordRef: entry.ref });
+        const refKey = historyArtworkReferenceKey(ref);
+        const tmdbId = String(entry.tmdbId || "").trim();
+        const mediaType = normalizeHistoryMediaType(entry.mediaType);
+        const nativeTitle = normalizeTitle(entry.nativeTitle || "");
+        const searchTitle = normalizeTitle(entry.searchTitle || "");
+        const updatedAt = Number(entry.updatedAt || 0);
+        if (!ref || ref.kind !== "ITEM" || !refKey || !/^\d+$/.test(tmdbId) || !mediaType
+          || !nativeTitle || nativeTitle !== searchTitle || !String(entry.itemKey || "").trim()
+          || !(updatedAt > 0) || timestamp - updatedAt > RECENT_MAX_AGE_MS) return;
+        const normalized = { version: 1, updatedAt, ref, tmdbId, mediaType, nativeTitle, searchTitle,
+          itemKey: String(entry.itemKey).trim() };
+        const associationKey = JSON.stringify([refKey, mediaType, tmdbId, nativeTitle, searchTitle]);
+        const current = byAssociation.get(associationKey);
+        if (!current || normalized.updatedAt > current.updatedAt || normalized.updatedAt === current.updatedAt && index < current.index) {
+          byAssociation.set(associationKey, Object.assign({ index }, normalized));
+        }
+      });
+      const kept = Array.from(byAssociation.values())
+        .sort((a, b) => b.updatedAt - a.updatedAt || a.index - b.index)
+        .slice(0, RECENT_MAX_MEDIA)
+        .map((entry) => ({ version: entry.version, updatedAt: entry.updatedAt, ref: entry.ref,
+          tmdbId: entry.tmdbId, mediaType: entry.mediaType, nativeTitle: entry.nativeTitle,
+          searchTitle: entry.searchTitle, itemKey: entry.itemKey }));
+      return { links: kept, changed: raw.length !== kept.length
+        || raw.some((entry, index) => JSON.stringify(entry) !== JSON.stringify(kept[index])) };
+    }
+
+    function historyArtworkIdentityFor(history) {
+      const store = state.historyContexts;
+      const ref = historyRecordReference(history);
+      const refKey = historyArtworkReferenceKey(ref);
+      const raw = history && history.nativeHistoryRaw && typeof history.nativeHistoryRaw === "object"
+        ? history.nativeHistoryRaw : history;
+      const nativeTitle = normalizeTitle(historyTitleValue(raw));
+      if (!store || !store.loaded || !ref || !refKey || ref.kind !== "ITEM" || !nativeTitle) return null;
+      const matches = (Array.isArray(store.artworkLinks) ? store.artworkLinks : []).filter((entry) =>
+        historyArtworkReferenceKey(entry && entry.ref) === refKey
+          && entry.nativeTitle === nativeTitle && entry.searchTitle === nativeTitle);
+      if (!matches.length) return null;
+      const identities = new Set(matches.map((entry) => `${entry.mediaType}:${entry.tmdbId}`));
+      if (identities.size !== 1) return null;
+      const best = matches.slice().sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))[0];
+      return { mediaType: best.mediaType, tmdbId: best.tmdbId };
+    }
+
+    async function rememberHistoryArtworkIdentity(item, history, searchTitle, itemKey) {
+      const ref = historyRecordReference(history);
+      const raw = history && history.nativeHistoryRaw && typeof history.nativeHistoryRaw === "object"
+        ? history.nativeHistoryRaw : history;
+      const nativeTitle = normalizeTitle(historyTitleValue(raw));
+      const trustedSearchTitle = normalizeTitle(searchTitle);
+      const tmdbId = String(item && item.tmdbId || "").trim();
+      const mediaType = normalizeHistoryMediaType(item && (item.mediaType || item.media_type));
+      const expectedItemKey = String(itemKey || "").trim();
+      if (!ref || ref.kind !== "ITEM" || !nativeTitle || nativeTitle !== trustedSearchTitle
+        || !/^\d+$/.test(tmdbId) || !mediaType || !expectedItemKey
+        || expectedItemKey !== panSearchItemKey(item)) return false;
+      await loadHistoryContextIndex();
+      const store = state.historyContexts;
+      if (store.diag && store.diag.error) return false;
+      const entry = { version: 1, updatedAt: Date.now(), ref, tmdbId, mediaType,
+        nativeTitle, searchTitle: trustedSearchTitle, itemKey: expectedItemKey };
+      const refKey = historyArtworkReferenceKey(ref);
+      store.artworkLinks = pruneHistoryArtworkLinks([entry].concat((store.artworkLinks || []).filter((old) =>
+        !(historyArtworkReferenceKey(old && old.ref) === refKey && old.nativeTitle === nativeTitle
+          && old.mediaType === mediaType && old.tmdbId === tmdbId))), entry.updatedAt).links;
+      await persistHistoryContextEntries(store.entries || []);
+      return true;
     }
 
     function continueIndexMediaKey(item, target) {
@@ -33839,7 +33964,10 @@ utils.encode = function encode(arr, enc) {
     }
 
     async function persistHistoryContextEntries(entries) {
-      await sdk().cache.set(cacheKey("historyContext"), JSON.stringify({ version: 1, entries: Array.isArray(entries) ? entries : [] }));
+      const store = state.historyContexts || {};
+      await sdk().cache.set(cacheKey("historyContext"), JSON.stringify({ version: 1,
+        entries: Array.isArray(entries) ? entries : [],
+        artworkLinks: Array.isArray(store.artworkLinks) ? store.artworkLinks : [] }));
     }
 
     function normalizeRecentWatchingContext(entry, index) {
@@ -42077,6 +42205,10 @@ nsec: ${state.identity.nsec}` : "身份未就绪";
         if (history && changed) {
           retireDetailPreparedPlaybackAfterNativeSearch(item, marker,
             nativeSearchHistoryChangeReason(item, marker, history) || "native_search_authoritative_history");
+          try {
+            const artworkLink = rememberHistoryArtworkIdentity(item, history, marker.searchTitle, marker.itemKey);
+            if (artworkLink && typeof artworkLink.catch === "function") artworkLink.catch(() => {});
+          } catch (error) {}
           state.detailPlayerReturn = {
             itemKey: panSearchItemKey(item),
             handoffStarted: false,

@@ -6,7 +6,7 @@ const source = readFileSync(new URL("../src/js/11e-tv-browse.js", import.meta.ur
 const cardSource = readFileSync(new URL("../src/js/14-grid-card-focus.js", import.meta.url), "utf8");
 const names = [
   "tvBrowseHistoryTmdbIdentity", "tvBrowseHistoryPosterIsUsable", "tvBrowseHistoryPosterSource",
-  "tvBrowseApplyHistoryPoster", "tvBrowsePrepareHistoryCardPoster"
+  "tvBrowseHistoryDetailItem", "tvBrowseApplyHistoryPoster", "tvBrowsePrepareHistoryCardPoster"
 ];
 
 function extract(name) {
@@ -53,7 +53,10 @@ function makeHarness(item) {
     function tvBrowseQueryKey() { return __queryKey; }
     function mediaDomKey(item) { return item && item.id || ""; }
     function movieDetailCacheId(item) { return String(item && (item.tmdbId || item.id) || ""); }
-    function historyPlaybackContext(raw) { return raw && raw.context || null; }
+    function historyPlaybackContext(raw) {
+      return raw && (raw.context || (raw.tmdbId ? { tmdbId: raw.tmdbId, mediaType: raw.mediaType } : null)) || null;
+    }
+    function historyArtworkIdentityFor() { return null; }
     function tvBrowsePrepareDetailResource(item, requestClass, isCurrent) {
       __requests.push({ item, requestClass, current: isCurrent() });
       return __detailLoader(item, requestClass, isCurrent);
@@ -94,13 +97,17 @@ function makeHarness(item) {
 
 function historyItem(overrides = {}) {
   const poster = "https://vod.example.test/images/default-poster.png";
+  const nativeHistoryRaw = overrides.nativeHistoryRaw || {
+    tmdbId: "9301", mediaType: "movie", vodName: "The Apothecary Diaries",
+    vodPic: poster, wallPic: "https://vod.example.test/images/wide-wall.jpg"
+  };
+  const identity = nativeHistoryRaw.context || nativeHistoryRaw;
   return Object.assign({
     id: "history:push-1", source: "history", historyKey: "push-1", historyStableKey: "push-1",
-    title: "The Apothecary Diaries", mediaType: "movie", tmdbId: "9301", pic: poster, image: poster,
+    title: "The Apothecary Diaries", mediaType: identity.mediaType || "", tmdbId: identity.tmdbId || "", pic: poster, image: poster,
     landscape: "https://vod.example.test/images/wide-wall.jpg",
-    nativeHistoryRaw: { vodPic: poster, wallPic: "https://vod.example.test/images/wide-wall.jpg",
-      context: { title: "药屋少女的呢喃", tmdbId: "9301", mediaType: "movie" } }
-  }, overrides);
+    nativeHistoryRaw
+  }, overrides, { nativeHistoryRaw });
 }
 
 // The TV History rail sends only visible rows through the existing shared
@@ -123,7 +130,8 @@ assert.match(cardSource, /opts\.history === true && item\.source === "history" \
   let requestCount = 0;
   harness.api.setDetailLoader(async (requested, requestClass, isCurrent) => {
     requestCount += 1;
-    assert.equal(requested, item);
+    assert.equal(requested.tmdbId, item.tmdbId);
+    assert.equal(requested.mediaType, item.mediaType);
     assert.equal(requestClass, "foreground");
     assert.equal(isCurrent(), true);
     return { state: "ready", detail: {
@@ -197,7 +205,9 @@ for (const [label, context] of [
   ["missing", { title: "药屋少女的呢喃" }],
   ["conflicting", { title: "The Apothecary Diaries", tmdbId: "9302", mediaType: "movie" }]
 ]) {
-  const item = historyItem({ nativeHistoryRaw: { wallPic: "https://vod.example.test/images/wide-wall.jpg", context } });
+  const item = historyItem(Object.assign(label === "conflicting" ? { tmdbId: "9301", mediaType: "movie" } : {}, {
+    nativeHistoryRaw: { wallPic: "https://vod.example.test/images/wide-wall.jpg", context }
+  }));
   const harness = makeHarness(item);
   harness.api.setDetailLoader(() => { assert.fail("untrusted History identity must not request TMDB details"); });
   assert.equal(await harness.api.tvBrowsePrepareHistoryCardPoster(harness.card), false);
@@ -205,6 +215,24 @@ for (const [label, context] of [
   assert.equal(harness.api.classHas("poster-unavailable"), true, `${label} identity retains the existing placeholder state`);
 }
 console.log("TV_HISTORY_UNTRUSTED_IDENTITY_NO_POSTER_LOOKUP = PASS");
+
+// A push History row with no native poster can use its own serialized,
+// explicit TMDB identity. This is independent of the site-source association above.
+{
+  const raw = { tmdbId: "9301", mediaType: "movie", vodName: "推送影片",
+    vodPic: "", wallPic: "https://vod.example.test/images/push-backdrop.jpg" };
+  const item = historyItem({ title: "推送影片", nativeHistoryRaw: raw, pic: "", image: "", landscape: raw.wallPic });
+  const harness = makeHarness(item);
+  harness.api.setDetailLoader(async requested => ({ state: "ready", detail: {
+    id: 9301, media_type: "movie", poster_path: "/push-poster.jpg", backdrop_path: "/push-backdrop.jpg"
+  } }));
+  assert.equal(harness.api.tvBrowseHistoryTmdbIdentity(item).tmdbId, "9301",
+    "push poster completion uses identity carried by that push record, not the site-source artwork link");
+  assert.equal(await harness.api.tvBrowsePrepareHistoryCardPoster(harness.card), true);
+  assert.equal(harness.image.src, "https://image.tmdb.org/t/p/w342/push-poster.jpg");
+  assert.equal(item.nativeHistoryRaw.vodPic, "", "completion is HTML-only and does not write to Native History");
+  console.log("TV_HISTORY_PUSH_DIRECT_IDENTITY_FROM_NATIVE_RECORD = PASS");
+}
 
 // An async detail that arrives after query change or deletion cannot paint a
 // stale History card.

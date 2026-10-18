@@ -2160,23 +2160,33 @@
 
     function tvBrowsePreviewDetail(item) {
       if (!item || (item.source !== "history" && tvBrowseShouldDeferAsyncDetailPreview(item))) return null;
-      const type = String(item.mediaType || item.media_type || "").toLowerCase();
       const historyIdentity = item.source === "history" ? tvBrowseHistoryTmdbIdentity(item) : null;
       if (item.source === "history" && !historyIdentity) return null;
+      const type = String(historyIdentity && historyIdentity.mediaType || item.mediaType || item.media_type || "").toLowerCase();
+      const detailItem = historyIdentity ? Object.assign({}, item, historyIdentity) : item;
       const expectedId = historyIdentity ? historyIdentity.tmdbId : String(item.tmdbId || item.id || "");
-      const cached = (type === "movie" ? movieDetailCacheValue(item) || item.movieDetail : type === "tv" ? tvDetailCacheValue(item) || item.tvDetail : null) || item.weeklyDetail || item.heroDetail || null;
+      const cached = (type === "movie" ? movieDetailCacheValue(detailItem) || item.movieDetail : type === "tv" ? tvDetailCacheValue(detailItem) || item.tvDetail : null) || item.weeklyDetail || item.heroDetail || null;
       return cached && String(cached.id || cached.tmdbId || "") === expectedId && (!cached.media_type || cached.media_type === type) ? cached : null;
     }
 
     function tvBrowseHistoryTmdbIdentity(item) {
       if (!item || item.source !== "history") return null;
-      const type = String(item.mediaType || item.media_type || "").toLowerCase();
-      const id = movieDetailCacheId(item);
-      if (!/^(movie|tv)$/.test(type) || !id) return null;
-      const context = historyPlaybackContext(item.nativeHistoryRaw || item);
-      return context && String(context.tmdbId || "") === id && String(context.mediaType || "").toLowerCase() === type
-        ? { mediaType: type, tmdbId: id }
-        : null;
+      const context = historyPlaybackContext(item.nativeHistoryRaw || item) || {};
+      const type = String(item.mediaType || item.media_type || context.mediaType || "").toLowerCase();
+      const id = String(item.tmdbId || context.tmdbId || "").trim();
+      const direct = /^(movie|tv)$/.test(type) && /^\d+$/.test(id) ? { mediaType: type, tmdbId: id } : null;
+      const contextType = String(context.mediaType || "").toLowerCase();
+      const contextId = String(context.tmdbId || "").trim();
+      if (direct && (contextType && contextType !== direct.mediaType || contextId && contextId !== direct.tmdbId)) return null;
+      const linked = typeof historyArtworkIdentityFor === "function" ? historyArtworkIdentityFor(item) : null;
+      if (direct && linked && (direct.mediaType !== linked.mediaType || direct.tmdbId !== linked.tmdbId)) return null;
+      if (direct) return direct;
+      if (linked && (!type || type === linked.mediaType) && (!id || id === linked.tmdbId)) return linked;
+      return null;
+    }
+
+    function tvBrowseHistoryDetailItem(item, identity) {
+      return identity ? Object.assign({}, item, { mediaType: identity.mediaType, tmdbId: identity.tmdbId }) : item;
     }
 
     function tvBrowsePreviewBackgrounds(item, detail) {
@@ -2239,19 +2249,9 @@
     function tvBrowsePrepareHistoryCardPoster(card) {
       const item = card && card.__mediaItem;
       if (!card || !item || tvBrowseHistoryPosterSource(item)) return Promise.resolve(false);
-      const identity = tvBrowseHistoryTmdbIdentity(item);
-      if (!identity) {
-        const image = card.querySelector("img.poster");
-        if (image) tvBrowseMarkPosterState(card, image, "absent", "");
-        return Promise.resolve(false);
-      }
       const key = String(card.dataset.mediaKey || mediaDomKey(item));
       const historyKey = String(item.historyStableKey || item.historyKey || key);
       const queryKey = tvBrowseQueryKey();
-      const sameIdentity = (candidate) => {
-        const resolved = tvBrowseHistoryTmdbIdentity(candidate);
-        return !!resolved && resolved.mediaType === identity.mediaType && resolved.tmdbId === identity.tmdbId;
-      };
       const isCurrent = () => {
         const ui = tvBrowseState();
         const current = (state.recent.items || []).find((entry) => mediaDomKey(entry) === key);
@@ -2260,11 +2260,36 @@
           && card.isConnected !== false && String(card.dataset.mediaKey || "") === key
           && cardItem && mediaDomKey(cardItem) === key
           && String(cardItem.historyStableKey || cardItem.historyKey || key) === historyKey
-          && current && String(current.historyStableKey || current.historyKey || key) === historyKey
-          && sameIdentity(cardItem) && sameIdentity(current);
+          && current && String(current.historyStableKey || current.historyKey || key) === historyKey;
       };
-      return tvBrowsePrepareDetailResource(item, "foreground", isCurrent).then((result) => {
-        if (!isCurrent()) return false;
+      const identity = tvBrowseHistoryTmdbIdentity(item);
+      if (!identity) {
+        const store = state.historyContexts;
+        if (store && !store.loaded && typeof loadHistoryContextIndex === "function"
+          && typeof historyRecordReference === "function" && historyRecordReference(item)) {
+          const pending = card.__tvBrowseHistoryIdentityLookup;
+          if (pending && pending.queryKey === queryKey && pending.historyKey === historyKey) return pending.promise;
+          const promise = loadHistoryContextIndex().then(() => {
+            if (!isCurrent() || tvBrowseHistoryPosterSource(card.__mediaItem)) return false;
+            delete card.__tvBrowseHistoryIdentityLookup;
+            return tvBrowsePrepareHistoryCardPoster(card);
+          }).catch(() => false);
+          card.__tvBrowseHistoryIdentityLookup = { queryKey, historyKey, promise };
+          return promise;
+        }
+        const image = card.querySelector("img.poster");
+        if (image) tvBrowseMarkPosterState(card, image, "absent", "");
+        return Promise.resolve(false);
+      }
+      const sameIdentity = (candidate) => {
+        const resolved = tvBrowseHistoryTmdbIdentity(candidate);
+        return !!resolved && resolved.mediaType === identity.mediaType && resolved.tmdbId === identity.tmdbId;
+      };
+      const isIdentityCurrent = () => isCurrent() && sameIdentity(card.__mediaItem)
+        && sameIdentity((state.recent.items || []).find((entry) => mediaDomKey(entry) === key));
+      const detailItem = tvBrowseHistoryDetailItem(item, identity);
+      return tvBrowsePrepareDetailResource(detailItem, "foreground", isIdentityCurrent).then((result) => {
+        if (!isIdentityCurrent()) return false;
         const detail = result && result.detail;
         if (!detail || String(detail.id || detail.tmdbId || "") !== identity.tmdbId
           || (detail.media_type && String(detail.media_type).toLowerCase() !== identity.mediaType)
@@ -2318,11 +2343,23 @@
 
     function tvBrowseEnsureHistoryBackdropDetail(item, key, previewToken) {
       const identity = tvBrowseHistoryTmdbIdentity(item);
-      if (!identity) return false;
       const ui = tvBrowseState(), queryKey = tvBrowseQueryKey();
       const isCurrent = () => tvBrowseActive() && ui.view === "history" && tvBrowseQueryKey() === queryKey
         && ui.previewKey === key && ui.backdropToken === previewToken;
-      tvBrowsePrepareDetailResource(item, "foreground", isCurrent).then((result) => {
+      if (!identity) {
+        const store = state.historyContexts;
+        if (!store || store.loaded || typeof loadHistoryContextIndex !== "function"
+          || typeof historyRecordReference !== "function" || !historyRecordReference(item)) return false;
+        const pending = item.__tvBrowseHistoryIdentityLookup;
+        if (pending && pending.queryKey === queryKey && pending.key === key) return true;
+        const promise = loadHistoryContextIndex().then(() => {
+          if (isCurrent() && tvBrowseHistoryTmdbIdentity(item)) tvBrowsePreview(item, { direction: ui.previewDirection });
+        }).catch(() => {});
+        item.__tvBrowseHistoryIdentityLookup = { queryKey, key, promise };
+        return true;
+      }
+      const detailItem = tvBrowseHistoryDetailItem(item, identity);
+      tvBrowsePrepareDetailResource(detailItem, "foreground", isCurrent).then((result) => {
         const detail = result && result.detail;
         if (!isCurrent() || !detail || !detail.backdrop_path
           || String(detail.id || detail.tmdbId || "") !== identity.tmdbId

@@ -8,7 +8,7 @@ const names = [
   "tvBrowseEnsureWarmBackdrop", "tvBrowseWaitWarmBackdrop", "tvBrowseCancelWarmBackdrop",
   "tvBrowseBackdropLayers", "tvBrowseClearBackdropLayer", "tvBrowseBackdropTransitionMs",
   "tvBrowseFinishDisplayedBackdropTransition", "tvBrowseStartDisplayedBackdropTransition",
-  "tvBrowseClearDisplayedBackdrop", "tvBrowseSetDisplayedBackdrop", "tvBrowseHistoryTmdbIdentity",
+  "tvBrowseClearDisplayedBackdrop", "tvBrowseSetDisplayedBackdrop", "tvBrowseHistoryTmdbIdentity", "tvBrowseHistoryDetailItem",
   "tvBrowsePreviewDetail", "tvBrowsePreviewBackgrounds", "tvBrowseHistoryBackdropSource", "tvBrowseCardPosterSource",
   "tvBrowseReadyCardPoster", "tvBrowseWarmBackdropTracked", "tvBrowseWarmBackdropSettled",
   "tvBrowseStartWarmBackdrop", "tvBrowseTakeWarmBackdrop", "tvBrowseFinishPreviewImage",
@@ -106,6 +106,7 @@ function makeHarness(items, imagePlan = {}) {
 
   const layers = { tvBrowseBackdrop: new FakeLayer(), tvBrowseBackdropNext: new FakeLayer() };
   const stub = `
+    const state = { historyContexts: { loaded: true, artworkLinks: [] } };
     let runtimeUi = __ui, runtimeWall = __wall, runtimeQuery = __query;
     function tvBrowseState() { return runtimeUi; }
     function $(id) { const key = String(id).replace(/^#/, ""); return key === "tvBrowseRail" ? __rail : __layers[key] || null; }
@@ -124,6 +125,7 @@ function makeHarness(items, imagePlan = {}) {
     function movieDetailCacheValue(item) { return detailCache.get("movie:" + movieDetailCacheId(item)) || null; }
     function tvDetailCacheValue(item) { return detailCache.get("tv:" + movieDetailCacheId(item)) || null; }
     function historyPlaybackContext(history) { return history && history.context || null; }
+    function historyArtworkIdentityFor() { return null; }
     function displayImage(source, options) { if (!source) return ""; displayCalls.push({ source: String(source), size: options && options.size || "" }); return String(source); }
     function tvBrowsePrepareDetailResource(item, requestClass, isCurrent) {
       return globalThis.__detailLoader ? globalThis.__detailLoader(item, requestClass, isCurrent) : Promise.resolve({ state: "failed", detail: null });
@@ -359,7 +361,9 @@ async function show(harness, item, prepKeys = [item.key]) {
   let requestCount = 0;
   harness.api.setDetailLoader((requested, requestClass, isCurrent) => {
     requestCount += 1;
-    assert.equal(requested, item);
+    assert.equal(requested.id, item.id);
+    assert.equal(requested.tmdbId, item.tmdbId);
+    assert.equal(requested.mediaType, item.mediaType);
     assert.equal(requestClass, "foreground", "the selected History row uses the existing foreground detail path");
     assert.equal(isCurrent(), true, "the current History identity passes the existing stale-result guard");
     return new Promise(resolve => { resolveDetail = resolve; });

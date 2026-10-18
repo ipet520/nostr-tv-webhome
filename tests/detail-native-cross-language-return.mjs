@@ -4,6 +4,7 @@ import vm from 'node:vm';
 
 const source = (name) => fs.readFileSync(new URL('../src/js/' + name, import.meta.url), 'utf8');
 const store = new Map();
+const historyCache = new Map();
 const rawHistory = (siteKey, title, options = {}) => ({
   key: `${siteKey}@@@${options.vodId || 'vod-7'}@@@7`,
   cid: 7,
@@ -52,12 +53,19 @@ const c = vm.createContext({
     detailPlayerReturn: null,
     detailEpisodeTarget: null,
     recent: { items: [], detailItems: [], loaded: true, error: '', loading: false, loadingPromise: null },
-    historyContexts: { loaded: true, entries: [] },
+    historyContexts: { loaded: true, entries: [], artworkLinks: [] },
     continueIndex: { loaded: true, entries: [] },
     watch: { item: null },
     pan: { playbackReturn: null, directReady: null, directFailure: null }
   },
   normalizeTitle: (value) => String(value || '').trim().toLowerCase(),
+  RECENT_MAX_MEDIA: 100,
+  RECENT_MAX_AGE_MS: 180 * 24 * 60 * 60 * 1000,
+  HISTORY_CONTEXT_TTL_MS: 30 * 24 * 60 * 60 * 1000,
+  MOVIE_DETAIL_CACHE_TTL_MS: 45 * 60 * 1000,
+  TV_DETAIL_CACHE_TTL_MS: 45 * 60 * 1000,
+  safeJson(text, fallback) { try { return JSON.parse(text || ''); } catch { return fallback; } },
+  cacheKey: key => key,
   resolvePanProviderForHistory: () => '',
   isTvDiagnosticEnabled: () => false,
   isExpiredPosterSource: () => false,
@@ -172,7 +180,13 @@ async function runNativeSearchReturn(item, searchTitle, beforeRows, afterRows, r
   const searchCalls = [];
   c.rememberDetailReturn = () => {};
   c.toast = () => {};
-  c.sdk = () => ({ search: async (...args) => { searchCalls.push(args); } });
+  c.sdk = () => ({
+    search: async (...args) => { searchCalls.push(args); },
+    cache: {
+      async get(key) { return historyCache.has(key) ? historyCache.get(key) : null; },
+      async set(key, value) { historyCache.set(key, String(value)); return true; }
+    }
+  });
   await c.nativeSearch(searchTitle);
   assert.deepEqual(JSON.parse(JSON.stringify(searchCalls)), [[searchTitle, { direct: true }]], 'Native Search receives the same trusted title saved on its return marker');
   const marker = JSON.parse(store.get('fm_detail_native_search_return'));
@@ -184,6 +198,13 @@ async function runNativeSearchReturn(item, searchTitle, beforeRows, afterRows, r
 
 {
   const item = makeItem();
+  const artworkWrites = [];
+  const rememberArtwork = c.rememberHistoryArtworkIdentity;
+  c.rememberHistoryArtworkIdentity = (...args) => {
+    const promise = rememberArtwork(...args);
+    artworkWrites.push({ args, promise });
+    return promise;
+  };
   const { continueText, button, reconciled, marker } = await runNativeSearchReturn(
     item,
     '可信中文名',
@@ -195,6 +216,10 @@ async function runNativeSearchReturn(item, searchTitle, beforeRows, afterRows, r
   assert.equal(c.state.recent.detailItems[0].historyReplayKind, 'PAN_NATIVE', 'the regression exercises the strict non-VOD title path');
   assert.equal(c.state.detailPlayerReturn.nativeHistoryKey, 'push_agent@@@vod-7@@@7');
   assert.equal(c.state.detailPlayerReturn.nativeSearchTitle, '可信中文名');
+  assert.equal(artworkWrites.length, 1, 'the production exact Native Search reconciliation starts the durable artwork association');
+  assert.equal(artworkWrites[0].args[1].historyRecordRef.historyKey, 'push_agent@@@vod-7@@@7');
+  await artworkWrites[0].promise;
+  c.rememberHistoryArtworkIdentity = rememberArtwork;
   assert.equal(c.detailReturnedNativeHistoryFor(item).title, '可信中文名');
   assert.equal(continueText.textContent, '续播');
   assert.equal(button.dataset.mode, 'CONTINUE');
@@ -215,7 +240,104 @@ async function runNativeSearchReturn(item, searchTitle, beforeRows, afterRows, r
   assert.equal(exactCalls.length, 1);
   assert.equal(exactCalls[0].nativeHistoryKey, 'push_agent@@@vod-7@@@7');
   assert.equal(exactCalls[0].historyRecordRef.historyKey, 'push_agent@@@vod-7@@@7', 'the button action uses the exact Native reference that matched the detail');
+  c.state.detailPlayerReturn = null;
+  c.state.historyContexts = { loaded: false, loading: false, promise: null, entries: [], artworkLinks: [] };
+  await c.loadHistoryContextIndex();
+  const restoredHistory = c.state.recent.items[0];
+  assert.equal(restoredHistory.tmdbId, '', 'the Native History row itself still contains no TMDB id');
+  assert.deepEqual(JSON.parse(JSON.stringify(c.historyArtworkIdentityFor(restoredHistory))), {
+    mediaType: 'movie', tmdbId: '42'
+  }, 'the exact ref and Chinese title restore the trusted detail identity after close/re-entry');
+  assert.equal(c.historyArtworkIdentityFor(Object.assign({}, restoredHistory, {
+    historyRecordRef: Object.assign({}, restoredHistory.historyRecordRef, { vodId: 'different-vod' })
+  })), null, 'a different exact Native History resource cannot inherit the saved movie identity');
+  assert.equal(c.historyArtworkIdentityFor(Object.assign({}, restoredHistory, {
+    nativeHistoryRaw: Object.assign({}, restoredHistory.nativeHistoryRaw, { vodName: '另一个中文名称' })
+  })), null, 'a reused History reference with a different exact native title cannot inherit the association');
+  const browseSource = source('11e-tv-browse.js');
+  const identityStart = browseSource.indexOf('    function tvBrowseHistoryTmdbIdentity(');
+  const identityEnd = browseSource.indexOf('\n    function ', identityStart + 1);
+  assert.ok(identityStart >= 0 && identityEnd > identityStart, 'production TV Browse identity resolver is extractable');
+  c.tvBrowseState = () => ({ view: 'history' });
+  vm.runInContext(browseSource.slice(identityStart, identityEnd).trim(), c, { filename: '11e-tv-browse.js' });
+  assert.deepEqual(JSON.parse(JSON.stringify(c.tvBrowseHistoryTmdbIdentity(restoredHistory))), {
+    mediaType: 'movie', tmdbId: '42'
+  }, 'the re-entered HTML History card uses the persisted exact association');
+  const conflictingDetail = makeItem('99');
+  await c.rememberHistoryArtworkIdentity(conflictingDetail, restoredHistory, '可信中文名', c.panSearchItemKey(conflictingDetail));
+  assert.equal(c.historyArtworkIdentityFor(restoredHistory), null,
+    'two different TMDB identities claimed for the same exact History row fail closed instead of last-write-wins');
   console.log('English detail + Chinese Native Search + exact Chinese History = PASS');
+  console.log('cross-language History artwork identity persists and restores after detail close = PASS');
+}
+
+{
+  const item = makeItem();
+  const artworkWrites = [];
+  const rememberArtwork = c.rememberHistoryArtworkIdentity;
+  c.rememberHistoryArtworkIdentity = (...args) => {
+    const promise = rememberArtwork(...args);
+    artworkWrites.push(promise);
+    return promise;
+  };
+  const { reconciled } = await runNativeSearchReturn(item, '可信中文名', [], [
+    rawHistory('site-a', '可信中文名', { vodId: 'series-7', tmdbId: null, position: 90_000, createTime: 2_050 })
+  ]);
+  assert.equal(reconciled, true, 'an exact cross-language Native Search return can associate a site-source row');
+  await artworkWrites[0];
+  c.rememberHistoryArtworkIdentity = rememberArtwork;
+  c.state.detailPlayerReturn = null;
+  c.state.historyContexts = { loaded: false, loading: false, promise: null, entries: [], artworkLinks: [] };
+  await c.loadHistoryContextIndex();
+  const restoredHistory = c.state.recent.items[0];
+  assert.equal(restoredHistory.tmdbId, '', 'the source History row has no persisted TMDB ID');
+  const browseSource = source('11e-tv-browse.js');
+  const functionNames = ['tvBrowsePreviewDetail', 'tvBrowseHistoryTmdbIdentity', 'tvBrowseHistoryDetailItem',
+    'tvBrowsePreviewBackgrounds', 'tvBrowseHistoryBackdropSource'];
+  const blocks = functionNames.map((name) => {
+    const start = browseSource.indexOf(`    function ${name}(`);
+    const end = browseSource.indexOf('\n    function ', start + 1);
+    assert.ok(start >= 0 && end > start, `production TV History function ${name} is extractable`);
+    return { start, text: browseSource.slice(start, end) };
+  }).sort((a, b) => a.start - b.start).map((entry) => entry.text);
+  c.tvBrowseState = () => ({ view: 'history' });
+  c.displayImage = (path, options) => String(path || '').startsWith('/')
+    ? `https://image.tmdb.org/t/p/${options.size}${path}` : String(path || '');
+  const backdropDetail = { id: 42, media_type: 'movie', poster_path: '/poster-42.jpg', backdrop_path: '/backdrop-42.jpg' };
+  c.state.movieDetail = { cache: { 'movie:42': { detail: backdropDetail, fetchedAt: Date.now() } } };
+  vm.runInContext(blocks.join('\n'), c, { filename: '11e-tv-browse.js' });
+  assert.deepEqual(JSON.parse(JSON.stringify(c.tvBrowseHistoryTmdbIdentity(restoredHistory))), {
+    mediaType: 'movie', tmdbId: '42'
+  });
+  assert.equal(c.tvBrowsePreviewDetail(restoredHistory), backdropDetail,
+    'the identity restored from the exact History link reads the existing shared detail cache');
+  const backgrounds = c.tvBrowsePreviewBackgrounds(restoredHistory, backdropDetail);
+  assert.equal(backgrounds.preferred, 'https://image.tmdb.org/t/p/w1280/backdrop-42.jpg',
+    'the re-entered source History row resolves its trusted wide backdrop without using its portrait poster');
+  assert.equal(restoredHistory.nativeHistoryRaw.vodPic, '/poster.jpg', 'the original vertical source poster remains intact');
+  console.log('site-source History exact identity restores shared TMDB backdrop after closing detail = PASS');
+}
+
+{
+  const title = '推送影片';
+  c.state.historyContexts = { loaded: true, entries: [{
+    updatedAt: Date.now(), title,
+    item: { title, tmdbId: '9301', mediaType: 'movie', pic: '' },
+    playbackTarget: { title, tmdbId: '9301', mediaType: 'movie', lastPlayUrl: 'https://pan.example.test/file-9301' }
+  }], artworkLinks: [] };
+  const raw = rawHistory('push_agent', title, { vodId: 'https://pan.example.test/file-9301', tmdbId: null, position: 70_000 });
+  raw.mediaType = '';
+  raw.vodPic = '';
+  raw.wallPic = 'https://images.example.test/push-wide.jpg';
+  raw.historyRecordRef = referenceOf(raw);
+  const normalized = c.normalizeHistoryItem(raw, 0);
+  assert.equal(normalized.tmdbId, '9301', 'the existing exact persisted playback context restores push History identity');
+  assert.equal(normalized.mediaType, 'movie');
+  assert.equal(normalized.pic, '', 'the push record still has no vertical poster');
+  assert.deepEqual(JSON.parse(JSON.stringify(c.tvBrowseHistoryTmdbIdentity(normalized))), {
+    mediaType: 'movie', tmdbId: '9301'
+  }, 'poster completion can use the existing playback context independently of the site-source artwork link');
+  console.log('push History identity recovers from existing exact playback context without A artwork link = PASS');
 }
 
 {

@@ -1939,6 +1939,10 @@
         if (history && changed) {
           retireDetailPreparedPlaybackAfterNativeSearch(item, marker,
             nativeSearchHistoryChangeReason(item, marker, history) || "native_search_authoritative_history");
+          try {
+            const artworkLink = rememberHistoryArtworkIdentity(item, history, marker.searchTitle, marker.itemKey);
+            if (artworkLink && typeof artworkLink.catch === "function") artworkLink.catch(() => {});
+          } catch (error) {}
           state.detailPlayerReturn = {
             itemKey: panSearchItemKey(item),
             handoffStarted: false,

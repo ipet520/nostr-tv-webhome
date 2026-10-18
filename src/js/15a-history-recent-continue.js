@@ -378,7 +378,7 @@
     }
 
     async function loadHistoryContextIndex() {
-      const store = state.historyContexts || (state.historyContexts = { loaded: false, loading: false, promise: null, entries: [], diag: null });
+      const store = state.historyContexts || (state.historyContexts = { loaded: false, loading: false, promise: null, entries: [], artworkLinks: [], diag: null });
       if (store.loaded) return store;
       if (store.loading && store.promise) return store.promise;
       store.loading = true;
@@ -388,10 +388,13 @@
           const entries = saved && Array.isArray(saved.entries) ? saved.entries : [];
           const pruned = pruneRecentWatchingEntries(entries, Date.now());
           store.entries = pruned.entries;
+          const artwork = pruneHistoryArtworkLinks(saved && saved.artworkLinks, Date.now());
+          store.artworkLinks = artwork.links;
           store.diag = pruned;
-          if (pruned.changed) await persistHistoryContextEntries(store.entries);
+          if (pruned.changed || artwork.changed) await persistHistoryContextEntries(store.entries);
         } catch (e) {
           store.entries = [];
+          store.artworkLinks = [];
           store.diag = { rawCount: 0, keptCount: 0, mediaCount: 0, changed: false, error: String(e && e.message || "") };
         }
         store.loaded = true;
@@ -400,6 +403,91 @@
         return store;
       })();
       return store.promise;
+    }
+
+    function historyArtworkReferenceKey(value) {
+      const ref = value && value.historyRecordRef ? historyRecordReference(value) : historyRecordReference({ historyRecordRef: value });
+      if (!ref) return "";
+      return JSON.stringify([ref.version, ref.kind, ref.historyKey, ref.cid, ref.siteKey, ref.vodId,
+        ref.kind === "SEASON" ? ref.mediaType : "", ref.kind === "SEASON" ? ref.tmdbId : 0,
+        ref.kind === "SEASON" ? ref.seasonNumber : -1]);
+    }
+
+    function pruneHistoryArtworkLinks(links, now) {
+      const timestamp = Number(now || Date.now());
+      const raw = Array.isArray(links) ? links : [];
+      const byAssociation = new Map();
+      raw.forEach((entry, index) => {
+        if (!entry || typeof entry !== "object") return;
+        const ref = historyRecordReference({ historyRecordRef: entry.ref });
+        const refKey = historyArtworkReferenceKey(ref);
+        const tmdbId = String(entry.tmdbId || "").trim();
+        const mediaType = normalizeHistoryMediaType(entry.mediaType);
+        const nativeTitle = normalizeTitle(entry.nativeTitle || "");
+        const searchTitle = normalizeTitle(entry.searchTitle || "");
+        const updatedAt = Number(entry.updatedAt || 0);
+        if (!ref || ref.kind !== "ITEM" || !refKey || !/^\d+$/.test(tmdbId) || !mediaType
+          || !nativeTitle || nativeTitle !== searchTitle || !String(entry.itemKey || "").trim()
+          || !(updatedAt > 0) || timestamp - updatedAt > RECENT_MAX_AGE_MS) return;
+        const normalized = { version: 1, updatedAt, ref, tmdbId, mediaType, nativeTitle, searchTitle,
+          itemKey: String(entry.itemKey).trim() };
+        const associationKey = JSON.stringify([refKey, mediaType, tmdbId, nativeTitle, searchTitle]);
+        const current = byAssociation.get(associationKey);
+        if (!current || normalized.updatedAt > current.updatedAt || normalized.updatedAt === current.updatedAt && index < current.index) {
+          byAssociation.set(associationKey, Object.assign({ index }, normalized));
+        }
+      });
+      const kept = Array.from(byAssociation.values())
+        .sort((a, b) => b.updatedAt - a.updatedAt || a.index - b.index)
+        .slice(0, RECENT_MAX_MEDIA)
+        .map((entry) => ({ version: entry.version, updatedAt: entry.updatedAt, ref: entry.ref,
+          tmdbId: entry.tmdbId, mediaType: entry.mediaType, nativeTitle: entry.nativeTitle,
+          searchTitle: entry.searchTitle, itemKey: entry.itemKey }));
+      return { links: kept, changed: raw.length !== kept.length
+        || raw.some((entry, index) => JSON.stringify(entry) !== JSON.stringify(kept[index])) };
+    }
+
+    function historyArtworkIdentityFor(history) {
+      const store = state.historyContexts;
+      const ref = historyRecordReference(history);
+      const refKey = historyArtworkReferenceKey(ref);
+      const raw = history && history.nativeHistoryRaw && typeof history.nativeHistoryRaw === "object"
+        ? history.nativeHistoryRaw : history;
+      const nativeTitle = normalizeTitle(historyTitleValue(raw));
+      if (!store || !store.loaded || !ref || !refKey || ref.kind !== "ITEM" || !nativeTitle) return null;
+      const matches = (Array.isArray(store.artworkLinks) ? store.artworkLinks : []).filter((entry) =>
+        historyArtworkReferenceKey(entry && entry.ref) === refKey
+          && entry.nativeTitle === nativeTitle && entry.searchTitle === nativeTitle);
+      if (!matches.length) return null;
+      const identities = new Set(matches.map((entry) => `${entry.mediaType}:${entry.tmdbId}`));
+      if (identities.size !== 1) return null;
+      const best = matches.slice().sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))[0];
+      return { mediaType: best.mediaType, tmdbId: best.tmdbId };
+    }
+
+    async function rememberHistoryArtworkIdentity(item, history, searchTitle, itemKey) {
+      const ref = historyRecordReference(history);
+      const raw = history && history.nativeHistoryRaw && typeof history.nativeHistoryRaw === "object"
+        ? history.nativeHistoryRaw : history;
+      const nativeTitle = normalizeTitle(historyTitleValue(raw));
+      const trustedSearchTitle = normalizeTitle(searchTitle);
+      const tmdbId = String(item && item.tmdbId || "").trim();
+      const mediaType = normalizeHistoryMediaType(item && (item.mediaType || item.media_type));
+      const expectedItemKey = String(itemKey || "").trim();
+      if (!ref || ref.kind !== "ITEM" || !nativeTitle || nativeTitle !== trustedSearchTitle
+        || !/^\d+$/.test(tmdbId) || !mediaType || !expectedItemKey
+        || expectedItemKey !== panSearchItemKey(item)) return false;
+      await loadHistoryContextIndex();
+      const store = state.historyContexts;
+      if (store.diag && store.diag.error) return false;
+      const entry = { version: 1, updatedAt: Date.now(), ref, tmdbId, mediaType,
+        nativeTitle, searchTitle: trustedSearchTitle, itemKey: expectedItemKey };
+      const refKey = historyArtworkReferenceKey(ref);
+      store.artworkLinks = pruneHistoryArtworkLinks([entry].concat((store.artworkLinks || []).filter((old) =>
+        !(historyArtworkReferenceKey(old && old.ref) === refKey && old.nativeTitle === nativeTitle
+          && old.mediaType === mediaType && old.tmdbId === tmdbId))), entry.updatedAt).links;
+      await persistHistoryContextEntries(store.entries || []);
+      return true;
     }
 
     function continueIndexMediaKey(item, target) {
@@ -828,7 +916,10 @@
     }
 
     async function persistHistoryContextEntries(entries) {
-      await sdk().cache.set(cacheKey("historyContext"), JSON.stringify({ version: 1, entries: Array.isArray(entries) ? entries : [] }));
+      const store = state.historyContexts || {};
+      await sdk().cache.set(cacheKey("historyContext"), JSON.stringify({ version: 1,
+        entries: Array.isArray(entries) ? entries : [],
+        artworkLinks: Array.isArray(store.artworkLinks) ? store.artworkLinks : [] }));
     }
 
     function normalizeRecentWatchingContext(entry, index) {
