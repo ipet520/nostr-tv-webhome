@@ -7099,11 +7099,11 @@
     html.tv-browse-active .tv-browse-rail { display: flex; align-items: flex-start; gap: var(--tv-card-gap,1.4vw); overflow-x: auto; overflow-y: hidden; height: 100%; padding: var(--tv-focus-space) var(--tv-gutter); box-sizing: border-box; scrollbar-width: none; }
     /* One measured height budget determines both dimensions at 2:3.
        No flex shrink may compress the image independently of its width. */
-    html.tv-browse-active .tv-browse-rail .card { flex: 0 0 var(--tv-poster-width,17.2vh); display: flex; flex-direction: column; width: var(--tv-poster-width,17.2vh); min-width: 0; max-width: none; overflow: visible; }
+    html.tv-browse-active .tv-browse-rail .card { flex: 0 0 var(--tv-poster-width,17.2vh); display: flex; flex-direction: column; width: var(--tv-poster-width,17.2vh); min-width: 0; max-width: none; overflow: visible; transform-origin: center center; }
     html.tv-browse-active .tv-browse-rail .poster-wrap { flex: 0 0 auto; width: 100%; max-width: 100%; margin: 0; aspect-ratio: 2 / 3; height: var(--tv-poster-height,25.8vh); border-radius: inherit; overflow: hidden; }
     html.tv-browse-active .tv-browse-rail .card-body { flex: 0 0 auto; width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; padding: 6px 8px; }
     html.tv-browse-active .tv-browse-rail .card img { width: 100%; height: 100%; object-fit: cover; }
-    html.tv-browse-active .tv-browse-rail .card:focus { transform: none; transition: none; }
+    html.tv-browse-active .tv-browse-rail .card:focus { transform: scale(1.04); }
     html.tv-browse-active .tv-browse-rail .card:focus .poster-wrap::after { content: ""; position: absolute; inset: 0; border: 2px solid rgba(255,255,255,.9); border-radius: inherit; box-sizing: border-box; pointer-events: none; z-index: 4; }
     html.tv-browse-active .tv-browse-rail .card-title { width: 100%; max-width: 100%; min-width: 0; font-size: var(--tv-caption-font); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     html.tv-browse-active .tv-browse-rail .card-meta { display: none; }
