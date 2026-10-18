@@ -886,6 +886,19 @@
       if (!item || state.selected !== item || !marker || marker.itemKey !== panSearchItemKey(item)
         || marker.handoffStarted || !(Number(marker.returnedAt || 0) > 0)
         || !detail || !detail.classList.contains("active")) return false;
+      const nativeSearchTitle = String(marker.nativeSearchTitle || "").trim();
+      if (nativeSearchTitle) {
+        const nativeSearchItemKey = String(marker.nativeSearchItemKey || marker.itemKey || "").trim();
+        if (nativeSearchItemKey !== panSearchItemKey(item)) return false;
+        const pinnedKey = String(marker.nativeHistoryKey || "").trim();
+        const rows = state.recent && (state.recent.detailItems || state.recent.items) || [];
+        const history = pinnedKey
+          ? rows.find((candidate) => detailNativeHistoryKey(candidate) === pinnedKey) || null
+          : null;
+        const matchOptions = { nativeSearchTitle, nativeSearchItemKey };
+        return !!(history && detailHasAuthoritativeNativeHistory(history)
+          && detailHistoryMatches(item, history, matchOptions) && nativeHistoryRecordCanPlayExact(history));
+      }
       const history = findDetailContinueHistory(item);
       marker.nativeHistoryKey = nativeHistoryRecordCanPlayExact(history) ? detailNativeHistoryKey(history) : "";
       return !!marker.nativeHistoryKey;

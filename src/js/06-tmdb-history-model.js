@@ -812,7 +812,10 @@
         item && item.original_title
       ];
       if (options && options.includeResourceAliases) {
-        values.push(item && item.resourceSearchTitle, item && item.aliases);
+        values.push(item && item.resourceSearchTitle);
+        const aliases = item && item.aliases;
+        if (Array.isArray(aliases)) aliases.forEach((alias) => values.push(alias));
+        else values.push(aliases);
       }
       return values.map(normalizeTitle).filter(Boolean);
     }

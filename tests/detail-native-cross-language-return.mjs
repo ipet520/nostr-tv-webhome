@@ -192,6 +192,11 @@ async function runNativeSearchReturn(item, searchTitle, beforeRows, afterRows, r
   assert.equal(continueText.textContent, '续播');
   assert.equal(button.dataset.mode, 'CONTINUE');
   assert.equal(button.dataset.playState, 'ready');
+  assert.equal(c.refreshDetailReturnHistory(item), true,
+    'a later Recent refresh must retain the exact cross-language Native History pinned by this Search return');
+  assert.equal(c.state.detailPlayerReturn.nativeHistoryKey, 'push_agent@@@vod-7@@@7');
+  c.updateDetailContinueButton();
+  assert.equal(continueText.textContent, '续播', 'refreshing Native History must not clear the primary continuation action');
   const playbackSource = source('07-detail-playback-race.js');
   const begin = playbackSource.indexOf('    async function requestDetailPlayback(item) {');
   const finish = playbackSource.indexOf('\n    function handleDetailPrimaryAction()', begin);
@@ -204,6 +209,24 @@ async function runNativeSearchReturn(item, searchTitle, beforeRows, afterRows, r
   assert.equal(exactCalls[0].nativeHistoryKey, 'push_agent@@@vod-7@@@7');
   assert.equal(exactCalls[0].historyRecordRef.historyKey, 'push_agent@@@vod-7@@@7', 'the button action uses the exact Native reference that matched the detail');
   console.log('English detail + Chinese Native Search + exact Chinese History = PASS');
+}
+
+{
+  const item = makeItem();
+  delete item.resourceSearchTitle;
+  item.aliases = ['可信中文名'];
+  const { continueText, reconciled } = await runNativeSearchReturn(
+    item,
+    '可信中文名',
+    [],
+    [rawHistory('push_agent', '可信中文名', { position: 85_000, createTime: 2_500 })]
+  );
+  assert.equal(Array.from(c.detailHistoryTitleCandidates(item, { includeResourceAliases: true })).includes('可信中文名'), true,
+    'each trusted alias is an individual exact title candidate');
+  assert.equal(reconciled, true, 'a Chinese Search title present only in aliases can link its exact Native History');
+  assert.equal(c.detailReturnedNativeHistoryFor(item).title, '可信中文名');
+  assert.equal(continueText.textContent, '续播');
+  console.log('English detail + Chinese alias-only Search + exact Native History = PASS');
 }
 
 {
