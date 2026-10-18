@@ -4,6 +4,10 @@ import vm from "node:vm";
 
 const source = readFileSync(new URL("../src/js/11e-tv-browse.js", import.meta.url), "utf8");
 const cardSource = readFileSync(new URL("../src/js/14-grid-card-focus.js", import.meta.url), "utf8");
+const historyModelSource = readFileSync(new URL("../src/js/06-tmdb-history-model.js", import.meta.url), "utf8");
+const historyContextSource = readFileSync(new URL("../src/js/15a-history-recent-continue.js", import.meta.url), "utf8");
+const historyTitleSource = readFileSync(new URL("../src/js/15b-canonical-history-resolution.js", import.meta.url), "utf8");
+const panUrlSource = readFileSync(new URL("../src/js/19-pan-results-handoff-return.js", import.meta.url), "utf8");
 const names = [
   "tvBrowseHistoryTmdbIdentity", "tvBrowseHistoryPosterIsUsable", "tvBrowseHistoryPosterSource",
   "tvBrowseHistoryDetailItem", "tvBrowseApplyHistoryPoster", "tvBrowsePrepareHistoryCardPoster"
@@ -14,6 +18,17 @@ function extract(name) {
   assert.notEqual(start, -1, `production function ${name} exists`);
   const end = source.indexOf("\n    function ", start + 1);
   return source.slice(start, end < 0 ? source.length : end);
+}
+
+function extractFrom(text, name) {
+  const normal = text.indexOf(`    function ${name}(`);
+  const async = text.indexOf(`    async function ${name}(`);
+  const start = async >= 0 && (normal < 0 || async < normal) ? async : normal;
+  assert.notEqual(start, -1, `production function ${name} exists`);
+  const nextNormal = text.indexOf("\n    function ", start + 1);
+  const nextAsync = text.indexOf("\n    async function ", start + 1);
+  const ends = [nextNormal, nextAsync].filter(index => index >= 0);
+  return text.slice(start, ends.length ? Math.min(...ends) : text.length);
 }
 
 function makeHarness(item) {
@@ -268,4 +283,139 @@ console.log("TV_HISTORY_STALE_POSTER_RESULT_REJECTED = PASS");
   assert.equal(harness.api.classHas("poster-unavailable"), true, "a failed detail lookup settles to the existing placeholder");
   assert.notEqual(harness.image.src, item.nativeHistoryRaw.wallPic, "a landscape never fills the vertical card slot");
   console.log("TV_HISTORY_POSTER_FAILURE_KEEPS_PLACEHOLDER = PASS");
+}
+
+// Exercise the persisted production path: push context cache -> exact playback
+// URL match -> History normalization -> TV Browse cover selection. In
+// particular, no TMDB id is injected into the Native History row.
+{
+  const now = Date.now();
+  const seasonOneUrl = "https://pan.example.test/play?id=show-s1-ep3";
+  const seasonTwoUrl = "https://pan.example.test/play?id=show-s2-ep1";
+  const savedContexts = [
+    {
+      version: 1, updatedAt: now, title: "The Apothecary Diaries", lastPlayUrl: seasonOneUrl,
+      poster: "https://image.tmdb.org/t/p/w342/saved-season-one.jpg",
+      item: { title: "The Apothecary Diaries", tmdbId: "9301", mediaType: "tv", seasonNumber: 1,
+        pic: "https://image.tmdb.org/t/p/w342/saved-season-one.jpg", lastPlayUrl: seasonOneUrl },
+      playbackTarget: { title: "The Apothecary Diaries", tmdbId: "9301", mediaType: "tv", seasonNumber: 1,
+        lastPlayUrl: seasonOneUrl }
+    },
+    {
+      version: 1, updatedAt: now + 1, title: "The Apothecary Diaries", lastPlayUrl: seasonTwoUrl,
+      poster: "https://image.tmdb.org/t/p/w342/saved-season-two.jpg",
+      item: { title: "The Apothecary Diaries", tmdbId: "9301", mediaType: "tv", seasonNumber: 2,
+        pic: "https://image.tmdb.org/t/p/w342/saved-season-two.jpg", lastPlayUrl: seasonTwoUrl },
+      playbackTarget: { title: "The Apothecary Diaries", tmdbId: "9301", mediaType: "tv", seasonNumber: 2,
+        lastPlayUrl: seasonTwoUrl }
+    }
+  ];
+  const integratedState = { pan: {}, watch: {}, recent: { items: [] }, historyContexts: {
+    loaded: false, loading: false, promise: null, entries: [], artworkLinks: []
+  } };
+  const integrationStub = `
+    const state = __state;
+    const HISTORY_CONTEXT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+    function sdk() { return __sdk; }
+    function cacheKey(key) { return key; }
+    function safeJson(value, fallback) { try { return typeof value === "string" ? JSON.parse(value) : value || fallback; } catch (error) { return fallback; } }
+    function pruneRecentWatchingEntries(entries) { return { entries, changed: false }; }
+    function pruneHistoryArtworkLinks(links) { return { links: Array.isArray(links) ? links : [], changed: false }; }
+    function persistHistoryContextEntries() { return Promise.resolve(); }
+    function historyRecordReference() { return null; }
+    function historyArtworkIdentityFor() { return null; }
+    function resolvePanProviderForHistory() { return ""; }
+    function mergeTitleAliases() { return []; }
+    function historyProgressText() { return ""; }
+    function historyProgressPercent() { return 0; }
+    function isRestorableHistory() { return false; }
+    function historyReplayKind() { return "PUSH"; }
+    function historyStableKey() { return "push-history"; }
+    function historySiteKind() { return "PUSH"; }
+    function tvBrowseState() { return { view: "history" }; }
+    function tvBrowseActive() { return true; }
+    function tvBrowseQueryKey() { return "history"; }
+    function mediaDomKey(item) { return item && item.id || ""; }
+    function tvBrowsePrepareDetailResource() { __detailRequests += 1; return Promise.resolve({ state: "absent", detail: null }); }
+    function displayImage(value) { return value; }
+    function tvBrowseCardSignature(item) { return JSON.stringify(item); }
+    function activateHomeDeferredImage() { return false; }
+    function tvBrowseMarkPosterState() {}
+    function tvBrowseDecodePoster() {}
+  `;
+  const productionFunctions = [
+    extractFrom(historyModelSource, "historyKeyParts"),
+    extractFrom(historyModelSource, "historyTitleValue"),
+    extractFrom(historyModelSource, "historyTypeText"),
+    extractFrom(historyModelSource, "historyUrlLike"),
+    extractFrom(historyModelSource, "normalizeHistoryItem"),
+    extractFrom(historyContextSource, "historyNestedContainers"),
+    extractFrom(historyContextSource, "historyNestedValue"),
+    extractFrom(historyContextSource, "historyMediaIdentity"),
+    extractFrom(historyContextSource, "normalizeHistoryMediaType"),
+    extractFrom(historyContextSource, "historyTmdbReference"),
+    extractFrom(historyContextSource, "historyEpisodeMarker"),
+    extractFrom(historyContextSource, "historyPersistedMediaConsensus"),
+    extractFrom(historyContextSource, "historyPlaybackContextHint"),
+    extractFrom(historyContextSource, "historyPlaybackContext"),
+    extractFrom(historyContextSource, "loadHistoryContextIndex"),
+    extractFrom(historyTitleSource, "normalizeTitle"),
+    extractFrom(panUrlSource, "normalizePanUrl"),
+    extract("tvBrowseHistoryTmdbIdentity"),
+    extract("tvBrowseHistoryPosterIsUsable"),
+    extract("tvBrowseHistoryPosterSource"),
+    extract("tvBrowsePrepareHistoryCardPoster")
+  ];
+  const integrationSandbox = {
+    __state: integratedState,
+    __sdk: { cache: { get: async key => key === "historyContext" ? JSON.stringify({ entries: savedContexts, artworkLinks: [] }) : null } },
+    __detailRequests: 0,
+    String, Number, Array, Object, Promise, Set, Map, Date, JSON, RegExp, URL
+  };
+  vm.runInNewContext(`${integrationStub}\n${productionFunctions.join("\n")}\nglobalThis.api = {
+    loadHistoryContextIndex, normalizeHistoryItem, tvBrowseHistoryTmdbIdentity,
+    tvBrowseHistoryPosterIsUsable, tvBrowseHistoryPosterSource, tvBrowsePrepareHistoryCardPoster, state,
+    detailRequests: () => __detailRequests
+  };`, integrationSandbox, { filename: "tv-history-saved-push-poster.vm.js" });
+  await integrationSandbox.api.loadHistoryContextIndex();
+  assert.equal(integrationSandbox.api.state.historyContexts.loaded, true, "a fresh HTML runtime restores the saved context index");
+  assert.equal(integrationSandbox.api.state.historyContexts.entries.length, 2, "persisted push playback contexts survive reload");
+
+  function nativeRow(url, season) {
+    return {
+      key: `push_agent@@@${url}@@@`, type: "push_agent",
+      vodName: `药屋少女的呢喃 第${season}季`,
+      vodPic: "https://cdn.example.test/icons/cloud-drive.png",
+      url
+    };
+  }
+  assert.equal(integrationSandbox.api.tvBrowseHistoryPosterIsUsable("https://cdn.example.test/icons/cloud-drive.png"), false,
+    "a shared icons-directory asset is not classified as a movie poster");
+  const secondSeasonRaw = nativeRow(seasonTwoUrl, 2);
+  const secondSeason = integrationSandbox.api.normalizeHistoryItem(secondSeasonRaw, 0);
+  integrationSandbox.api.state.recent.items = [secondSeason];
+  assert.equal(secondSeason.tmdbId, "9301", "trusted TMDB identity is restored from the exact saved playback URL");
+  assert.equal(secondSeason.mediaType, "tv");
+  assert.equal(secondSeason.seasonNumber, 2, "the matching playback context retains the correct season");
+  assert.equal(secondSeason.pic, secondSeasonRaw.vodPic,
+    "legacy normalizing priority still reflects the raw Native icon before the TV-specific correction");
+  assert.equal(integrationSandbox.api.tvBrowseHistoryTmdbIdentity(secondSeason).tmdbId, "9301");
+  assert.equal(integrationSandbox.api.tvBrowseHistoryPosterSource(secondSeason),
+    "https://image.tmdb.org/t/p/w342/saved-season-two.jpg",
+    "TV History reuses the matching persisted context poster instead of its generic Native icon");
+  assert.equal(await integrationSandbox.api.tvBrowsePrepareHistoryCardPoster({ __mediaItem: secondSeason }), false,
+    "a recovered saved poster skips the redundant shared-detail lookup");
+  assert.equal(integrationSandbox.api.detailRequests(), 0);
+
+  const firstSeason = integrationSandbox.api.normalizeHistoryItem(nativeRow(seasonOneUrl, 1), 1);
+  assert.equal(integrationSandbox.api.tvBrowseHistoryPosterSource(firstSeason),
+    "https://image.tmdb.org/t/p/w342/saved-season-one.jpg",
+    "rapidly selecting another season resolves that row to its own exact playback context");
+  assert.equal(integrationSandbox.api.tvBrowseHistoryPosterSource(secondSeason),
+    "https://image.tmdb.org/t/p/w342/saved-season-two.jpg", "selecting back does not retain the other season's poster");
+  const conflictingRaw = Object.assign(nativeRow(seasonTwoUrl, 2), { tmdbId: "9999", mediaType: "movie" });
+  const conflicting = integrationSandbox.api.normalizeHistoryItem(conflictingRaw, 2);
+  assert.equal(integrationSandbox.api.tvBrowseHistoryPosterSource(conflicting), "",
+    "a stored poster cannot cross an explicit conflicting Native media identity");
+  console.log("TV_HISTORY_PERSISTED_PUSH_CONTEXT_POSTER_RESTORED = PASS");
 }

@@ -30139,14 +30139,27 @@ utils.encode = function encode(arr, enc) {
       const value = String(source || "").trim();
       if (!value || /^data:image\/gif;base64,R0lGODlhAQABAAD\/ACwAAAAAAQABAAACADs=/i.test(value)) return false;
       const path = value.split(/[?#]/, 1)[0].toLowerCase();
-      return !/(?:^|[\/_.-])(?:no[._-]?(?:poster|image|img|cover)|(?:poster|image|cover)[._-]?(?:default|placeholder|none)|placeholder|default|blank|empty|unknown|icon|logo|ic_launcher)(?:$|[\/_.-])/i.test(path);
+      return !/(?:^|[\/_.-])(?:no[._-]?(?:poster|image|img|cover)|(?:poster|image|cover)[._-]?(?:default|placeholder|none)|placeholder|default|blank|empty|unknown|icons?|logo|ic_launcher)(?:$|[\/_.-])/i.test(path);
     }
 
     function tvBrowseHistoryPosterSource(item) {
       if (!item || item.source !== "history") return "";
       const raw = item.nativeHistoryRaw || {};
       const candidates = [raw.vodPic, raw.pic, raw.poster, item.pic, item.image, item.vodPic];
-      return candidates.map((value) => String(value || "").trim()).find(tvBrowseHistoryPosterIsUsable) || "";
+      const poster = candidates.map((value) => String(value || "").trim()).find(tvBrowseHistoryPosterIsUsable);
+      if (poster) return poster;
+
+      // Reuse the existing trusted push-playback context match. The matched context
+      // already carries the TMDB poster captured before Native handoff; do
+      // not force another detail request just because Native stored an icon.
+      const identity = tvBrowseHistoryTmdbIdentity(item);
+      if (!identity || typeof historyPlaybackContextHint !== "function"
+        || typeof historyKeyParts !== "function" || typeof historyTitleValue !== "function") return "";
+      const hint = historyPlaybackContextHint(raw, historyKeyParts(raw), historyTitleValue(raw));
+      if (!hint || String(hint.tmdbId || "").trim() !== identity.tmdbId
+        || String(hint.mediaType || "").toLowerCase() !== identity.mediaType) return "";
+      const savedPoster = String(hint.poster || "").trim();
+      return tvBrowseHistoryPosterIsUsable(savedPoster) ? savedPoster : "";
     }
 
     function tvBrowseApplyHistoryPoster(card, item, posterUrl) {
