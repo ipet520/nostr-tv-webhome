@@ -977,11 +977,11 @@
         image.dataset.tvBrowsePosterState = stateName;
         if (source != null) image.dataset.tvBrowsePosterReadySource = source;
         if (stateName === "failed") image.dataset.tvBrowsePosterFailedAt = String(Date.now());
-        else if (stateName === "ready") delete image.dataset.tvBrowsePosterFailedAt;
+        else if (stateName === "ready" || stateName === "pending" || stateName === "timed-out") delete image.dataset.tvBrowsePosterFailedAt;
       }
       if (card) {
         card.dataset.posterState = stateName;
-        card.classList.toggle("poster-unavailable", stateName === "failed" || stateName === "absent");
+        card.classList.toggle("poster-unavailable", stateName === "failed" || stateName === "absent" || stateName === "timed-out");
       }
     }
 
@@ -1032,8 +1032,9 @@
           || !tvBrowseReadinessTerminal(record.backgroundDecodeState)) return false;
         const posterState = image && image.dataset.tvBrowsePosterState;
         if (!image || image.dataset.tvBrowsePosterReadySource !== posterUrl
-          || !["ready", "absent", "failed"].includes(posterState)) return false;
+          || !["ready", "absent", "failed", "timed-out"].includes(posterState)) return false;
         if (posterState === "failed" && Date.now() >= itemRetryAfter) return false;
+        if (posterState === "timed-out" && image.complete && !image.naturalWidth && Date.now() >= itemRetryAfter) return false;
         const type = String(item.mediaType || item.media_type || "").toLowerCase();
         const id = movieDetailCacheId(item);
         const detail = tvBrowsePreviewDetail(item);
@@ -1059,6 +1060,9 @@
       const ui = tvBrowseState(), gate = ui.railReadiness;
       if (gate && gate.timeoutId) clearTimeout(gate.timeoutId);
       if (gate && gate.cleanup) gate.cleanup.splice(0).forEach((cleanup) => { try { cleanup(); } catch (error) {} });
+      if (gate && gate.resources) gate.resources.forEach((entry) => {
+        if (typeof entry.finishPosterWait === "function") entry.finishPosterWait({ posterState: "cancelled", posterDecodeState: "cancelled" });
+      });
       ui.railReadiness = null;
       ui.railReadinessToken = Number(ui.railReadinessToken || 0) + 1;
       ui.coldRailPresentPreview = false;
@@ -1070,6 +1074,7 @@
       const ui = tvBrowseState();
       if (!gate || gate.settled || ui.railReadiness !== gate || gate.token !== ui.railReadinessToken
         || gate.queryKey !== tvBrowseQueryKey()) return false;
+      gate.timedOut = !!timedOut;
       gate.settled = true;
       if (gate.timeoutId) clearTimeout(gate.timeoutId);
       if (gate.cleanup) gate.cleanup.splice(0).forEach((cleanup) => { try { cleanup(); } catch (error) {} });
@@ -1080,9 +1085,12 @@
         if (entry.posterDecodeState === "pending") entry.posterDecodeState = "timed-out";
         if (entry.logoDecodeState === "pending") entry.logoDecodeState = "timed-out";
         if (entry.backgroundDecodeState === "pending") entry.backgroundDecodeState = "timed-out";
-        if (entry.posterState === "timed-out") tvBrowseMarkPosterState(entry.card, entry.image, "failed", entry.posterUrl);
+        if (entry.posterState === "timed-out") tvBrowseMarkPosterState(entry.card, entry.image, "timed-out", entry.posterUrl);
         if (entry.logoState === "timed-out" && entry.logoAsset) tvBrowseExpireLogoAsset(entry.logoAsset);
         if (entry.backgroundState === "timed-out") (entry.warmBackdrops || []).forEach(tvBrowseExpireWarmBackdrop);
+        if (entry.posterState === "timed-out" && typeof entry.finishPosterWait === "function") {
+          entry.finishPosterWait({ posterState: "timed-out", posterDecodeState: "timed-out" });
+        }
         if (entry.detailState === "timed-out") {
           const item = entry.card && entry.card.__mediaItem;
           const type = String(item && (item.mediaType || item.media_type) || "").toLowerCase();
@@ -1167,20 +1175,42 @@
       image.loading = "eager";
       image.decoding = "async";
       return new Promise((resolve) => {
-        let settled = false;
+        let settled = false, taskSettled = false;
+        const finishPosterWait = (result) => {
+          if (taskSettled) return false;
+          taskSettled = true;
+          delete record.finishPosterWait;
+          resolve(result);
+          return true;
+        };
+        record.finishPosterWait = finishPosterWait;
         const cleanup = () => {
           image.removeEventListener("load", onLoad);
           image.removeEventListener("error", onError);
           gate.cleanup = (gate.cleanup || []).filter((fn) => fn !== cleanup);
         };
         const finish = (status) => {
-          if (settled || gate.settled || tvBrowseState().railReadiness !== gate) return;
-          settled = true; cleanup();
+          if (settled) return;
           const available = status === "ready" || status === "loaded-no-decode";
+          if (gate.settled || tvBrowseState().railReadiness !== gate) {
+            const currentCard = image.closest && image.closest(".card");
+            const sameActiveQuery = tvBrowseQueryKey() === gate.queryKey;
+            const sameCachedCard = currentCard === card && currentCard && !currentCard.isConnected;
+            if (!gate.timedOut || !currentCard || (!sameActiveQuery && !sameCachedCard)
+              || String(currentCard.dataset.mediaKey || "") !== String(record.key || "")
+              || tvBrowsePosterSource(image) !== source
+              || image.dataset.tvBrowseDecodePrepared !== String(record.key || "")
+              || image.dataset.tvBrowseDecodePreparedSource !== source) return;
+            settled = true; cleanup();
+            image.dataset.tvBrowsePosterDecodeState = status;
+            tvBrowseMarkPosterState(currentCard, image, available ? "ready" : "failed", source);
+            return;
+          }
+          settled = true; cleanup();
           image.dataset.tvBrowsePosterDecodeState = status;
           record.posterDecodeState = status;
           tvBrowseMarkPosterState(card, image, available ? "ready" : "failed", source);
-          resolve({ posterState: status, posterDecodeState: status });
+          finishPosterWait({ posterState: status, posterDecodeState: status });
         };
         const decode = () => {
           if (!image.complete || !image.naturalWidth) return finish("failed");
@@ -1290,6 +1320,23 @@
       if (!image) return false;
       const card = image.closest && image.closest(".card"), key = card && card.dataset.mediaKey || "";
       const source = tvBrowsePosterSource(image);
+      if (image.dataset.tvBrowsePosterState === "failed") {
+        const failedAt = Number(image.dataset.tvBrowsePosterFailedAt || 0);
+        if (Date.now() - failedAt < 60000) return false;
+        delete image.dataset.tvBrowsePosterState;
+        delete image.dataset.tvBrowsePosterReadySource;
+        delete image.dataset.tvBrowsePosterDecodeState;
+        delete image.dataset.tvBrowsePosterFailedAt;
+        delete image.dataset.tvBrowseDecodePrepared;
+        delete image.dataset.tvBrowseDecodePreparedSource;
+        if (card) card.classList.remove("poster-unavailable");
+        if (image.hasAttribute("data-src") || image.hasAttribute("data-home-deferred")) {
+          activateHomeDeferredImage(image, { proactive: true, decode: false });
+        } else if (source) {
+          image.removeAttribute("src"); image.src = source;
+        }
+        tvBrowseMarkPosterState(card, image, "pending", source);
+      }
       if (image.dataset.tvBrowseDecodePrepared === key && image.dataset.tvBrowseDecodePreparedSource === source) return false;
       image.dataset.tvBrowseDecodePrepared = key;
       image.dataset.tvBrowseDecodePreparedSource = source;
@@ -1298,8 +1345,10 @@
         image.removeEventListener("load", onLoad);
         image.removeEventListener("error", onError);
         image.dataset.tvBrowsePosterDecodeState = status;
-        if (card && card.isConnected) tvBrowseMarkPosterState(card, image,
-          status === "ready" || status === "loaded-no-decode" ? "ready" : "failed", source);
+        const currentCard = image.closest && image.closest(".card");
+        if (currentCard && String(currentCard.dataset.mediaKey || "") === String(key)
+          && tvBrowsePosterSource(image) === source) tvBrowseMarkPosterState(currentCard, image,
+            status === "ready" || status === "loaded-no-decode" ? "ready" : "failed", source);
       };
       const onError = () => finish("failed");
       const onLoad = () => decodeLoaded();

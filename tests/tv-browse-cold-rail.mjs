@@ -34,6 +34,26 @@ window.testRail.installDecodeProbe = () => {
   return true;
 };
 window.testRail.clearDecodeProbe = () => { window.decodeRequests=[]; };
+window.testRail.delayDecode = fragment => {
+  const prototype=HTMLImageElement.prototype, original=prototype.decode;
+  window.originalPosterDecode=original; window.delayedPosterDecodeRelease=null;
+  prototype.decode=function(){
+    const image=this,args=arguments,url=String(image.currentSrc||image.src||"");
+    if(!url.includes(fragment)) return original.apply(image,args);
+    return new Promise((resolve,reject)=>{
+      window.delayedPosterDecodeRelease=()=>original.apply(image,args).then(resolve,reject);
+    });
+  };
+};
+window.testRail.releaseDecode = () => {
+  const release=window.delayedPosterDecodeRelease;
+  window.delayedPosterDecodeRelease=null;
+  if(release) release();
+};
+window.testRail.restoreDecode = () => {
+  if(window.originalPosterDecode) HTMLImageElement.prototype.decode=window.originalPosterDecode;
+  window.originalPosterDecode=null;
+};
 window.testRail.seed = (id, count, prefix, hasMore=false) => {
   const query=secondaryGetQuery(id);query.items=Array.from({length:count},(_,i)=>({
     id:prefix+"-"+i,title:prefix+" item "+i,mediaType:"other",source:"fixture",
@@ -531,8 +551,8 @@ try {
       preview:testRail.previewState(),title:document.querySelector("#tvBrowseTitle").textContent
     };
   });
-  assert.equal(timedStates.firstScreen.every(card=>card.state==="failed"&&card.unavailable),true,
-    "timed-out visible posters use the same explicit fallback state");
+  assert.equal(timedStates.firstScreen.every(card=>card.state==="timed-out"&&card.unavailable),true,
+    "the first-screen timeout releases the Gate while retaining a recoverable temporary poster state");
   assert.equal(timedStates.laterScreen.some(Boolean),false,
     "only timed-out first-screen images are degraded and the remainder of the rail remains normal");
   assert.equal(timedStates.resources.slice(0,timedCount).every(resource=>resource.background==="timed-out"&&resource.decode==="timed-out"),true,
@@ -540,6 +560,9 @@ try {
   assert.equal(timedStates.preview.key,"timed-category-0","the timed-out cold screen still commits the selected resource identity");
   assert.equal(timedStates.title,"timed-category item 0","background timeout never delays the selected card title");
   releaseHeld();holdPrefix="";
+  await page.waitForFunction(count=>Array.from(document.querySelectorAll("#tvBrowseRail > .card")).slice(0,count)
+    .every(card=>card.querySelector("img.poster")?.dataset.tvBrowsePosterState==="ready"&&!card.classList.contains("poster-unavailable")),timedCount,
+    {timeout:3000});
   await page.waitForFunction(()=>!Array.from(document.querySelectorAll("#tvBrowseBackdrop,#tvBrowseBackdropNext"))
     .some(layer=>layer.dataset.tvBrowseBackdropKey==="timed-category-0"));
   assert.equal(await page.evaluate(()=>testRail.previewState().key),"timed-category-0",
@@ -595,8 +618,36 @@ try {
     assert.equal(revisit.loaderHidden,true,"a ready category revisit never replays the cold dots");
     assert.equal(revisit.sameNode,true,"the bounded category rail node is reused on revisit");
   }
+
+  // The poster can load before the Gate while decode resolves later. Releasing
+  // the Gate at five seconds must not discard that same-resource completion.
+  await page.evaluate(() => {
+    testRail.seedMovies("movie",8,"decode-late",63000);
+    testRail.delayDecode("decode-late-poster-0.jpg");
+    testRail.tvBrowseSelectColumn("movie");
+  });
+  await page.waitForFunction(()=>{
+    const image=document.querySelector("#tvBrowseRail > .card img.poster");
+    return image&&String(image.currentSrc||image.src).includes("decode-late-poster-0.jpg")
+      && image.complete&&image.naturalWidth>0&&testRail.tvBrowseState().railReadiness;
+  });
+  await page.waitForFunction(()=>document.querySelector("#tvBrowseRailLoader").hidden,{},{timeout:6500});
+  const decodeTimedOut=await page.evaluate(()=>{
+    const card=document.querySelector("#tvBrowseRail > .card"),image=card&&card.querySelector("img.poster");
+    return {state:image&&image.dataset.tvBrowsePosterState,unavailable:!!(card&&card.classList.contains("poster-unavailable")),
+      decodePending:typeof window.delayedPosterDecodeRelease==="function"};
+  });
+  assert.equal(decodeTimedOut.state,"timed-out","a slow decode is not cached as a genuine image failure");
+  assert.equal(decodeTimedOut.unavailable,true,"the temporary poster state remains visible until decode completes");
+  assert.equal(decodeTimedOut.decodePending,true,"the test held the poster decode across the Gate deadline");
+  await page.evaluate(()=>testRail.releaseDecode());
+  await page.waitForFunction(()=>{
+    const card=document.querySelector("#tvBrowseRail > .card"),image=card&&card.querySelector("img.poster");
+    return image&&image.dataset.tvBrowsePosterState==="ready"&&!card.classList.contains("poster-unavailable");
+  });
+  await page.evaluate(()=>testRail.restoreDecode());
   await page.close();
-  console.log("TV Browse cold rail checks passed: dynamic first screen, atomic reveal, single poster handoff, hot reuse, bounded page fill, failure placeholder, stale category guard.");
+  console.log("TV Browse cold rail checks passed: dynamic first screen, atomic reveal, recoverable poster timeout, single poster handoff, hot reuse, bounded page fill, failure placeholder, stale category guard.");
 } finally {
   releaseHeld();
   await browser.close();
