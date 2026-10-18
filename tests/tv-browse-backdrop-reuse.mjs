@@ -297,18 +297,41 @@ async function show(harness, item, prepKeys = [item.key]) {
   console.log("TV_HISTORY_TRUSTED_BACKDROP_SOURCE = PASS");
 }
 
-// Native History's wallPic is retained as a candidate when its TMDB identity
-// is verified; a wallPic that resolves to the same TMDB image as vodPic is
-// rejected as a poster variant.
+// Native History's own horizontal wallPic is bound to the row and does not
+// require an unrelated TMDB identity; a poster variant is still rejected.
 {
-  const item = makeHistoryItem("native-wall-pic", 4111);
+  const item = makeHistoryItem("native-wall-pic", "");
+  item.title = "The English Title";
+  item.nativeHistoryRaw.context = { title: "中文原标题" };
   const wallPic = "https://image.tmdb.org/t/p/w1280/4111-wide.jpg";
   item.nativeHistoryRaw.wallPic = wallPic;
   const harness = makeHarness([item]);
   harness.api.setView("history");
+  harness.api.setDetailLoader(() => { assert.fail("a row-supplied wallPic must not require TMDB identity"); });
   harness.api.tvBrowsePreview(item);
   await waitFor(() => harness.api.ui().backdropMediaKey === item.key, "native wallPic displayed");
-  assert.equal(harness.api.ui().backdropUrl, wallPic, "verified native wallPic becomes the full-screen landscape source");
+  assert.equal(harness.api.ui().backdropUrl, wallPic, "native wallPic is used without fuzzy title matching or TMDB identity");
+
+  const savedBackdrop = makeHistoryItem("saved-backdrop-no-identity", "", "https://img.example.test/saved-backdrop.jpg");
+  savedBackdrop.nativeHistoryRaw.context = { title: "不同语言的保存标题" };
+  const savedHarness = makeHarness([savedBackdrop]);
+  savedHarness.api.setView("history");
+  savedHarness.api.setDetailLoader(() => { assert.fail("a row-supplied saved backdrop must not require TMDB identity"); });
+  savedHarness.api.tvBrowsePreview(savedBackdrop);
+  await waitFor(() => savedHarness.api.ui().backdropMediaKey === savedBackdrop.key, "saved row backdrop displayed");
+  assert.equal(savedHarness.api.ui().backdropUrl, savedBackdrop.landscape);
+
+  const conflictingIdentity = makeHistoryItem("row-wall-pic-conflicting-id", 4999);
+  const conflictWallPic = "https://img.example.test/history/row-bound-wall.jpg";
+  conflictingIdentity.nativeHistoryRaw.context = { tmdbId: "4103", mediaType: "movie" };
+  conflictingIdentity.nativeHistoryRaw.wallPic = conflictWallPic;
+  const conflictHarness = makeHarness([conflictingIdentity]);
+  conflictHarness.api.setView("history");
+  conflictHarness.api.setDetailLoader(() => { assert.fail("a mismatched identity must not start TMDB artwork lookup"); });
+  conflictHarness.api.tvBrowsePreview(conflictingIdentity);
+  await waitFor(() => conflictHarness.api.ui().backdropMediaKey === conflictingIdentity.key, "row wallPic with conflicting TMDB identity displayed");
+  assert.equal(conflictHarness.api.ui().backdropUrl, conflictWallPic,
+    "a row-bound wallPic remains usable even when unrelated TMDB identity conflicts");
 
   const sameArtwork = makeHistoryItem("poster-wall-pic", 4112);
   sameArtwork.pic = "https://image.tmdb.org/t/p/w500/4112.jpg";
@@ -371,11 +394,12 @@ async function show(harness, item, prepKeys = [item.key]) {
   console.log("TV_HISTORY_DETAIL_CACHE_HIT = PASS");
 }
 
-// Missing or conflicting TMDB identity makes even a supplied History
-// landscape untrusted. The item stays on a neutral background with no lookup.
+// Missing or conflicting identity prevents TMDB detail artwork from being
+// associated with a row. The row may still use its own saved artwork, covered
+// above; with no row artwork it stays on a neutral background.
 for (const [label, item] of [
-  ["missing", makeHistoryItem("no-identity", "", "https://img.example.test/history/unverified.jpg")],
-  ["mismatch", Object.assign(makeHistoryItem("wrong-identity", 4999, "https://img.example.test/history/wrong.jpg"), {
+  ["missing", makeHistoryItem("no-identity", "")],
+  ["mismatch", Object.assign(makeHistoryItem("wrong-identity", 4999, ""), {
     nativeHistoryRaw: { context: { tmdbId: "4103", mediaType: "movie" } }
   })]
 ]) {
@@ -383,6 +407,9 @@ for (const [label, item] of [
   harness.api.setView("history");
   let requests = 0;
   harness.api.setDetailLoader(() => { requests += 1; return Promise.resolve({ state: "ready", detail: null }); });
+  if (label === "mismatch") harness.api.setCachedDetail("movie", item.tmdbId, {
+    id: Number(item.tmdbId), media_type: "movie", backdrop_path: "https://img.example.test/history/wrong-detail.jpg"
+  });
   harness.api.tvBrowsePreview(item);
   await new Promise(resolve => setTimeout(resolve, 5));
   assert.equal(harness.api.ui().backdropUrl, "", `${label} identity uses the neutral base`);

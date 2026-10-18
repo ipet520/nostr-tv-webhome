@@ -1379,8 +1379,9 @@
     }
 
     function tvBrowseSyncRailImagePreparation() {
-      if (!tvBrowseActive() || tvBrowseState().view !== "home") return false;
+      if (!tvBrowseActive()) return false;
       const ui = tvBrowseState(), rail = $("tvBrowseRail");
+      if (ui.view !== "home" && ui.view !== "history") return false;
       if (!rail || rail.dataset.queryKey !== tvBrowseQueryKey()) return false;
       const cards = rail.children, cardCount = cards.length;
       if (!cardCount) return false;
@@ -1415,9 +1416,14 @@
       visible.forEach((card) => {
         const image = card.querySelector("img.poster");
         if (!image) return;
+        if (ui.view === "history" && !tvBrowseHistoryPosterSource(card.__mediaItem)) return;
         if (image.hasAttribute("data-home-deferred") && image.getAttribute("data-src")) activateHomeDeferredImage(image);
         if (!(ui.railReadiness && ui.railReadiness.queryKey === tvBrowseQueryKey())) tvBrowseDecodePoster(image);
       });
+      if (ui.view === "history") {
+        visible.forEach((card) => tvBrowsePrepareHistoryCardPoster(card));
+        return true;
+      }
       const targetIndex = lastVisibleIndex + 1;
       let target = cards[targetIndex] || null;
       if (!target && lastVisibleIndex >= cards.length - 1) {
@@ -2177,7 +2183,7 @@
       const historyView = item && item.source === "history";
       const historyIdentity = historyView ? tvBrowseHistoryTmdbIdentity(item) : null;
       const backdrop = historyView
-        ? historyIdentity && tvBrowseHistoryBackdropSource(item, detail)
+        ? tvBrowseHistoryBackdropSource(item, historyIdentity ? detail : null)
         : item.landscape || item.backdrop || item.backdrop_path || detail && detail.backdrop_path;
       const preferred = displayImage(backdrop || (!historyView && (item.image || item.pic)), { size: backdrop ? "w1280" : "w780" });
       const fallback = backdrop && !historyView ? displayImage(item.image || item.pic, { size: "w780" }) : "";
@@ -2191,6 +2197,92 @@
       const candidates = [item && item.landscape, item && item.backdrop, item && item.backdrop_path, raw.wallPic, detail && detail.backdrop_path];
       return candidates.map((value) => String(value || "").trim()).find((candidate) => candidate
         && !posterSources.some((poster) => artworkKey(poster) && artworkKey(poster) === artworkKey(candidate))) || "";
+    }
+
+    function tvBrowseHistoryPosterIsUsable(source) {
+      const value = String(source || "").trim();
+      if (!value || /^data:image\/gif;base64,R0lGODlhAQABAAD\/ACwAAAAAAQABAAACADs=/i.test(value)) return false;
+      const path = value.split(/[?#]/, 1)[0].toLowerCase();
+      return !/(?:^|[\/_.-])(?:no[._-]?(?:poster|image|img|cover)|(?:poster|image|cover)[._-]?(?:default|placeholder|none)|placeholder|default|blank|empty|unknown|icon|logo|ic_launcher)(?:$|[\/_.-])/i.test(path);
+    }
+
+    function tvBrowseHistoryPosterSource(item) {
+      if (!item || item.source !== "history") return "";
+      const raw = item.nativeHistoryRaw || {};
+      const candidates = [raw.vodPic, raw.pic, raw.poster, item.pic, item.image, item.vodPic];
+      return candidates.map((value) => String(value || "").trim()).find(tvBrowseHistoryPosterIsUsable) || "";
+    }
+
+    function tvBrowseApplyHistoryPoster(card, item, posterUrl) {
+      if (!card || !item || !posterUrl || !card.querySelector) return false;
+      const image = card.querySelector("img.poster");
+      if (!image || tvBrowseHistoryPosterSource(item)) return false;
+      item.pic = posterUrl;
+      card.__mediaItem = item;
+      card.__tvBrowseRenderSignature = tvBrowseCardSignature(item);
+      image.loading = "eager";
+      image.decoding = "async";
+      delete image.dataset.tvBrowsePosterState;
+      delete image.dataset.tvBrowsePosterReadySource;
+      delete image.dataset.tvBrowsePosterDecodeState;
+      delete image.dataset.tvBrowsePosterFailedAt;
+      delete image.dataset.tvBrowseDecodePrepared;
+      delete image.dataset.tvBrowseDecodePreparedSource;
+      card.classList.remove("poster-unavailable");
+      image.setAttribute("data-src", posterUrl);
+      activateHomeDeferredImage(image, { proactive: true, decode: false });
+      tvBrowseMarkPosterState(card, image, "pending", posterUrl);
+      tvBrowseDecodePoster(image);
+      return true;
+    }
+
+    function tvBrowsePrepareHistoryCardPoster(card) {
+      const item = card && card.__mediaItem;
+      if (!card || !item || tvBrowseHistoryPosterSource(item)) return Promise.resolve(false);
+      const identity = tvBrowseHistoryTmdbIdentity(item);
+      if (!identity) {
+        const image = card.querySelector("img.poster");
+        if (image) tvBrowseMarkPosterState(card, image, "absent", "");
+        return Promise.resolve(false);
+      }
+      const key = String(card.dataset.mediaKey || mediaDomKey(item));
+      const historyKey = String(item.historyStableKey || item.historyKey || key);
+      const queryKey = tvBrowseQueryKey();
+      const sameIdentity = (candidate) => {
+        const resolved = tvBrowseHistoryTmdbIdentity(candidate);
+        return !!resolved && resolved.mediaType === identity.mediaType && resolved.tmdbId === identity.tmdbId;
+      };
+      const isCurrent = () => {
+        const ui = tvBrowseState();
+        const current = (state.recent.items || []).find((entry) => mediaDomKey(entry) === key);
+        const cardItem = card.__mediaItem;
+        return tvBrowseActive() && ui.view === "history" && tvBrowseQueryKey() === queryKey
+          && card.isConnected !== false && String(card.dataset.mediaKey || "") === key
+          && cardItem && mediaDomKey(cardItem) === key
+          && String(cardItem.historyStableKey || cardItem.historyKey || key) === historyKey
+          && current && String(current.historyStableKey || current.historyKey || key) === historyKey
+          && sameIdentity(cardItem) && sameIdentity(current);
+      };
+      return tvBrowsePrepareDetailResource(item, "foreground", isCurrent).then((result) => {
+        if (!isCurrent()) return false;
+        const detail = result && result.detail;
+        if (!detail || String(detail.id || detail.tmdbId || "") !== identity.tmdbId
+          || (detail.media_type && String(detail.media_type).toLowerCase() !== identity.mediaType)
+          || !tvBrowseHistoryPosterIsUsable(detail.poster_path)) {
+          const image = card.querySelector("img.poster");
+          if (image && !tvBrowseHistoryPosterSource(card.__mediaItem)) {
+            tvBrowseMarkPosterState(card, image, detail && detail.poster_path ? "failed" : "absent", "");
+          }
+          return false;
+        }
+        const posterUrl = displayImage(detail.poster_path, { size: "w342" });
+        if (!tvBrowseApplyHistoryPoster(card, card.__mediaItem, posterUrl)) {
+          const image = card.querySelector("img.poster");
+          if (image && !tvBrowseHistoryPosterSource(card.__mediaItem)) tvBrowseMarkPosterState(card, image, "failed", "");
+          return false;
+        }
+        return true;
+      }).catch(() => false);
     }
 
     function tvBrowsePrepareDetailResource(item, requestClass, isCurrent) {
