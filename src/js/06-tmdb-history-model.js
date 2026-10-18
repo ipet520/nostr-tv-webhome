@@ -802,15 +802,19 @@
       return items;
     }
 
-    function detailHistoryTitleCandidates(item) {
-      return [
+    function detailHistoryTitleCandidates(item, options) {
+      const values = [
         item && item.title,
         item && item.name,
         item && item.query,
         item && item.originalTitle,
         item && item.original_name,
         item && item.original_title
-      ].map(normalizeTitle).filter(Boolean);
+      ];
+      if (options && options.includeResourceAliases) {
+        values.push(item && item.resourceSearchTitle, item && item.aliases);
+      }
+      return values.map(normalizeTitle).filter(Boolean);
     }
 
     function detailHistoryVodIdMatchesTmdb(tmdbId, vodId) {
@@ -858,15 +862,24 @@
       }, 0);
     }
 
-    function detailHistoryMatches(item, history) {
+    function detailHistoryMatches(item, history, options) {
       if (!item || !history || !historyCanContinuePlayback(history)) return false;
       const context = historyPlaybackContext(history);
       const replayKind = String(history.historyReplayKind || historyReplayKind(history, null, historyCanUseVodReplay(history)));
       if (item.mediaType && context.mediaType && item.mediaType !== context.mediaType) return false;
       const tmdbId = item.tmdbId ? String(item.tmdbId) : item.id && /^tmdb:/i.test(String(item.id)) ? String(item.id).split(":").pop() : "";
+      const historyTmdbId = String(context.tmdbId || "").trim();
+      if (tmdbId && historyTmdbId && tmdbId !== historyTmdbId) return false;
       if (detailHistoryVodIdMatchesTmdb(tmdbId, history.vodId) || detailHistoryVodIdMatchesTmdb(tmdbId, context.tmdbId)) return true;
       const title = normalizeTitle(history.title || context.title || "");
       if (!title) return false;
+      const nativeSearchTitle = String(options && options.nativeSearchTitle || "").trim();
+      const nativeSearchItemKey = String(options && options.nativeSearchItemKey || "").trim();
+      if (nativeSearchTitle && nativeSearchItemKey === panSearchItemKey(item)) {
+        const trustedSearchTitle = normalizeTitle(nativeSearchTitle);
+        const candidates = detailHistoryTitleCandidates(item, { includeResourceAliases: true });
+        return !!(trustedSearchTitle && candidates.includes(trustedSearchTitle) && title === trustedSearchTitle);
+      }
       if (replayKind !== "VOD") {
         return detailHistoryTitleCandidates(item).some((candidate) => candidate === title);
       }

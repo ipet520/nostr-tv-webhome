@@ -901,8 +901,12 @@
       const history = hasPinnedIdentity
         ? (pinnedKey ? rows.find((candidate) => detailNativeHistoryKey(candidate) === pinnedKey) || null : null)
         : findDetailContinueHistory(item);
+      const matchOptions = marker.nativeSearchTitle ? {
+        nativeSearchTitle: marker.nativeSearchTitle,
+        nativeSearchItemKey: marker.nativeSearchItemKey || marker.itemKey
+      } : null;
       return history && detailHasAuthoritativeNativeHistory(history)
-        && detailHistoryMatches(item, history) && nativeHistoryRecordCanPlayExact(history) ? history : null;
+        && detailHistoryMatches(item, history, matchOptions) && nativeHistoryRecordCanPlayExact(history) ? history : null;
     }
 
     function updateDetailContinueButton() {

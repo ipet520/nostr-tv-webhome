@@ -1227,10 +1227,14 @@
       return marker;
     }
 
-    function nativeSearchHistorySnapshotFor(item, history) {
+    function nativeSearchHistorySnapshotFor(item, history, searchTitle) {
       if (!item) return null;
       const candidate = arguments.length > 1 ? history : recentNativeHistoryWinnerFor(item);
-      if (!candidate || !detailHasAuthoritativeNativeHistory(candidate) || !detailHistoryMatches(item, candidate)
+      const matchOptions = searchTitle ? {
+        nativeSearchTitle: searchTitle,
+        nativeSearchItemKey: panSearchItemKey(item)
+      } : null;
+      if (!candidate || !detailHasAuthoritativeNativeHistory(candidate) || !detailHistoryMatches(item, candidate, matchOptions)
         || !nativeHistoryRecordCanPlayExact(candidate)) return null;
       return {
         itemKey: panSearchItemKey(item),
@@ -1247,14 +1251,34 @@
       };
     }
 
+    function nativeSearchHistoryWinnerFor(item, marker, list) {
+      if (!item || !marker || marker.itemKey !== panSearchItemKey(item) || !String(marker.searchTitle || "").trim()) return null;
+      const source = Array.isArray(list) ? list : (state.recent.detailItems || state.recent.items || []);
+      const matchOptions = {
+        nativeSearchTitle: marker.searchTitle,
+        nativeSearchItemKey: marker.itemKey
+      };
+      const candidates = source.filter((history) => history
+        && detailHasAuthoritativeNativeHistory(history)
+        && nativeHistoryRecordCanPlayExact(history)
+        && detailHistoryMatches(item, history, matchOptions));
+      return uniqueRecentWatchingMedia(candidates)[0] || null;
+    }
+
     function nativeSearchHistoryChangeReason(item, marker, winner) {
       if (!item || !marker || marker.itemKey !== panSearchItemKey(item)) return "";
       const before = marker.historySnapshot && marker.historySnapshot.itemKey === marker.itemKey
         ? marker.historySnapshot
         : null;
-      const after = nativeSearchHistorySnapshotFor(item, winner);
+      const after = nativeSearchHistorySnapshotFor(item, winner, marker.searchTitle);
       if (!after) return "";
-      if (!before) return "new-history";
+      if (!before) {
+        // A missing baseline is evidence of a new record only when the Native
+        // History list was already loaded before entering Search. Otherwise an
+        // old matching record can arrive with the first post-return refresh.
+        if (marker.searchTitle && marker.historyBaselineReady !== true) return "";
+        return "new-history";
+      }
 
       const beforeSite = String(before.siteKey || "").trim();
       const afterSite = String(after.siteKey || "").trim();
@@ -1280,7 +1304,7 @@
       if (afterProgress > beforeProgress) return "progress-advanced";
       const beforeUpdatedAt = Math.max(Number(before.updatedAt || 0) || 0, Number(before.createTime || 0) || 0);
       const afterUpdatedAt = Math.max(Number(after.updatedAt || 0) || 0, Number(after.createTime || 0) || 0);
-      if (afterUpdatedAt > beforeUpdatedAt) return "history-updated";
+      if (afterUpdatedAt > beforeUpdatedAt && !marker.searchTitle) return "history-updated";
       return "";
     }
 
@@ -1288,20 +1312,27 @@
       return !!nativeSearchHistoryChangeReason(item, marker, winner);
     }
 
-    function setNativeSearchReturnMarker(item) {
+    function setNativeSearchReturnMarker(item, searchTitle) {
       if (!item) return;
       const detailRun = state.detailPlayback && detailPlaybackIsCurrent(state.detailPlayback)
         ? state.detailPlayback
         : null;
       try {
-        localStorage.setItem("fm_detail_native_search_return", JSON.stringify({
+        const marker = {
           itemKey: panSearchItemKey(item),
           mediaKey: recentWatchingMediaKey(item),
           at: Date.now(),
+          searchTitle: String(searchTitle || "").trim(),
+          historyBaselineReady: !!(state.recent && state.recent.loaded === true && !state.recent.error
+            && !(typeof nativeHistoryRefreshPending === "function" && nativeHistoryRefreshPending())),
           detailRunToken: Number(detailRun && detailRun.token || 0) || 0,
-          detailRunItemKey: String(detailRun && detailRun.itemKey || panSearchItemKey(item)),
-          historySnapshot: nativeSearchHistorySnapshotFor(item)
-        }));
+          detailRunItemKey: String(detailRun && detailRun.itemKey || panSearchItemKey(item))
+        };
+        const searchWinner = marker.searchTitle ? nativeSearchHistoryWinnerFor(item, marker) : null;
+        marker.historySnapshot = marker.searchTitle
+          ? nativeSearchHistorySnapshotFor(item, searchWinner, marker.searchTitle)
+          : nativeSearchHistorySnapshotFor(item);
+        localStorage.setItem("fm_detail_native_search_return", JSON.stringify(marker));
       } catch (e) {}
     }
 
@@ -1312,8 +1343,20 @@
     async function nativeSearch(title) {
       if (!title) return;
       const item = state.selected;
+      const detail = $("detailSheet");
+      if (item && detail && detail.classList.contains("active")
+        && typeof shouldRefreshRecentList === "function"
+        && (shouldRefreshRecentList()
+          || typeof nativeHistoryRefreshPending === "function" && nativeHistoryRefreshPending())) {
+        try {
+          if (typeof loadRecentList === "function") {
+            await loadRecentList({ refresh: true, silent: true, reconcileDetail: false });
+          }
+        } catch (e) {}
+        if (state.selected !== item || !$("detailSheet") || !$("detailSheet").classList.contains("active")) return;
+      }
       if (item && $("detailSheet") && $("detailSheet").classList.contains("active")) {
-        setNativeSearchReturnMarker(item);
+        setNativeSearchReturnMarker(item, title);
       }
       rememberDetailReturn($("detailSearchBtn"));
       try {
@@ -1864,8 +1907,14 @@
       if (origin === "native-search") {
         const marker = nativeSearchReturnMarkerFor();
         if (!marker || marker.itemKey !== panSearchItemKey(item)) return false;
-        const winner = recentNativeHistoryWinnerFor(item);
-        const history = winner && detailHasAuthoritativeNativeHistory(winner) && detailHistoryMatches(item, winner)
+        const winner = marker.searchTitle
+          ? nativeSearchHistoryWinnerFor(item, marker)
+          : recentNativeHistoryWinnerFor(item);
+        const matchOptions = marker.searchTitle ? {
+          nativeSearchTitle: marker.searchTitle,
+          nativeSearchItemKey: marker.itemKey
+        } : null;
+        const history = winner && detailHasAuthoritativeNativeHistory(winner) && detailHistoryMatches(item, winner, matchOptions)
           && nativeHistoryRecordCanPlayExact(winner) ? winner : null;
         const changed = nativeSearchHistoryChanged(item, marker, history);
         if (history && changed) {
@@ -1876,6 +1925,8 @@
             handoffStarted: false,
             startedAt: Number(marker.at || 0) || Date.now(),
             returnedAt: Date.now(),
+            nativeSearchTitle: String(marker.searchTitle || ""),
+            nativeSearchItemKey: String(marker.itemKey || ""),
             nativeHistoryKey: detailNativeHistoryKey(history)
           };
           clearNativeSearchReturnMarker();

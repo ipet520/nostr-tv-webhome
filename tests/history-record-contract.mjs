@@ -246,10 +246,10 @@ await test('Native Search cancellation preserves preparation and a late committe
   vm.runInContext(handoffSource.slice(start,end).trim(),c);
  };
  install('    function nativeSearchReturnMarkerFor() {','\n    function nativeSearchHistorySnapshotFor');
- install('    function nativeSearchHistorySnapshotFor(item, history) {','\n    function nativeSearchHistoryChangeReason');
+ install('    function nativeSearchHistorySnapshotFor(item, history, searchTitle) {','\n    function nativeSearchHistoryWinnerFor');
  install('    function nativeSearchHistoryChangeReason(item, marker, winner) {','\n    function nativeSearchHistoryChanged');
  install('    function nativeSearchHistoryChanged(item, marker, winner) {','\n    function setNativeSearchReturnMarker');
- install('    function setNativeSearchReturnMarker(item) {','\n    function clearNativeSearchReturnMarker');
+ install('    function setNativeSearchReturnMarker(item, searchTitle) {','\n    function clearNativeSearchReturnMarker');
  install('    function clearNativeSearchReturnMarker() {','\n    async function nativeSearch');
  install('    function retireDetailPreparedPlaybackAfterNativeSearch(item, marker, reason) {','\n    function reconcileDetailAfterNativeReturn');
  install('    function reconcileDetailAfterNativeReturn(item, origin) {','\n    // 滚动恢复：closeDetail(needBack)');

@@ -127,7 +127,7 @@ function reconcileRestoredHistory(h) {
     Date
   };
   const snapshot = productionFunction(source19,
-    "    function nativeSearchHistorySnapshotFor(item, history) {", "\n    function nativeSearchHistoryChangeReason", shared);
+    "    function nativeSearchHistorySnapshotFor(item, history, searchTitle) {", "\n    function nativeSearchHistoryWinnerFor", shared);
   const reason = productionFunction(source19,
     "    function nativeSearchHistoryChangeReason(item, marker, winner) {", "\n    function nativeSearchHistoryChanged", {
       ...shared,
