@@ -8,10 +8,12 @@ const names = [
   "tvBrowseEnsureWarmBackdrop", "tvBrowseWaitWarmBackdrop", "tvBrowseCancelWarmBackdrop",
   "tvBrowseBackdropLayers", "tvBrowseClearBackdropLayer", "tvBrowseBackdropTransitionMs",
   "tvBrowseFinishDisplayedBackdropTransition", "tvBrowseStartDisplayedBackdropTransition",
-  "tvBrowseClearDisplayedBackdrop", "tvBrowseSetDisplayedBackdrop", "tvBrowseCardPosterSource",
+  "tvBrowseClearDisplayedBackdrop", "tvBrowseSetDisplayedBackdrop", "tvBrowseHistoryTmdbIdentity",
+  "tvBrowsePreviewDetail", "tvBrowsePreviewBackgrounds", "tvBrowseCardPosterSource",
   "tvBrowseReadyCardPoster", "tvBrowseWarmBackdropTracked", "tvBrowseWarmBackdropSettled",
   "tvBrowseStartWarmBackdrop", "tvBrowseTakeWarmBackdrop", "tvBrowseFinishPreviewImage",
-  "tvBrowseFailPreviewImage", "tvBrowseAdvancePreviewSource", "tvBrowseLoadPreviewSource",
+  "tvBrowsePreviewFallbackImage", "tvBrowseEnsureHistoryBackdropDetail", "tvBrowseFailPreviewImage",
+  "tvBrowseAdvancePreviewSource", "tvBrowseLoadPreviewSource",
   "tvBrowseWarmNextBackground", "tvBrowsePreview"
 ];
 
@@ -32,6 +34,8 @@ function makeHarness(items, imagePlan = {}) {
   const wall = { active: false, currentKey: "", moveToken: 0 };
   const query = { items, hasMore: false, loading: false };
   const displayWrites = [];
+  const displayCalls = [];
+  const detailCache = new Map();
   const stats = { requests: new Map(), decodes: new Map(), created: 0 };
 
   class FakeClassList {
@@ -108,10 +112,22 @@ function makeHarness(items, imagePlan = {}) {
     function tvBrowseInitialVisibleCardCount() { return 1; }
     function mediaDomKey(item) { return item && item.key || ""; }
     function tvBrowseActive() { return true; }
+    function tvBrowseQueryKey() { return runtimeUi.queryKey || "history-test-query"; }
     function secondaryGetQuery() { return runtimeQuery; }
     function tvWallpaperCurrentItems(query) { return query.items; }
-    function tvBrowsePreviewDetail(item) { return item.detail || null; }
-    function tvBrowsePreviewBackgrounds(item) { return item.backdropUrl ? { preferred: item.backdropUrl, urls: [item.backdropUrl] } : { preferred: "", urls: [] }; }
+    function tvBrowseShouldDeferAsyncDetailPreview() { return false; }
+    function movieDetailCacheId(itemOrId) {
+      const raw = itemOrId && typeof itemOrId === "object" ? (itemOrId.tmdbId != null ? itemOrId.tmdbId : itemOrId.id) : itemOrId;
+      const value = String(raw == null ? "" : raw).trim();
+      return /^\\d+$/.test(value) && Number(value) > 0 ? value : "";
+    }
+    function movieDetailCacheValue(item) { return detailCache.get("movie:" + movieDetailCacheId(item)) || null; }
+    function tvDetailCacheValue(item) { return detailCache.get("tv:" + movieDetailCacheId(item)) || null; }
+    function historyPlaybackContext(history) { return history && history.context || null; }
+    function displayImage(source, options) { if (!source) return ""; displayCalls.push({ source: String(source), size: options && options.size || "" }); return String(source); }
+    function tvBrowsePrepareDetailResource(item, requestClass, isCurrent) {
+      return globalThis.__detailLoader ? globalThis.__detailLoader(item, requestClass, isCurrent) : Promise.resolve({ state: "failed", detail: null });
+    }
     function tvWallpaperState() { return runtimeWall; }
     function tvWallpaperScheduleInfoShift() {}
     function tvBrowseCommitPreviewInfo(item, detail, key) { runtimeUi.presentedKey = key; }
@@ -127,6 +143,11 @@ function makeHarness(items, imagePlan = {}) {
     ui: () => runtimeUi,
     setPreparationKeys: keys => { runtimeUi.logoPreparationKeys = keys.slice(); },
     setWallpaper: (active, key) => { runtimeWall.active = active; runtimeWall.currentKey = key || ""; },
+    setView: view => { runtimeUi.view = view; },
+    setQueryKey: key => { runtimeUi.queryKey = key; },
+    setDetailLoader: loader => { globalThis.__detailLoader = loader; },
+    setCachedDetail: (type, id, detail) => { detailCache.set(String(type) + ":" + String(id), detail); },
+    getDisplayCalls: () => displayCalls.slice(),
     setItems: next => { runtimeQuery.items = next; },
     displayedLayers: () => [$("tvBrowseBackdrop"), $("tvBrowseBackdropNext")]
       .filter(layer => layer.classList.contains("visible"))
@@ -136,7 +157,8 @@ function makeHarness(items, imagePlan = {}) {
     __ui: ui, __wall: wall, __query: query, __layers: layers, __rail: rail,
     Image: FakeImage, Date, Math, Number, String, Array, Set, Map, Promise, Object, JSON,
     setTimeout, clearTimeout, getComputedStyle: () => ({ transitionDuration: "0s", transitionDelay: "0s" }),
-    TV_BROWSE_BACKDROP_TIMEOUT_MS: 1000, displayWrites, stats
+    TV_BROWSE_BACKDROP_TIMEOUT_MS: 1000, displayWrites, displayCalls, detailCache, stats,
+    __detailLoader: null
   };
   vm.runInNewContext(code, sandbox, { filename: "tv-browse-backdrop-reuse.vm.js" });
   return { api: sandbox.api, stats, displayWrites, imagePlan };
@@ -152,7 +174,12 @@ const waitFor = async (predicate, label, timeoutMs = 1500) => {
 };
 const backdrop = key => `https://img.example.test/w1280/${key}.jpg`;
 const poster = key => `https://img.example.test/w780/${key}-poster.jpg`;
-const makeItems = keys => keys.map(key => ({ key, title: `Title ${key}`, mediaType: "movie", backdropUrl: backdrop(key), posterUrl: poster(key) }));
+const makeItems = keys => keys.map(key => ({ key, title: `Title ${key}`, mediaType: "movie", landscape: backdrop(key), backdropUrl: backdrop(key), posterUrl: poster(key) }));
+const makeHistoryItem = (key, id, landscape = "") => ({
+  key, id: `history:${key}`, source: "history", title: `History ${key}`, mediaType: "movie", tmdbId: String(id || ""),
+  landscape, pic: poster(key), image: poster(key), posterUrl: poster(key),
+  nativeHistoryRaw: { context: { tmdbId: String(id || ""), mediaType: "movie" } }
+});
 
 async function show(harness, item, prepKeys = [item.key]) {
   harness.api.setPreparationKeys(prepKeys);
@@ -252,4 +279,161 @@ async function show(harness, item, prepKeys = [item.key]) {
   assert.equal(harness.api.ui().backdropMediaKey, "wall");
   assert.equal(harness.stats.requests.get(backdrop("wall")), 1);
   console.log("TV_BACKDROP_REUSE_NORMAL_WALLPAPER_SHARED_PATH = PASS");
+}
+
+// History view uses a verified horizontal backdrop when one is already
+// available and never promotes the row's vertical poster to full screen.
+{
+  const item = makeHistoryItem("trusted-landscape", 4101, "https://img.example.test/history/4101-backdrop.jpg");
+  const harness = makeHarness([item]);
+  harness.api.setView("history");
+  harness.api.setDetailLoader(() => { assert.fail("existing History backdrop should not request detail"); });
+  harness.api.tvBrowsePreview(item);
+  await waitFor(() => harness.api.ui().backdropMediaKey === item.key, "trusted History backdrop displayed");
+  assert.equal(harness.api.ui().backdropUrl, item.landscape, "the verified landscape URL is displayed");
+  assert.equal(harness.stats.requests.get(item.landscape), 1, "the backdrop is requested once");
+  assert.equal(harness.stats.requests.get(item.posterUrl) || 0, 0, "the vertical poster is not requested as a background");
+  assert.ok(!harness.displayWrites.some(entry => entry.url === item.posterUrl), "no poster URL is submitted to a background layer");
+  console.log("TV_HISTORY_TRUSTED_BACKDROP_SOURCE = PASS");
+}
+
+// A trusted History identity can reuse the existing shared detail path to
+// obtain a missing horizontal backdrop; text and the neutral base do not wait
+// on or display the vertical poster.
+{
+  const item = makeHistoryItem("detail-backdrop", 4102);
+  const expected = "https://img.example.test/history/4102-detail-backdrop.jpg";
+  const harness = makeHarness([item]);
+  harness.api.setView("history");
+  let resolveDetail;
+  let requestCount = 0;
+  harness.api.setDetailLoader((requested, requestClass, isCurrent) => {
+    requestCount += 1;
+    assert.equal(requested, item);
+    assert.equal(requestClass, "foreground", "the selected History row uses the existing foreground detail path");
+    assert.equal(isCurrent(), true, "the current History identity passes the existing stale-result guard");
+    return new Promise(resolve => { resolveDetail = resolve; });
+  });
+  harness.api.tvBrowsePreview(item);
+  assert.equal(harness.api.ui().backdropUrl, "", "missing backdrop starts from the neutral base");
+  assert.equal(requestCount, 1, "trusted identity starts one shared detail lookup");
+  assert.equal(harness.stats.requests.get(item.posterUrl) || 0, 0, "the History poster is not used while detail is pending");
+  harness.api.setCachedDetail("movie", item.tmdbId, { id: Number(item.tmdbId), media_type: "movie", backdrop_path: expected });
+  resolveDetail({ state: "ready", detail: { id: Number(item.tmdbId), media_type: "movie", backdrop_path: expected } });
+  await waitFor(() => harness.api.ui().backdropMediaKey === item.key, "detail-provided History backdrop displayed");
+  assert.equal(harness.api.ui().backdropUrl, expected, "the shared detail backdrop is used");
+  assert.equal(harness.stats.requests.get(expected), 1, "the returned horizontal background is requested once");
+  assert.equal(harness.stats.requests.get(item.posterUrl) || 0, 0, "the vertical poster is not substituted");
+  console.log("TV_HISTORY_SHARED_DETAIL_BACKDROP = PASS");
+}
+
+// A still-valid shared TMDB detail cache is consumed immediately without a
+// second detail lookup or a poster fallback.
+{
+  const item = makeHistoryItem("cached-detail", 4107);
+  const expected = "https://img.example.test/history/4107-cached-backdrop.jpg";
+  const harness = makeHarness([item]);
+  harness.api.setView("history");
+  harness.api.setCachedDetail("movie", item.tmdbId, { id: Number(item.tmdbId), media_type: "movie", backdrop_path: expected });
+  harness.api.setDetailLoader(() => { assert.fail("cached History detail must avoid another lookup"); });
+  harness.api.tvBrowsePreview(item);
+  await waitFor(() => harness.api.ui().backdropMediaKey === item.key, "cached History backdrop displayed");
+  assert.equal(harness.api.ui().backdropUrl, expected);
+  assert.equal(harness.stats.requests.get(expected), 1);
+  assert.equal(harness.stats.requests.get(item.posterUrl) || 0, 0);
+  console.log("TV_HISTORY_DETAIL_CACHE_HIT = PASS");
+}
+
+// Missing or conflicting TMDB identity makes even a supplied History
+// landscape untrusted. The item stays on a neutral background with no lookup.
+for (const [label, item] of [
+  ["missing", makeHistoryItem("no-identity", "", "https://img.example.test/history/unverified.jpg")],
+  ["mismatch", Object.assign(makeHistoryItem("wrong-identity", 4999, "https://img.example.test/history/wrong.jpg"), {
+    nativeHistoryRaw: { context: { tmdbId: "4103", mediaType: "movie" } }
+  })]
+]) {
+  const harness = makeHarness([item]);
+  harness.api.setView("history");
+  let requests = 0;
+  harness.api.setDetailLoader(() => { requests += 1; return Promise.resolve({ state: "ready", detail: null }); });
+  harness.api.tvBrowsePreview(item);
+  await new Promise(resolve => setTimeout(resolve, 5));
+  assert.equal(harness.api.ui().backdropUrl, "", `${label} identity uses the neutral base`);
+  assert.equal(requests, 0, `${label} identity cannot trigger TMDB detail lookup`);
+  assert.equal(harness.stats.requests.get(item.posterUrl) || 0, 0, `${label} identity does not load its poster as background`);
+  assert.ok(!harness.displayWrites.some(entry => entry.url === item.posterUrl), `${label} identity never submits the poster to a background layer`);
+  console.log(`TV_HISTORY_${label.toUpperCase()}_IDENTITY_NEUTRAL = PASS`);
+}
+
+// A response with a mismatched movie identity is rejected before its backdrop
+// URL can be prepared or presented.
+{
+  const item = makeHistoryItem("wrong-detail-response", 4110);
+  const harness = makeHarness([item]);
+  harness.api.setView("history");
+  harness.api.setDetailLoader(() => Promise.resolve({
+    state: "ready",
+    detail: { id: 9999, media_type: "movie", backdrop_path: "https://img.example.test/history/wrong-detail.jpg" }
+  }));
+  harness.api.tvBrowsePreview(item);
+  await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(harness.api.ui().backdropUrl, "", "a mismatched detail response stays on neutral background");
+  assert.equal(harness.stats.requests.get("https://img.example.test/history/wrong-detail.jpg") || 0, 0);
+  assert.equal(harness.stats.requests.get(item.posterUrl) || 0, 0);
+  console.log("TV_HISTORY_DETAIL_IDENTITY_MISMATCH_REJECTED = PASS");
+}
+
+// A confirmed backdrop failure settles to neutral rather than a full-screen
+// vertical poster.
+{
+  const item = makeHistoryItem("failed-landscape", 4104, "https://img.example.test/history/4104-fails.jpg");
+  const harness = makeHarness([item], { [item.landscape]: { fail: true } });
+  harness.api.setView("history");
+  harness.api.tvBrowsePreview(item);
+  await waitFor(() => harness.api.ui().pendingPreview === null, "failed History backdrop settles");
+  assert.equal(harness.api.ui().backdropUrl, "", "failed History backdrop settles to neutral");
+  assert.equal(harness.stats.requests.get(item.landscape), 1, "the failed backdrop is attempted once");
+  assert.equal(harness.stats.requests.get(item.posterUrl) || 0, 0, "the vertical poster is not retried as a background");
+  assert.ok(!harness.displayWrites.some(entry => entry.url === item.posterUrl), "the failed History image never displays a poster fallback");
+  console.log("TV_HISTORY_BACKDROP_FAILURE_NEUTRAL = PASS");
+}
+
+// Switching History rows while detail and image work is pending cannot allow
+// a stale completion to replace the currently selected row's backdrop.
+{
+  const first = makeHistoryItem("late-detail", 4105);
+  const second = makeHistoryItem("current-row", 4106, "https://img.example.test/history/4106-current.jpg");
+  const harness = makeHarness([first, second], { [second.landscape]: { delay: 2 } });
+  harness.api.setView("history");
+  let resolveFirst;
+  harness.api.setDetailLoader(() => new Promise(resolve => { resolveFirst = resolve; }));
+  harness.api.tvBrowsePreview(first);
+  harness.api.tvBrowsePreview(second);
+  await waitFor(() => harness.api.ui().backdropMediaKey === second.key, "second History row displayed");
+  resolveFirst({ state: "ready", detail: { id: Number(first.tmdbId), media_type: "movie", backdrop_path: "https://img.example.test/history/4105-stale.jpg" } });
+  await new Promise(resolve => setTimeout(resolve, 12));
+  assert.equal(harness.api.ui().previewKey, second.key);
+  assert.equal(harness.api.ui().backdropUrl, second.landscape, "the latest History backdrop remains current");
+  assert.equal(harness.api.ui().backdropMediaKey, second.key, "late detail cannot replace the current identity");
+  assert.ok(!harness.displayWrites.some(entry => entry.url === "https://img.example.test/history/4105-stale.jpg"), "stale detail never reaches a background layer");
+  assert.ok(!harness.displayWrites.some(entry => entry.url === first.posterUrl), "rapid History switching never displays a vertical poster");
+  console.log("TV_HISTORY_RAPID_SWITCH_STALE_GUARD = PASS");
+}
+
+// The shared image token and warm-cache cancellation also protect History
+// rows when an earlier backdrop load finishes after a newer row is selected.
+{
+  const first = makeHistoryItem("slow-landscape", 4108, "https://img.example.test/history/4108-slow.jpg");
+  const second = makeHistoryItem("fast-landscape", 4109, "https://img.example.test/history/4109-fast.jpg");
+  const harness = makeHarness([first, second], { [first.landscape]: { delay: 70 } });
+  harness.api.setView("history");
+  harness.api.tvBrowsePreview(first);
+  harness.api.tvBrowsePreview(second);
+  await waitFor(() => harness.api.ui().backdropMediaKey === second.key, "fast History backdrop displayed");
+  await new Promise(resolve => setTimeout(resolve, 85));
+  assert.equal(harness.api.ui().previewKey, second.key);
+  assert.equal(harness.api.ui().backdropUrl, second.landscape);
+  assert.equal(harness.api.ui().backdropMediaKey, second.key);
+  assert.ok(!harness.displayWrites.some(entry => entry.url === first.landscape), "stale first History image never reaches a background layer");
+  console.log("TV_HISTORY_RAPID_IMAGE_SWITCH_GUARD = PASS");
 }
