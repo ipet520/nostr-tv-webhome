@@ -701,8 +701,16 @@
       if (!item) return "";
       if (item.mediaType !== "tv") {
         const runtime = detailRuntime(detail || {}, item);
-        const releaseDate = latestDateOnly(detail && (detail.release_date || detail.primary_release_date) || item.releaseDate);
-        const release = releaseDate ? `${weeklyDateLabel(releaseDate)}上映` : "";
+        const detailReleaseDate = detail && [detail.release_date, detail.primary_release_date, detail.releaseDate]
+          .map(latestDateOnly).find(Boolean) || "";
+        const itemReleaseDate = [item.releaseDate, item.release_date].map(latestDateOnly).find(Boolean) || "";
+        const releaseDate = detailReleaseDate || itemReleaseDate;
+        const presentationItem = releaseDate ? Object.assign({}, item, { releaseDate }) : item;
+        const isMovie = String(item.mediaType || item.media_type || "").toLowerCase() === "movie";
+        const weeklyRelease = String(item.weeklyUpdateText || "").trim();
+        const release = isMovie
+          ? weeklyRelease ? weeklyUpdateText(presentationItem) : movieReleaseStatusText(presentationItem)
+          : releaseDate ? `${weeklyDateLabel(releaseDate)}上映` : "";
         return [runtime, release].filter(Boolean).join(" · ");
       }
       return tvPresentationStatus(item, detail);
