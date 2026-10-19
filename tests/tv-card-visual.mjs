@@ -13,7 +13,7 @@ const { output } = renderIndex();
 validateRenderedArtifact(output);
 // Exercise actual source, including its event handlers, with deterministic
 // business fixtures. Exporting lexical functions is confined to this test HTML.
-const hook = `window.testBrowse = { state, mediaCard, tvBrowsePreview, tvBrowseSelectColumn, syncBrowseDevicePresentation,
+const hook = `window.testBrowse = { state, mediaCard, renderTvBrowse, tvBrowseState, tvBrowsePreview, tvBrowseSelectColumn, syncBrowseDevicePresentation,
  tvBrowseBeginStartup, homeFocusUserEpoch };
  window.testBrowse.setup = () => {
    syncBrowseDevicePresentation(); bindActions(); installRemoteKeys();
@@ -26,6 +26,15 @@ const hook = `window.testBrowse = { state, mediaCard, tvBrowsePreview, tvBrowseS
      mediaType: 'movie', source: 'tmdb', pic: '/poster.jpg', landscape: '/backdrop-' + index + '.jpg',
      releaseDate: '2025-01-01', overview: '影片简介', genreIds: [18], voteAverage: 8.2
    })); return query;
+ };
+ window.testBrowse.seedHistory = () => {
+   state.recent.loaded = true; state.recent.loading = false; state.recent.error = "";
+   state.recent.items = Array.from({length: 3}, (_, index) => ({
+     id: "history-visual-" + index, title: "历史影片" + index, mediaType: "movie", source: "history",
+     pic: "/history-poster-" + index + ".jpg", landscape: "/history-backdrop-" + index + ".jpg"
+   }));
+   const ui = tvBrowseState(); ui.view = "history"; ui.filterOpen = false; ui.previewKey = "";
+   renderTvBrowse({reason: "focus-visual-history"});
  };
 `;
 const html = output.replace(/boot\(\)\.catch\(function\(e\) \{[\s\S]*?\n    \}\);/, hook);
@@ -74,7 +83,7 @@ try {
    if(target.startsWith('#tvColumn-'))await p.evaluate(id=>testBrowse.tvBrowseSelectColumn(id),target.slice('#tvColumn-'.length));
    await p.locator(target).first().focus();await p.waitForTimeout(350);
    values.push(await p.evaluate(()=>{
-    const style=el=>{const s=getComputedStyle(el);return Object.fromEntries(['backgroundColor','color','fontSize','fontWeight','border','borderRadius','boxShadow','outline','padding','width','height','transform','textOverflow','whiteSpace','overflow'].map(k=>[k,s[k]]));};
+    const style=el=>{const s=getComputedStyle(el);return Object.fromEntries(['backgroundColor','color','fontSize','fontWeight','border','borderRadius','boxShadow','outline','padding','width','height','transform','transitionProperty','transitionDuration','transitionTimingFunction','textOverflow','whiteSpace','overflow'].map(k=>[k,s[k]]));};
     const column=document.querySelector('#tvColumn-movie'),normal=document.querySelector('#tvColumn-documentary'),focused=document.querySelector('#tvColumn-tv');
     const line=getComputedStyle(column,'::after');
     const card=document.querySelector('#tvBrowseRail .card'),title=card.querySelector('.card-title');
@@ -82,7 +91,7 @@ try {
     const rail=card.parentElement,poster=card.querySelector('.poster-wrap'),cols=document.querySelector('#tvBrowseColumns');
     const frame=getComputedStyle(poster,'::after');
     return {column:style(column),normal:style(normal),focused:style(focused),line:[line.width,line.height,line.backgroundColor],card:style(card),poster:style(poster),title:style(title),body:style(card.querySelector('.card-body')),rating:style(card.querySelector('.rating-badge')),
-     frame:{content:frame.content,border:frame.border,borderRadius:frame.borderRadius,inset:frame.inset,pointerEvents:frame.pointerEvents},
+     frame:{content:frame.content,border:frame.border,borderRadius:frame.borderRadius,inset:frame.inset,pointerEvents:frame.pointerEvents,opacity:frame.opacity,transitionProperty:frame.transitionProperty,transitionDuration:frame.transitionDuration},
      layout:{info:rect(document.querySelector('#tvBrowseInfo')),columns:rect(cols),firstColumn:rect(cols.firstElementChild),rail:rect(rail),card:rect(card),poster:rect(poster),image:rect(card.querySelector('img')),title:rect(title),gap:poster.getBoundingClientRect().top-cols.getBoundingClientRect().bottom,bottomSpace:innerHeight-title.getBoundingClientRect().bottom,railGap:getComputedStyle(rail).gap},
      viewport:{width:innerWidth,height:innerHeight,dpr:devicePixelRatio,visual:{width:visualViewport.width,height:visualViewport.height,scale:visualViewport.scale},media:{landscape:matchMedia('(orientation:landscape)').matches,min901:matchMedia('(min-width:901px)').matches,coarse:matchMedia('(pointer:coarse)').matches,dvh:CSS.supports('height','100dvh')}}};
    }));
@@ -103,13 +112,19 @@ try {
   assert.equal(await p.locator('#tvBrowseRail .card').count(),3);
   assert.ok((await p.locator('#tvBrowseRail .card img').nth(2).getAttribute('src')).startsWith('data:image/gif'));
   const inspect=()=>p.locator('#tvBrowseRail .card').first().evaluate(card=>{
-   const style=el=>{const s=getComputedStyle(el);return {align:s.textAlign,outline:s.outline,shadow:s.boxShadow,border:s.borderTop,background:s.backgroundColor,width:s.width,padding:s.padding,overflow:s.overflow,whiteSpace:s.whiteSpace,ellipsis:s.textOverflow,transform:s.transform};};
-   return {active:document.activeElement.className,card:style(card),poster:style(card.querySelector('.poster-wrap')),body:style(card.querySelector('.card-body')),title:style(card.querySelector('.card-title'))};
+   const style=el=>{const s=getComputedStyle(el);return {align:s.textAlign,outline:s.outline,shadow:s.boxShadow,border:s.borderTop,background:s.backgroundColor,width:s.width,padding:s.padding,overflow:s.overflow,whiteSpace:s.whiteSpace,ellipsis:s.textOverflow,transform:s.transform,transitionProperty:s.transitionProperty,transitionDuration:s.transitionDuration};};
+   const frame=getComputedStyle(card.querySelector('.poster-wrap'),'::after');
+   return {active:document.activeElement.className,card:style(card),poster:style(card.querySelector('.poster-wrap')),body:style(card.querySelector('.card-body')),title:style(card.querySelector('.card-title')),frame:{opacity:frame.opacity,transitionProperty:frame.transitionProperty,transitionDuration:frame.transitionDuration}};
   });
   await p.waitForTimeout(350);const normal=await inspect(); await p.locator('#tvBrowseRail .card').first().focus();await p.waitForTimeout(350);const focused=await inspect();
   assert.ok(focused.active.includes('card focusable'));
   for(const state of [normal,focused]) {assert.equal(state.title.align,'center');assert.equal(state.title.whiteSpace,'nowrap');assert.equal(state.title.ellipsis,'ellipsis');assert.ok(state.card.outline.includes('none'));assert.ok(state.title.outline.includes('none'));}
-  assert.equal(normal.title.width,focused.title.width);assert.ok(focused.card.transform.includes('1.04'));
+  assert.equal(normal.card.transform,'none');assert.equal(normal.title.width,focused.title.width);assert.ok(focused.card.transform.includes('1.04'));
+  assert.equal(normal.card.transitionProperty,'transform');assert.equal(normal.card.transitionDuration,'0.17s');
+  assert.equal(focused.card.transitionProperty,'transform');assert.equal(focused.card.transitionDuration,'0.17s');
+  assert.equal(normal.frame.transitionProperty,'opacity');assert.equal(normal.frame.transitionDuration,'0.16s');
+  await p.locator('#tvColumn-movie').focus();await p.waitForTimeout(180);const blurred=await inspect();
+  assert.equal(blurred.card.transform,'none','blur settles back to the original card size');assert.equal(blurred.frame.opacity,'0','focus frame fades out');
   assert.equal(await p.locator('#tvBrowseRail .card-title').nth(1).evaluate(el=>el.scrollWidth>el.clientWidth),true);
   for(const card of await p.locator('#tvBrowseRail .card').all()) {
    await card.focus();await p.waitForTimeout(160);
@@ -118,9 +133,24 @@ try {
    assert.equal(await card.locator('[tabindex],button,a,input').count(),0,'the card remains the sole focus node');
    assert.equal(await card.locator('.poster-wrap').evaluate(el=>getComputedStyle(el).borderRadius),'6px');
   }
+  for(const index of [0,2]) {
+   const card=p.locator('#tvBrowseRail .card').nth(index);await card.focus();await p.waitForTimeout(190);
+   const bounds=await card.evaluate(el=>{const c=el.getBoundingClientRect(),r=el.parentElement.getBoundingClientRect(),s=el.nextElementSibling||el.previousElementSibling,n=s&&s.getBoundingClientRect();return {card:{left:c.left,right:c.right,top:c.top,bottom:c.bottom},rail:{left:r.left,right:r.right,top:r.top,bottom:r.bottom},neighbor:n&&{left:n.left,right:n.right}};});
+   assert.ok(bounds.card.left>=bounds.rail.left&&bounds.card.right<=bounds.rail.right,'scaled edge card remains inside the visible rail');
+   assert.ok(bounds.card.top>=bounds.rail.top&&bounds.card.bottom<=bounds.rail.bottom,'scaled edge card remains inside the vertical rail slot');
+   if(index===0)assert.ok(bounds.card.right<=bounds.neighbor.left,'focused first card does not cover its neighbor');
+   else assert.ok(bounds.neighbor.right<=bounds.card.left,'focused last card does not cover its neighbor');
+  }
   await p.locator('#tvBrowseRail .card').first().focus();
   for(let move=0;move<12;move++) await p.keyboard.press(move%2?'ArrowLeft':'ArrowRight');
-  assert.equal(await p.locator('#tvBrowseRail .poster-wrap').evaluateAll(els=>els.filter(el=>getComputedStyle(el,'::after').content==='""').length),1,'rapid focus changes leave exactly one poster frame');
+  await p.waitForTimeout(180);
+  assert.equal(await p.locator('#tvBrowseRail .poster-wrap').evaluateAll(els=>els.filter(el=>getComputedStyle(el,'::after').opacity==='1').length),1,'rapid focus changes leave exactly one fully visible poster frame');
+  await p.evaluate(()=>testBrowse.seedHistory());
+  const historyCard=p.locator('#tvBrowseRail .card').first();await historyCard.focus();await p.waitForTimeout(190);
+  const historyFocus=await historyCard.evaluate(el=>({transform:getComputedStyle(el).transform,transition:getComputedStyle(el).transitionDuration,frame:getComputedStyle(el.querySelector('.poster-wrap'),'::after').opacity}));
+  assert.ok(historyFocus.transform.includes('1.04'),'History rail cards use the same focused scale');
+  assert.equal(historyFocus.transition,'0.17s');assert.equal(historyFocus.frame,'1');
+  await p.evaluate(()=>testBrowse.tvBrowseSelectColumn('movie'));
   const ref=await pageAt(true,viewport,true,true);await ref.waitForTimeout(300);
   for(const page of [p,ref])await page.evaluate(()=>{testBrowse.seed('tv',3).hasMore=false;});
   await ref.evaluate(()=>{const q=testBrowse.seed('movie',3);q.hasMore=false;testBrowse.tvBrowseSelectColumn('movie');});
@@ -142,7 +172,8 @@ try {
    assert.ok(a.poster.y>=a.rail.y && a.title.bottom<a.rail.bottom && a.card.bottom<a.rail.bottom,'focus remains within the rail clipping bounds');
    assert.ok(a.title.y>a.poster.bottom && a.card.bottom<viewport.height && a.info.bottom<a.columns.y);
    assert.deepEqual(a.image,a.poster,'image fills the independently rounded poster');
-   assert.equal(after[i].frame.content,i===2?'""':'none');
+   assert.equal(after[i].frame.content,'""','the inset ring exists for both directions of opacity transition');
+   assert.equal(after[i].frame.opacity,i===2?'1':'0');
    if(i===2) {assert.equal(after[i].frame.border,'2px solid rgba(255, 255, 255, 0.9)');assert.equal(after[i].frame.borderRadius,after[i].poster.borderRadius);assert.equal(after[i].frame.inset,'0px');assert.equal(after[i].frame.pointerEvents,'none');}
    assert.equal(after[i].normal.backgroundColor,'rgba(40, 40, 40, 0.18)');assert.equal(after[i].normal.boxShadow,'none');
   }

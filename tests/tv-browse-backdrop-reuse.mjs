@@ -7,7 +7,7 @@ const names = [
   "tvBrowseCancelPendingPreview", "tvBrowseTouchWarmBackdrop", "tvBrowseTrimWarmBackdrops",
   "tvBrowseEnsureWarmBackdrop", "tvBrowseWaitWarmBackdrop", "tvBrowseCancelWarmBackdrop",
   "tvBrowseBackdropLayers", "tvBrowseClearBackdropLayer", "tvBrowseBackdropTransitionMs",
-  "tvBrowseFinishDisplayedBackdropTransition", "tvBrowseStartDisplayedBackdropTransition",
+  "tvBrowseFinishDisplayedBackdropTransition", "tvBrowseInterruptDisplayedBackdropTransition", "tvBrowseStartDisplayedBackdropTransition",
   "tvBrowseClearDisplayedBackdrop", "tvBrowseSetDisplayedBackdrop", "tvBrowseHistoryTmdbIdentity", "tvBrowseHistoryDetailItem",
   "tvBrowsePreviewDetail", "tvBrowsePreviewBackgrounds", "tvBrowseHistoryBackdropSource", "tvBrowseCardPosterSource",
   "tvBrowseReadyCardPoster", "tvBrowseWarmBackdropTracked", "tvBrowseWarmBackdropSettled",
@@ -45,7 +45,7 @@ function makeHarness(items, imagePlan = {}) {
     remove(value) { this.values.delete(value); }
   }
   class FakeStyle {
-    constructor(layer) { this.layer = layer; this._backgroundImage = ""; }
+    constructor(layer) { this.layer = layer; this._backgroundImage = ""; this.opacity = ""; this.transition = ""; this.zIndex = ""; }
     get backgroundImage() { return this._backgroundImage; }
     set backgroundImage(value) {
       this._backgroundImage = value;
@@ -60,6 +60,7 @@ function makeHarness(items, imagePlan = {}) {
       this.classList = new FakeClassList();
       this.style = new FakeStyle(this);
       this.listeners = new Map();
+      this.computedOpacity = null;
     }
     addEventListener(name, callback) { this.listeners.set(name, callback); }
     removeEventListener(name, callback) { if (this.listeners.get(name) === callback) this.listeners.delete(name); }
@@ -150,6 +151,9 @@ function makeHarness(items, imagePlan = {}) {
     setDetailLoader: loader => { globalThis.__detailLoader = loader; },
     setCachedDetail: (type, id, detail) => { detailCache.set(String(type) + ":" + String(id), detail); },
     getDisplayCalls: () => displayCalls.slice(),
+    setTransitionDuration: value => { runtimeUi.testTransitionDuration = String(value || "0s"); },
+    setLayerOpacity: (id, value) => { __layers[id].computedOpacity = Number(value); },
+    getLayer: id => __layers[id],
     setItems: next => { runtimeQuery.items = next; },
     displayedLayers: () => [$("tvBrowseBackdrop"), $("tvBrowseBackdropNext")]
       .filter(layer => layer.classList.contains("visible"))
@@ -158,7 +162,10 @@ function makeHarness(items, imagePlan = {}) {
   const sandbox = {
     __ui: ui, __wall: wall, __query: query, __layers: layers, __rail: rail,
     Image: FakeImage, Date, Math, Number, String, Array, Set, Map, Promise, Object, JSON,
-    setTimeout, clearTimeout, getComputedStyle: () => ({ transitionDuration: "0s", transitionDelay: "0s" }),
+    setTimeout, clearTimeout, getComputedStyle: layer => ({
+      transitionDuration: ui.testTransitionDuration || "0s", transitionDelay: "0s",
+      opacity: layer && layer.computedOpacity != null ? String(layer.computedOpacity) : layer && layer.classList.contains("visible") ? "1" : "0"
+    }),
     TV_BROWSE_BACKDROP_TIMEOUT_MS: 1000, displayWrites, displayCalls, detailCache, stats,
     __detailLoader: null
   };
@@ -249,6 +256,45 @@ async function show(harness, item, prepKeys = [item.key]) {
   assert.equal(harness.api.ui().previewKey, "fast-B");
   assert.equal(JSON.stringify(harness.api.displayedLayers()), JSON.stringify([{ url: backdrop("fast-B"), key: "fast-B" }]), "stale A callback cannot overwrite B's visible layer");
   console.log("TV_BACKDROP_REUSE_STALE_CALLBACK_GUARD = PASS");
+}
+
+// A new ready target interrupts an in-flight crossfade immediately, keeps
+// whichever prepared layer is currently more visible as its base, and drops
+// the stale intermediate target instead of waiting for its transition queue.
+{
+  const items = makeItems(["transition-A", "transition-B", "transition-C"]);
+  const harness = makeHarness(items);
+  harness.api.setTransitionDuration("240ms");
+  harness.api.tvBrowseSetDisplayedBackdrop(backdrop("transition-A"), "transition-A");
+  const transitionA = harness.api.ui().backdropTransition;
+  assert.ok(transitionA, "the first prepared background starts the crossfade");
+  harness.api.setLayerOpacity("tvBrowseBackdropNext", 0.76);
+  harness.api.tvBrowseSetDisplayedBackdrop(backdrop("transition-B"), "transition-B");
+  const transitionB = harness.api.ui().backdropTransition;
+  assert.equal(transitionA.finished, true, "the previous transition listener and timer are retired");
+  assert.equal(harness.api.ui().backdropUrl, backdrop("transition-B"));
+  assert.equal(harness.api.getLayer("tvBrowseBackdropNext").classList.contains("visible"), false,
+    "the strongest prior layer remains the outgoing base during the next fade");
+  assert.equal(transitionB.outgoing.dataset.tvBrowseBackdropUrl, backdrop("transition-A"));
+
+  harness.api.setLayerOpacity("tvBrowseBackdrop", 0.31);
+  harness.api.setLayerOpacity("tvBrowseBackdropNext", 0.69);
+  harness.api.tvBrowseSetDisplayedBackdrop(backdrop("transition-C"), "transition-C");
+  const transitionC = harness.api.ui().backdropTransition;
+  assert.equal(transitionB.finished, true, "the stale B transition is interrupted rather than serialized");
+  assert.equal(harness.api.ui().backdropQueue, null, "rapid set targets do not remain queued");
+  assert.equal(harness.api.ui().backdropUrl, backdrop("transition-C"));
+  assert.equal(harness.api.ui().backdropMediaKey, "transition-C");
+  assert.equal(transitionC.incoming.dataset.tvBrowseBackdropUrl, backdrop("transition-C"));
+  assert.equal(transitionC.incoming.dataset.tvBrowseBackdropKey, "transition-C");
+  assert.equal(JSON.stringify(harness.api.displayedLayers()), JSON.stringify([
+    { url: backdrop("transition-C"), key: "transition-C" }
+  ]), "only C is the visible target after retargeting");
+  harness.api.tvBrowseFinishDisplayedBackdropTransition(transitionC);
+  assert.equal(JSON.stringify(harness.api.displayedLayers()), JSON.stringify([
+    { url: backdrop("transition-C"), key: "transition-C" }
+  ]), "completion cleans the hidden stale layer");
+  console.log("TV_BACKDROP_CROSSFADE_RAPID_RETARGET_LATEST_WINS = PASS");
 }
 
 // Unprepared resources retain the current same-item poster fallback, while a

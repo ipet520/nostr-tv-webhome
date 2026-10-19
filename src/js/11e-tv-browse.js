@@ -1756,12 +1756,12 @@
         px("card-gap", clamp(12, rect.width * .014, 28));
         const minWidth = compact ? 96 : Math.max(96, captionFont * 6 + 16);
         poster = Math.max(minWidth * 1.5, height * .33);
-        // Keep the measured rail breathing room and bottom safe position
-        // stable across displays while the focus itself remains unscaled.
+        // Reserve space for the centered 4% focus scale while keeping the
+        // rail breathing room and bottom safe position stable across displays.
         focusSpace = Math.ceil((poster + caption) * .02) + 2;
         railSlot = Math.ceil(poster + caption) + focusSpace * 2;
-        // Preserve the established title edge budget while removing the
-        // transform that made the focused card visually pulse during travel.
+        // Preserve the established title edge budget for the centered scale,
+        // including the card's scaled bottom inset.
         // CSS resolves system safe-area insets on this one foreground.
         const titleEdge = railSlot - focusSpace - (poster + caption) * 1.02 + 6 * 1.04;
         px("rail-title-bottom-gap", titleEdge);
@@ -2547,6 +2547,46 @@
       return true;
     }
 
+    function tvBrowseInterruptDisplayedBackdropTransition() {
+      const ui = tvBrowseState(), record = ui.backdropTransition;
+      if (!record || record.finished) return null;
+      record.finished = true;
+      if (record.timer) clearTimeout(record.timer);
+      (record.watch || []).forEach((layer) => {
+        layer.removeEventListener("transitionend", record.onTransition);
+        layer.removeEventListener("transitioncancel", record.onTransition);
+      });
+      ui.backdropTransition = null;
+      ui.backdropQueue = null;
+
+      const layers = tvBrowseBackdropLayers();
+      const candidates = layers.filter((layer) => layer.dataset.tvBrowseBackdropUrl);
+      let base = null, baseOpacity = -1;
+      candidates.forEach((layer) => {
+        const parsed = parseFloat(getComputedStyle(layer).opacity);
+        const opacity = Number.isFinite(parsed) ? parsed : 0;
+        if (!base || opacity > baseOpacity || (opacity === baseOpacity && layer === record.incoming)) {
+          base = layer; baseOpacity = opacity;
+        }
+      });
+      const outgoing = base ? layers.find((layer) => layer !== base) || null : null;
+      if (base) {
+        // Keep the most visible prepared image as the continuous base. The
+        // next set call replaces only the weaker layer and reverses the two
+        // existing opacity transitions toward the latest target.
+        base.classList.add("visible");
+        base.style.zIndex = "0";
+        if (outgoing) { outgoing.classList.remove("visible"); outgoing.style.zIndex = "1"; }
+        ui.backdropSlot = base === $("tvBrowseBackdropNext") ? 1 : 0;
+        ui.backdropUrl = base.dataset.tvBrowseBackdropUrl || "";
+        ui.backdropMediaKey = base.dataset.tvBrowseBackdropKey || "";
+      } else {
+        layers.forEach((layer) => { layer.classList.remove("visible"); tvBrowseClearBackdropLayer(layer); });
+        ui.backdropUrl = ""; ui.backdropMediaKey = ""; ui.backdropSlot = 0;
+      }
+      return base ? { base, outgoing } : { base: null, outgoing: null };
+    }
+
     function tvBrowseStartDisplayedBackdropTransition(type, incoming, outgoing) {
       const ui = tvBrowseState();
       const watch = incoming ? [incoming] : (outgoing || []).filter(Boolean);
@@ -2598,12 +2638,18 @@
         ui.backdropQueue = null;
         if (mediaKey) {
           ui.backdropMediaKey = mediaKey;
-          if (visible) visible.dataset.tvBrowseBackdropKey = mediaKey;
+          const displayed = tvBrowseBackdropLayers().find((layer) => layer.dataset.tvBrowseBackdropUrl === url) || visible;
+          if (displayed) displayed.dataset.tvBrowseBackdropKey = mediaKey;
         }
         return false;
       }
-      if (ui.backdropTransition) {
-        ui.backdropQueue = { type: "set", url, mediaKey: mediaKey || "" };
+      const interrupted = ui.backdropTransition ? tvBrowseInterruptDisplayedBackdropTransition() : null;
+      if (url === ui.backdropUrl && interrupted && interrupted.base) {
+        if (mediaKey) {
+          ui.backdropMediaKey = mediaKey;
+          interrupted.base.dataset.tvBrowseBackdropKey = mediaKey;
+        }
+        tvBrowseStartDisplayedBackdropTransition("set", interrupted.base, interrupted.outgoing);
         return true;
       }
       const next = ui.backdropSlot ? $("tvBrowseBackdrop") : $("tvBrowseBackdropNext");

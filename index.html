@@ -7009,7 +7009,7 @@
     html.tv-browse-active .tv-browse-foreground { position: relative; display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: minmax(0,1fr) auto var(--tv-rail-slot); gap: 0; height: var(--tv-visible-height,100%); padding: var(--tv-safe-top) 0 max(var(--tv-safe-bottom),env(safe-area-inset-bottom,0px)); }
     html.tv-browse-active .tv-browse-foreground > * { grid-column: 1; }
     html.tv-browse-active .tv-browse-upper { grid-row: 1; display: grid; grid-template-columns: minmax(0,1fr) auto; grid-template-rows: minmax(0,1fr); gap: var(--tv-gap); margin: 0 var(--tv-gutter) var(--tv-gap); min-height: 0; }
-    html.tv-browse-active .tv-browse-backdrop { position: absolute; z-index: 0; inset: 0; background-size: cover; background-position: center; opacity: 0; transition: opacity 240ms ease; pointer-events: none; }
+    html.tv-browse-active .tv-browse-backdrop { position: absolute; z-index: 0; inset: 0; background-size: cover; background-position: center; opacity: 0; transition: opacity 240ms ease-in-out; pointer-events: none; }
     html.tv-browse-active .tv-browse-backdrop.visible { opacity: 1; }
     html.tv-browse-active .tv-browse-shade { position: absolute; z-index: 1; inset: 0; background: linear-gradient(90deg,rgba(8,12,18,.58),rgba(8,12,18,.22) 34%,transparent 65%),linear-gradient(0deg,rgba(8,12,18,.58),rgba(8,12,18,.16) 25%,transparent 42%); pointer-events: none; }
     html.tv-browse-active .tv-browse-foreground { z-index: 2; }
@@ -7099,12 +7099,13 @@
     html.tv-browse-active .tv-browse-rail { display: flex; align-items: flex-start; gap: var(--tv-card-gap,1.4vw); overflow-x: auto; overflow-y: hidden; height: 100%; padding: var(--tv-focus-space) var(--tv-gutter); box-sizing: border-box; scrollbar-width: none; }
     /* One measured height budget determines both dimensions at 2:3.
        No flex shrink may compress the image independently of its width. */
-    html.tv-browse-active .tv-browse-rail .card { flex: 0 0 var(--tv-poster-width,17.2vh); display: flex; flex-direction: column; width: var(--tv-poster-width,17.2vh); min-width: 0; max-width: none; overflow: visible; transform-origin: center center; }
+    html.tv-browse-active .tv-browse-rail .card { flex: 0 0 var(--tv-poster-width,17.2vh); display: flex; flex-direction: column; width: var(--tv-poster-width,17.2vh); min-width: 0; max-width: none; overflow: visible; transform-origin: center center; transition: transform 170ms cubic-bezier(.2,0,0,1); }
     html.tv-browse-active .tv-browse-rail .poster-wrap { flex: 0 0 auto; width: 100%; max-width: 100%; margin: 0; aspect-ratio: 2 / 3; height: var(--tv-poster-height,25.8vh); border-radius: inherit; overflow: hidden; }
     html.tv-browse-active .tv-browse-rail .card-body { flex: 0 0 auto; width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; padding: 6px 8px; }
     html.tv-browse-active .tv-browse-rail .card img { width: 100%; height: 100%; object-fit: cover; }
     html.tv-browse-active .tv-browse-rail .card:focus { transform: scale(1.04); }
-    html.tv-browse-active .tv-browse-rail .card:focus .poster-wrap::after { content: ""; position: absolute; inset: 0; border: 2px solid rgba(255,255,255,.9); border-radius: inherit; box-sizing: border-box; pointer-events: none; z-index: 4; }
+    html.tv-browse-active .tv-browse-rail .card .poster-wrap::after { content: ""; position: absolute; inset: 0; border: 2px solid rgba(255,255,255,.9); border-radius: inherit; box-sizing: border-box; opacity: 0; pointer-events: none; z-index: 4; transition: opacity 160ms ease-in-out; }
+    html.tv-browse-active .tv-browse-rail .card:focus .poster-wrap::after { opacity: 1; }
     html.tv-browse-active .tv-browse-rail .card-title { width: 100%; max-width: 100%; min-width: 0; font-size: var(--tv-caption-font); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     html.tv-browse-active .tv-browse-rail .card-meta { display: none; }
     html.tv-browse-active .tv-browse-rail .weekly-air-status { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
@@ -29682,12 +29683,12 @@ utils.encode = function encode(arr, enc) {
         px("card-gap", clamp(12, rect.width * .014, 28));
         const minWidth = compact ? 96 : Math.max(96, captionFont * 6 + 16);
         poster = Math.max(minWidth * 1.5, height * .33);
-        // Keep the measured rail breathing room and bottom safe position
-        // stable across displays while the focus itself remains unscaled.
+        // Reserve space for the centered 4% focus scale while keeping the
+        // rail breathing room and bottom safe position stable across displays.
         focusSpace = Math.ceil((poster + caption) * .02) + 2;
         railSlot = Math.ceil(poster + caption) + focusSpace * 2;
-        // Preserve the established title edge budget while removing the
-        // transform that made the focused card visually pulse during travel.
+        // Preserve the established title edge budget for the centered scale,
+        // including the card's scaled bottom inset.
         // CSS resolves system safe-area insets on this one foreground.
         const titleEdge = railSlot - focusSpace - (poster + caption) * 1.02 + 6 * 1.04;
         px("rail-title-bottom-gap", titleEdge);
@@ -30473,6 +30474,46 @@ utils.encode = function encode(arr, enc) {
       return true;
     }
 
+    function tvBrowseInterruptDisplayedBackdropTransition() {
+      const ui = tvBrowseState(), record = ui.backdropTransition;
+      if (!record || record.finished) return null;
+      record.finished = true;
+      if (record.timer) clearTimeout(record.timer);
+      (record.watch || []).forEach((layer) => {
+        layer.removeEventListener("transitionend", record.onTransition);
+        layer.removeEventListener("transitioncancel", record.onTransition);
+      });
+      ui.backdropTransition = null;
+      ui.backdropQueue = null;
+
+      const layers = tvBrowseBackdropLayers();
+      const candidates = layers.filter((layer) => layer.dataset.tvBrowseBackdropUrl);
+      let base = null, baseOpacity = -1;
+      candidates.forEach((layer) => {
+        const parsed = parseFloat(getComputedStyle(layer).opacity);
+        const opacity = Number.isFinite(parsed) ? parsed : 0;
+        if (!base || opacity > baseOpacity || (opacity === baseOpacity && layer === record.incoming)) {
+          base = layer; baseOpacity = opacity;
+        }
+      });
+      const outgoing = base ? layers.find((layer) => layer !== base) || null : null;
+      if (base) {
+        // Keep the most visible prepared image as the continuous base. The
+        // next set call replaces only the weaker layer and reverses the two
+        // existing opacity transitions toward the latest target.
+        base.classList.add("visible");
+        base.style.zIndex = "0";
+        if (outgoing) { outgoing.classList.remove("visible"); outgoing.style.zIndex = "1"; }
+        ui.backdropSlot = base === $("tvBrowseBackdropNext") ? 1 : 0;
+        ui.backdropUrl = base.dataset.tvBrowseBackdropUrl || "";
+        ui.backdropMediaKey = base.dataset.tvBrowseBackdropKey || "";
+      } else {
+        layers.forEach((layer) => { layer.classList.remove("visible"); tvBrowseClearBackdropLayer(layer); });
+        ui.backdropUrl = ""; ui.backdropMediaKey = ""; ui.backdropSlot = 0;
+      }
+      return base ? { base, outgoing } : { base: null, outgoing: null };
+    }
+
     function tvBrowseStartDisplayedBackdropTransition(type, incoming, outgoing) {
       const ui = tvBrowseState();
       const watch = incoming ? [incoming] : (outgoing || []).filter(Boolean);
@@ -30524,12 +30565,18 @@ utils.encode = function encode(arr, enc) {
         ui.backdropQueue = null;
         if (mediaKey) {
           ui.backdropMediaKey = mediaKey;
-          if (visible) visible.dataset.tvBrowseBackdropKey = mediaKey;
+          const displayed = tvBrowseBackdropLayers().find((layer) => layer.dataset.tvBrowseBackdropUrl === url) || visible;
+          if (displayed) displayed.dataset.tvBrowseBackdropKey = mediaKey;
         }
         return false;
       }
-      if (ui.backdropTransition) {
-        ui.backdropQueue = { type: "set", url, mediaKey: mediaKey || "" };
+      const interrupted = ui.backdropTransition ? tvBrowseInterruptDisplayedBackdropTransition() : null;
+      if (url === ui.backdropUrl && interrupted && interrupted.base) {
+        if (mediaKey) {
+          ui.backdropMediaKey = mediaKey;
+          interrupted.base.dataset.tvBrowseBackdropKey = mediaKey;
+        }
+        tvBrowseStartDisplayedBackdropTransition("set", interrupted.base, interrupted.outgoing);
         return true;
       }
       const next = ui.backdropSlot ? $("tvBrowseBackdrop") : $("tvBrowseBackdropNext");
