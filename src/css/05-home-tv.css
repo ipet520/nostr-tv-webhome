@@ -1243,11 +1243,11 @@
     html.tv-browse-active .tv-browse-rail .card:focus { transform: scale(1.04); }
     html.tv-browse-active .tv-browse-rail .card .poster-wrap::after { content: ""; position: absolute; inset: 0; border: 2px solid rgba(255,255,255,.9); border-radius: inherit; box-sizing: border-box; opacity: 0; pointer-events: none; z-index: 4; transition: opacity 160ms ease-in-out; }
     html.tv-browse-active .tv-browse-rail .card:focus .poster-wrap::after { opacity: 1; }
-    /* Keep the semantic DOM focus immediate, but only show its card treatment
-       at the center anchor while scrolling is possible. Edge cards retain the
-       normal focused treatment when the anchor is clamped. */
-    html.tv-browse-active #tvBrowseRail > .card:focus:not(.tv-browse-anchor-centered) { transform: none; }
-    html.tv-browse-active #tvBrowseRail > .card:focus:not(.tv-browse-anchor-centered) .poster-wrap::after { opacity: 0; }
+    /* During center-anchor motion the existing rail animation frame drives a
+       spatial focus gradient for only the anchor neighbors. Edge focus keeps
+       the ordinary CSS transition above. */
+    html.tv-browse-active #tvBrowseRail.tv-browse-spatial-focus > .card.tv-browse-focus-interpolated { transform: scale(var(--tv-browse-focus-scale,1)); transition: none; }
+    html.tv-browse-active #tvBrowseRail.tv-browse-spatial-focus > .card.tv-browse-focus-interpolated .poster-wrap::after { opacity: var(--tv-browse-focus-opacity,0); transition: none; }
     html.tv-browse-active .tv-browse-rail .card-title { width: 100%; max-width: 100%; min-width: 0; font-size: var(--tv-caption-font); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     html.tv-browse-active .tv-browse-rail .card-meta { display: none; }
     html.tv-browse-active .tv-browse-rail .weekly-air-status { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
