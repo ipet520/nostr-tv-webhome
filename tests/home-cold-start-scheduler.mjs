@@ -222,12 +222,10 @@ const wallpaperResumeSource = browseJs.match(/    function tvWallpaperResume\(\)
 const browseLayoutSource = browseJs.match(/    function layoutTvBrowse\(\) \{[\s\S]*?(?=\n    function initTvBrowse\()/)?.[0] || "";
 check(wallpaperEnterSource.includes("observeHomeImages($(\"tvBrowseRail\"))") && wallpaperMoveSource.includes("observeMovieCardEnrichment($(\"tvBrowseRail\"))") && wallpaperResumeSource.includes("observeHomeImages($(\"tvBrowseRail\"))") && browseLayoutSource.includes("observeMovieCardEnrichment(rail)") && !browseJs.includes("tvWallpaperPrepareNearbyResources") && !browseJs.includes("queueTvCardEpisodeEnrichment(card)"), "TV_WALLPAPER_LOADING_CONTINUITY", "entry, position changes, resize, and lifecycle resume refresh only the existing observers; no wallpaper-specific loader is used");
 const logicalVisibilitySource = categoryJs.match(/    function tvBrowseWallpaperObservationKey\(target\) \{[\s\S]*?(?=\n    function ensureHomeImageObserver\()/)?.[0] || "";
-const railMetricsSource = browseJs.match(/    function tvBrowseRailAnchorMetrics\(card, rail\) \{[\s\S]*?(?=\n    function tvBrowseFocusEase\()/)?.[0] || "";
 const railTargetSource = browseJs.match(/    function tvBrowseRailTargetScrollLeft\(card, rail\) \{[\s\S]*?(?=\n    function tvBrowseExpectedRailScrollLeft\()/)?.[0] || "";
 assert.ok(railTargetSource, "wallpaper logical visibility uses the actual center-anchor geometry helper");
-assert.ok(railMetricsSource, "wallpaper logical visibility has the center-anchor metrics dependency");
 let logicalWallpaperActive = true;
-const logicalVisibilityChecks = vm.runInNewContext(`${railMetricsSource}\n${railTargetSource}\n${logicalVisibilitySource}\n({ includes: tvBrowseLogicalViewportIncludes, intersects: homeVisibilityEntryIntersects })`, {
+const logicalVisibilityChecks = vm.runInNewContext(`${railTargetSource}\n${logicalVisibilitySource}\n({ includes: tvBrowseLogicalViewportIncludes, intersects: homeVisibilityEntryIntersects })`, {
   isTvLikeDevice: () => true,
   tvWallpaperIsActive: () => logicalWallpaperActive,
   tvBrowseQueryKey: () => "active-query",
@@ -237,7 +235,7 @@ const logicalVisibilityChecks = vm.runInNewContext(`${railMetricsSource}\n${rail
   tvBrowseRailMaxPosition: (rail) => Math.max(0, Number(rail.scrollWidth || 0) - Number(rail.clientWidth || 0)),
   tvWallpaperState: () => ({ moveToken: 1 }),
   mediaDomKey: (item) => item.id,
-  getComputedStyle: () => ({ columnGap: "18px", paddingLeft: "0px", paddingRight: "0px" }),
+  getComputedStyle: () => ({ columnGap: "18px", gap: "18px", paddingLeft: "0px", paddingRight: "0px" }),
   tvFocusSafeInsets: () => ({ left: 12, right: 12 }),
   window: { visualViewport: null, innerWidth: 1280, innerHeight: 720 },
   document: { documentElement: { clientWidth: 1280 } }
@@ -246,7 +244,7 @@ const logicalViewportIncludes = logicalVisibilityChecks.includes;
 const logicalPosition = { key: "wallpaper-17", index: 17 };
 const logicalRail = {
   dataset: { queryKey: "active-query" }, children: [], scrollLeft: 0, scrollWidth: 25 * 142, clientWidth: 1280,
-  querySelectorAll: (selector) => selector === ".tv-browse-rail-track > .card" ? logicalRail.children : [],
+  querySelectorAll: () => [], clientLeft: 0, scrollLeft: 0,
   getBoundingClientRect: () => ({ left: 0, right: 1280, width: 1280 })
 };
 const logicalCards = Array.from({ length: 25 }, (_, index) => {

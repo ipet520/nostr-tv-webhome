@@ -6944,8 +6944,8 @@
        The immersive rail retains its inset focus ring below. */
     #home.home-root .home-rail > .card,
     #home.home-root .home-rail > .card:focus,
-    html.tv-browse-active #tvBrowseRail .tv-browse-rail-track > .card,
-    html.tv-browse-active #tvBrowseRail .tv-browse-rail-track > .card:focus,
+    html.tv-browse-active #tvBrowseRail > .card,
+    html.tv-browse-active #tvBrowseRail > .card:focus,
     #secondaryCatalog.weekly-secondary-page #secondaryCatalogGrid.weekly-secondary-rail > .weekly-card,
     #secondaryCatalog.weekly-secondary-page #secondaryCatalogGrid.weekly-secondary-rail > .weekly-card:focus {
       border: 0 !important;
@@ -7079,8 +7079,8 @@
     html.tv-browse-active .tv-history-progress { height: 3px; border-radius: 2px; background: rgba(255,255,255,.45); overflow: hidden; }
     html.tv-browse-active .tv-history-progress > span { display: block; height: 100%; background: #D95763; }
     html.tv-browse-active .tv-browse-posters { position: relative; grid-row: 3; min-height: 0; z-index: 3; }
-    html.tv-browse-active .tv-browse-posters.rail-switch-pending #tvBrowseRail .tv-browse-rail-track > .card { visibility: hidden; }
-    html.tv-browse-active .tv-browse-posters.rail-loading #tvBrowseRail .tv-browse-rail-track > .card { visibility: hidden; }
+    html.tv-browse-active .tv-browse-posters.rail-switch-pending #tvBrowseRail > .card { visibility: hidden; }
+    html.tv-browse-active .tv-browse-posters.rail-loading #tvBrowseRail > .card { visibility: hidden; }
     html.tv-browse-active .tv-browse-rail-loader {
       position: absolute; inset: 0; z-index: 5; display: flex; justify-content: center; align-items: center; gap: 13px;
       background: transparent; pointer-events: none;
@@ -7090,29 +7090,21 @@
     html.tv-browse-active .tv-browse-rail-dot:nth-child(2) { animation-delay: 130ms; }
     html.tv-browse-active .tv-browse-rail-dot:nth-child(3) { animation-delay: 260ms; }
     @keyframes tv-browse-rail-dot-bounce { 0%,70%,100% { transform: translateY(0); } 35% { transform: translateY(-7px); } }
-    html.tv-browse-active .tv-browse-rail .tv-browse-rail-track > .card.poster-unavailable .poster-wrap { position: relative; background: linear-gradient(145deg,rgba(50,58,69,.96),rgba(20,24,30,.98)); }
-    html.tv-browse-active .tv-browse-rail .tv-browse-rail-track > .card.poster-unavailable .poster-wrap::before {
+    html.tv-browse-active .tv-browse-rail > .card.poster-unavailable .poster-wrap { position: relative; background: linear-gradient(145deg,rgba(50,58,69,.96),rgba(20,24,30,.98)); }
+    html.tv-browse-active .tv-browse-rail > .card.poster-unavailable .poster-wrap::before {
       content: "海报暂不可用"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
       padding: 12px; color: rgba(255,255,255,.6); font-size: var(--tv-caption-font,15px); line-height: 1.35; text-align: center; white-space: normal;
     }
-    html.tv-browse-active .tv-browse-rail .tv-browse-rail-track > .card.poster-unavailable .poster { visibility: hidden; }
-    html.tv-browse-active .tv-browse-rail { display: block; position: relative; overflow-x: auto; overflow-y: hidden; height: 100%; padding: var(--tv-focus-space) var(--tv-gutter); box-sizing: border-box; scrollbar-width: none; }
-    html.tv-browse-active #tvBrowseRail[data-rail-motion-mode="transform"] { overflow-x: hidden; }
-    html.tv-browse-active .tv-browse-rail-track { position: relative; display: flex; align-items: flex-start; gap: var(--tv-card-gap,1.4vw); width: max-content; min-width: 100%; }
+    html.tv-browse-active .tv-browse-rail > .card.poster-unavailable .poster { visibility: hidden; }
+    html.tv-browse-active .tv-browse-rail { display: flex; align-items: flex-start; gap: var(--tv-card-gap,1.4vw); overflow-x: auto; overflow-y: hidden; height: 100%; padding: var(--tv-focus-space) var(--tv-gutter); box-sizing: border-box; scrollbar-width: none; }
     /* One measured height budget determines both dimensions at 2:3.
        No flex shrink may compress the image independently of its width. */
-    html.tv-browse-active .tv-browse-rail .card { flex: 0 0 var(--tv-poster-width,17.2vh); display: flex; flex-direction: column; width: var(--tv-poster-width,17.2vh); min-width: 0; max-width: none; overflow: visible; transform-origin: center center; transition: transform 170ms cubic-bezier(.2,0,0,1); }
+    html.tv-browse-active .tv-browse-rail .card { flex: 0 0 var(--tv-poster-width,17.2vh); display: flex; flex-direction: column; width: var(--tv-poster-width,17.2vh); min-width: 0; max-width: none; overflow: visible; transform-origin: center center; }
     html.tv-browse-active .tv-browse-rail .poster-wrap { flex: 0 0 auto; width: 100%; max-width: 100%; margin: 0; aspect-ratio: 2 / 3; height: var(--tv-poster-height,25.8vh); border-radius: inherit; overflow: hidden; }
     html.tv-browse-active .tv-browse-rail .card-body { flex: 0 0 auto; width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; padding: 6px 8px; }
     html.tv-browse-active .tv-browse-rail .card img { width: 100%; height: 100%; object-fit: cover; }
     html.tv-browse-active .tv-browse-rail .card:focus { transform: scale(1.04); }
-    html.tv-browse-active .tv-browse-rail .card .poster-wrap::after { content: ""; position: absolute; inset: 0; border: 2px solid rgba(255,255,255,.9); border-radius: inherit; box-sizing: border-box; opacity: 0; pointer-events: none; z-index: 4; transition: opacity 160ms ease-in-out; }
-    html.tv-browse-active .tv-browse-rail .card:focus .poster-wrap::after { opacity: 1; }
-    /* During center-anchor motion the existing rail animation frame drives a
-       spatial focus gradient for only the anchor neighbors. Edge focus keeps
-       the ordinary CSS transition above. */
-    html.tv-browse-active #tvBrowseRail.tv-browse-spatial-focus .tv-browse-rail-track > .card.tv-browse-focus-interpolated { transform: scale(var(--tv-browse-focus-scale,1)); transition: none; }
-    html.tv-browse-active #tvBrowseRail.tv-browse-spatial-focus .tv-browse-rail-track > .card.tv-browse-focus-interpolated .poster-wrap::after { opacity: var(--tv-browse-focus-opacity,0); transition: none; }
+    html.tv-browse-active .tv-browse-rail .card:focus .poster-wrap::after { content: ""; position: absolute; inset: 0; border: 2px solid rgba(255,255,255,.9); border-radius: inherit; box-sizing: border-box; pointer-events: none; z-index: 4; }
     html.tv-browse-active .tv-browse-rail .card-title { width: 100%; max-width: 100%; min-width: 0; font-size: var(--tv-caption-font); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     html.tv-browse-active .tv-browse-rail .card-meta { display: none; }
     html.tv-browse-active .tv-browse-rail .weekly-air-status { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
@@ -7728,7 +7720,7 @@
         <button id="tvHistoryContinue" class="btn focusable" type="button"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3L21 12L6 21Z"></path></svg><span>继续观看</span></button>
         <div class="tv-history-progress-info"><div class="tv-history-progress-label"><span id="tvHistoryEpisode"></span><span id="tvHistoryTime"></span></div><div id="tvHistoryProgress" class="tv-history-progress" aria-hidden="true" hidden><span></span></div></div>
       </div>
-      <div id="tvBrowsePosters" class="tv-browse-posters"><div id="tvBrowseRail" class="rail tv-browse-rail" data-rail-motion-mode="transform"><div id="tvBrowseRailTrack" class="tv-browse-rail-track"></div></div><div id="tvBrowseRailLoader" class="tv-browse-rail-loader" role="status" aria-live="polite" aria-label="正在准备首屏内容" hidden><span class="tv-browse-rail-dot" aria-hidden="true"></span><span class="tv-browse-rail-dot" aria-hidden="true"></span><span class="tv-browse-rail-dot" aria-hidden="true"></span></div></div>
+      <div id="tvBrowsePosters" class="tv-browse-posters"><div id="tvBrowseRail" class="rail tv-browse-rail"></div><div id="tvBrowseRailLoader" class="tv-browse-rail-loader" role="status" aria-live="polite" aria-label="正在准备首屏内容" hidden><span class="tv-browse-rail-dot" aria-hidden="true"></span><span class="tv-browse-rail-dot" aria-hidden="true"></span><span class="tv-browse-rail-dot" aria-hidden="true"></span></div></div>
       <div class="tv-browse-feedback"><span id="tvBrowseStatus" role="status"></span><span id="tvBrowseBlockHint" class="home-block-select-hint" hidden></span><button id="tvBrowseRetry" class="focusable" type="button" hidden>重试</button></div>
       </div>
     </section>
@@ -27142,7 +27134,7 @@ utils.encode = function encode(arr, enc) {
       if (!targetCard || !targetCard.__mediaItem || targetCard.dataset.mediaKey !== mediaDomKey(targetCard.__mediaItem)) return false;
       const index = Number(targetCard.dataset.cardIndex), currentIndex = Number(position.index);
       if (!Number.isInteger(index) || !Number.isInteger(currentIndex)) return false;
-      const cards = typeof tvBrowseRailCards === "function" ? Array.from(tvBrowseRailCards(rail)) : Array.from(rail.querySelectorAll(".tv-browse-rail-track > .card"));
+      const cards = typeof tvBrowseRailCards === "function" ? Array.from(tvBrowseRailCards(rail)) : Array.from(rail.children || []).filter((card) => card.matches && card.matches(".card"));
       const currentCard = cards.find((card) => Number(card.dataset.cardIndex) === currentIndex
         && card.dataset.mediaKey === position.key && card.__mediaItem && mediaDomKey(card.__mediaItem) === position.key);
       if (!currentCard) return false;
@@ -27150,8 +27142,7 @@ utils.encode = function encode(arr, enc) {
       const currentWidth = currentRect.width || currentCard.offsetWidth || 0;
       if (!currentWidth || !targetRect.width) return false;
       const adjacent = cards.find((card) => Number(card.dataset.cardIndex) === currentIndex + 1);
-      const track = typeof tvBrowseRailTrack === "function" ? tvBrowseRailTrack(rail, false) : null;
-      const trackStyle = getComputedStyle(track || rail);
+      const trackStyle = getComputedStyle(rail);
       const gap = parseFloat(trackStyle.columnGap || trackStyle.gap || "0") || 0;
       const stride = adjacent && Number(adjacent.offsetLeft) > Number(currentCard.offsetLeft)
         ? Number(adjacent.offsetLeft) - Number(currentCard.offsetLeft) : currentWidth + gap;
@@ -28003,7 +27994,7 @@ utils.encode = function encode(arr, enc) {
         previewKey: "", presentedKey: "", backdropToken: 0, backdropSlot: 0, backdropUrl: "", backdropMediaKey: "",
         pendingImage: null, pendingPreview: null, warmBackdrops: [],
         focusIntent: null, coldStartFocusIntent: null, retryFocusIntent: null, railCache: {}, railCacheOrder: [], railReadyByQuery: {}, railReadyOrder: [], railReadiness: null, railReadinessToken: 0, coldRailQueryKey: "", initialized: false,
-        railScroll: { motionMode: "", logicalPos: 0, generation: 0, frame: 0, target: null, targetKey: "", focusCard: null, focusVisualCards: [], focusGeometry: null, lastFrameAt: 0 }, railPrepareFrame: 0, posterWarmTargetKey: "", logoPreparationKeys: [], navigationDirection: 0, previewDirection: 1,
+        railScroll: { frame: 0, target: null, targetKey: "", lastFrameAt: 0 }, railPrepareFrame: 0, posterWarmTargetKey: "", logoPreparationKeys: [], navigationDirection: 0, previewDirection: 1,
         backdropTransition: null, backdropQueue: null
       });
       if (!ui.wallpaper) ui.wallpaper = { active: false, timer: 0, timerToken: 0, moveToken: 0, infoFrame: 0, movePending: false, paused: false, lastActivityAt: 0, historyEntry: false, pendingHistoryAction: null, currentKey: "", currentItem: null, consumeUntilKeyup: {}, detailPending: false, clickSinkPrepared: false, clickSinkTabIndex: null, clickSinkOutline: "", phase: "idle" };
@@ -28842,66 +28833,26 @@ utils.encode = function encode(arr, enc) {
       return ui.positions[key] || (ui.positions[key] = { key: "", index: 0, scrollLeft: 0 });
     }
 
-    function tvBrowseRequestedRailMotionMode() {
-      return String(window.__TV_BROWSE_RAIL_MOTION__ || "transform").toLowerCase() === "baseline" ? "baseline" : "transform";
-    }
-
-    function tvBrowseRailMotionMode() {
-      const scroll = tvBrowseState().railScroll || {};
-      return scroll.motionMode || tvBrowseRequestedRailMotionMode();
-    }
-
-    function tvBrowseRailTrack(rail, create) {
-      const container = rail || $("tvBrowseRail");
-      if (!container) return null;
-      let track = Array.from(container.children).find((node) => node.classList && node.classList.contains("tv-browse-rail-track")) || null;
-      if (!track && create !== false) {
-        track = document.createElement("div");
-        track.className = "tv-browse-rail-track";
-        track.id = "tvBrowseRailTrack";
-        const legacyCards = Array.from(container.children).filter((node) => node.classList && node.classList.contains("card"));
-        container.appendChild(track);
-        legacyCards.forEach((card) => track.appendChild(card));
-      }
-      return track;
-    }
-
     function tvBrowseRailCards(rail) {
-      const track = tvBrowseRailTrack(rail, false);
-      return track ? track.children : [];
-    }
-
-    function tvBrowseRailCurrentPosition(rail, runtime) {
-      const container = rail || $("tvBrowseRail"), scroll = runtime || tvBrowseState().railScroll || {};
-      return tvBrowseRailMotionMode() === "transform" ? Math.max(0, Number(scroll.logicalPos || 0)) : Math.max(0, Number(container && container.scrollLeft || 0));
-    }
-
-    function tvBrowseRailMaxPosition(rail, refresh) {
       const container = rail || $("tvBrowseRail");
-      if (!container) return 0;
-      if (tvBrowseRailMotionMode() !== "transform") return Math.max(0, Number(container.scrollWidth || 0) - Number(container.clientWidth || 0));
-      const scroll = tvBrowseState().railScroll || {};
-      if (!refresh && Number.isFinite(Number(scroll.maxPosition))) return Math.max(0, Number(scroll.maxPosition));
-      const track = tvBrowseRailTrack(container, false);
-      if (!track) return 0;
-      const style = getComputedStyle(container);
-      const padding = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
-      const max = Math.max(0, Number(track.offsetWidth || track.scrollWidth || 0) + padding - Number(container.clientWidth || 0));
-      scroll.maxPosition = max;
-      return max;
+      return container ? container.children : [];
+    }
+
+    function tvBrowseRailCurrentPosition(rail) {
+      const container = rail || $("tvBrowseRail");
+      return Math.max(0, Number(container && container.scrollLeft || 0));
+    }
+
+    function tvBrowseRailMaxPosition(rail) {
+      const container = rail || $("tvBrowseRail");
+      return container ? Math.max(0, Number(container.scrollWidth || 0) - Number(container.clientWidth || 0)) : 0;
     }
 
     function tvBrowseWriteRailPosition(rail, value, options) {
-      const container = rail || $("tvBrowseRail"), scroll = tvBrowseState().railScroll || {};
+      const container = rail || $("tvBrowseRail");
       if (!container) return 0;
       const next = Math.max(0, Math.min(tvBrowseRailMaxPosition(container), Number(value) || 0));
-      if (tvBrowseRailMotionMode() === "transform") {
-        const track = tvBrowseRailTrack(container);
-        scroll.logicalPos = next;
-        if (track) track.style.transform = "translate3d(" + (-next) + "px,0,0)";
-      } else {
-        container.scrollLeft = next;
-      }
+      container.scrollLeft = next;
       if (!(options && options.silent)) tvBrowseRailPositionChanged(container);
       return next;
     }
@@ -28914,42 +28865,7 @@ utils.encode = function encode(arr, enc) {
       return true;
     }
 
-    function tvBrowseEnsureRailMotionMode(rail) {
-      const container = rail || $("tvBrowseRail");
-      if (!container) return false;
-      const track = tvBrowseRailTrack(container);
-      const scroll = tvBrowseState().railScroll || (tvBrowseState().railScroll = {});
-      const requested = tvBrowseRequestedRailMotionMode();
-      const current = scroll.motionMode || "";
-      if (current === requested) {
-        container.dataset.railMotionMode = requested;
-        if (requested === "transform" && track && !track.style.transform) {
-          track.style.transform = "translate3d(" + (-Number(scroll.logicalPos || 0)) + "px,0,0)";
-        }
-        return false;
-      }
-      const previousPosition = current === "transform" ? Number(scroll.logicalPos || 0) : Number(container.scrollLeft || 0);
-      if (scroll.frame) cancelAnimationFrame(scroll.frame);
-      tvBrowseClearRailAnchorFocusVisual(container, scroll);
-      scroll.frame = 0; scroll.generation = Number(scroll.generation || 0) + 1;
-      scroll.target = null; scroll.targetKey = ""; scroll.focusCard = null; scroll.focusGeometry = null; scroll.lastFrameAt = 0;
-      scroll.motionMode = requested;
-      if (requested === "transform") {
-        scroll.maxPosition = null;
-        scroll.logicalPos = Math.max(0, Math.min(tvBrowseRailMaxPosition(container, true), previousPosition));
-        container.scrollLeft = 0;
-        if (track) track.style.transform = "translate3d(" + (-scroll.logicalPos) + "px,0,0)";
-      } else {
-        if (track) track.style.removeProperty("transform");
-        container.scrollLeft = Math.max(0, Math.min(Math.max(0, container.scrollWidth - container.clientWidth), previousPosition));
-        scroll.logicalPos = Number(container.scrollLeft || 0);
-        scroll.maxPosition = null;
-      }
-      container.dataset.railMotionMode = requested;
-      return true;
-    }
-
-    function tvBrowseRailAnchorMetrics(card, rail) {
+    function tvBrowseRailTargetScrollLeft(card, rail) {
       const target = card && card.closest && card.closest("#tvBrowseRail");
       const container = rail || target;
       if (!card || !container || !container.clientWidth || !card.getBoundingClientRect) return null;
@@ -28958,121 +28874,10 @@ utils.encode = function encode(arr, enc) {
       const paddingLeft = parseFloat(style.paddingLeft) || 0, paddingRight = parseFloat(style.paddingRight) || 0;
       const contentLeft = rect.left + (container.clientLeft || 0);
       const usableWidth = Math.max(0, container.clientWidth - paddingLeft - paddingRight);
-      // The card transform is centered, so its visual center is invariant.
-      // Keeping the calculation center-based also makes it stable at scale 1.04.
-      const position = tvBrowseRailCurrentPosition(container);
-      const contentCenter = cardRect.left + cardRect.width / 2 - contentLeft + position;
+      const contentCenter = cardRect.left + cardRect.width / 2 - contentLeft + Number(container.scrollLeft || 0);
       const desired = contentCenter - paddingLeft - usableWidth / 2;
-      const max = tvBrowseRailMaxPosition(container);
-      const cards = tvBrowseRailCards(container), index = Number(card.dataset.cardIndex);
-      const next = Number.isInteger(index) ? cards[index + 1] : null;
-      const previous = Number.isInteger(index) ? cards[index - 1] : null;
-      const pitch = next ? Number(next.offsetLeft) - Number(card.offsetLeft)
-        : previous ? Number(card.offsetLeft) - Number(previous.offsetLeft) : 0;
-      const anchorX = contentLeft + paddingLeft + usableWidth / 2;
-      return {
-        desired,
-        max,
-        target: Math.max(0, Math.min(max, desired)),
-        canCenter: desired >= -0.5 && desired <= max + 0.5,
-        contentCenter,
-        contentLeft,
-        anchorX,
-        pitch: Math.max(0, pitch)
-      };
-    }
-
-    function tvBrowseFocusEase(value) {
-      const t = Math.max(0, Math.min(1, Number(value) || 0));
-      return t * t * (3 - 2 * t);
-    }
-
-    function tvBrowseClearRailAnchorFocusVisual(rail, runtime) {
-      const container = rail || $("tvBrowseRail"), scroll = runtime || tvBrowseState().railScroll || {};
-      (Array.isArray(scroll.focusVisualCards) ? scroll.focusVisualCards : []).forEach((card) => {
-        if (!card) return;
-        card.classList.remove("tv-browse-focus-interpolated");
-        card.style.removeProperty("--tv-browse-focus-scale");
-        card.style.removeProperty("--tv-browse-focus-opacity");
-      });
-      if (container) container.classList.remove("tv-browse-spatial-focus");
-      scroll.focusVisualCards = [];
-      return true;
-    }
-
-    function tvBrowseUpdateRailAnchorFocusVisual(card, rail, runtime, logicalPosition) {
-      const container = rail || $("tvBrowseRail"), scroll = runtime || tvBrowseState().railScroll || {};
-      if (!container || !card || !container.contains(card) || document.activeElement !== card) {
-        tvBrowseClearRailAnchorFocusVisual(container, scroll);
-        return false;
-      }
-      const activeIndex = Number(card.dataset.cardIndex);
-      if (!Number.isInteger(activeIndex)) {
-        tvBrowseClearRailAnchorFocusVisual(container, scroll);
-        return false;
-      }
-      const metrics = scroll.focusGeometry && scroll.focusGeometry.card === card
-        ? scroll.focusGeometry : tvBrowseRailAnchorMetrics(card, container);
-      const pitch = Number(metrics && metrics.pitch) || 0;
-      if (!pitch || !Number.isFinite(pitch)) {
-        tvBrowseClearRailAnchorFocusVisual(container, scroll);
-        return false;
-      }
-      const position = Number.isFinite(Number(logicalPosition)) ? Number(logicalPosition) : tvBrowseRailCurrentPosition(container, scroll);
-      const anchorX = metrics.anchorX;
-      const focusCenterX = metrics.contentCenter - position + metrics.contentLeft;
-      const max = tvBrowseRailMaxPosition(container);
-      const scrollLeft = Math.max(0, Math.min(max, position));
-      const startWeight = tvBrowseFocusEase(Math.min(1, scrollLeft / pitch));
-      const endWeight = tvBrowseFocusEase(Math.min(1, (max - scrollLeft) / pitch));
-      const centerWeight = Math.min(startWeight, endWeight);
-      if (centerWeight <= 0) {
-        tvBrowseClearRailAnchorFocusVisual(container, scroll);
-        return false;
-      }
-
-      // Estimate the card crossing the anchor from the active card and its
-      // fixed layout pitch. Only the center neighbors plus semantic focus are
-      // touched; the rail is never scanned during animation frames.
-      const children = tvBrowseRailCards(container);
-      const nearestIndex = Math.max(0, Math.min(children.length - 1,
-        Math.round(activeIndex + (anchorX - focusCenterX) / pitch)));
-      const indexes = new Set([activeIndex, nearestIndex - 1, nearestIndex, nearestIndex + 1]);
-      const candidates = [];
-      indexes.forEach((index) => {
-        if (index < 0 || index >= children.length) return;
-        const candidate = children[index];
-        if (candidate && candidate.classList.contains("card") && Number(candidate.dataset.cardIndex) === index) candidates.push(candidate);
-      });
-      if (!candidates.includes(card)) candidates.push(card);
-      const candidateSet = new Set(candidates);
-      (Array.isArray(scroll.focusVisualCards) ? scroll.focusVisualCards : []).forEach((previousCard) => {
-        if (previousCard && !candidateSet.has(previousCard)) {
-          previousCard.classList.remove("tv-browse-focus-interpolated");
-          previousCard.style.removeProperty("--tv-browse-focus-scale");
-          previousCard.style.removeProperty("--tv-browse-focus-opacity");
-        }
-      });
-
-      container.classList.add("tv-browse-spatial-focus");
-      candidates.forEach((candidate) => {
-        const index = Number(candidate.dataset.cardIndex);
-        const centerX = focusCenterX + (index - activeIndex) * pitch;
-        const spatial = tvBrowseFocusEase(1 - Math.abs(anchorX - centerX) / pitch);
-        const strength = candidate === card
-          ? spatial * centerWeight + (1 - centerWeight)
-          : spatial * centerWeight;
-        candidate.classList.add("tv-browse-focus-interpolated");
-        candidate.style.setProperty("--tv-browse-focus-scale", String(1 + 0.04 * strength));
-        candidate.style.setProperty("--tv-browse-focus-opacity", String(strength));
-      });
-      scroll.focusVisualCards = candidates;
-      return true;
-    }
-
-    function tvBrowseRailTargetScrollLeft(card, rail) {
-      const metrics = tvBrowseRailAnchorMetrics(card, rail);
-      return metrics ? metrics.target : null;
+      const max = Math.max(0, Number(container.scrollWidth || 0) - Number(container.clientWidth || 0));
+      return Math.max(0, Math.min(max, desired));
     }
 
     function tvBrowseExpectedRailScrollLeft(rail) {
@@ -29081,119 +28886,59 @@ utils.encode = function encode(arr, enc) {
       if (tvWallpaperIsActive()) {
         const selection = tvWallpaperCurrentSelection(), card = tvWallpaperCardFor(selection);
         const target = card && tvBrowseRailTargetScrollLeft(card, container);
-        return target == null ? tvBrowseRailCurrentPosition(container, scroll) : target;
+        return target == null ? Number(container.scrollLeft || 0) : target;
       }
       if (Number.isFinite(Number(scroll.target)) && scroll.frame) return Number(scroll.target);
-      return tvBrowseRailCurrentPosition(container, scroll);
+      return Number(container.scrollLeft || 0);
     }
 
     function tvBrowseCancelRailScroll() {
-      const scroll = tvBrowseState().railScroll || (tvBrowseState().railScroll = { frame: 0, target: null, targetKey: "", focusCard: null, lastFrameAt: 0 });
+      const scroll = tvBrowseState().railScroll || (tvBrowseState().railScroll = { frame: 0, target: null, targetKey: "", lastFrameAt: 0 });
       if (scroll.frame) cancelAnimationFrame(scroll.frame);
-      tvBrowseClearRailAnchorFocusVisual($("tvBrowseRail"), scroll);
-      scroll.frame = 0; scroll.generation = Number(scroll.generation || 0) + 1; scroll.target = null; scroll.targetKey = "";
-      scroll.focusCard = null; scroll.focusGeometry = null; scroll.lastFrameAt = 0;
+      scroll.frame = 0; scroll.target = null; scroll.targetKey = ""; scroll.lastFrameAt = 0;
       return true;
     }
 
     function tvBrowseScheduleRailAnchor(card) {
       const rail = $("tvBrowseRail"), ui = tvBrowseState();
       if (!tvBrowseActive() || tvWallpaperIsActive() || !card || !rail || !rail.contains(card) || !card.classList.contains("card")) return false;
-      tvBrowseEnsureRailMotionMode(rail);
-      tvBrowseRailMaxPosition(rail, true);
-      const scroll = ui.railScroll || (ui.railScroll = { frame: 0, target: null, targetKey: "", focusCard: null, lastFrameAt: 0 });
-      const metrics = tvBrowseRailAnchorMetrics(card, rail);
-      if (!metrics) return false;
-      const target = metrics.target;
-      const mode = tvBrowseRailMotionMode(), current = tvBrowseRailCurrentPosition(rail, scroll);
-      const settled = Math.abs(current - target) <= (mode === "transform" ? 2 : 1.25);
+      const scroll = ui.railScroll || (ui.railScroll = { frame: 0, target: null, targetKey: "", lastFrameAt: 0 });
+      const target = tvBrowseRailTargetScrollLeft(card, rail);
+      if (target == null) return false;
       const targetKey = card.dataset.mediaKey || "";
-      // A render can replace a card node without changing its media key. Keep
-      // the active node as the completion candidate even when its scroll
-      // target is unchanged.
-      scroll.focusCard = card;
-      scroll.focusGeometry = metrics;
-      if (mode === "baseline") tvBrowseUpdateRailAnchorFocusVisual(card, rail, scroll, current);
-      else tvBrowseClearRailAnchorFocusVisual(rail, scroll);
-      if (scroll.frame && scroll.targetKey === targetKey && scroll.target != null && Math.abs(scroll.target - target) < 0.5) return true;
-      if (!scroll.frame && settled) {
-        scroll.target = null; scroll.targetKey = ""; scroll.focusCard = null; scroll.focusGeometry = null; scroll.lastFrameAt = 0;
+      if (scroll.targetKey === targetKey && scroll.target != null && Math.abs(scroll.target - target) < 0.5) return true;
+      if (!scroll.frame && Math.abs(Number(rail.scrollLeft || 0) - target) <= 1) {
+        scroll.target = null; scroll.targetKey = ""; scroll.lastFrameAt = 0;
         return false;
       }
       scroll.target = target; scroll.targetKey = targetKey;
       if (scroll.frame) return true;
-      if (mode === "transform") {
-        scroll.lastFrameAt = 0;
-        const generation = Number(scroll.generation || 0);
-        scroll.frame = requestAnimationFrame((now) => tvBrowseTransformRailStep(now, generation));
-        tvBrowseScheduleRailImagePreparation();
-        return true;
-      }
       const step = (now) => {
         const currentRail = $("tvBrowseRail"), state = tvBrowseState(), runtime = state.railScroll;
         if (!runtime || !currentRail || !tvBrowseActive() || tvWallpaperIsActive() || runtime.target == null) {
-          if (runtime) { runtime.frame = 0; runtime.lastFrameAt = 0; runtime.focusGeometry = null; tvBrowseClearRailAnchorFocusVisual(currentRail, runtime); }
+          if (runtime) { runtime.frame = 0; runtime.lastFrameAt = 0; }
           return;
         }
-        const goal = Math.max(0, Math.min(tvBrowseRailMaxPosition(currentRail), Number(runtime.target || 0)));
-        const before = tvBrowseRailCurrentPosition(currentRail, runtime), delta = goal - before;
-        // Some WebViews quantize scrollLeft to whole CSS pixels. Exponential
-        // steps can otherwise round to the same integer while up to two CSS
-        // pixels remain, leaving both the rail and centered focus treatment
-        // permanently unsettled.
-        if (Math.abs(delta) <= 2) {
-          tvBrowseWriteRailPosition(currentRail, goal, { silent: true });
-          const completedCard = runtime.focusCard, completedKey = runtime.targetKey;
-          if (completedCard && currentRail.contains(completedCard) && document.activeElement === completedCard
-            && completedCard.dataset.mediaKey === completedKey) tvBrowseUpdateRailAnchorFocusVisual(completedCard, currentRail, runtime, goal);
-          runtime.frame = 0; runtime.target = null; runtime.targetKey = ""; runtime.focusCard = null; runtime.focusGeometry = null; runtime.lastFrameAt = 0;
+        const goal = Math.max(0, Math.min(Math.max(0, currentRail.scrollWidth - currentRail.clientWidth), Number(runtime.target || 0)));
+        const before = Number(currentRail.scrollLeft || 0), delta = goal - before;
+        // Some WebViews quantize scrollLeft to whole CSS pixels. Snap the
+        // final couple of pixels so an exponential step cannot stall forever
+        // below the browser's scroll precision.
+        if (Math.abs(delta) <= 1.25) {
+          currentRail.scrollLeft = goal;
+          runtime.frame = 0; runtime.target = null; runtime.targetKey = ""; runtime.lastFrameAt = 0;
           tvBrowseScheduleRailImagePreparation();
           return;
         }
         const elapsed = runtime.lastFrameAt ? Math.max(1, Math.min(48, now - runtime.lastFrameAt)) : 16;
         runtime.lastFrameAt = now;
         const fraction = 1 - Math.exp(-elapsed / 48);
-        const next = tvBrowseWriteRailPosition(currentRail, before + delta * fraction, { silent: true });
-        const movingCard = runtime.focusCard;
-        if (movingCard && currentRail.contains(movingCard) && document.activeElement === movingCard
-          && movingCard.dataset.mediaKey === runtime.targetKey) tvBrowseUpdateRailAnchorFocusVisual(movingCard, currentRail, runtime, next);
+        currentRail.scrollLeft = before + delta * fraction;
         runtime.frame = requestAnimationFrame(step);
       };
       scroll.frame = requestAnimationFrame(step);
       tvBrowseScheduleRailImagePreparation();
       return true;
-    }
-
-    function tvBrowseTransformRailStep(now, generation) {
-      const rail = $("tvBrowseRail"), ui = tvBrowseState(), scroll = ui.railScroll || {};
-      const track = tvBrowseRailTrack(rail, false);
-      if (!rail || !track || scroll.motionMode !== "transform" || generation !== Number(scroll.generation || 0)
-        || !tvBrowseActive() || tvWallpaperIsActive() || rail.dataset.queryKey !== tvBrowseQueryKey() || scroll.target == null) {
-        if (generation === Number(scroll.generation || 0)) {
-          scroll.frame = 0; scroll.target = null; scroll.targetKey = ""; scroll.focusCard = null;
-          scroll.focusGeometry = null; scroll.lastFrameAt = 0;
-          tvBrowseClearRailAnchorFocusVisual(rail, scroll);
-        }
-        return;
-      }
-      const maxPosition = tvBrowseRailMaxPosition(rail);
-      const goal = Math.max(0, Math.min(maxPosition, Number(scroll.target || 0)));
-      const elapsed = scroll.lastFrameAt ? Math.max(1, Math.min(48, now - scroll.lastFrameAt)) : 16;
-      scroll.lastFrameAt = now;
-      const before = Number(scroll.logicalPos || 0);
-      const delta = goal - before;
-      if (Math.abs(delta) <= 2) {
-        tvBrowseWriteRailPosition(rail, goal, { silent: true });
-        scroll.frame = 0; scroll.target = null; scroll.targetKey = ""; scroll.focusCard = null;
-        scroll.focusGeometry = null; scroll.lastFrameAt = 0;
-        tvBrowseRailPositionChanged(rail);
-        return;
-      }
-      const fraction = 1 - Math.exp(-elapsed / 48);
-      const next = tvBrowseWriteRailPosition(rail, before + delta * fraction, { silent: true });
-      tvBrowsePosition().scrollLeft = next;
-      const nextGeneration = Number(scroll.generation || 0);
-      scroll.frame = requestAnimationFrame((frameNow) => tvBrowseTransformRailStep(frameNow, nextGeneration));
     }
 
     function tvBrowseScheduleRailImagePreparation() {
@@ -29209,24 +28954,21 @@ utils.encode = function encode(arr, enc) {
     function tvBrowseSetRailAnchor(card) {
       const rail = $("tvBrowseRail");
       if (!rail || !card || !rail.contains(card)) return false;
-      tvBrowseEnsureRailMotionMode(rail);
       const target = tvBrowseRailTargetScrollLeft(card, rail);
       if (target == null) return false;
       tvBrowseCancelRailScroll();
-      tvBrowseWriteRailPosition(rail, target, { silent: tvBrowseRailMotionMode() !== "transform" });
+      rail.scrollLeft = target;
       tvBrowseState().railScroll.target = null;
-      if (document.activeElement === card) tvBrowseScheduleRailAnchor(card);
       return true;
     }
-
     function tvBrowseInitialVisibleCardCount(rail, itemCount) {
       if (!rail) return Math.min(Math.max(1, Number(itemCount) || 1), 8);
-      const root = $("tvBrowse"), style = getComputedStyle(rail), track = tvBrowseRailTrack(rail, false), trackStyle = track && getComputedStyle(track), rootStyle = root && getComputedStyle(root);
+      const root = $("tvBrowse"), style = getComputedStyle(rail), rootStyle = root && getComputedStyle(root);
       const width = Number(rail.clientWidth || root && root.clientWidth || window.innerWidth || 0);
       const padding = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
       const cardWidth = parseFloat(rootStyle && rootStyle.getPropertyValue("--tv-poster-width"))
         || Number(rail.querySelector(".card") && rail.querySelector(".card").offsetWidth) || 140;
-      const gap = parseFloat(trackStyle && (trackStyle.columnGap || trackStyle.gap) || "0") || 0;
+      const gap = parseFloat(style.columnGap || style.gap || "0") || 0;
       const stride = Math.max(1, cardWidth + gap);
       const count = Math.max(1, Math.ceil(Math.max(cardWidth, width - padding) / stride));
       return Math.min(Math.max(1, Number(itemCount) || 1), count);
@@ -29680,7 +29422,6 @@ utils.encode = function encode(arr, enc) {
     function tvBrowseSyncRailImagePreparation() {
       if (!tvBrowseActive() || tvBrowseState().view !== "home") return false;
       const ui = tvBrowseState(), rail = $("tvBrowseRail");
-      tvBrowseEnsureRailMotionMode(rail);
       if (!rail || rail.dataset.queryKey !== tvBrowseQueryKey()) return false;
       const cards = tvBrowseRailCards(rail), cardCount = cards.length;
       if (!cardCount) return false;
@@ -30092,7 +29833,6 @@ utils.encode = function encode(arr, enc) {
       const spare = upperHost.clientHeight - used - gap - parseFloat(root.style.getPropertyValue("--tv-preview-gap"));
       set("filter-overview-lines", String(height < 450 ? 0 : clamp(0, Math.floor(spare / (overviewFont * 1.5)), height >= 720 ? 3 : 2)));
       syncTvBrowseFilterOverview();
-      if (tvBrowseRailMotionMode() === "transform") tvBrowseRailMaxPosition(rail, true);
       if (tvWallpaperIsActive()) {
         tvWallpaperScheduleInfoShift();
         observeHomeImages(rail); observeMovieCardEnrichment(rail);
@@ -30108,29 +29848,10 @@ utils.encode = function encode(arr, enc) {
       ui.initialized = true;
       // One environment observer drives the foreground budget. Child grids
       // and filter transitions do not create competing size writers.
-      const resizeBrowse = () => { layoutTvBrowse(); tvBrowseRailMaxPosition($("tvBrowseRail"), true); tvBrowseSyncRailImagePreparation(); };
+      const resizeBrowse = () => { layoutTvBrowse(); tvBrowseSyncRailImagePreparation(); };
       if (typeof ResizeObserver === "function") new ResizeObserver(resizeBrowse).observe($("tvBrowse"));
       else window.addEventListener("resize", resizeBrowse);
       if (window.visualViewport) window.visualViewport.addEventListener("resize", resizeBrowse);
-      const railTrack = tvBrowseRailTrack($("tvBrowseRail"));
-      if (typeof ResizeObserver === "function" && railTrack) {
-        ui.railTrackObserver = new ResizeObserver(() => {
-          if (ui.railTrackResizeFrame) return;
-          ui.railTrackResizeFrame = requestAnimationFrame(() => {
-            ui.railTrackResizeFrame = 0;
-            const rail = $("tvBrowseRail");
-            if (!rail || !tvBrowseActive()) return;
-            if (tvBrowseRailMotionMode() === "transform") {
-              const max = tvBrowseRailMaxPosition(rail, true);
-              tvBrowseWriteRailPosition(rail, Math.min(tvBrowseRailCurrentPosition(rail), max), { silent: true });
-            }
-            const activeCard = document.activeElement && document.activeElement.closest("#tvBrowseRail .card");
-            if (activeCard && !tvWallpaperIsActive()) tvBrowseScheduleRailAnchor(activeCard);
-            else tvBrowseScheduleRailImagePreparation();
-          });
-        });
-        ui.railTrackObserver.observe(railTrack);
-      }
       const controls = $("recentManageControls");
       if (controls) $("tvBrowseRecentTools").appendChild(controls);
       const columns = $("tvBrowseColumns");
@@ -30224,8 +29945,6 @@ utils.encode = function encode(arr, enc) {
       const postersHost = $("tvBrowsePosters");
       if (postersHost) postersHost.classList.remove("rail-switch-pending");
       const ui = tvBrowseState(), rail = $("tvBrowseRail");
-      const railTrack = tvBrowseRailTrack(rail);
-      const railMotionChanged = tvBrowseEnsureRailMotionMode(rail);
       const focusBefore = tvBrowseFocusLabel();
       const historyView = ui.view === "history";
       const query = historyView ? { key: tvBrowseQueryKey(), items: state.recent.items || [], loaded: state.recent.loaded, loading: state.recent.loading, error: state.recent.error } : secondaryGetQuery(ui.column);
@@ -30267,12 +29986,12 @@ utils.encode = function encode(arr, enc) {
       if (queryChanged && previousKey) {
         ui.railCache = ui.railCache && typeof ui.railCache === "object" ? ui.railCache : {};
         ui.railCacheOrder = Array.isArray(ui.railCacheOrder) ? ui.railCacheOrder : [];
-        ui.railCache[previousKey] = { keys: (rail.__renderKeys || []).slice(), nodes: Array.from(railTrack.children) };
+        ui.railCache[previousKey] = { keys: (rail.__renderKeys || []).slice(), nodes: Array.from(rail.children) };
         ui.railCacheOrder = ui.railCacheOrder.filter((key) => key !== previousKey).concat(previousKey);
         while (ui.railCacheOrder.length > tvBrowseRailCacheCapacity()) delete ui.railCache[ui.railCacheOrder.shift()];
       }
       const cachedRail = queryChanged && ui.railCache && ui.railCache[query.key] || null;
-      const oldNodes = queryChanged ? cachedRail && cachedRail.nodes || [] : Array.from(railTrack.children);
+      const oldNodes = queryChanged ? cachedRail && cachedRail.nodes || [] : Array.from(rail.children);
       const oldKeys = queryChanged ? cachedRail && cachedRail.keys || [] : rail.__renderKeys || [];
       // Keep catalog data whole; materialize the visible batch and saved focus
       // first. Further cards append when DPAD approaches the current DOM end.
@@ -30305,10 +30024,6 @@ utils.encode = function encode(arr, enc) {
             tvBrowseScheduleRailImagePreparation();
             scheduleUiSnapshotSave();
           });
-          card.addEventListener("blur", () => {
-            const railNode = $("tvBrowseRail"), runtime = tvBrowseState().railScroll;
-            if (!railNode || !railNode.contains(document.activeElement)) tvBrowseClearRailAnchorFocusVisual(railNode, runtime);
-          });
           card.__tvBrowseRenderSignature = signature;
           createdCards += 1;
         } else {
@@ -30318,18 +30033,16 @@ utils.encode = function encode(arr, enc) {
         card.__mediaItem = item;
         return card;
       });
-      const sequenceUnchanged = !queryChanged && nextNodes.length === railTrack.children.length
-        && nextNodes.every((card, index) => card === railTrack.children[index]);
+      const sequenceUnchanged = !queryChanged && nextNodes.length === rail.children.length
+        && nextNodes.every((card, index) => card === rail.children[index]);
       const railChanged = queryChanged || !sequenceUnchanged;
       if (queryChanged) {
         rail.dataset.queryKey = query.key;
-        if (tvBrowseRailMotionMode() === "transform") tvBrowseWriteRailPosition(rail, 0, { silent: true });
-        else rail.scrollLeft = tvBrowsePosition().scrollLeft;
+        rail.scrollLeft = tvBrowsePosition().scrollLeft;
       }
       if (railChanged) {
-        tvBrowseReconcileRailNodes(railTrack, nextNodes, queryChanged);
+        tvBrowseReconcileRailNodes(rail, nextNodes, queryChanged);
       }
-      if (tvBrowseRailMotionMode() === "transform") tvBrowseRailMaxPosition(rail, true);
       if (queryChanged && ui.railCache) {
         delete ui.railCache[query.key];
         ui.railCacheOrder = (ui.railCacheOrder || []).filter((key) => key !== query.key);
@@ -30338,18 +30051,7 @@ utils.encode = function encode(arr, enc) {
       const tracked = state.recentDelete && (state.recentDelete.armedCard || state.recentDelete.pendingCard || state.recentDelete.remotePressCard);
       if (historyView && tracked && (!tracked.isConnected || !recentWatchingPressKey(tracked))) cancelRecentDeleteArm();
       syncTvBrowseVisibility();
-      if (queryChanged) {
-        const position = tvBrowsePosition();
-        if (tvBrowseRailMotionMode() === "transform") {
-          const cards = Array.from(tvBrowseRailCards(rail));
-          const restoreCard = cards.find((card) => position.key && card.dataset.mediaKey === position.key)
-            || cards[Math.max(0, Math.min(cards.length - 1, Number(position.index) || 0))];
-          const restoreTarget = restoreCard ? tvBrowseRailTargetScrollLeft(restoreCard, rail) : Number(position.scrollLeft || 0);
-          position.scrollLeft = tvBrowseWriteRailPosition(rail, restoreTarget == null ? 0 : restoreTarget, { silent: true });
-        } else rail.scrollLeft = position.scrollLeft;
-      } else if (tvBrowseRailMotionMode() === "transform") {
-        tvBrowseWriteRailPosition(rail, tvBrowseRailCurrentPosition(rail), { silent: true });
-      }
+      if (queryChanged) rail.scrollLeft = tvBrowsePosition().scrollLeft;
       syncTvBrowseColumns();
       updateRecentManageUi();
       updateBlockSelectUi();
@@ -30394,14 +30096,10 @@ utils.encode = function encode(arr, enc) {
         tvWallpaperFocusClickSink();
       }
       if (focused && railChanged && !tvWallpaperIsActive() && focusScopeRoot() === document && !isSidebarOpen()) {
-        const target = Array.from(tvBrowseRailCards(rail)).find((card) => card.dataset.mediaKey === focused) || (ui.filterOpen ? Array.from(tvBrowseRailCards(rail)).find(isVisibleFocusable) || tvBrowseFilterTarget() : tvBrowsePosterTarget());
+        const target = Array.from(rail.children).find((card) => card.dataset.mediaKey === focused) || (ui.filterOpen ? Array.from(rail.children).find(isVisibleFocusable) || tvBrowseFilterTarget() : tvBrowsePosterTarget());
         if (target) focusRemoteTarget(target);
       }
       tvBrowseTryFocus();
-      if (railMotionChanged && !queryChanged && !tvWallpaperIsActive()) {
-        const activeCard = document.activeElement && document.activeElement.closest("#tvBrowseRail .card");
-        if (activeCard) tvBrowseScheduleRailAnchor(activeCard);
-      }
       if (historyView && ui.retryFocusIntent) {
         const intent = ui.retryFocusIntent;
         if (intent.epoch !== homeFocusUserEpoch()) ui.retryFocusIntent = null;
@@ -30425,7 +30123,7 @@ utils.encode = function encode(arr, enc) {
       if (!historyView && state.hot && state.hot.ready) tvBrowseMaybePreloadCategories("tv-recommendation-ready");
       recordTvBrowseDiagnostic("TV_BROWSE_RENDER", {
         queryKey: query.key, requestSeq: Number(query.requestSeq || 0), dataVersion: Number(query.dataVersion || 0),
-        itemCount: items.length, renderedCount: railTrack.children.length, renderReason: options && options.reason || (queryChanged ? "query-change" : "state-update"),
+        itemCount: items.length, renderedCount: rail.children.length, renderReason: options && options.reason || (queryChanged ? "query-change" : "state-update"),
         queryChanged, railChanged, createdCards, reusedCards, focusBefore, focusAfter: tvBrowseFocusLabel()
       });
     }

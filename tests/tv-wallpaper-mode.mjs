@@ -510,14 +510,14 @@ try {
   const batchTarget = await batch.evaluate(() => ({
     key: testWallpaper.tvBrowsePosition().key,
     items: secondaryGetQuery("recommendation").items.length,
-    rendered: Array.from(document.querySelectorAll("#tvBrowseRail .tv-browse-rail-track > .card")).some(card => card.__mediaItem.id === "wallpaper-18")
+    rendered: Array.from(document.querySelectorAll("#tvBrowseRail > .card")).some(card => card.__mediaItem.id === "wallpaper-18")
   }));
   assert.equal(batchTarget.key, "wallpaper-18");
   assert.equal(batchTarget.items, 25, "wallpaper movement extends the current recommendation batch");
   assert.equal(batchTarget.rendered, true, "next resource card is materialized from the current Browse query");
-  assert.equal(await batch.locator('#tvBrowseRail .tv-browse-rail-track > .card[data-card-index="20"] img').getAttribute("data-src"), null,
+  assert.equal(await batch.locator('#tvBrowseRail > .card[data-card-index="20"] img').getAttribute("data-src"), null,
     "a changed logical Browse position applies the existing focus-reveal viewport to newly adjacent posters");
-  assert.notEqual(await batch.locator('#tvBrowseRail .tv-browse-rail-track > .card[data-card-index="24"] img').getAttribute("data-src"), null,
+  assert.notEqual(await batch.locator('#tvBrowseRail > .card[data-card-index="24"] img').getAttribute("data-src"), null,
     "poster loading remains bounded by the ordinary observer viewport after a logical position change");
   await batch.evaluate(() => {
     testWallpaper.stubDetail();

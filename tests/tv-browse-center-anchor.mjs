@@ -21,10 +21,9 @@ catch {
 const { output } = renderIndex();
 validateRenderedArtifact(output);
 const hook = `window.testBrowse = { state, tvBrowseState, tvBrowsePosition, tvBrowseSelectColumn,
-  tvBrowseRailAnchorMetrics, tvBrowseScheduleRailAnchor, tvBrowseSetRailAnchor, tvBrowseRailCards,
-  tvBrowseRailCurrentPosition, tvBrowseSetRailPosition: tvBrowseWriteRailPosition, focusRemoteTarget, renderTvBrowse,
-  syncBrowseDevicePresentation, bindActions, installRemoteKeys, tvBrowseBeginStartup, homeFocusUserEpoch,
-  secondaryGetQuery, openDetail };
+  tvBrowseRailTargetScrollLeft, tvBrowseScheduleRailAnchor, tvBrowseSetRailAnchor, tvBrowseRailCards,
+  tvBrowseRailCurrentPosition, focusRemoteTarget, renderTvBrowse, syncBrowseDevicePresentation,
+  bindActions, installRemoteKeys, tvBrowseBeginStartup, homeFocusUserEpoch, secondaryGetQuery, openDetail };
 window.testBrowse.setup = () => { syncBrowseDevicePresentation(); bindActions(); installRemoteKeys(); };
 window.testBrowse.seed = (count = 18) => {
   const query = secondaryGetQuery('movie'); query.loaded = true; query.loading = false;
@@ -32,59 +31,42 @@ window.testBrowse.seed = (count = 18) => {
   query.items = Array.from({length: count}, (_, index) => ({
     id: 71000 + index, tmdbId: 71000 + index, title: '轨迹影片' + index,
     mediaType: 'movie', source: 'tmdb', pic: '/poster-' + index + '.jpg', landscape: '/backdrop-' + index + '.jpg',
-    releaseDate: '2025-01-01', overview: '焦点锚定浏览轨迹测试', voteAverage: 8.1
+    releaseDate: '2025-01-01', overview: 'scrollLeft 居中锚定浏览轨迹测试', voteAverage: 8.1
   }));
   return query;
 };
 window.testBrowse.sample = () => {
-  const rail = document.querySelector('#tvBrowseRail'), card = document.activeElement && document.activeElement.closest('#tvBrowseRail .tv-browse-rail-track > .card');
-  const ui = tvBrowseState(), runtime = ui.railScroll || {}, position = tvBrowsePosition();
+  const rail = document.querySelector('#tvBrowseRail');
+  const card = document.activeElement && document.activeElement.closest('#tvBrowseRail > .card');
+  const position = tvBrowsePosition(), runtime = tvBrowseState().railScroll || {};
   if (!rail) return null;
   const railRect = rail.getBoundingClientRect(), style = getComputedStyle(rail), cardRect = card && card.getBoundingClientRect();
   const padLeft = Number(style.paddingLeft.replace('px', '')) || 0, padRight = Number(style.paddingRight.replace('px', '')) || 0;
   const anchorX = railRect.left + rail.clientLeft + padLeft + (rail.clientWidth - padLeft - padRight) / 2;
-  const metrics = card && tvBrowseRailAnchorMetrics(card, rail);
-  const scaleOf = node => { const transform = getComputedStyle(node).transform; if (transform === 'none') return 1; const matrix = transform.match(/^matrix\(([^,]+)/) || transform.match(/^matrix3d\(([^,]+)/); return matrix ? Number(matrix[1]) : 1; };
-  const focusVisuals = Array.from(tvBrowseRailCards(rail)).filter(node => node.classList.contains('tv-browse-focus-interpolated')).map(node => {
-    const rect = node.getBoundingClientRect(), wrap = node.querySelector('.poster-wrap');
-    return {key: node.dataset.mediaKey || '', centerX: rect.left + rect.width / 2, scale: scaleOf(node), opacity: wrap ? Number(getComputedStyle(wrap, '::after').opacity) : 0};
-  });
+  const scaleOf = node => { const value = getComputedStyle(node).transform; if (value === 'none') return 1; const match = value.match(/^matrix\\(([^,]+)/) || value.match(/^matrix3d\\(([^,]+)/); return match ? Number(match[1]) : 1; };
+  const ring = card && card.querySelector('.poster-wrap');
   return {
-    scrollLeft: tvBrowseRailCurrentPosition(rail), actualScrollLeft: rail.scrollLeft,
-    logicalPos: Number(runtime.logicalPos || 0),
-    trackTransform: rail.querySelector('.tv-browse-rail-track').style.transform,
-    motionMode: runtime.motionMode,
-    target: runtime.frame && Number.isFinite(Number(runtime.target)) ? Number(runtime.target) : metrics ? metrics.target : tvBrowseRailCurrentPosition(rail),
-    targetKey: runtime.frame ? runtime.targetKey : card && card.dataset.mediaKey || '',
+    scrollLeft: rail.scrollLeft, maxScroll: Math.max(0, rail.scrollWidth - rail.clientWidth),
+    target: Number.isFinite(Number(runtime.target)) ? Number(runtime.target) : card ? tvBrowseRailTargetScrollLeft(card, rail) : rail.scrollLeft,
+    frame: !!runtime.frame,
     anchorX, cardCenterX: cardRect ? cardRect.left + cardRect.width / 2 : null,
-    domFocusKey: card && card.dataset.mediaKey || '', selectedKey: position.key || '', selectedIndex: Number(position.index || 0),
-    mediaId: card && card.__mediaItem && card.__mediaItem.id || null,
-    targetMetrics: metrics && {desired: metrics.desired, max: metrics.max, canCenter: metrics.canCenter},
-    spatialMode: rail.classList.contains('tv-browse-spatial-focus'),
-    transform: card ? getComputedStyle(card).transform : '',
+    domFocusKey: card && card.dataset.mediaKey || '', selectedKey: position.key || '',
+    selectedIndex: Number(position.index || 0), mediaId: card && card.__mediaItem && card.__mediaItem.id || null,
     scale: card ? scaleOf(card) : 1,
-    ringOpacity: card ? Number(getComputedStyle(card.querySelector('.poster-wrap'), '::after').opacity) : 0,
-    focusVisuals
+    ringBorderWidth: ring ? getComputedStyle(ring, '::after').borderTopWidth : '0px',
+    ringOpacity: ring ? Number(getComputedStyle(ring, '::after').opacity) : 0
   };
 };
-window.testBrowse.setMotionMode = mode => { window.__TV_BROWSE_RAIL_MOTION__ = mode; renderTvBrowse(); };
 window.testBrowse.beginTrace = () => {
-  window.centerAnchorTrace = []; window.centerAnchorKeys = [];
+  window.railTrace = []; window.railTraceSampling = true;
   const sample = () => {
-    if (!window.centerAnchorSampling) return;
-    const value = testBrowse.sample();
-    if (value) window.centerAnchorTrace.push(value);
+    if (!window.railTraceSampling) return;
+    const value = testBrowse.sample(); if (value) window.railTrace.push(value);
     requestAnimationFrame(sample);
   };
-  window.centerAnchorSampling = true; requestAnimationFrame(sample);
+  requestAnimationFrame(sample);
 };
-window.testBrowse.endTrace = () => { window.centerAnchorSampling = false; return window.centerAnchorTrace || []; };
-document.addEventListener('keydown', event => {
-  if (window.centerAnchorSampling && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
-    window.centerAnchorKeys = window.centerAnchorKeys || [];
-    window.centerAnchorKeys.push({ key: event.key, frameIndex: (window.centerAnchorTrace || []).length + 1 });
-  }
-}, true);
+window.testBrowse.endTrace = () => { window.railTraceSampling = false; return window.railTrace || []; };
 `;
 const html = output.replace(/boot\(\)\.catch\(function\(e\) \{[\s\S]*?\n    \}\);/, hook);
 assert.notEqual(html, output, "fixture exports must replace production boot");
@@ -112,161 +94,87 @@ async function pageAt(viewport = { width: 1280, height: 720 }) {
     api.state.recent.loaded = true; api.state.recent.items = [];
     api.setup(); api.tvBrowseBeginStartup(api.homeFocusUserEpoch()); api.seed(); api.tvBrowseSelectColumn("movie");
   });
-  await page.waitForFunction(() => document.querySelectorAll("#tvBrowseRail .tv-browse-rail-track > .card").length === 18);
+  await page.waitForFunction(() => document.querySelectorAll("#tvBrowseRail > .card").length === 18);
   await page.waitForTimeout(700);
   return page;
 }
 const waitForScrollIdle = page => page.waitForFunction(() => !testBrowse.tvBrowseState().railScroll.frame, null, { timeout: 3000 });
-const pressAndWait = async (page, key, wait = 72) => { await page.keyboard.press(key); await page.waitForTimeout(wait); };
-const summarize = trace => trace.length ? {
-  frames: trace.length,
-  scrollStart: Number(trace[0].scrollLeft.toFixed(2)), scrollEnd: Number(trace.at(-1).scrollLeft.toFixed(2)),
-  anchorMin: Number(Math.min(...trace.map(x => x.anchorX)).toFixed(2)), anchorMax: Number(Math.max(...trace.map(x => x.anchorX)).toFixed(2)),
-  selectedKey: trace.at(-1).selectedKey, focusedKey: trace.at(-1).domFocusKey,
-  spatialFrames: trace.filter(x => x.spatialMode).length,
-  intermediateFocusFrames: trace.filter(x => x.focusVisuals.some(item => item.opacity > 0.02 && item.opacity < 0.98)).length,
-  tailTarget: trace.at(-1).target
-} : null;
+const press = async (page, key, wait = 34) => { await page.keyboard.press(key); await page.waitForTimeout(wait); };
+const scale = value => {
+  const match = String(value).match(/^matrix\(([^,]+)/) || String(value).match(/^matrix3d\(([^,]+)/);
+  return match ? Number(match[1]) : value === "none" ? 1 : NaN;
+};
 
-const waitForFullCenterTreatment = page => page.waitForFunction(() => {
-  const card = document.activeElement && document.activeElement.closest('#tvBrowseRail .tv-browse-rail-track > .card');
-  if (!card) return false;
-  const transform = getComputedStyle(card).transform;
-  const matrix = transform.match(/^matrix\(([^,]+)/) || transform.match(/^matrix3d\(([^,]+)/);
-  const scale = matrix ? Number(matrix[1]) : 1;
-  return Math.abs(scale - 1.04) < 0.001 && Number(getComputedStyle(card.querySelector('.poster-wrap'), '::after').opacity) > 0.999;
-}, null, { timeout: 1200 });
-
-const report = { viewport: { width: 1280, height: 720 }, phases: {}, trace: {} };
 try {
   const page = await pageAt();
-  await page.locator("#tvBrowseRail .tv-browse-rail-track > .card").first().focus();
+  const rail = page.locator("#tvBrowseRail");
+  await rail.locator(":scope > .card").first().focus();
   await waitForScrollIdle(page);
-  await page.waitForTimeout(190);
-  const start = await page.evaluate(() => testBrowse.sample());
-  assert.equal(start.motionMode, "transform", "the formal TV Browse rail defaults to original B Transform");
-  assert.equal(start.scrollLeft, 0, "first card remains at the natural rail start");
-  assert.equal(start.actualScrollLeft, 0, "B Transform leaves native scrollLeft at zero");
-  assert.match(start.trackTransform, /^translate3d\(/, "the inner track is the single visual position authority");
-  assert.equal(start.domFocusKey, start.selectedKey, "start DOM focus and current resource agree");
-  assert.equal(start.spatialMode, false, "the natural start edge retains ordinary focus presentation");
-  assert.ok(Math.abs(start.scale - 1.04) < 0.001 && start.ringOpacity > 0.999, "start edge retains the ordinary focused card treatment");
-  report.phases.start = start;
+  const first = await page.evaluate(() => testBrowse.sample());
+  assert.equal(first.scrollLeft, 0, "first card stays at the natural left boundary");
+  assert.equal(first.domFocusKey, first.selectedKey, "the initial focused card and Browse position agree");
+  assert.ok(Math.abs(first.scale - 1.04) < 0.001, "focus scale is the original immediate 1.04 treatment");
+  assert.equal(first.ringBorderWidth, "2px", "the original 2px white focus ring is present");
+  assert.ok(first.ringOpacity > 0.99, "the focus ring appears immediately on the DOM-focused card");
 
   await page.evaluate(() => testBrowse.beginTrace());
-  const forwardKeys = [];
-  for (let index = 0; index < 7; index++) { await pressAndWait(page, "ArrowRight", 30); forwardKeys.push((await page.evaluate(() => testBrowse.sample())).selectedIndex); }
-  await waitForScrollIdle(page);
-  await page.waitForTimeout(80);
-  const centerTrace = await page.evaluate(() => testBrowse.endTrace());
-  await waitForFullCenterTreatment(page);
-  const centerEnd = await page.evaluate(() => testBrowse.sample());
-  assert.equal(centerEnd.domFocusKey, centerEnd.selectedKey, "center selection is the actual DOM focus");
-  assert.equal(centerEnd.spatialMode, false, "B uses the experiment's ordinary DOM focus styling");
-  assert.ok(Math.abs(centerEnd.cardCenterX - centerEnd.anchorX) <= 1.5, "settled card center matches the stable visual anchor");
-  assert.ok(Math.abs(centerEnd.scale - 1.04) < 0.001, "existing 1.04 card scale appears at the center");
-  assert.ok(centerEnd.ringOpacity > 0.999, "existing focus ring reaches full opacity at the center");
-  assert.ok(forwardKeys.every((value, index) => index === 0 || value > forwardKeys[index - 1]), "every right input advances to the next resource");
-  assert.ok(centerTrace.every(frame => Math.abs(frame.anchorX - centerEnd.anchorX) < 0.1), "center anchor remains fixed during rail motion");
-  for (let index = 1; index < centerTrace.length; index++) {
-    assert.ok(centerTrace[index].scrollLeft + 0.1 >= centerTrace[index - 1].scrollLeft, "forward-only segment never reverses its rail position");
-    assert.equal(centerTrace[index].focusVisuals.length, 0, "B does not run D2's spatial focus interpolator");
-  }
-  assert.ok(centerTrace.every(frame => frame.domFocusKey === frame.selectedKey), "ordinary focus presentation remains on the selected resource");
-  report.phases.center = { end: centerEnd, forwardKeys, summary: summarize(centerTrace) };
-  report.trace.center = centerTrace;
+  await page.keyboard.press("ArrowRight");
+  const oneStep = await page.evaluate(() => testBrowse.sample());
+  assert.equal(oneStep.selectedIndex, 1, "one DPAD input immediately selects the next card");
+  assert.equal(oneStep.domFocusKey, oneStep.selectedKey, "DPAD focus and selected media stay aligned");
+  assert.ok(Math.abs(oneStep.scale - 1.04) < 0.001 && oneStep.ringOpacity > 0.99, "focus visuals do not wait for rail motion completion");
 
+  for (let index = 0; index < 7; index++) await press(page, "ArrowRight", 30);
+  await waitForScrollIdle(page);
+  const forwardTrace = await page.evaluate(() => testBrowse.endTrace());
+  const centered = await page.evaluate(() => testBrowse.sample());
+  assert.equal(centered.domFocusKey, centered.selectedKey, "center selection is the real DOM focus");
+  assert.ok(Math.abs(centered.cardCenterX - centered.anchorX) <= 1.5, "middle cards settle on the rail center anchor");
+  assert.ok(Math.abs(centered.scrollLeft - centered.target) <= 1.5, "physical scrollLeft settles on the latest centered target");
+  assert.ok(forwardTrace.length > 2 && forwardTrace.some((sample, index) => index > 0 && sample.scrollLeft !== forwardTrace[index - 1].scrollLeft), "the scrollLeft rail moves through actual browser frames");
+  assert.ok(forwardTrace.every(sample => sample.domFocusKey === sample.selectedKey), "focus identity remains current during scrolling");
+  assert.ok(forwardTrace.every(sample => Math.abs(sample.anchorX - centered.anchorX) < 0.1), "the visual center anchor stays fixed during movement");
+
+  const startReverse = await page.evaluate(() => testBrowse.sample());
   await page.evaluate(() => testBrowse.beginTrace());
-  await pressAndWait(page, "ArrowRight", 44);
-  const beforeReverse = await page.evaluate(() => testBrowse.sample());
-  await pressAndWait(page, "ArrowLeft", 90);
+  await press(page, "ArrowRight", 28);
+  await press(page, "ArrowLeft", 80);
   await waitForScrollIdle(page);
   const reverseTrace = await page.evaluate(() => testBrowse.endTrace());
-  await waitForFullCenterTreatment(page);
-  const reverseEnd = await page.evaluate(() => testBrowse.sample());
-  assert.equal(reverseEnd.selectedIndex, beforeReverse.selectedIndex - 1, "immediate reversal selects the latest left input");
-  assert.equal(reverseEnd.domFocusKey, reverseEnd.selectedKey, "reversal leaves DOM focus on current resource");
-  assert.ok(Math.abs(reverseEnd.cardCenterX - reverseEnd.anchorX) <= 1.5, "reversed motion settles at the same center anchor");
-  const reverseKeyEvent = await page.evaluate(() => (window.centerAnchorKeys || []).filter(item => item.key === "ArrowLeft").at(-1));
-  const reversedSegment = reverseKeyEvent ? reverseTrace.slice(reverseKeyEvent.frameIndex) : reverseTrace;
-  for (let index = 1; index < reversedSegment.length; index++) {
-    assert.ok(reversedSegment[index].scrollLeft <= reversedSegment[index - 1].scrollLeft + 0.1, "latest reverse target is approached without moving back toward the stale target");
-  }
-  report.phases.immediateReverse = { beforeReverse, end: reverseEnd, summary: summarize(reverseTrace) };
-  report.trace.immediateReverse = reverseTrace;
+  const reversed = await page.evaluate(() => testBrowse.sample());
+  assert.equal(reversed.selectedIndex, startReverse.selectedIndex, "a right move followed by a left move returns to the latest requested selection");
+  assert.equal(reversed.domFocusKey, reversed.selectedKey, "reverse input leaves one authoritative DOM focus");
+  assert.ok(Math.abs(reversed.scrollLeft - reversed.target) <= 1.5, "reverse motion settles on the latest target");
+  assert.ok(reverseTrace.every(sample => sample.domFocusKey === sample.selectedKey), "reverse frames do not show stale focused resources");
 
-  await page.evaluate(() => testBrowse.beginTrace());
-  for (const key of ["ArrowRight", "ArrowRight", "ArrowRight", "ArrowRight", "ArrowLeft", "ArrowRight", "ArrowLeft", "ArrowLeft"]) await pressAndWait(page, key, 22);
+  await page.evaluate(() => {
+    const cards = testBrowse.tvBrowseRailCards(document.querySelector("#tvBrowseRail"));
+    for (let index = 5; index <= 10; index++) testBrowse.focusRemoteTarget(cards[index]);
+  });
   await waitForScrollIdle(page);
-  const rapidTrace = await page.evaluate(() => testBrowse.endTrace());
-  await waitForFullCenterTreatment(page);
-  const rapidEnd = await page.evaluate(() => testBrowse.sample());
-  assert.equal(rapidEnd.domFocusKey, rapidEnd.selectedKey, "rapid alternating input ends on the authoritative resource");
-  assert.equal(rapidEnd.spatialMode, false, "rapid B motion keeps the experiment's ordinary DOM focus styling");
-  assert.ok(Math.abs(rapidEnd.cardCenterX - rapidEnd.anchorX) <= 1.5, "rapid alternation settles at the same anchor");
-  assert.ok(rapidTrace.every(frame => frame.focusVisuals.length === 0 && frame.domFocusKey === frame.selectedKey), "rapid movement keeps one semantic DOM focus without a second spatial visual system");
-  report.phases.rapidAlternation = { end: rapidEnd, summary: summarize(rapidTrace) };
-  report.trace.rapidAlternation = rapidTrace;
-
-  await page.evaluate(() => testBrowse.beginTrace());
-  const longForwardKeys = [];
-  for (let index = 0; index < 8; index++) { await pressAndWait(page, "ArrowRight", 22); longForwardKeys.push((await page.evaluate(() => testBrowse.sample())).selectedIndex); }
-  await waitForScrollIdle(page);
-  const longForwardTrace = await page.evaluate(() => testBrowse.endTrace());
-  const longForwardEnd = await page.evaluate(() => testBrowse.sample());
-  assert.ok(longForwardKeys.every((value, index) => index === 0 || value > longForwardKeys[index - 1]), "long continuous right input preserves every selection");
-  assert.equal(longForwardEnd.domFocusKey, longForwardEnd.selectedKey, "long movement ends on the latest selected resource");
-  assert.ok(longForwardTrace.every(frame => frame.focusVisuals.length <= 4 && frame.domFocusKey === frame.selectedKey), "long movement keeps focus visual work bounded and semantic focus current");
-  report.phases.longForward = { end: longForwardEnd, keys: longForwardKeys, summary: summarize(longForwardTrace) };
-  report.trace.longForward = longForwardTrace;
+  const rapid = await page.evaluate(() => testBrowse.sample());
+  assert.equal(rapid.selectedIndex, 10, "rapid target updates keep the latest card selection");
+  assert.ok(Math.abs(rapid.cardCenterX - rapid.anchorX) <= 1.5, "the latest rapid target settles at the center");
 
   const tail = await page.evaluate(() => {
-    const card = document.querySelector("#tvBrowseRail .tv-browse-rail-track > .card:last-child");
-    focusRemoteTarget(card);
+    const cards = testBrowse.tvBrowseRailCards(document.querySelector("#tvBrowseRail"));
+    testBrowse.focusRemoteTarget(cards[cards.length - 1]);
     return testBrowse.sample();
   });
   await waitForScrollIdle(page);
   const tailEnd = await page.evaluate(() => testBrowse.sample());
-  assert.equal(tailEnd.selectedIndex, 17, "tail selection reaches the final card");
-  assert.ok(Math.abs(tailEnd.scrollLeft - tailEnd.targetMetrics.max) <= 1.5, "rail stops at its natural maximum without overscroll");
-  assert.ok(tailEnd.scale >= 1.035 && tailEnd.ringOpacity >= 0.9, "clamped tail keeps a strong, continuous focus treatment");
-  assert.equal(tailEnd.domFocusKey, tailEnd.selectedKey, "tail DOM focus and selected resource agree");
-  report.phases.tail = { initial: tail, end: tailEnd };
-
-  const migration = await page.evaluate(() => {
-    const rail = document.querySelector("#tvBrowseRail"), card = document.activeElement;
-    const rect = () => { const r=card.getBoundingClientRect(); return {left:r.left,right:r.right,center:r.left+r.width/2}; };
-    const before = { position:tvBrowseRailCurrentPosition(rail), rect:rect() };
-    testBrowse.setMotionMode("baseline");
-    const baseline = { mode:tvBrowseState().railScroll.motionMode, scrollLeft:rail.scrollLeft,
-      transform:tvBrowseRailCards(rail).length ? document.querySelector("#tvBrowseRailTrack").style.transform : "missing", rect:rect() };
-    testBrowse.setMotionMode("transform");
-    const transform = { mode:tvBrowseState().railScroll.motionMode, logical:tvBrowseRailCurrentPosition(rail),
-      scrollLeft:rail.scrollLeft, transform:document.querySelector("#tvBrowseRailTrack").style.transform, rect:rect(),
-      controllers:tvBrowseState().railScroll.frame ? 1 : 0 };
-    return { before, baseline, transform };
-  });
-  await waitForScrollIdle(page);
-  assert.equal(migration.baseline.mode, "baseline", "the explicit rollback mode takes sole control");
-  assert.equal(migration.baseline.transform, "", "baseline mode removes the B track transform");
-  assert.ok(Math.abs(migration.baseline.scrollLeft-migration.before.position)<=1.5, "B logical position migrates to native position without a jump");
-  assert.ok(Math.abs(migration.baseline.rect.center-migration.before.rect.center)<=1.5, "the card remains visually stationary during B to baseline migration");
-  assert.equal(migration.transform.mode, "transform", "switching back restores the original B controller");
-  assert.equal(migration.transform.scrollLeft, 0, "B resets physical scroll before accepting control");
-  assert.ok(Math.abs(migration.transform.logical-migration.baseline.scrollLeft)<=1.5, "baseline position migrates back to B logical position");
-  assert.ok(Math.abs(migration.transform.rect.center-migration.baseline.rect.center)<=1.5, "the reverse migration does not move the selected card on screen");
-  assert.ok(migration.transform.controllers<=1, "mode migration never leaves concurrent rail controllers");
-  report.phases.motionMigration = migration;
+  assert.equal(tailEnd.selectedIndex, 17, "tail selection reaches the last card");
+  assert.ok(Math.abs(tailEnd.scrollLeft - tailEnd.maxScroll) <= 1.5, "the tail stops at the physical scroll maximum");
+  assert.equal(tailEnd.domFocusKey, tailEnd.selectedKey, "tail focus matches the selected resource");
+  assert.ok(Math.abs(tailEnd.scale - 1.04) < 0.001 && tailEnd.ringOpacity > 0.99, "tail focus retains the original 1.04 scale and ring");
 
   await page.keyboard.press("Enter");
   await page.waitForFunction(() => document.querySelector("#detailSheet")?.classList.contains("active"));
-  const detail = await page.evaluate(() => ({ selectedId: state.selected && state.selected.id, focusedId: document.activeElement && document.activeElement.__mediaItem && document.activeElement.__mediaItem.id, position: tvBrowsePosition() }));
-  assert.equal(detail.selectedId, 71017, "confirm opens the currently focused tail resource");
-  report.phases.confirm = detail;
+  const detail = await page.evaluate(() => ({ selectedId: state.selected && state.selected.id, position: tvBrowsePosition() }));
+  assert.equal(detail.selectedId, 71017, "confirm opens the currently focused last resource");
   assert.deepEqual(pageErrors, [], "fixture has no page errors");
-  console.log("TV_BROWSE_CENTER_ANCHOR_BROWSER = PASS");
-  console.log("CENTER_ANCHOR_FRAME_COUNTS = " + JSON.stringify(Object.fromEntries(Object.entries(report.trace).map(([key, value]) => [key, value.length]))));
-  console.log("CENTER_ANCHOR_TRACE = " + JSON.stringify(report.trace));
+  console.log("TV_BROWSE_SCROLLLEFT_CENTER_ANCHOR_BROWSER = PASS");
+  console.log("SCROLLLEFT_TRACE_COUNTS = " + JSON.stringify({forward: forwardTrace.length, reverse: reverseTrace.length}));
   await page.close();
 } finally {
   await browser.close();

@@ -1081,8 +1081,8 @@
        The immersive rail retains its inset focus ring below. */
     #home.home-root .home-rail > .card,
     #home.home-root .home-rail > .card:focus,
-    html.tv-browse-active #tvBrowseRail .tv-browse-rail-track > .card,
-    html.tv-browse-active #tvBrowseRail .tv-browse-rail-track > .card:focus,
+    html.tv-browse-active #tvBrowseRail > .card,
+    html.tv-browse-active #tvBrowseRail > .card:focus,
     #secondaryCatalog.weekly-secondary-page #secondaryCatalogGrid.weekly-secondary-rail > .weekly-card,
     #secondaryCatalog.weekly-secondary-page #secondaryCatalogGrid.weekly-secondary-rail > .weekly-card:focus {
       border: 0 !important;
@@ -1216,8 +1216,8 @@
     html.tv-browse-active .tv-history-progress { height: 3px; border-radius: 2px; background: rgba(255,255,255,.45); overflow: hidden; }
     html.tv-browse-active .tv-history-progress > span { display: block; height: 100%; background: #D95763; }
     html.tv-browse-active .tv-browse-posters { position: relative; grid-row: 3; min-height: 0; z-index: 3; }
-    html.tv-browse-active .tv-browse-posters.rail-switch-pending #tvBrowseRail .tv-browse-rail-track > .card { visibility: hidden; }
-    html.tv-browse-active .tv-browse-posters.rail-loading #tvBrowseRail .tv-browse-rail-track > .card { visibility: hidden; }
+    html.tv-browse-active .tv-browse-posters.rail-switch-pending #tvBrowseRail > .card { visibility: hidden; }
+    html.tv-browse-active .tv-browse-posters.rail-loading #tvBrowseRail > .card { visibility: hidden; }
     html.tv-browse-active .tv-browse-rail-loader {
       position: absolute; inset: 0; z-index: 5; display: flex; justify-content: center; align-items: center; gap: 13px;
       background: transparent; pointer-events: none;
@@ -1227,29 +1227,21 @@
     html.tv-browse-active .tv-browse-rail-dot:nth-child(2) { animation-delay: 130ms; }
     html.tv-browse-active .tv-browse-rail-dot:nth-child(3) { animation-delay: 260ms; }
     @keyframes tv-browse-rail-dot-bounce { 0%,70%,100% { transform: translateY(0); } 35% { transform: translateY(-7px); } }
-    html.tv-browse-active .tv-browse-rail .tv-browse-rail-track > .card.poster-unavailable .poster-wrap { position: relative; background: linear-gradient(145deg,rgba(50,58,69,.96),rgba(20,24,30,.98)); }
-    html.tv-browse-active .tv-browse-rail .tv-browse-rail-track > .card.poster-unavailable .poster-wrap::before {
+    html.tv-browse-active .tv-browse-rail > .card.poster-unavailable .poster-wrap { position: relative; background: linear-gradient(145deg,rgba(50,58,69,.96),rgba(20,24,30,.98)); }
+    html.tv-browse-active .tv-browse-rail > .card.poster-unavailable .poster-wrap::before {
       content: "海报暂不可用"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
       padding: 12px; color: rgba(255,255,255,.6); font-size: var(--tv-caption-font,15px); line-height: 1.35; text-align: center; white-space: normal;
     }
-    html.tv-browse-active .tv-browse-rail .tv-browse-rail-track > .card.poster-unavailable .poster { visibility: hidden; }
-    html.tv-browse-active .tv-browse-rail { display: block; position: relative; overflow-x: auto; overflow-y: hidden; height: 100%; padding: var(--tv-focus-space) var(--tv-gutter); box-sizing: border-box; scrollbar-width: none; }
-    html.tv-browse-active #tvBrowseRail[data-rail-motion-mode="transform"] { overflow-x: hidden; }
-    html.tv-browse-active .tv-browse-rail-track { position: relative; display: flex; align-items: flex-start; gap: var(--tv-card-gap,1.4vw); width: max-content; min-width: 100%; }
+    html.tv-browse-active .tv-browse-rail > .card.poster-unavailable .poster { visibility: hidden; }
+    html.tv-browse-active .tv-browse-rail { display: flex; align-items: flex-start; gap: var(--tv-card-gap,1.4vw); overflow-x: auto; overflow-y: hidden; height: 100%; padding: var(--tv-focus-space) var(--tv-gutter); box-sizing: border-box; scrollbar-width: none; }
     /* One measured height budget determines both dimensions at 2:3.
        No flex shrink may compress the image independently of its width. */
-    html.tv-browse-active .tv-browse-rail .card { flex: 0 0 var(--tv-poster-width,17.2vh); display: flex; flex-direction: column; width: var(--tv-poster-width,17.2vh); min-width: 0; max-width: none; overflow: visible; transform-origin: center center; transition: transform 170ms cubic-bezier(.2,0,0,1); }
+    html.tv-browse-active .tv-browse-rail .card { flex: 0 0 var(--tv-poster-width,17.2vh); display: flex; flex-direction: column; width: var(--tv-poster-width,17.2vh); min-width: 0; max-width: none; overflow: visible; transform-origin: center center; }
     html.tv-browse-active .tv-browse-rail .poster-wrap { flex: 0 0 auto; width: 100%; max-width: 100%; margin: 0; aspect-ratio: 2 / 3; height: var(--tv-poster-height,25.8vh); border-radius: inherit; overflow: hidden; }
     html.tv-browse-active .tv-browse-rail .card-body { flex: 0 0 auto; width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; padding: 6px 8px; }
     html.tv-browse-active .tv-browse-rail .card img { width: 100%; height: 100%; object-fit: cover; }
     html.tv-browse-active .tv-browse-rail .card:focus { transform: scale(1.04); }
-    html.tv-browse-active .tv-browse-rail .card .poster-wrap::after { content: ""; position: absolute; inset: 0; border: 2px solid rgba(255,255,255,.9); border-radius: inherit; box-sizing: border-box; opacity: 0; pointer-events: none; z-index: 4; transition: opacity 160ms ease-in-out; }
-    html.tv-browse-active .tv-browse-rail .card:focus .poster-wrap::after { opacity: 1; }
-    /* During center-anchor motion the existing rail animation frame drives a
-       spatial focus gradient for only the anchor neighbors. Edge focus keeps
-       the ordinary CSS transition above. */
-    html.tv-browse-active #tvBrowseRail.tv-browse-spatial-focus .tv-browse-rail-track > .card.tv-browse-focus-interpolated { transform: scale(var(--tv-browse-focus-scale,1)); transition: none; }
-    html.tv-browse-active #tvBrowseRail.tv-browse-spatial-focus .tv-browse-rail-track > .card.tv-browse-focus-interpolated .poster-wrap::after { opacity: var(--tv-browse-focus-opacity,0); transition: none; }
+    html.tv-browse-active .tv-browse-rail .card:focus .poster-wrap::after { content: ""; position: absolute; inset: 0; border: 2px solid rgba(255,255,255,.9); border-radius: inherit; box-sizing: border-box; pointer-events: none; z-index: 4; }
     html.tv-browse-active .tv-browse-rail .card-title { width: 100%; max-width: 100%; min-width: 0; font-size: var(--tv-caption-font); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     html.tv-browse-active .tv-browse-rail .card-meta { display: none; }
     html.tv-browse-active .tv-browse-rail .weekly-air-status { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }

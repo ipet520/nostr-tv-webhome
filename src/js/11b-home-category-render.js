@@ -626,7 +626,7 @@
       if (!targetCard || !targetCard.__mediaItem || targetCard.dataset.mediaKey !== mediaDomKey(targetCard.__mediaItem)) return false;
       const index = Number(targetCard.dataset.cardIndex), currentIndex = Number(position.index);
       if (!Number.isInteger(index) || !Number.isInteger(currentIndex)) return false;
-      const cards = typeof tvBrowseRailCards === "function" ? Array.from(tvBrowseRailCards(rail)) : Array.from(rail.querySelectorAll(".tv-browse-rail-track > .card"));
+      const cards = typeof tvBrowseRailCards === "function" ? Array.from(tvBrowseRailCards(rail)) : Array.from(rail.children || []).filter((card) => card.matches && card.matches(".card"));
       const currentCard = cards.find((card) => Number(card.dataset.cardIndex) === currentIndex
         && card.dataset.mediaKey === position.key && card.__mediaItem && mediaDomKey(card.__mediaItem) === position.key);
       if (!currentCard) return false;
@@ -634,8 +634,7 @@
       const currentWidth = currentRect.width || currentCard.offsetWidth || 0;
       if (!currentWidth || !targetRect.width) return false;
       const adjacent = cards.find((card) => Number(card.dataset.cardIndex) === currentIndex + 1);
-      const track = typeof tvBrowseRailTrack === "function" ? tvBrowseRailTrack(rail, false) : null;
-      const trackStyle = getComputedStyle(track || rail);
+      const trackStyle = getComputedStyle(rail);
       const gap = parseFloat(trackStyle.columnGap || trackStyle.gap || "0") || 0;
       const stride = adjacent && Number(adjacent.offsetLeft) > Number(currentCard.offsetLeft)
         ? Number(adjacent.offsetLeft) - Number(currentCard.offsetLeft) : currentWidth + gap;

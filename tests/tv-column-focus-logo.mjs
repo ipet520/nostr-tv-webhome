@@ -88,7 +88,7 @@ try {
  await press(p,'Enter');assert.equal(await p.evaluate(()=>testBrowse.tvBrowseState().filterOpen),false);
  assert.equal(await p.evaluate(()=>window.savedCard===document.querySelector('#tvBrowseRail .card')),true);
  assert.equal(await p.locator('#tvBrowseRail').evaluate(e=>testBrowse.railPosition(e)),stable.scroll);
- assert.equal(stable.nativeScroll,0,"B Transform uses the logical position rather than browser scrollLeft");
+ assert.equal(stable.nativeScroll,stable.scroll,"the restored rail position is the browser-native scrollLeft");
  assert.equal(await p.evaluate(()=>testBrowse.secondaryActiveQuery('movie').requestSeq),stable.seq);
  await press(p,'Enter');assert.equal(await p.evaluate(()=>testBrowse.tvBrowseState().filterOpen),true);await press(p,'Escape');
  assert.equal(await p.locator('#tvBrowseRail').evaluate(e=>testBrowse.railPosition(e)),stable.scroll);
