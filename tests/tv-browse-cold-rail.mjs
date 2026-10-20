@@ -471,7 +471,7 @@ try {
   assert.equal(sameCategoryPosition.position.index,5,"a same-query rerender retains the current card index");
   assert.equal(sameCategoryPosition.position.key,"cold-movie-5","a same-query rerender retains the current media key");
   assert.equal(sameCategoryPosition.scrollLeft,137,"a same-query rerender retains the current rail position");
-  assert.equal(sameCategoryPosition.actualScrollLeft,0,"D2 keeps browser-native scrollLeft out of the motion path");
+  assert.equal(sameCategoryPosition.actualScrollLeft,0,"B Transform keeps browser-native scrollLeft out of the motion path");
   assert.equal(sameCategoryPosition.focusedColumn,true,"same-query rendering leaves remote focus on its category control");
   await page.evaluate(() => {
     window.movieNodes=Array.from(document.querySelectorAll("#tvBrowseRail .tv-browse-rail-track > .card"));

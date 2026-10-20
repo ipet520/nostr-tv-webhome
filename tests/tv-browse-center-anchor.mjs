@@ -51,7 +51,7 @@ window.testBrowse.sample = () => {
   });
   return {
     scrollLeft: tvBrowseRailCurrentPosition(rail), actualScrollLeft: rail.scrollLeft,
-    logicalPos: Number(runtime.logicalPos || 0), velocity: Number(runtime.velocity || 0),
+    logicalPos: Number(runtime.logicalPos || 0),
     trackTransform: rail.querySelector('.tv-browse-rail-track').style.transform,
     motionMode: runtime.motionMode,
     target: runtime.frame && Number.isFinite(Number(runtime.target)) ? Number(runtime.target) : metrics ? metrics.target : tvBrowseRailCurrentPosition(rail),
@@ -144,9 +144,9 @@ try {
   await waitForScrollIdle(page);
   await page.waitForTimeout(190);
   const start = await page.evaluate(() => testBrowse.sample());
-  assert.equal(start.motionMode, "d2", "the formal TV Browse rail defaults to the selected D2 controller");
+  assert.equal(start.motionMode, "transform", "the formal TV Browse rail defaults to original B Transform");
   assert.equal(start.scrollLeft, 0, "first card remains at the natural rail start");
-  assert.equal(start.actualScrollLeft, 0, "D2 leaves native scrollLeft at zero");
+  assert.equal(start.actualScrollLeft, 0, "B Transform leaves native scrollLeft at zero");
   assert.match(start.trackTransform, /^translate3d\(/, "the inner track is the single visual position authority");
   assert.equal(start.domFocusKey, start.selectedKey, "start DOM focus and current resource agree");
   assert.equal(start.spatialMode, false, "the natural start edge retains ordinary focus presentation");
@@ -162,7 +162,7 @@ try {
   await waitForFullCenterTreatment(page);
   const centerEnd = await page.evaluate(() => testBrowse.sample());
   assert.equal(centerEnd.domFocusKey, centerEnd.selectedKey, "center selection is the actual DOM focus");
-  assert.equal(centerEnd.spatialMode, true, "settled center selection uses spatial focus styling");
+  assert.equal(centerEnd.spatialMode, false, "B uses the experiment's ordinary DOM focus styling");
   assert.ok(Math.abs(centerEnd.cardCenterX - centerEnd.anchorX) <= 1.5, "settled card center matches the stable visual anchor");
   assert.ok(Math.abs(centerEnd.scale - 1.04) < 0.001, "existing 1.04 card scale appears at the center");
   assert.ok(centerEnd.ringOpacity > 0.999, "existing focus ring reaches full opacity at the center");
@@ -170,12 +170,9 @@ try {
   assert.ok(centerTrace.every(frame => Math.abs(frame.anchorX - centerEnd.anchorX) < 0.1), "center anchor remains fixed during rail motion");
   for (let index = 1; index < centerTrace.length; index++) {
     assert.ok(centerTrace[index].scrollLeft + 0.1 >= centerTrace[index - 1].scrollLeft, "forward-only segment never reverses its rail position");
-    assert.ok(centerTrace[index].focusVisuals.length <= 4, "only the center neighbors and semantic focus are styled");
-    assert.ok(centerTrace[index].focusVisuals.filter(item => item.opacity > 0.999).length <= 1, "neighbor handoff never shows two full focus rings");
-    centerTrace[index].focusVisuals.forEach(item => assert.ok(Math.abs(item.scale - (1 + 0.04 * item.opacity)) < 0.001, "scale follows the same continuous strength as the focus ring"));
+    assert.equal(centerTrace[index].focusVisuals.length, 0, "B does not run D2's spatial focus interpolator");
   }
-  assert.ok(centerTrace.some(frame => frame.focusVisuals.some(item => item.opacity > 0.02 && item.opacity < 0.98)), "focus scale and ring visibly interpolate while cards move through the anchor");
-  assert.ok(centerTrace.every(frame => frame.domFocusKey === frame.selectedKey), "spatial presentation never changes semantic DOM focus or selected resource");
+  assert.ok(centerTrace.every(frame => frame.domFocusKey === frame.selectedKey), "ordinary focus presentation remains on the selected resource");
   report.phases.center = { end: centerEnd, forwardKeys, summary: summarize(centerTrace) };
   report.trace.center = centerTrace;
 
@@ -205,9 +202,9 @@ try {
   await waitForFullCenterTreatment(page);
   const rapidEnd = await page.evaluate(() => testBrowse.sample());
   assert.equal(rapidEnd.domFocusKey, rapidEnd.selectedKey, "rapid alternating input ends on the authoritative resource");
-  assert.equal(rapidEnd.spatialMode, true, "latest rapid target ends with the spatial focus treatment");
+  assert.equal(rapidEnd.spatialMode, false, "rapid B motion keeps the experiment's ordinary DOM focus styling");
   assert.ok(Math.abs(rapidEnd.cardCenterX - rapidEnd.anchorX) <= 1.5, "rapid alternation settles at the same anchor");
-  assert.ok(rapidTrace.every(frame => frame.focusVisuals.length <= 4 && frame.domFocusKey === frame.selectedKey), "no stale or unbounded focus visual state survives rapid movement");
+  assert.ok(rapidTrace.every(frame => frame.focusVisuals.length === 0 && frame.domFocusKey === frame.selectedKey), "rapid movement keeps one semantic DOM focus without a second spatial visual system");
   report.phases.rapidAlternation = { end: rapidEnd, summary: summarize(rapidTrace) };
   report.trace.rapidAlternation = rapidTrace;
 
@@ -243,22 +240,22 @@ try {
     testBrowse.setMotionMode("baseline");
     const baseline = { mode:tvBrowseState().railScroll.motionMode, scrollLeft:rail.scrollLeft,
       transform:tvBrowseRailCards(rail).length ? document.querySelector("#tvBrowseRailTrack").style.transform : "missing", rect:rect() };
-    testBrowse.setMotionMode("d2");
-    const d2 = { mode:tvBrowseState().railScroll.motionMode, logical:tvBrowseRailCurrentPosition(rail),
+    testBrowse.setMotionMode("transform");
+    const transform = { mode:tvBrowseState().railScroll.motionMode, logical:tvBrowseRailCurrentPosition(rail),
       scrollLeft:rail.scrollLeft, transform:document.querySelector("#tvBrowseRailTrack").style.transform, rect:rect(),
       controllers:tvBrowseState().railScroll.frame ? 1 : 0 };
-    return { before, baseline, d2 };
+    return { before, baseline, transform };
   });
   await waitForScrollIdle(page);
   assert.equal(migration.baseline.mode, "baseline", "the explicit rollback mode takes sole control");
-  assert.equal(migration.baseline.transform, "", "baseline mode removes the D2 track transform");
-  assert.ok(Math.abs(migration.baseline.scrollLeft-migration.before.position)<=1.5, "D2 logical position migrates to native position without a jump");
-  assert.ok(Math.abs(migration.baseline.rect.center-migration.before.rect.center)<=1.5, "the card remains visually stationary during D2 to baseline migration");
-  assert.equal(migration.d2.mode, "d2", "switching back restores the D2 controller");
-  assert.equal(migration.d2.scrollLeft, 0, "D2 resets physical scroll before accepting control");
-  assert.ok(Math.abs(migration.d2.logical-migration.baseline.scrollLeft)<=1.5, "baseline position migrates back to D2 logical position");
-  assert.ok(Math.abs(migration.d2.rect.center-migration.baseline.rect.center)<=1.5, "the reverse migration does not move the selected card on screen");
-  assert.ok(migration.d2.controllers<=1, "mode migration never leaves concurrent rail controllers");
+  assert.equal(migration.baseline.transform, "", "baseline mode removes the B track transform");
+  assert.ok(Math.abs(migration.baseline.scrollLeft-migration.before.position)<=1.5, "B logical position migrates to native position without a jump");
+  assert.ok(Math.abs(migration.baseline.rect.center-migration.before.rect.center)<=1.5, "the card remains visually stationary during B to baseline migration");
+  assert.equal(migration.transform.mode, "transform", "switching back restores the original B controller");
+  assert.equal(migration.transform.scrollLeft, 0, "B resets physical scroll before accepting control");
+  assert.ok(Math.abs(migration.transform.logical-migration.baseline.scrollLeft)<=1.5, "baseline position migrates back to B logical position");
+  assert.ok(Math.abs(migration.transform.rect.center-migration.baseline.rect.center)<=1.5, "the reverse migration does not move the selected card on screen");
+  assert.ok(migration.transform.controllers<=1, "mode migration never leaves concurrent rail controllers");
   report.phases.motionMigration = migration;
 
   await page.keyboard.press("Enter");

@@ -1234,7 +1234,7 @@
     }
     html.tv-browse-active .tv-browse-rail .tv-browse-rail-track > .card.poster-unavailable .poster { visibility: hidden; }
     html.tv-browse-active .tv-browse-rail { display: block; position: relative; overflow-x: auto; overflow-y: hidden; height: 100%; padding: var(--tv-focus-space) var(--tv-gutter); box-sizing: border-box; scrollbar-width: none; }
-    html.tv-browse-active #tvBrowseRail[data-rail-motion-mode="d2"] { overflow-x: hidden; }
+    html.tv-browse-active #tvBrowseRail[data-rail-motion-mode="transform"] { overflow-x: hidden; }
     html.tv-browse-active .tv-browse-rail-track { position: relative; display: flex; align-items: flex-start; gap: var(--tv-card-gap,1.4vw); width: max-content; min-width: 100%; }
     /* One measured height budget determines both dimensions at 2:3.
        No flex shrink may compress the image independently of its width. */

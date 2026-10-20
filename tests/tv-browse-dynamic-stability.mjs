@@ -217,7 +217,7 @@ async function railMotionStability(){
      const center=railRect.left+rail.clientLeft+(parseFloat(style.paddingLeft)||0)
        +(rail.clientWidth-(parseFloat(style.paddingLeft)||0)-(parseFloat(style.paddingRight)||0))/2;
      window.railMotionTrace.push({at:performance.now()-started,scroll:testBrowse.railPosition(rail),actualScrollLeft:rail.scrollLeft,error:cardRect.left+cardRect.width/2-center,
-       frame:!!testBrowse.tvBrowseState().railScroll.frame,transform:getComputedStyle(active).transform});
+       frame:!!testBrowse.tvBrowseState().railScroll.frame,transform:getComputedStyle(active).transform,spatial:rail.classList.contains('tv-browse-spatial-focus')});
      if(testBrowse.tvBrowseState().railScroll.frame||performance.now()-started<260)requestAnimationFrame(sample);
      else window.railMotionDone=true;
    };
@@ -232,9 +232,12 @@ async function railMotionStability(){
  assert.ok(scroll.every((value,index)=>!index||value>=scroll[index-1]-1.25),'rightward anchor motion never corrects back toward an older target');
  assert.ok(Math.abs(scroll.at(-1)-motion.expected)<=1.25,'the latest target is reached without a corrective second anchor');
  assert.ok(Math.abs(trace.at(-1).error)<=2,'the focused card settles on the visual center anchor');
- assert.ok(trace.every(sample=>sample.actualScrollLeft===0),'D2 never lets native scrollLeft compete with its transform position');
+ assert.ok(trace.every(sample=>sample.actualScrollLeft===0),'B Transform never lets native scrollLeft compete with its logical position');
  assert.ok(Math.max(...last.map(sample=>sample.scroll))-Math.min(...last.map(sample=>sample.scroll))<=.5,'the settled rail does not micro-jitter');
- assert.ok(trace.every(sample=>sample.transform==='none'),'focused cards do not scale during rail travel');
+ const focusScales=trace.map(sample=>{const match=sample.transform.match(/^matrix\(([^,]+)/);return match?Number(match[1]):sample.transform==='none'?1:NaN;});
+ assert.ok(focusScales.every(scale=>Number.isFinite(scale)&&scale>=.999&&scale<=1.041),'ordinary B focus scaling stays within the existing 1.04 limit');
+ assert.ok(focusScales.some(scale=>scale>1.001),'the actual focused card keeps the ordinary CSS focus scale while the rail moves');
+ assert.ok(trace.every(sample=>!sample.spatial),'B does not run a second spatial focus visual controller');
  assert.equal(motion.running,false,'only one coalesced animation remains and it is cleared at rest');
  await p.evaluate(()=>{
    const rail=document.querySelector('#tvBrowseRail'),cards=testBrowse.railCards(rail);
@@ -260,7 +263,7 @@ async function railMotionStability(){
  assert.ok(reverseScroll.every((value,index)=>!index||value<=reverseScroll[index-1]+1.25),'leftward anchor motion does not jump back toward the previous rightward target');
  assert.ok(Math.abs(reverseScroll.at(-1)-reverse.expected)<=1.25&&Math.abs(reverseTrace.at(-1).error)<=2,'reverse motion settles on its latest visual anchor');
  assert.ok(Math.max(...reverseLast.map(sample=>sample.scroll))-Math.min(...reverseLast.map(sample=>sample.scroll))<=.5,'reverse motion also settles without micro-jitter');
- assert.ok(reverseTrace.every(sample=>sample.actualScrollLeft===0),'reverse motion continues to use only transform control');
+ assert.ok(reverseTrace.every(sample=>sample.actualScrollLeft===0),'reverse motion continues to use only B Transform control');
  report.results.push({version:'after',motion:{firstMoveMs:firstMoved.at,finalOffset:trace.at(-1).error,settledRange:Math.max(...last.map(sample=>sample.scroll))-Math.min(...last.map(sample=>sample.scroll)),reverseOffset:reverseTrace.at(-1).error,reverseSettledRange:Math.max(...reverseLast.map(sample=>sample.scroll))-Math.min(...reverseLast.map(sample=>sample.scroll)),samples:trace.length+reverseTrace.length}});
  await p.close();
 }

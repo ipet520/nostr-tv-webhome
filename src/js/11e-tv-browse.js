@@ -61,7 +61,7 @@
         previewKey: "", presentedKey: "", backdropToken: 0, backdropSlot: 0, backdropUrl: "", backdropMediaKey: "",
         pendingImage: null, pendingPreview: null, warmBackdrops: [],
         focusIntent: null, coldStartFocusIntent: null, retryFocusIntent: null, railCache: {}, railCacheOrder: [], railReadyByQuery: {}, railReadyOrder: [], railReadiness: null, railReadinessToken: 0, coldRailQueryKey: "", initialized: false,
-        railScroll: { motionMode: "", logicalPos: 0, velocity: 0, generation: 0, frame: 0, target: null, targetKey: "", focusCard: null, focusVisualCards: [], focusGeometry: null, lastFrameAt: 0 }, railPrepareFrame: 0, posterWarmTargetKey: "", logoPreparationKeys: [], navigationDirection: 0, previewDirection: 1,
+        railScroll: { motionMode: "", logicalPos: 0, generation: 0, frame: 0, target: null, targetKey: "", focusCard: null, focusVisualCards: [], focusGeometry: null, lastFrameAt: 0 }, railPrepareFrame: 0, posterWarmTargetKey: "", logoPreparationKeys: [], navigationDirection: 0, previewDirection: 1,
         backdropTransition: null, backdropQueue: null
       });
       if (!ui.wallpaper) ui.wallpaper = { active: false, timer: 0, timerToken: 0, moveToken: 0, infoFrame: 0, movePending: false, paused: false, lastActivityAt: 0, historyEntry: false, pendingHistoryAction: null, currentKey: "", currentItem: null, consumeUntilKeyup: {}, detailPending: false, clickSinkPrepared: false, clickSinkTabIndex: null, clickSinkOutline: "", phase: "idle" };
@@ -901,7 +901,7 @@
     }
 
     function tvBrowseRequestedRailMotionMode() {
-      return String(window.__TV_BROWSE_RAIL_MOTION__ || "d2").toLowerCase() === "baseline" ? "baseline" : "d2";
+      return String(window.__TV_BROWSE_RAIL_MOTION__ || "transform").toLowerCase() === "baseline" ? "baseline" : "transform";
     }
 
     function tvBrowseRailMotionMode() {
@@ -931,13 +931,13 @@
 
     function tvBrowseRailCurrentPosition(rail, runtime) {
       const container = rail || $("tvBrowseRail"), scroll = runtime || tvBrowseState().railScroll || {};
-      return tvBrowseRailMotionMode() === "d2" ? Math.max(0, Number(scroll.logicalPos || 0)) : Math.max(0, Number(container && container.scrollLeft || 0));
+      return tvBrowseRailMotionMode() === "transform" ? Math.max(0, Number(scroll.logicalPos || 0)) : Math.max(0, Number(container && container.scrollLeft || 0));
     }
 
     function tvBrowseRailMaxPosition(rail, refresh) {
       const container = rail || $("tvBrowseRail");
       if (!container) return 0;
-      if (tvBrowseRailMotionMode() !== "d2") return Math.max(0, Number(container.scrollWidth || 0) - Number(container.clientWidth || 0));
+      if (tvBrowseRailMotionMode() !== "transform") return Math.max(0, Number(container.scrollWidth || 0) - Number(container.clientWidth || 0));
       const scroll = tvBrowseState().railScroll || {};
       if (!refresh && Number.isFinite(Number(scroll.maxPosition))) return Math.max(0, Number(scroll.maxPosition));
       const track = tvBrowseRailTrack(container, false);
@@ -953,7 +953,7 @@
       const container = rail || $("tvBrowseRail"), scroll = tvBrowseState().railScroll || {};
       if (!container) return 0;
       const next = Math.max(0, Math.min(tvBrowseRailMaxPosition(container), Number(value) || 0));
-      if (tvBrowseRailMotionMode() === "d2") {
+      if (tvBrowseRailMotionMode() === "transform") {
         const track = tvBrowseRailTrack(container);
         scroll.logicalPos = next;
         if (track) track.style.transform = "translate3d(" + (-next) + "px,0,0)";
@@ -981,18 +981,18 @@
       const current = scroll.motionMode || "";
       if (current === requested) {
         container.dataset.railMotionMode = requested;
-        if (requested === "d2" && track && !track.style.transform) {
+        if (requested === "transform" && track && !track.style.transform) {
           track.style.transform = "translate3d(" + (-Number(scroll.logicalPos || 0)) + "px,0,0)";
         }
         return false;
       }
-      const previousPosition = current === "d2" ? Number(scroll.logicalPos || 0) : Number(container.scrollLeft || 0);
+      const previousPosition = current === "transform" ? Number(scroll.logicalPos || 0) : Number(container.scrollLeft || 0);
       if (scroll.frame) cancelAnimationFrame(scroll.frame);
       tvBrowseClearRailAnchorFocusVisual(container, scroll);
       scroll.frame = 0; scroll.generation = Number(scroll.generation || 0) + 1;
-      scroll.target = null; scroll.targetKey = ""; scroll.focusCard = null; scroll.focusGeometry = null; scroll.lastFrameAt = 0; scroll.velocity = 0;
+      scroll.target = null; scroll.targetKey = ""; scroll.focusCard = null; scroll.focusGeometry = null; scroll.lastFrameAt = 0;
       scroll.motionMode = requested;
-      if (requested === "d2") {
+      if (requested === "transform") {
         scroll.maxPosition = null;
         scroll.logicalPos = Math.max(0, Math.min(tvBrowseRailMaxPosition(container, true), previousPosition));
         container.scrollLeft = 0;
@@ -1150,7 +1150,7 @@
       if (scroll.frame) cancelAnimationFrame(scroll.frame);
       tvBrowseClearRailAnchorFocusVisual($("tvBrowseRail"), scroll);
       scroll.frame = 0; scroll.generation = Number(scroll.generation || 0) + 1; scroll.target = null; scroll.targetKey = "";
-      scroll.focusCard = null; scroll.focusGeometry = null; scroll.lastFrameAt = 0; scroll.velocity = 0;
+      scroll.focusCard = null; scroll.focusGeometry = null; scroll.lastFrameAt = 0;
       return true;
     }
 
@@ -1164,15 +1164,15 @@
       if (!metrics) return false;
       const target = metrics.target;
       const mode = tvBrowseRailMotionMode(), current = tvBrowseRailCurrentPosition(rail, scroll);
-      const settled = Math.abs(current - target) <= (mode === "d2" ? 0.75 : 1.25)
-        && (mode !== "d2" || Math.abs(Number(scroll.velocity || 0)) <= 12);
+      const settled = Math.abs(current - target) <= (mode === "transform" ? 2 : 1.25);
       const targetKey = card.dataset.mediaKey || "";
       // A render can replace a card node without changing its media key. Keep
       // the active node as the completion candidate even when its scroll
       // target is unchanged.
       scroll.focusCard = card;
       scroll.focusGeometry = metrics;
-      tvBrowseUpdateRailAnchorFocusVisual(card, rail, scroll, current);
+      if (mode === "baseline") tvBrowseUpdateRailAnchorFocusVisual(card, rail, scroll, current);
+      else tvBrowseClearRailAnchorFocusVisual(rail, scroll);
       if (scroll.frame && scroll.targetKey === targetKey && scroll.target != null && Math.abs(scroll.target - target) < 0.5) return true;
       if (!scroll.frame && settled) {
         scroll.target = null; scroll.targetKey = ""; scroll.focusCard = null; scroll.focusGeometry = null; scroll.lastFrameAt = 0;
@@ -1180,10 +1180,10 @@
       }
       scroll.target = target; scroll.targetKey = targetKey;
       if (scroll.frame) return true;
-      if (mode === "d2") {
-        scroll.lastFrameAt = performance.now();
+      if (mode === "transform") {
+        scroll.lastFrameAt = 0;
         const generation = Number(scroll.generation || 0);
-        scroll.frame = requestAnimationFrame((now) => tvBrowseD2RailStep(now, generation));
+        scroll.frame = requestAnimationFrame((now) => tvBrowseTransformRailStep(now, generation));
         tvBrowseScheduleRailImagePreparation();
         return true;
       }
@@ -1222,56 +1222,36 @@
       return true;
     }
 
-    function tvBrowseCriticalDampedStep(position, velocity, target, elapsedMs) {
-      const dt = Math.max(0, Math.min(Number(elapsedMs || 0) / 1000, 0.08));
-      const error = position - target;
-      const omega = 20;
-      const combined = velocity + omega * error;
-      const decay = Math.exp(-omega * dt);
-      return {
-        position: target + (error + combined * dt) * decay,
-        velocity: (velocity - omega * combined * dt) * decay
-      };
-    }
-
-    function tvBrowseD2RailStep(now, generation) {
+    function tvBrowseTransformRailStep(now, generation) {
       const rail = $("tvBrowseRail"), ui = tvBrowseState(), scroll = ui.railScroll || {};
       const track = tvBrowseRailTrack(rail, false);
-      if (!rail || !track || scroll.motionMode !== "d2" || generation !== Number(scroll.generation || 0)
+      if (!rail || !track || scroll.motionMode !== "transform" || generation !== Number(scroll.generation || 0)
         || !tvBrowseActive() || tvWallpaperIsActive() || rail.dataset.queryKey !== tvBrowseQueryKey() || scroll.target == null) {
         if (generation === Number(scroll.generation || 0)) {
           scroll.frame = 0; scroll.target = null; scroll.targetKey = ""; scroll.focusCard = null;
-          scroll.focusGeometry = null; scroll.lastFrameAt = 0; scroll.velocity = 0;
+          scroll.focusGeometry = null; scroll.lastFrameAt = 0;
           tvBrowseClearRailAnchorFocusVisual(rail, scroll);
         }
         return;
       }
       const maxPosition = tvBrowseRailMaxPosition(rail);
       const goal = Math.max(0, Math.min(maxPosition, Number(scroll.target || 0)));
-      const elapsed = scroll.lastFrameAt == null ? 0 : Math.max(0, Math.min(48, now - scroll.lastFrameAt));
+      const elapsed = scroll.lastFrameAt ? Math.max(1, Math.min(48, now - scroll.lastFrameAt)) : 16;
       scroll.lastFrameAt = now;
-      const result = tvBrowseCriticalDampedStep(Number(scroll.logicalPos || 0), Number(scroll.velocity || 0), goal, elapsed);
-      if (Math.abs(goal - result.position) <= 0.75 && Math.abs(result.velocity) <= 12) {
-        scroll.velocity = 0;
+      const before = Number(scroll.logicalPos || 0);
+      const delta = goal - before;
+      if (Math.abs(delta) <= 2) {
         tvBrowseWriteRailPosition(rail, goal, { silent: true });
-        const completedCard = scroll.focusCard, completedKey = scroll.targetKey;
-        if (completedCard && rail.contains(completedCard) && document.activeElement === completedCard
-          && completedCard.dataset.mediaKey === completedKey) tvBrowseUpdateRailAnchorFocusVisual(completedCard, rail, scroll, goal);
         scroll.frame = 0; scroll.target = null; scroll.targetKey = ""; scroll.focusCard = null;
         scroll.focusGeometry = null; scroll.lastFrameAt = 0;
         tvBrowseRailPositionChanged(rail);
         return;
       }
-      scroll.logicalPos = Math.max(0, Math.min(maxPosition, result.position));
-      scroll.velocity = result.velocity;
-      const trackX = -scroll.logicalPos;
-      track.style.transform = "translate3d(" + trackX + "px,0,0)";
-      tvBrowsePosition().scrollLeft = scroll.logicalPos;
-      const movingCard = scroll.focusCard;
-      if (movingCard && rail.contains(movingCard) && document.activeElement === movingCard
-        && movingCard.dataset.mediaKey === scroll.targetKey) tvBrowseUpdateRailAnchorFocusVisual(movingCard, rail, scroll, scroll.logicalPos);
+      const fraction = 1 - Math.exp(-elapsed / 48);
+      const next = tvBrowseWriteRailPosition(rail, before + delta * fraction, { silent: true });
+      tvBrowsePosition().scrollLeft = next;
       const nextGeneration = Number(scroll.generation || 0);
-      scroll.frame = requestAnimationFrame((frameNow) => tvBrowseD2RailStep(frameNow, nextGeneration));
+      scroll.frame = requestAnimationFrame((frameNow) => tvBrowseTransformRailStep(frameNow, nextGeneration));
     }
 
     function tvBrowseScheduleRailImagePreparation() {
@@ -1291,7 +1271,7 @@
       const target = tvBrowseRailTargetScrollLeft(card, rail);
       if (target == null) return false;
       tvBrowseCancelRailScroll();
-      tvBrowseWriteRailPosition(rail, target, { silent: tvBrowseRailMotionMode() !== "d2" });
+      tvBrowseWriteRailPosition(rail, target, { silent: tvBrowseRailMotionMode() !== "transform" });
       tvBrowseState().railScroll.target = null;
       if (document.activeElement === card) tvBrowseScheduleRailAnchor(card);
       return true;
@@ -2170,7 +2150,7 @@
       const spare = upperHost.clientHeight - used - gap - parseFloat(root.style.getPropertyValue("--tv-preview-gap"));
       set("filter-overview-lines", String(height < 450 ? 0 : clamp(0, Math.floor(spare / (overviewFont * 1.5)), height >= 720 ? 3 : 2)));
       syncTvBrowseFilterOverview();
-      if (tvBrowseRailMotionMode() === "d2") tvBrowseRailMaxPosition(rail, true);
+      if (tvBrowseRailMotionMode() === "transform") tvBrowseRailMaxPosition(rail, true);
       if (tvWallpaperIsActive()) {
         tvWallpaperScheduleInfoShift();
         observeHomeImages(rail); observeMovieCardEnrichment(rail);
@@ -2198,7 +2178,7 @@
             ui.railTrackResizeFrame = 0;
             const rail = $("tvBrowseRail");
             if (!rail || !tvBrowseActive()) return;
-            if (tvBrowseRailMotionMode() === "d2") {
+            if (tvBrowseRailMotionMode() === "transform") {
               const max = tvBrowseRailMaxPosition(rail, true);
               tvBrowseWriteRailPosition(rail, Math.min(tvBrowseRailCurrentPosition(rail), max), { silent: true });
             }
@@ -2401,13 +2381,13 @@
       const railChanged = queryChanged || !sequenceUnchanged;
       if (queryChanged) {
         rail.dataset.queryKey = query.key;
-        if (tvBrowseRailMotionMode() === "d2") tvBrowseWriteRailPosition(rail, 0, { silent: true });
+        if (tvBrowseRailMotionMode() === "transform") tvBrowseWriteRailPosition(rail, 0, { silent: true });
         else rail.scrollLeft = tvBrowsePosition().scrollLeft;
       }
       if (railChanged) {
         tvBrowseReconcileRailNodes(railTrack, nextNodes, queryChanged);
       }
-      if (tvBrowseRailMotionMode() === "d2") tvBrowseRailMaxPosition(rail, true);
+      if (tvBrowseRailMotionMode() === "transform") tvBrowseRailMaxPosition(rail, true);
       if (queryChanged && ui.railCache) {
         delete ui.railCache[query.key];
         ui.railCacheOrder = (ui.railCacheOrder || []).filter((key) => key !== query.key);
@@ -2418,14 +2398,14 @@
       syncTvBrowseVisibility();
       if (queryChanged) {
         const position = tvBrowsePosition();
-        if (tvBrowseRailMotionMode() === "d2") {
+        if (tvBrowseRailMotionMode() === "transform") {
           const cards = Array.from(tvBrowseRailCards(rail));
           const restoreCard = cards.find((card) => position.key && card.dataset.mediaKey === position.key)
             || cards[Math.max(0, Math.min(cards.length - 1, Number(position.index) || 0))];
           const restoreTarget = restoreCard ? tvBrowseRailTargetScrollLeft(restoreCard, rail) : Number(position.scrollLeft || 0);
           position.scrollLeft = tvBrowseWriteRailPosition(rail, restoreTarget == null ? 0 : restoreTarget, { silent: true });
         } else rail.scrollLeft = position.scrollLeft;
-      } else if (tvBrowseRailMotionMode() === "d2") {
+      } else if (tvBrowseRailMotionMode() === "transform") {
         tvBrowseWriteRailPosition(rail, tvBrowseRailCurrentPosition(rail), { silent: true });
       }
       syncTvBrowseColumns();
