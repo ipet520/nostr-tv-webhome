@@ -10,9 +10,13 @@ catch { playwright = require(process.env.WEBHOME_PLAYWRIGHT_PATH || join(process
 
 const { output } = renderIndex();
 validateRenderedArtifact(output);
-const hook = `window.testBrowse = { state, tvBrowseState, tvBrowseFocusIntent, tvBrowseBeginStartup, tvBrowseOpenHistory,
+const hook = `window.testBrowse = {
+ state, tvBrowseState, tvBrowsePosition, tvBrowseFocusIntent, tvBrowseBeginStartup, tvBrowseOpenHistory,
  tvBrowseCloseHistory, tvBrowseSnapshot, restoreTvBrowseSnapshot, renderTvBrowse, homeFocusUserEpoch,
- normalizeRecentWatchingItems, sdk, bindActions, installRemoteKeys, syncBrowseDevicePresentation, focusRemoteTarget };
+ normalizeRecentWatchingItems, sdk, bindActions, installRemoteKeys, syncBrowseDevicePresentation, focusRemoteTarget,
+ ensureRemoteInitialFocus, ensureRemoteActiveFocus, tvBrowseColdStartFocusPending,
+ tvWallpaperState, tvWallpaperScheduleIdle, tvWallpaperStopTimer, tvWallpaperCanEnter, tvWallpaperMove
+};
 window.testBrowse.setup = () => { syncBrowseDevicePresentation(); bindActions(); installRemoteKeys(); };
 window.testBrowse.seedHistory = (raw) => normalizeRecentWatchingItems(raw);
 window.testBrowse.rawHistory = (count, prefix, newestTime) => Array.from({ length: count }, (_, index) => ({
@@ -20,6 +24,10 @@ window.testBrowse.rawHistory = (count, prefix, newestTime) => Array.from({ lengt
   vodName: prefix + ' 历史 ' + (index + 1), vodPic: '/poster-history.svg',
   createTime: (newestTime || Date.now()) - index * 1000, position: 5000, duration: 60000
 }));
+window.testBrowse.scheduleStartupChecks = () => {
+  setTimeout(ensureRemoteInitialFocus, 80);
+  setTimeout(ensureRemoteInitialFocus, 260);
+};
 `;
 const html = output.replace(/boot\(\)\.catch\(function\(e\) \{[\s\S]*?\n    \}\);/, hook);
 assert.notEqual(html, output);
@@ -51,18 +59,26 @@ async function pageAt(options) {
     window.WEBHOME_CONFIG.tmdb.apiBase = "http://fixture.local/tmdb";
     window.WEBHOME_CONFIG.tmdb.apiKey = "fixture";
     testBrowse.state.previewMode = true;
+    testBrowse.state.activeList = "all";
+    testBrowse.state.uiPrefs = Object.assign({}, testBrowse.state.uiPrefs || {}, {
+      tvWallpaperEnterSeconds: 0, tvWallpaperIntervalSeconds: 0
+    });
     document.documentElement.classList.add("tv-preview", "tv-mode");
     testBrowse.state.hot.ready = true;
     testBrowse.state.hot.items = Array.from({ length: 36 }, (_, index) => ({
       id: 8100 + index, tmdbId: 8100 + index, title: "推荐" + index, mediaType: "movie",
       source: "nostr-hot", pic: "/poster-" + index + ".svg", landscape: "/backdrop-" + index + ".svg",
-      overview: "简介", releaseDate: "2025-01-01"
+      overview: "简介 " + index, releaseDate: "2025-01-01"
     }));
     testBrowse.state.recent.loaded = true;
     testBrowse.state.recent.loading = false;
     testBrowse.state.recent.items = [];
     testBrowse.state.recent.refreshedAt = Date.now();
-    if (setup) { testBrowse.setup(); testBrowse.tvBrowseBeginStartup(testBrowse.homeFocusUserEpoch()); }
+    if (setup) {
+      testBrowse.setup();
+      testBrowse.tvBrowseBeginStartup(testBrowse.homeFocusUserEpoch());
+      testBrowse.scheduleStartupChecks();
+    }
   }, !!opts.setup);
   return page;
 }
@@ -74,83 +90,122 @@ async function waitForCard(page, index) {
   }, index, { timeout: 8000 });
 }
 
+async function waitForRailReady(page) {
+  await page.waitForFunction(() => !document.querySelector("#tvBrowsePosters").classList.contains("rail-loading")
+    && !document.querySelector("#tvBrowseColumns").classList.contains("tv-browse-columns-pending"), null, { timeout: 10000 });
+}
+
 try {
-  // Cold startup: keep the first card hidden behind the existing readiness gate,
-  // then assert the first focused frame is already at its final visual state.
-  const cold = await pageAt({ setup: false, imageDelay: 180 });
-  const gate = await cold.evaluate(() => {
-    window.initialFocusTrace = [];
-    window.initialCardFocusEvents = 0;
-    document.addEventListener("focusin", (event) => {
-      const card = event.target.closest && event.target.closest("#tvBrowseRail .card");
-      if (!card || Number(card.dataset.cardIndex) !== 0) return;
-      window.initialCardFocusEvents += 1;
-      let frames = 0;
-      const sample = () => {
-        const transform = getComputedStyle(card).transform;
-        const match = transform.match(/^matrix\(([^,]+)/);
-        window.initialFocusTrace.push({
-          scale: match ? Number(match[1]) : 1,
-          borderOpacity: Number(getComputedStyle(card.querySelector(".poster-wrap"), "::after").opacity),
-          visible: getComputedStyle(card).visibility
-        });
-        if (++frames < 8) requestAnimationFrame(sample);
-      };
-      requestAnimationFrame(sample);
-    }, true);
-    testBrowse.setup();
-    testBrowse.tvBrowseBeginStartup(testBrowse.homeFocusUserEpoch());
-    return document.querySelector("#tvBrowsePosters").classList.contains("rail-loading");
-  });
-  assert.equal(gate, true, "cold first-card focus is held by the existing rail readiness gate");
-  await waitForCard(cold, 0);
-  await cold.waitForFunction(() => window.initialFocusTrace.length > 0);
-  const firstFrame = await cold.evaluate(() => window.initialFocusTrace[0]);
-  assert.equal(firstFrame.visible, "visible");
-  assert.ok(Math.abs(firstFrame.scale - 1.04) < 0.001, `initial scale is already final: ${firstFrame.scale}`);
-  assert.equal(firstFrame.borderOpacity, 1, "the first visible frame has the full 2px focus border");
-  await cold.waitForTimeout(120);
-  const startupFocusEvents = await cold.evaluate(() => window.initialCardFocusEvents);
-  assert.equal(startupFocusEvents, 1, "delayed Gate release does not refocus the first card");
-
-  await cold.evaluate(() => {
-    const next = document.querySelector('#tvBrowseRail .card[data-card-index="1"]');
-    window.userFocusTransition = false;
-    next.addEventListener("transitionrun", (event) => {
-      if (event.propertyName === "transform") window.userFocusTransition = true;
-    });
-  });
-  await cold.keyboard.press("ArrowRight");
-  await cold.waitForFunction(() => document.activeElement.matches('#tvBrowseRail .card[data-card-index="1"]'));
-  await cold.waitForFunction(() => window.userFocusTransition);
-  const userTransition = await cold.evaluate(() => ({
-    duration: getComputedStyle(document.activeElement).transitionDuration,
-    startupMarker: document.activeElement.classList.contains("tv-browse-initial-focus")
+  // Cold start keeps preview/rendering alive while startup and Gate focus work
+  // are suppressed. The two production 80/260ms recovery checks run here.
+  const cold = await pageAt({ setup: true, imageDelay: 180 });
+  const beforeReady = await cold.evaluate(() => ({
+    activeTag: document.activeElement.tagName,
+    cardFocused: !!document.activeElement.closest?.("#tvBrowseRail .card"),
+    pending: testBrowse.tvBrowseColdStartFocusPending()
   }));
-  assert.equal(userTransition.duration, "0.17s", "user navigation keeps the normal focus transition");
-  assert.equal(userTransition.startupMarker, false);
+  assert.equal(beforeReady.cardFocused, false);
+  assert.equal(beforeReady.pending, true);
+  await waitForRailReady(cold);
+  await cold.waitForTimeout(360);
+  const preview = await cold.evaluate(() => ({
+    title: document.querySelector("#tvBrowseTitle").textContent,
+    firstTitle: document.querySelector('#tvBrowseRail .card[data-card-index="0"] .title')?.textContent || "",
+    active: document.activeElement,
+    cardFocused: !!document.activeElement.closest?.("#tvBrowseRail .card"),
+    columnFocused: !!document.activeElement.closest?.("#tvBrowseColumns button"),
+    pending: testBrowse.tvBrowseColdStartFocusPending()
+  }));
+  assert.equal(preview.title, "推荐0", "the first recommendation remains the displayed preview");
+  assert.equal(preview.cardFocused, false, "Gate completion and auto-focus checks do not focus the first poster");
+  assert.equal(preview.columnFocused, false);
+  assert.equal(preview.pending, true);
 
-  const restored = await cold.evaluate(() => {
-    const snapshot = testBrowse.tvBrowseSnapshot();
-    testBrowse.focusRemoteTarget(document.querySelector("#tvFunction-settings"));
-    testBrowse.tvBrowseState().startupFocusAnimation = { epoch: testBrowse.homeFocusUserEpoch(), queryKey: "test" };
-    testBrowse.restoreTvBrowseSnapshot(snapshot);
+  await cold.keyboard.press("ArrowUp");
+  await cold.waitForFunction(() => document.activeElement && document.activeElement.id === "tvColumn-recommendation");
+  assert.equal(await cold.evaluate(() => testBrowse.tvBrowseState().coldStartFocusIntent), null,
+    "one first direction is consumed to establish real category focus");
+  await cold.keyboard.press("ArrowRight");
+  await cold.waitForFunction(() => document.activeElement?.matches("#tvBrowseColumns button")
+    && document.activeElement.id !== "tvColumn-recommendation");
+  await cold.keyboard.press("ArrowLeft");
+  await cold.waitForFunction(() => document.activeElement?.id === "tvColumn-recommendation");
+  await cold.keyboard.press("ArrowDown");
+  await waitForCard(cold, 0);
+  console.log("TV_COLD_START_PREVIEW_NO_FOCUS_AND_FIRST_DPAD = PASS (browser)");
+  console.log("TV_FIRST_DPAD_ONLY_FOCUSES_RECOMMENDATION_THEN_NORMAL_NAV = PASS (browser)");
+
+  await cold.keyboard.press("ArrowRight");
+  await waitForCard(cold, 1);
+  const snapshot = await cold.evaluate(() => testBrowse.tvBrowseSnapshot());
+  await cold.evaluate(() => testBrowse.focusRemoteTarget(document.querySelector("#tvFunction-settings")));
+  await cold.evaluate((value) => {
+    testBrowse.restoreTvBrowseSnapshot(value);
     testBrowse.renderTvBrowse();
     testBrowse.tvBrowseFocusIntent();
-    return {
-      index: Number(document.activeElement.dataset.cardIndex),
-      startupMarker: document.activeElement.classList.contains("tv-browse-initial-focus"),
-      startupState: testBrowse.tvBrowseState().startupFocusAnimation
-    };
-  });
-  assert.equal(restored.index, 1, "snapshot restoration keeps its saved card");
-  assert.equal(restored.startupMarker, false, "snapshot focus does not receive cold-start styling");
-  assert.equal(restored.startupState, null, "snapshot restoration clears cold-start-only state");
+  }, snapshot);
+  await waitForCard(cold, 1);
+  assert.equal(await cold.evaluate(() => testBrowse.tvBrowseState().coldStartFocusIntent), null,
+    "snapshot restore uses saved focus and never re-arms cold startup");
+  console.log("TV_SNAPSHOT_RESTORE_RETAINS_SAVED_CARD = PASS (browser)");
   await cold.close();
-  console.log("TV_BROWSE_COLD_FIRST_FOCUS_NO_FLASH = PASS");
 
-  // A fresh explicit History entry clears its previous position; closing and
-  // reopening starts from the current first row again.
+  // The first D-pad may arrive while the visibility Gate still hides columns.
+  // The key is held as an intent and resolved only after the existing release.
+  const gated = await pageAt({ setup: true, imageDelay: 650 });
+  await gated.waitForFunction(() => document.querySelector("#tvBrowsePosters").classList.contains("rail-loading"));
+  await gated.keyboard.press("ArrowDown");
+  const queued = await gated.evaluate(() => ({
+    phase: testBrowse.tvBrowseState().coldStartFocusIntent?.phase,
+    focusedColumn: document.activeElement?.closest?.("#tvBrowseColumns button")?.id || "",
+    focusedCard: !!document.activeElement?.closest?.("#tvBrowseRail .card")
+  }));
+  assert.equal(queued.phase, "waiting-columns");
+  assert.equal(queued.focusedColumn, "", "the hidden category never receives focus");
+  assert.equal(queued.focusedCard, false, "generic focus recovery cannot fall through to a hidden poster");
+  await waitForRailReady(gated);
+  await gated.waitForFunction(() => document.activeElement?.id === "tvColumn-recommendation");
+  console.log("TV_GATE_DPAD_QUEUED_UNTIL_CATEGORY_VISIBLE = PASS (browser)");
+  await gated.close();
+
+  // A truly idle cold start still prepares the preview and can enter wallpaper.
+  // Set lastActivityAt to the configured deadline to exercise the real scheduler
+  // without waiting ten wall-clock seconds.
+  const wallpaper = await pageAt({ setup: true, imageDelay: 120 });
+  await waitForRailReady(wallpaper);
+  await wallpaper.waitForTimeout(300);
+  const beforeWallpaper = await wallpaper.evaluate(() => ({
+    cardFocused: !!document.activeElement?.closest?.("#tvBrowseRail .card"),
+    currentKey: testBrowse.tvBrowseState().previewKey,
+    pending: testBrowse.tvBrowseState().coldStartFocusIntent?.phase || ""
+  }));
+  assert.equal(beforeWallpaper.cardFocused, false);
+  assert.ok(beforeWallpaper.currentKey, "the preview identity is initialized without DOM focus");
+  assert.equal(beforeWallpaper.pending, "armed");
+  await wallpaper.evaluate(() => {
+    const state = testBrowse.tvBrowseState();
+    testBrowse.state.uiPrefs.tvWallpaperEnterSeconds = 10;
+    testBrowse.state.uiPrefs.tvWallpaperIntervalSeconds = 0;
+    testBrowse.tvWallpaperStopTimer();
+    state.wallpaper.lastActivityAt = Date.now() - 10000;
+    testBrowse.tvWallpaperScheduleIdle(false);
+  });
+  await wallpaper.waitForFunction(() => testBrowse.tvWallpaperState().active && document.activeElement.id === "tvBrowse");
+  assert.equal(await wallpaper.evaluate(() => testBrowse.tvBrowseState().coldStartFocusIntent), null,
+    "wallpaper entry invalidates any unused cold-start focus intent");
+  const wallpaperFirstKey = await wallpaper.evaluate(() => testBrowse.tvBrowsePosition().key);
+  await wallpaper.keyboard.press("ArrowRight");
+  await wallpaper.waitForFunction((key) => testBrowse.tvBrowsePosition().key !== key, wallpaperFirstKey);
+  const wallpaperCurrentKey = await wallpaper.evaluate(() => testBrowse.tvBrowsePosition().key);
+  await wallpaper.keyboard.press("ArrowDown");
+  await wallpaper.waitForFunction(() => !testBrowse.tvWallpaperState().active);
+  await wallpaper.waitForFunction((key) => document.activeElement?.matches("#tvBrowseRail .card")
+    && document.activeElement.dataset.mediaKey === key, wallpaperCurrentKey);
+  console.log("TV_WALLPAPER_IDLE_ENTRY_DPAD_AND_EXIT_FOCUS = PASS (browser)");
+  await wallpaper.close();
+
+  // Explicitly reopening History begins at the first currently sorted row;
+  // refresh completion must not steal a user's later selection.
   const history = await pageAt({ setup: true });
   const firstHistoryKey = await history.evaluate(() => {
     const rows = testBrowse.seedHistory(testBrowse.rawHistory(8, "entry"));
@@ -173,18 +228,15 @@ try {
     await history.keyboard.press("ArrowRight");
     await waitForCard(history, index);
   }
-  const fifthKey = await history.evaluate(() => document.activeElement.dataset.mediaKey);
   await history.evaluate(() => testBrowse.tvBrowseCloseHistory());
   await history.evaluate(() => testBrowse.tvBrowseOpenHistory());
   await waitForCard(history, 0);
-  assert.equal(await history.evaluate(() => document.activeElement.dataset.mediaKey), firstHistoryKey,
-    "a new History entry starts at row one after leaving from row five");
-  assert.notEqual(fifthKey, firstHistoryKey);
+  assert.equal(await history.evaluate(() => document.activeElement.dataset.mediaKey), firstHistoryKey);
+  console.log("TV_HISTORY_REOPEN_STARTS_FIRST = PASS (browser)");
   await history.close();
-  console.log("TV_BROWSE_HISTORY_REOPEN_STARTS_FIRST = PASS");
 
-  // Unloaded History waits for the current result, and an input during a stale
-  // refresh invalidates the entry intent so it cannot steal the user's focus.
+  // A pending native History read still focuses the first result after it
+  // arrives, while an input during a refresh invalidates that focus intent.
   const delayed = await pageAt({ setup: true });
   await delayed.evaluate(() => {
     testBrowse.state.recent.loaded = false;
@@ -199,7 +251,7 @@ try {
   await waitForCard(delayed, 0);
   assert.equal(await delayed.evaluate(() => Number(document.activeElement.dataset.cardIndex)), 0);
   await delayed.close();
-  console.log("TV_BROWSE_HISTORY_DELAYED_LOAD_STARTS_FIRST = PASS");
+  console.log("TV_HISTORY_DELAYED_LOAD_STARTS_FIRST = PASS (browser)");
 
   const userMoved = await pageAt({ setup: true });
   const movedKey = await userMoved.evaluate(() => {
@@ -225,7 +277,7 @@ try {
   assert.equal(await userMoved.evaluate(() => testBrowse.tvBrowseState().positions["native-history"].key), movedKey,
     "a user move during refresh is not reset to the first row");
   await userMoved.close();
-  console.log("TV_BROWSE_HISTORY_USER_MOVE_NOT_STOLEN = PASS");
+  console.log("TV_HISTORY_USER_MOVE_NOT_STOLEN = PASS (browser)");
 
   assert.deepEqual(errors, []);
 } finally {

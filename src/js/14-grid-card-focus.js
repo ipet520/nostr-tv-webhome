@@ -272,17 +272,19 @@
       return Number(state.homeV14 && state.homeV14.focusUserEpoch || 0);
     }
 
-    function markHomeUserNavigation() {
+    function markHomeUserNavigation(options) {
       const home = state.homeV14;
       if (!home) return 0;
       if (home.secondaryMediaFocusRestore) cancelSecondaryMediaFocusRestore();
       if (tvBrowseActive() && state.focusReturnEl && state.focusReturnEl.closest("#tvBrowseFunctions")) state.focusReturnEl = null;
+      if (tvBrowseActive() && !(options && options.preserveTvBrowseColdStart)) tvBrowseCancelColdStartFocusIntent();
       home.focusUserEpoch = Number(home.focusUserEpoch || 0) + 1;
       return home.focusUserEpoch;
     }
 
     function ensureRemoteInitialFocus() {
       if (tvBrowseActive()) {
+        if (tvBrowseColdStartFocusPending() || tvBrowseInitialColumnsPending()) return;
         if (isSidebarOpen() || focusScopeRoot() !== document) return;
         if (!isVisibleFocusable(document.activeElement)) tvBrowseFocusIntent();
         else tvBrowseTryFocus();
@@ -301,6 +303,7 @@
 
     function ensureRemoteActiveFocus() {
       if (isVisibleFocusable(document.activeElement)) return false;
+      if (tvBrowseActive() && (tvBrowseColdStartFocusPending() || tvBrowseInitialColumnsPending())) return true;
       if (restoreConnectionPanelFocus()) return true;
       const target = tvBrowseActive() && focusScopeRoot() === document ? tvBrowsePosterTarget() : firstContentFocus();
       if (!target) return false;
@@ -327,7 +330,7 @@
     }
 
     function initialHomeFocus() {
-      if (tvBrowseActive()) return tvBrowsePosterTarget();
+      if (tvBrowseActive()) return tvBrowseColdStartFocusPending() || tvBrowseInitialColumnsPending() ? null : tvBrowsePosterTarget();
       if (focusScopeRoot() !== document) return null;
       if (isHomeRouteActive() && isVisibleFocusable($("homeHero"))) return $("homeHero");
       return firstContentFocus();

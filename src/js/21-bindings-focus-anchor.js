@@ -363,6 +363,9 @@
       document.addEventListener("keydown", (event) => {
         const key = normalizeRemoteKey(event);
         if (tvWallpaperHandleKey(event, key)) return;
+        if (["Enter", "Menu", "Escape", "Backspace", "Tab"].includes(key) && tvBrowseColdStartFocusPending()) {
+          tvBrowseCancelColdStartFocusIntent();
+        }
         if (event.isTrusted !== false) tvWallpaperNoteUserActivity();
       }, true);
       document.addEventListener("keyup", (event) => {
@@ -396,9 +399,11 @@
           updateTvDiagnostic();
         }
         const el = document.activeElement;
+        let coldStartDpad = false;
         if (isTvLikeDevice() && (isHomeRouteActive() || homeUiRoute() === "secondary") && focusScopeRoot() === document
           && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(key)) {
-          markHomeUserNavigation();
+          coldStartDpad = tvBrowseShouldCaptureColdStartDpad(key);
+          markHomeUserNavigation(coldStartDpad ? { preserveTvBrowseColdStart: true } : null);
         }
         if (key === "Menu" && handleSidebarMenuKey(event)) return;
         const editing = isTextEditingElement(el);
@@ -407,6 +412,7 @@
           event.preventDefault();
           return;
         }
+        if (coldStartDpad && tvBrowseConsumeColdStartDpad(event, key)) return;
         if (key !== "Enter" && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(key) && ensureRemoteActiveFocus()) {
           event.preventDefault();
           return;

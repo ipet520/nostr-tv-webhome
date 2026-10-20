@@ -13,6 +13,7 @@ const browseTemplate = readFileSync(new URL("../src/index.template.html", import
 const browseCss = readFileSync(new URL("../src/css/05-home-tv.css", import.meta.url), "utf8");
 const routeJs = readFileSync(new URL("../src/js/11c-home-render-search-route.js", import.meta.url), "utf8");
 const cardsJs = readFileSync(new URL("../src/js/14-grid-card-focus.js", import.meta.url), "utf8");
+const bindingsJs = readFileSync(new URL("../src/js/21-bindings-focus-anchor.js", import.meta.url), "utf8");
 const detailJs = readFileSync(new URL("../src/js/06-tmdb-history-model.js", import.meta.url), "utf8");
 const artTitleJs = readFileSync(new URL("../src/js/16-detail-rendering.js", import.meta.url), "utf8");
 
@@ -409,7 +410,7 @@ check(browseKeyHandler.includes('target.closest("#tvBrowseColumns")') && browseK
   && !browseJs.includes('classList.add("tv-browse-columns-pending")'), "TV_BROWSE_INITIAL_COLUMNS_NO_REARM", "only the static initial marker exists; hidden columns cannot receive directional focus and ordinary later category changes do not re-arm it");
 const columnsReleaseRuntime = (() => {
   const classes = new Set(["tv-browse-columns-pending"]);
-  let syncCount = 0, focusCount = 0, wallpaperActive = false;
+  let syncCount = 0, resolveCount = 0, focusCount = 0, wallpaperActive = false;
   const element = { classList: {
     contains: (name) => classes.has(name),
     remove: (name) => classes.delete(name)
@@ -418,8 +419,9 @@ const columnsReleaseRuntime = (() => {
     $: (id) => id === "tvBrowseColumns" ? element : null,
     tvWallpaperIsActive: () => wallpaperActive,
     syncTvBrowseVisibility: () => { syncCount += 1; },
+    tvBrowseResolveColdStartFocusIntent: () => { resolveCount += 1; },
     tvBrowseTryFocus: () => { focusCount += 1; },
-    classes, element, getCounts: () => [syncCount, focusCount],
+    classes, element, getCounts: () => [syncCount, resolveCount, focusCount],
     setWallpaperActive: (active) => { wallpaperActive = active; }
   };
   vm.runInNewContext(`${browseColumns}\nglobalThis.releaseInitialColumns = tvBrowseReleaseInitialColumns`, runtime);
@@ -427,9 +429,9 @@ const columnsReleaseRuntime = (() => {
 })();
 check(columnsReleaseRuntime.releaseInitialColumns() === true
   && !columnsReleaseRuntime.classes.has("tv-browse-columns-pending")
-  && columnsReleaseRuntime.getCounts().join(",") === "1,1"
+  && columnsReleaseRuntime.getCounts().join(",") === "1,1,1"
   && columnsReleaseRuntime.releaseInitialColumns() === false
-  && columnsReleaseRuntime.getCounts().join(",") === "1,1", "TV_BROWSE_INITIAL_COLUMNS_RELEASE_ONCE", "release restores existing visibility and focus synchronization once and ignores stale repeat callbacks");
+  && columnsReleaseRuntime.getCounts().join(",") === "1,1,1", "TV_BROWSE_INITIAL_COLUMNS_RELEASE_ONCE", "release restores visibility, resolves a queued first-DPAD focus, and retries normal focus once while ignoring stale repeat callbacks");
 const wallpaperColumnsRuntime = (() => {
   const classes = new Set(["tv-browse-columns-pending"]);
   const element = { classList: { contains: (name) => classes.has(name), remove: (name) => classes.delete(name) } };
@@ -626,27 +628,46 @@ check(requiredDiagnostics.every((field) => categoryJs.includes(`${field}:`)), "H
 
 const beginTvBrowseStartup = browseJs.match(/    function tvBrowseBeginStartup\(epoch\) \{[\s\S]*?(?=\n    function tvBrowseActive\()/)?.[0] || "";
 const tvBrowseTryFocusSource = browseJs.match(/    function tvBrowseTryFocus\(\) \{[\s\S]*?(?=\n    function tvBrowseSelectColumn\()/)?.[0] || "";
+const coldStartDpadSource = browseJs.match(/    function tvBrowseConsumeColdStartDpad\(event, key\) \{[\s\S]*?(?=\n    function tvBrowseResolveColdStartFocusIntent\()/)?.[0] || "";
 const tvBrowseHistoryEntry = browseJs.match(/    function tvBrowseOpenHistory\(\) \{[\s\S]*?(?=\n    function tvBrowseCloseHistory\()/)?.[0] || "";
 const tvBrowseSnapshotRestore = browseJs.match(/    function restoreTvBrowseSnapshot\(saved, legacyColumn\) \{[\s\S]*?(?=\n    function renderCatalogQuery\()/)?.[0] || "";
-check(beginTvBrowseStartup.includes("startupFocusAnimation = { epoch")
-  && tvBrowseTryFocusSource.includes('target.dataset.cardIndex) === 0')
-  && tvBrowseTryFocusSource.includes('target.classList.add("tv-browse-initial-focus")')
-  && tvBrowseTryFocusSource.includes('getComputedStyle(poster, "::after").opacity')
-  && tvBrowseTryFocusSource.includes('requestAnimationFrame(() => target.classList.remove("tv-browse-initial-focus"))'),
-"TV_COLD_FIRST_FOCUS_INITIAL_FRAME", "only the startup first-card focus suppresses its initial transform and border transition, then removes the marker on the next frame");
-check(/\.tv-browse-rail \.card\s*\{[^}]*transition:\s*transform 170ms/.test(browseCss)
-  && browseCss.includes('.card.tv-browse-initial-focus { transition: none; }')
-  && browseCss.includes('.card.tv-browse-initial-focus .poster-wrap::after { transition: none; }'),
-"TV_COLD_FIRST_FOCUS_SCOPED_CSS", "normal TV card focus transitions remain in place and suppression is limited to the startup marker");
+check(beginTvBrowseStartup.includes('ui.coldStartFocusIntent = { phase: "armed"')
+  && beginTvBrowseStartup.includes('position.key = ""; position.index = 0; position.scrollLeft = 0;')
+  && beginTvBrowseStartup.includes("renderTvBrowse();")
+  && !beginTvBrowseStartup.includes("tvBrowseFocusIntent()")
+  && !browseJs.includes("startupFocusAnimation")
+  && !browseCss.includes("tv-browse-initial-focus"),
+"TV_COLD_START_PREVIEW_WITHOUT_DOM_FOCUS", "fresh startup initializes the first recommendation preview and position without creating a card focus intent or transition patch");
+check(tvBrowseTryFocusSource.includes("if (tvBrowseColdStartFocusPending()) return;")
+  && cardsJs.includes("if (tvBrowseColdStartFocusPending() || tvBrowseInitialColumnsPending()) return;")
+  && cardsJs.includes("tvBrowseColdStartFocusPending() || tvBrowseInitialColumnsPending())) return true;")
+  && cardsJs.includes("tvBrowseColdStartFocusPending() || tvBrowseInitialColumnsPending() ? null : tvBrowsePosterTarget()"),
+"TV_COLD_START_AUTOMATIC_FOCUS_GUARDED", "render focus, 80/260ms checks, active-focus fallback and initialHomeFocus cannot target a card while the cold columns Gate is pending");
+check(coldStartDpadSource.includes('$("tvColumn-recommendation")')
+  && coldStartDpadSource.includes('focusRemoteTarget(target)')
+  && coldStartDpadSource.includes("event.preventDefault(); event.stopPropagation();")
+  && coldStartDpadSource.includes("event.stopImmediatePropagation"),
+"TV_COLD_START_FIRST_DPAD_TARGET", "the first accepted directional key is consumed after focusing only the Recommendation category");
+const mainRemoteKeydown = bindingsJs.match(/document\.addEventListener\("keydown", \(event\) => \{[\s\S]*?if \(key === "Menu"[\s\S]*?\n      \}\);/)?.[0] || "";
+check(mainRemoteKeydown.indexOf("tvBrowseShouldCaptureColdStartDpad(key)") >= 0
+  && mainRemoteKeydown.indexOf("shouldThrottleRemoteNav(key, event, el)") > mainRemoteKeydown.indexOf("tvBrowseShouldCaptureColdStartDpad(key)")
+  && mainRemoteKeydown.indexOf("tvBrowseConsumeColdStartDpad(event, key)") > mainRemoteKeydown.indexOf("shouldThrottleRemoteNav(key, event, el)")
+  && mainRemoteKeydown.indexOf("tvBrowseConsumeColdStartDpad(event, key)") < mainRemoteKeydown.indexOf("ensureRemoteActiveFocus()"),
+"TV_COLD_START_DPAD_BEFORE_ACTIVE_FOCUS_FALLBACK", "cold startup activation runs after key throttling but before ensureRemoteActiveFocus can choose the poster");
+const startupCapture = bindingsJs.match(/document\.addEventListener\("keydown", \(event\) => \{[\s\S]*?tvWallpaperHandleKey\(event, key\)[\s\S]*?\n      \}, true\);/)?.[0] || "";
+const coldStartWallpaperEnterSource = browseJs.match(/    function tvWallpaperEnter\(\) \{[\s\S]*?(?=\n    function tvWallpaperMaterialize\()/)?.[0] || "";
+check(startupCapture.indexOf("tvWallpaperHandleKey(event, key)") < startupCapture.indexOf("tvBrowseColdStartFocusPending()")
+  && coldStartWallpaperEnterSource.includes("tvBrowseCancelColdStartFocusIntent();"),
+"TV_WALLPAPER_KEY_PRIORITY_AND_COLD_INTENT_CLEAR", "wallpaper capture keeps priority and entering wallpaper invalidates the pending cold-start focus");
 check(tvBrowseHistoryEntry.includes('ui.positions["native-history"]')
   && tvBrowseHistoryEntry.includes('historyPosition.key = ""; historyPosition.index = 0; historyPosition.scrollLeft = 0;')
   && browseJs.includes('ui.focusIntent && ui.focusIntent.historyEntry')
   && browseJs.includes('ui.focusIntent.epoch !== homeFocusUserEpoch()')
   && browseJs.includes('else if (query.loaded && !query.loading)'),
 "TV_HISTORY_ENTRY_FIRST_CARD_AND_USER_GUARD", "a new History entry resets only its position, waits for current data, and respects the existing user focus epoch");
-check(tvBrowseSnapshotRestore.includes("ui.startupFocusAnimation = null;")
-  && tvBrowseTryFocusSource.includes("ui.startupFocusAnimation = null;"),
-"TV_SNAPSHOT_RESTORE_NOT_COLD_START", "snapshot restoration and stale startup focus intents clear the cold-only transition marker");
+check(tvBrowseSnapshotRestore.includes("tvBrowseCancelColdStartFocusIntent();")
+  && tvBrowseHistoryEntry.includes("tvBrowseCancelColdStartFocusIntent();"),
+"TV_SNAPSHOT_AND_HISTORY_RESTORE_NOT_COLD_START", "snapshot and explicit History entry paths cannot inherit the fresh-start no-focus intent");
 
 console.log("HOME_CATEGORY_CACHE_FIRST = PASS");
 console.log("HOME_CATEGORY_BACKGROUND_REVALIDATE = PASS");
@@ -690,7 +711,10 @@ console.log("NOSTR_RECOMMENDATION_PRESERVED = PASS");
 console.log("WEEKLY_SEMANTICS_PRESERVED = PASS");
 console.log("HERO_SEMANTICS_PRESERVED = PASS (same selector after enrichment; provisional render is additive)");
 console.log("TV_EPISODE_STATUS_PRESERVED = PASS");
-console.log("TV_COLD_FIRST_FOCUS_INITIAL_FRAME = PASS (static source contract; visual frame is covered by tv-browse-focus-entry.mjs)");
-console.log("TV_COLD_FIRST_FOCUS_SCOPED_CSS = PASS");
+console.log("TV_COLD_START_PREVIEW_WITHOUT_DOM_FOCUS = PASS (static source contract; visual/browser behavior is covered by tv-browse-focus-entry.mjs)");
+console.log("TV_COLD_START_AUTOMATIC_FOCUS_GUARDED = PASS");
+console.log("TV_COLD_START_FIRST_DPAD_TARGET = PASS");
+console.log("TV_COLD_START_DPAD_BEFORE_ACTIVE_FOCUS_FALLBACK = PASS");
+console.log("TV_WALLPAPER_KEY_PRIORITY_AND_COLD_INTENT_CLEAR = PASS");
 console.log("TV_HISTORY_ENTRY_FIRST_CARD_AND_USER_GUARD = PASS (static source contract; interaction is covered by tv-browse-focus-entry.mjs)");
-console.log("TV_SNAPSHOT_RESTORE_NOT_COLD_START = PASS");
+console.log("TV_SNAPSHOT_AND_HISTORY_RESTORE_NOT_COLD_START = PASS");
