@@ -60,7 +60,7 @@
         confirm: null, enterHeld: false, suppressClickUntil: 0,
         previewKey: "", presentedKey: "", backdropToken: 0, backdropSlot: 0, backdropUrl: "", backdropMediaKey: "",
         pendingImage: null, pendingPreview: null, warmBackdrops: [],
-        focusIntent: null, retryFocusIntent: null, railCache: {}, railCacheOrder: [], railReadyByQuery: {}, railReadyOrder: [], railReadiness: null, railReadinessToken: 0, coldRailQueryKey: "", initialized: false,
+        focusIntent: null, startupFocusAnimation: null, retryFocusIntent: null, railCache: {}, railCacheOrder: [], railReadyByQuery: {}, railReadyOrder: [], railReadiness: null, railReadinessToken: 0, coldRailQueryKey: "", initialized: false,
         railScroll: { frame: 0, target: null, targetKey: "", focusCard: null, focusVisualCards: [], lastFrameAt: 0 }, railPrepareFrame: 0, posterWarmTargetKey: "", logoPreparationKeys: [], navigationDirection: 0, previewDirection: 1,
         backdropTransition: null, backdropQueue: null
       });
@@ -129,6 +129,7 @@
       const ui = tvBrowseState();
       if (!tvBrowseActive() || homeFocusUserEpoch() !== epoch) return;
       ui.column = "recommendation"; ui.view = "home";
+      ui.startupFocusAnimation = { epoch: Number(epoch), queryKey: tvBrowseQueryKey() };
       if (state.homeV14) state.homeV14.tvRecommendationPresented = true;
       renderTvBrowse(); tvBrowseFocusIntent();
     }
@@ -752,13 +753,16 @@
       const ui = tvBrowseState();
       if (!tvBrowseActive() || ui.view === "history") return;
       tvBrowseSavePosition();
+      const historyPosition = ui.positions["native-history"] || (ui.positions["native-history"] = { key: "", index: 0, scrollLeft: 0 });
+      historyPosition.key = ""; historyPosition.index = 0; historyPosition.scrollLeft = 0;
       ui.historyReturnFocus = homeFocusSnapshot(document.activeElement);
       if (ui.filterOpen) clearTvPanelHistoryEntry("filters", "#tv-filters");
       ui.view = "history"; ui.filterOpen = false; ui.previewKey = ""; ui.confirm = null;
+      ui.focusIntent = null;
       ensureTvPanelHistoryEntry("tvHistory", "#tv-history");
-      renderTvBrowse(); tvBrowseFocusIntent();
       loadRecentList({ refresh: shouldRefreshRecentList(), silent: true }).catch(() => {});
       renderTvBrowse();
+      tvBrowseFocusIntent(null, { historyEntry: true });
     }
 
     function tvBrowseCloseHistory(options) {
@@ -1663,15 +1667,19 @@
       return Array.from($("tvBrowseRecentTools").querySelectorAll("button")).find(isVisibleFocusable) || null;
     }
 
-    function tvBrowseFocusIntent(focus) {
-      tvBrowseState().focusIntent = { epoch: homeFocusUserEpoch(), focus: focus || null };
+    function tvBrowseFocusIntent(focus, options) {
+      const intent = { epoch: homeFocusUserEpoch(), focus: focus || null };
+      if (options && options.historyEntry) intent.historyEntry = true;
+      tvBrowseState().focusIntent = intent;
       tvBrowseTryFocus();
     }
 
     function tvBrowseTryFocus() {
       const ui = tvBrowseState(), intent = ui.focusIntent;
+      if (ui.startupFocusAnimation && (ui.startupFocusAnimation.epoch !== homeFocusUserEpoch()
+        || ui.startupFocusAnimation.queryKey !== tvBrowseQueryKey())) ui.startupFocusAnimation = null;
       if (!intent || tvWallpaperIsActive() || !tvBrowseActive() || isSidebarOpen() || focusScopeRoot() !== document) return;
-      if (intent.epoch !== homeFocusUserEpoch()) { ui.focusIntent = null; return; }
+      if (intent.epoch !== homeFocusUserEpoch()) { ui.focusIntent = null; ui.startupFocusAnimation = null; return; }
       const query = ui.view === "history" ? state.recent : secondaryActiveQuery(ui.column);
       const position = tvBrowsePosition();
       if (query && query.loaded && query.hasMore && !query.error && !query.retryableError && position.index >= query.items.length) {
@@ -1682,12 +1690,28 @@
       const requested = saved && saved.type === "id" ? $(saved.key) : null;
       const target = requested && isVisibleFocusable(requested) ? requested : tvBrowsePosterTarget();
       if (!target || !isVisibleFocusable(target)) return;
-      focusRemoteTarget(target);
+      const startupFocus = ui.startupFocusAnimation;
+      const suppressInitialCardTransition = startupFocus && !saved
+        && target.closest("#tvBrowseRail .card") === target && Number(target.dataset.cardIndex) === 0;
+      if (suppressInitialCardTransition) {
+        target.classList.add("tv-browse-initial-focus");
+        focusRemoteTarget(target);
+        // Commit the focused transform and frame border while transitions are
+        // disabled; removing the marker next frame leaves the same final style.
+        getComputedStyle(target).transform;
+        const poster = target.querySelector(".poster-wrap");
+        if (poster) getComputedStyle(poster, "::after").opacity;
+        requestAnimationFrame(() => target.classList.remove("tv-browse-initial-focus"));
+        ui.startupFocusAnimation = null;
+      } else focusRemoteTarget(target);
       state.remoteInitialFocused = true;
       // A loading column is an interim cold-start target, not a completed
       // media restore. The existing user epoch cancels this intent on input.
       if ((ui.view !== "history" || query.loaded && !query.loading)
-        && (target.closest("#tvBrowseRail") || saved && saved.type === "id" || query && query.loaded && (ui.view === "history" || ui.column !== "recommendation" || state.hot.ready))) ui.focusIntent = null;
+        && (target.closest("#tvBrowseRail") || saved && saved.type === "id" || query && query.loaded && (ui.view === "history" || ui.column !== "recommendation" || state.hot.ready))) {
+        ui.focusIntent = null;
+        if (ui.startupFocusAnimation) ui.startupFocusAnimation = null;
+      }
     }
 
     function tvBrowseSelectColumn(id, options) {
@@ -2023,6 +2047,14 @@
       const focusBefore = tvBrowseFocusLabel();
       const historyView = ui.view === "history";
       const query = historyView ? { key: tvBrowseQueryKey(), items: state.recent.items || [], loaded: state.recent.loaded, loading: state.recent.loading, error: state.recent.error } : secondaryGetQuery(ui.column);
+      if (historyView && ui.focusIntent && ui.focusIntent.historyEntry) {
+        if (ui.focusIntent.epoch !== homeFocusUserEpoch()) ui.focusIntent = null;
+        else if (query.loaded && !query.loading) {
+          const entryPosition = tvBrowsePosition();
+          entryPosition.key = ""; entryPosition.index = 0; entryPosition.scrollLeft = 0;
+          ui.focusIntent.historyEntry = false;
+        }
+      }
       if (!historyView && ui.column !== "recommendation" && query.loading) promoteSecondaryQueryRequests(query, "category-focused-render");
       $("tvBrowse").classList.toggle("empty-history", historyView && !(query.items || []).length);
       // Finite sources can change independently of the catalog page loader.
@@ -3181,6 +3213,7 @@
 
     function restoreTvBrowseSnapshot(saved, legacyColumn) {
       const ui = tvBrowseState(), value = saved || {};
+      ui.startupFocusAnimation = null;
       const id = value.column || legacyColumn || "recommendation";
       ui.view = value.view === "history" ? "history" : "home";
       ui.historyReturnFocus = value.historyReturnFocus || null;

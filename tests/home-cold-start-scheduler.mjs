@@ -221,10 +221,12 @@ const wallpaperResumeSource = browseJs.match(/    function tvWallpaperResume\(\)
 const browseLayoutSource = browseJs.match(/    function layoutTvBrowse\(\) \{[\s\S]*?(?=\n    function initTvBrowse\()/)?.[0] || "";
 check(wallpaperEnterSource.includes("observeHomeImages($(\"tvBrowseRail\"))") && wallpaperMoveSource.includes("observeMovieCardEnrichment($(\"tvBrowseRail\"))") && wallpaperResumeSource.includes("observeHomeImages($(\"tvBrowseRail\"))") && browseLayoutSource.includes("observeMovieCardEnrichment(rail)") && !browseJs.includes("tvWallpaperPrepareNearbyResources") && !browseJs.includes("queueTvCardEpisodeEnrichment(card)"), "TV_WALLPAPER_LOADING_CONTINUITY", "entry, position changes, resize, and lifecycle resume refresh only the existing observers; no wallpaper-specific loader is used");
 const logicalVisibilitySource = categoryJs.match(/    function tvBrowseWallpaperObservationKey\(target\) \{[\s\S]*?(?=\n    function ensureHomeImageObserver\()/)?.[0] || "";
+const railMetricsSource = browseJs.match(/    function tvBrowseRailAnchorMetrics\(card, rail\) \{[\s\S]*?(?=\n    function tvBrowseFocusEase\()/)?.[0] || "";
 const railTargetSource = browseJs.match(/    function tvBrowseRailTargetScrollLeft\(card, rail\) \{[\s\S]*?(?=\n    function tvBrowseExpectedRailScrollLeft\()/)?.[0] || "";
 assert.ok(railTargetSource, "wallpaper logical visibility uses the actual center-anchor geometry helper");
+assert.ok(railMetricsSource, "wallpaper logical visibility has the center-anchor metrics dependency");
 let logicalWallpaperActive = true;
-const logicalVisibilityChecks = vm.runInNewContext(`${railTargetSource}\n${logicalVisibilitySource}\n({ includes: tvBrowseLogicalViewportIncludes, intersects: homeVisibilityEntryIntersects })`, {
+const logicalVisibilityChecks = vm.runInNewContext(`${railMetricsSource}\n${railTargetSource}\n${logicalVisibilitySource}\n({ includes: tvBrowseLogicalViewportIncludes, intersects: homeVisibilityEntryIntersects })`, {
   isTvLikeDevice: () => true,
   tvWallpaperIsActive: () => logicalWallpaperActive,
   tvBrowseQueryKey: () => "active-query",
@@ -622,6 +624,30 @@ const requiredDiagnostics = [
 ];
 check(requiredDiagnostics.every((field) => categoryJs.includes(`${field}:`)), "HOME_COLD_START_DIAGNOSTICS", "all requested timing, cache, budget, render, and enrichment fields are exposed");
 
+const beginTvBrowseStartup = browseJs.match(/    function tvBrowseBeginStartup\(epoch\) \{[\s\S]*?(?=\n    function tvBrowseActive\()/)?.[0] || "";
+const tvBrowseTryFocusSource = browseJs.match(/    function tvBrowseTryFocus\(\) \{[\s\S]*?(?=\n    function tvBrowseSelectColumn\()/)?.[0] || "";
+const tvBrowseHistoryEntry = browseJs.match(/    function tvBrowseOpenHistory\(\) \{[\s\S]*?(?=\n    function tvBrowseCloseHistory\()/)?.[0] || "";
+const tvBrowseSnapshotRestore = browseJs.match(/    function restoreTvBrowseSnapshot\(saved, legacyColumn\) \{[\s\S]*?(?=\n    function renderCatalogQuery\()/)?.[0] || "";
+check(beginTvBrowseStartup.includes("startupFocusAnimation = { epoch")
+  && tvBrowseTryFocusSource.includes('target.dataset.cardIndex) === 0')
+  && tvBrowseTryFocusSource.includes('target.classList.add("tv-browse-initial-focus")')
+  && tvBrowseTryFocusSource.includes('getComputedStyle(poster, "::after").opacity')
+  && tvBrowseTryFocusSource.includes('requestAnimationFrame(() => target.classList.remove("tv-browse-initial-focus"))'),
+"TV_COLD_FIRST_FOCUS_INITIAL_FRAME", "only the startup first-card focus suppresses its initial transform and border transition, then removes the marker on the next frame");
+check(/\.tv-browse-rail \.card\s*\{[^}]*transition:\s*transform 170ms/.test(browseCss)
+  && browseCss.includes('.card.tv-browse-initial-focus { transition: none; }')
+  && browseCss.includes('.card.tv-browse-initial-focus .poster-wrap::after { transition: none; }'),
+"TV_COLD_FIRST_FOCUS_SCOPED_CSS", "normal TV card focus transitions remain in place and suppression is limited to the startup marker");
+check(tvBrowseHistoryEntry.includes('ui.positions["native-history"]')
+  && tvBrowseHistoryEntry.includes('historyPosition.key = ""; historyPosition.index = 0; historyPosition.scrollLeft = 0;')
+  && browseJs.includes('ui.focusIntent && ui.focusIntent.historyEntry')
+  && browseJs.includes('ui.focusIntent.epoch !== homeFocusUserEpoch()')
+  && browseJs.includes('else if (query.loaded && !query.loading)'),
+"TV_HISTORY_ENTRY_FIRST_CARD_AND_USER_GUARD", "a new History entry resets only its position, waits for current data, and respects the existing user focus epoch");
+check(tvBrowseSnapshotRestore.includes("ui.startupFocusAnimation = null;")
+  && tvBrowseTryFocusSource.includes("ui.startupFocusAnimation = null;"),
+"TV_SNAPSHOT_RESTORE_NOT_COLD_START", "snapshot restoration and stale startup focus intents clear the cold-only transition marker");
+
 console.log("HOME_CATEGORY_CACHE_FIRST = PASS");
 console.log("HOME_CATEGORY_BACKGROUND_REVALIDATE = PASS");
 console.log("ANIME_NO_SLOW_SOURCE_FULL_BLOCK = PASS (deferred-source fixture)");
@@ -664,3 +690,7 @@ console.log("NOSTR_RECOMMENDATION_PRESERVED = PASS");
 console.log("WEEKLY_SEMANTICS_PRESERVED = PASS");
 console.log("HERO_SEMANTICS_PRESERVED = PASS (same selector after enrichment; provisional render is additive)");
 console.log("TV_EPISODE_STATUS_PRESERVED = PASS");
+console.log("TV_COLD_FIRST_FOCUS_INITIAL_FRAME = PASS (static source contract; visual frame is covered by tv-browse-focus-entry.mjs)");
+console.log("TV_COLD_FIRST_FOCUS_SCOPED_CSS = PASS");
+console.log("TV_HISTORY_ENTRY_FIRST_CARD_AND_USER_GUARD = PASS (static source contract; interaction is covered by tv-browse-focus-entry.mjs)");
+console.log("TV_SNAPSHOT_RESTORE_NOT_COLD_START = PASS");

@@ -1243,6 +1243,8 @@
     html.tv-browse-active .tv-browse-rail .card:focus { transform: scale(1.04); }
     html.tv-browse-active .tv-browse-rail .card .poster-wrap::after { content: ""; position: absolute; inset: 0; border: 2px solid rgba(255,255,255,.9); border-radius: inherit; box-sizing: border-box; opacity: 0; pointer-events: none; z-index: 4; transition: opacity 160ms ease-in-out; }
     html.tv-browse-active .tv-browse-rail .card:focus .poster-wrap::after { opacity: 1; }
+    html.tv-browse-active .tv-browse-rail .card.tv-browse-initial-focus { transition: none; }
+    html.tv-browse-active .tv-browse-rail .card.tv-browse-initial-focus .poster-wrap::after { transition: none; }
     /* During center-anchor motion the existing rail animation frame drives a
        spatial focus gradient for only the anchor neighbors. Edge focus keeps
        the ordinary CSS transition above. */
