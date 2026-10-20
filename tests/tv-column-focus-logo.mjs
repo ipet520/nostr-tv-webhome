@@ -19,6 +19,10 @@ const hook = `window.testBrowse = { secondaryGetQuery, state, renderAll, renderT
  bindActions, installRemoteKeys, secondaryActiveQuery, syncBrowseDevicePresentation, handleWebHomeResume, boot,
  RECENT_DOUBLE_PRESS_WINDOW_MS, cancelRecentDeleteArm, isVisibleFocusable, tvHistoryPressItem, tvPresentationStatus, homeHeroPresentationStatus, tvEpisodeStatusLabel, normalizeHistoryList, tvBrowseCloseHistory, tvBrowseContinueHistory, tvBrowseQueryKey, tvBrowseOpenHistory, tvBrowsePreview, publishHomeWeeklySnapshot, enterRecentManageMode, exitRecentManageMode,
  openDetail, closeDetail, sdk, loadRecentList, tvBrowseBeginStartup, homeFocusUserEpoch, storeMovieDetailCache, storeTvDetailCache, updateMovieReleaseStatusCards, requestMovieDetailShared, homeEnrichmentRequest, bestDetailLogo, tvBrowseClearPreview, focusRemoteTarget, artLogoResource, prepareArtLogo, renderDetailTitleLogo };
+ window.testBrowse.railPosition = rail => typeof tvBrowseRailCurrentPosition === "function"
+   ? tvBrowseRailCurrentPosition(rail) : Number(rail && rail.scrollLeft || 0);
+ window.testBrowse.setRailPosition = (rail,value) => typeof tvBrowseWriteRailPosition === "function"
+   ? tvBrowseWriteRailPosition(rail,value,{silent:true}) : (rail.scrollLeft=value);
  window.testBrowse.disableTracking = () => { rememberWatchIntent = () => {}; startWatchTracking = () => {}; saveHistoryPlaybackContext = async () => {}; };
  window.testBrowse.setup = () => {
    syncBrowseDevicePresentation(); bindActions(); installRemoteKeys();
@@ -79,14 +83,15 @@ try {
  const p=await pageAt(true);await p.waitForTimeout(200);
  await p.evaluate(()=>{for(const id of ['movie','tv','anime','documentary','variety']){const q=testBrowse.seed(id,12);q.hasMore=false;}});
  await p.locator('#tvColumn-movie').focus();assert.equal(await p.evaluate(()=>testBrowse.tvBrowseState().column),'movie');
- await p.locator('#tvBrowseRail').evaluate(e=>e.scrollLeft=400);await p.waitForTimeout(150);
- const stable=await p.evaluate(()=>({seq:testBrowse.secondaryActiveQuery('movie').requestSeq,scroll:document.querySelector('#tvBrowseRail').scrollLeft,node:!!(window.savedCard=document.querySelector('#tvBrowseRail').firstElementChild)}));
+ await p.locator('#tvBrowseRail').evaluate(e=>testBrowse.setRailPosition(e,400));await p.waitForTimeout(150);
+ const stable=await p.evaluate(()=>({seq:testBrowse.secondaryActiveQuery('movie').requestSeq,scroll:testBrowse.railPosition(document.querySelector('#tvBrowseRail')),nativeScroll:document.querySelector('#tvBrowseRail').scrollLeft,node:!!(window.savedCard=document.querySelector('#tvBrowseRail .card'))}));
  await press(p,'Enter');assert.equal(await p.evaluate(()=>testBrowse.tvBrowseState().filterOpen),false);
- assert.equal(await p.evaluate(()=>window.savedCard===document.querySelector('#tvBrowseRail').firstElementChild),true);
- assert.equal(await p.locator('#tvBrowseRail').evaluate(e=>e.scrollLeft),stable.scroll);
+ assert.equal(await p.evaluate(()=>window.savedCard===document.querySelector('#tvBrowseRail .card')),true);
+ assert.equal(await p.locator('#tvBrowseRail').evaluate(e=>testBrowse.railPosition(e)),stable.scroll);
+ assert.equal(stable.nativeScroll,0,"D2 uses the logical transform position rather than browser scrollLeft");
  assert.equal(await p.evaluate(()=>testBrowse.secondaryActiveQuery('movie').requestSeq),stable.seq);
  await press(p,'Enter');assert.equal(await p.evaluate(()=>testBrowse.tvBrowseState().filterOpen),true);await press(p,'Escape');
- assert.equal(await p.locator('#tvBrowseRail').evaluate(e=>e.scrollLeft),stable.scroll);
+ assert.equal(await p.locator('#tvBrowseRail').evaluate(e=>testBrowse.railPosition(e)),stable.scroll);
  for(const id of ['tv','anime','documentary','variety','movie','tv','movie']){
   await p.locator('#tvColumn-'+id).focus();assert.equal(await p.evaluate(()=>testBrowse.tvBrowseState().column),id);
   assert.equal(await p.locator('#tvBrowseColumns button[aria-pressed="true"]').getAttribute('data-column'),id);

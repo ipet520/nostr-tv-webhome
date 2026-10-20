@@ -232,6 +232,9 @@ const logicalVisibilityChecks = vm.runInNewContext(`${railMetricsSource}\n${rail
   tvWallpaperIsActive: () => logicalWallpaperActive,
   tvBrowseQueryKey: () => "active-query",
   tvBrowsePosition: () => logicalPosition,
+  tvBrowseRailCards: (rail) => rail.children || [],
+  tvBrowseRailCurrentPosition: () => Number(logicalPosition.scrollLeft || 0),
+  tvBrowseRailMaxPosition: (rail) => Math.max(0, Number(rail.scrollWidth || 0) - Number(rail.clientWidth || 0)),
   tvWallpaperState: () => ({ moveToken: 1 }),
   mediaDomKey: (item) => item.id,
   getComputedStyle: () => ({ columnGap: "18px", paddingLeft: "0px", paddingRight: "0px" }),
@@ -243,6 +246,7 @@ const logicalViewportIncludes = logicalVisibilityChecks.includes;
 const logicalPosition = { key: "wallpaper-17", index: 17 };
 const logicalRail = {
   dataset: { queryKey: "active-query" }, children: [], scrollLeft: 0, scrollWidth: 25 * 142, clientWidth: 1280,
+  querySelectorAll: (selector) => selector === ".tv-browse-rail-track > .card" ? logicalRail.children : [],
   getBoundingClientRect: () => ({ left: 0, right: 1280, width: 1280 })
 };
 const logicalCards = Array.from({ length: 25 }, (_, index) => {

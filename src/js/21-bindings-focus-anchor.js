@@ -1569,6 +1569,8 @@
       const activeScope = focusDiagnosticScope(active);
       const activeScrollScope = focusDiagnosticScrollScope(active);
       const activeRail = rail ? (rail.id || rail.dataset.listId || "rail") : "";
+      const railLogicalPosition = rail && rail.id === "tvBrowseRail" && typeof tvBrowseRailCurrentPosition === "function"
+        ? tvBrowseRailCurrentPosition(rail) : rail && rail.scrollLeft || 0;
       const root = document.documentElement;
       const panDiag = state.tvDiag.panDirectPlay;
       const requestDiag = state.tvDiag.panSearchRequest;
@@ -1600,7 +1602,8 @@
         "window scrollY: " + Math.round(window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0),
         "detailSheet.scrollTop: " + (detail ? Math.round(detail.scrollTop || 0) : 0),
         "active rail: " + activeRail,
-        "rail.scrollLeft: " + (rail ? Math.round(rail.scrollLeft || 0) : 0),
+        "rail position: " + Math.round(railLogicalPosition),
+        "rail native scrollLeft: " + (rail ? Math.round(rail.scrollLeft || 0) : 0),
         "KEY: " + (state.tvDiag.key || ""),
         "FROM: " + (state.tvDiag.from || ""),
         "TO: " + (state.tvDiag.to || ""),

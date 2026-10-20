@@ -13,9 +13,13 @@ validateRenderedArtifact(output);
 const hook = `window.testBrowse = { state, renderTvBrowse, tvBrowseState, tvBrowseBeginStartup, tvBrowseSelectColumn,
   tvBrowseQueryKey, tvBrowseOpenHistory, tvBrowseCloseHistory, enterRecentManageMode, exitRecentManageMode,
   bindActions, installRemoteKeys, syncBrowseDevicePresentation, focusRemoteTarget, secondaryGetQuery,
+  tvBrowseRailCards, tvBrowseRailCurrentPosition, tvBrowseWriteRailPosition,
   secondaryActiveQuery, secondaryDefaultQueryFilters, tvBrowseMaybePreloadCategories, loadSecondaryPage,
   promoteSecondaryQueryRequests, homeFocusUserEpoch, isVisibleFocusable, tvBrowseDirectionalTarget };
 window.testBrowse.setup = () => { syncBrowseDevicePresentation(); bindActions(); installRemoteKeys(); };
+window.testBrowse.railCards = rail => Array.from(tvBrowseRailCards(rail || document.querySelector("#tvBrowseRail")));
+window.testBrowse.railPosition = rail => tvBrowseRailCurrentPosition(rail || document.querySelector("#tvBrowseRail"));
+window.testBrowse.setRailPosition = (rail,value) => tvBrowseWriteRailPosition(rail || document.querySelector("#tvBrowseRail"),value,{silent:true});
 window.testBrowse.startRecommendationCold = () => {
   state.previewMode = true; state.deviceMode = "leanback"; state.activeList = "all"; state.homeV14.route = "home";
   document.documentElement.classList.add("tv-preview", "tv-mode");
@@ -134,10 +138,10 @@ try {
   const movieFixture = await page.evaluate(() => {
     const rail = document.querySelector("#tvBrowseRail"), card = rail.querySelector(".card");
     const query = testBrowse.secondaryActiveQuery("movie");
-    if (!card) return { cardCount: rail.children.length, itemCount: query.items.length, loaded: query.loaded, error: query.error, retryableError: query.retryableError, status: document.querySelector("#tvBrowseStatus").textContent };
-    rail.scrollLeft = 73; testBrowse.tvBrowseState().positions[query.key].scrollLeft = 73;
+    if (!card) return { cardCount: testBrowse.railCards(rail).length, itemCount: query.items.length, loaded: query.loaded, error: query.error, retryableError: query.retryableError, status: document.querySelector("#tvBrowseStatus").textContent };
+    testBrowse.setRailPosition(rail,73); testBrowse.tvBrowseState().positions[query.key].scrollLeft = 73;
     window.savedMovieCard = card;
-    return { cardCount: rail.children.length, itemCount: query.items.length, mediaKey: card.dataset.mediaKey };
+    return { cardCount: testBrowse.railCards(rail).length, itemCount: query.items.length, mediaKey: card.dataset.mediaKey };
   });
   assert.ok(movieFixture.mediaKey, "fixture Movie query creates a visible card: " + JSON.stringify(movieFixture));
   const movieCardKey = movieFixture.mediaKey;

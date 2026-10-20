@@ -626,7 +626,7 @@
       if (!targetCard || !targetCard.__mediaItem || targetCard.dataset.mediaKey !== mediaDomKey(targetCard.__mediaItem)) return false;
       const index = Number(targetCard.dataset.cardIndex), currentIndex = Number(position.index);
       if (!Number.isInteger(index) || !Number.isInteger(currentIndex)) return false;
-      const cards = Array.from(rail.children);
+      const cards = typeof tvBrowseRailCards === "function" ? Array.from(tvBrowseRailCards(rail)) : Array.from(rail.querySelectorAll(".tv-browse-rail-track > .card"));
       const currentCard = cards.find((card) => Number(card.dataset.cardIndex) === currentIndex
         && card.dataset.mediaKey === position.key && card.__mediaItem && mediaDomKey(card.__mediaItem) === position.key);
       if (!currentCard) return false;
@@ -634,21 +634,21 @@
       const currentWidth = currentRect.width || currentCard.offsetWidth || 0;
       if (!currentWidth || !targetRect.width) return false;
       const adjacent = cards.find((card) => Number(card.dataset.cardIndex) === currentIndex + 1);
-      const adjacentRect = adjacent && adjacent.getBoundingClientRect();
-      const railStyle = getComputedStyle(rail);
-      const gap = parseFloat(railStyle.columnGap || railStyle.gap || "0") || 0;
-      const stride = adjacentRect && adjacentRect.left > currentRect.left
-        ? adjacentRect.left - currentRect.left : currentWidth + gap;
+      const track = typeof tvBrowseRailTrack === "function" ? tvBrowseRailTrack(rail, false) : null;
+      const trackStyle = getComputedStyle(track || rail);
+      const gap = parseFloat(trackStyle.columnGap || trackStyle.gap || "0") || 0;
+      const stride = adjacent && Number(adjacent.offsetLeft) > Number(currentCard.offsetLeft)
+        ? Number(adjacent.offsetLeft) - Number(currentCard.offsetLeft) : currentWidth + gap;
       if (!stride) return false;
-      const scrollBefore = Number(rail.scrollLeft || 0);
-      const scrollMax = Math.max(0, Number(rail.scrollWidth || 0) - Number(rail.clientWidth || 0));
+      const scrollBefore = typeof tvBrowseRailCurrentPosition === "function" ? tvBrowseRailCurrentPosition(rail) : Number(rail.scrollLeft || 0);
+      const scrollMax = typeof tvBrowseRailMaxPosition === "function" ? tvBrowseRailMaxPosition(rail) : Math.max(0, Number(rail.scrollWidth || 0) - Number(rail.clientWidth || 0));
       // Hidden wallpaper Browse follows the same center-anchor geometry as the
       // visible rail. Do not derive logical visibility from the old edge-reveal
       // behavior; the physical rail remains untouched while hidden.
       const anchored = typeof tvBrowseRailTargetScrollLeft === "function"
         ? tvBrowseRailTargetScrollLeft(currentCard, rail) : null;
       const scrollAfter = anchored == null ? scrollBefore : Math.max(0, Math.min(scrollMax, anchored));
-      const railRect = rail.getBoundingClientRect();
+      const railRect = rail.getBoundingClientRect(), railStyle = getComputedStyle(rail);
       const visibleLeft = railRect.left + (rail.clientLeft || 0) + (parseFloat(railStyle.paddingLeft) || 0);
       const visibleRight = railRect.left + (rail.clientLeft || 0) + rail.clientWidth - (parseFloat(railStyle.paddingRight) || 0);
       const virtualCardLeft = currentRect.left - (scrollAfter - scrollBefore) + (index - currentIndex) * stride;

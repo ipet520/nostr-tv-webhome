@@ -16,7 +16,8 @@ const hook = `window.testBrowse = { state, renderAll, renderTvBrowse, tvBrowseSt
  buildUiSnapshot, restoreUiSnapshot, openSidebar, closeSidebar, openSearchPage, closeSearchPage,
  bindActions, installRemoteKeys, secondaryActiveQuery, syncBrowseDevicePresentation, handleWebHomeResume, boot,
  tvBrowseOpenHistory, tvBrowsePreview, publishHomeWeeklySnapshot, enterRecentManageMode, exitRecentManageMode,
- openDetail, closeDetail, sdk, loadRecentList, tvBrowseBeginStartup, homeFocusUserEpoch, storeMovieDetailCache, storeTvDetailCache, updateMovieReleaseStatusCards, requestMovieDetailShared, homeEnrichmentRequest, bestDetailLogo, tvBrowseClearPreview, focusRemoteTarget, artLogoResource, prepareArtLogo, renderDetailTitleLogo };
+ openDetail, closeDetail, sdk, loadRecentList, tvBrowseBeginStartup, homeFocusUserEpoch, storeMovieDetailCache, storeTvDetailCache, updateMovieReleaseStatusCards, requestMovieDetailShared, homeEnrichmentRequest, bestDetailLogo, tvBrowseClearPreview, focusRemoteTarget, artLogoResource, prepareArtLogo, renderDetailTitleLogo,
+ tvBrowseRailCurrentPosition };
  window.testBrowse.setup = () => {
    syncBrowseDevicePresentation(); bindActions(); installRemoteKeys();
  };
@@ -270,7 +271,7 @@ async function filterBackAcceptance() {
       await press(p,'ArrowDown');await press(p,'ArrowRight');
       await p.evaluate(()=>testBrowse.focusRemoteTarget(document.querySelectorAll('#tvBrowseRail .card')[9]));
       await p.waitForFunction(()=>!testBrowse.tvBrowseState().railScroll?.frame,{},{timeout:5000});
-      await p.evaluate(()=>{window.returnCard=document.activeElement;window.returnScroll=document.querySelector('#tvBrowseRail').scrollLeft;window.returnIndex=testBrowse.tvBrowseState().positions[testBrowse.secondaryActiveQuery('movie').key].index;});
+      await p.evaluate(()=>{window.returnCard=document.activeElement;window.returnScroll=tvBrowseRailCurrentPosition(document.querySelector('#tvBrowseRail'));window.returnIndex=testBrowse.tvBrowseState().positions[testBrowse.secondaryActiveQuery('movie').key].index;});
       await press(p,'ArrowUp');assert.equal(await p.evaluate(()=>document.activeElement.dataset.value),'rating');await press(p,'ArrowDown');
     } else if(zone==='empty') {
       await p.evaluate(()=>{const q=testBrowse.secondaryActiveQuery('movie');q.items=[];q.hasMore=false;testBrowse.renderTvBrowse();});
@@ -281,7 +282,7 @@ async function filterBackAcceptance() {
     // Closing filters must preserve that current layout, not the old full pool.
     const railAtClose=await p.locator('#tvBrowseRail').boundingBox();
     if(zone!=='empty')assert.deepEqual(railAtClose,railBefore);
-    if(zone==='card') await p.evaluate(()=>{returnScroll=document.querySelector('#tvBrowseRail').scrollLeft;});
+    if(zone==='card') await p.evaluate(()=>{returnScroll=tvBrowseRailCurrentPosition(document.querySelector('#tvBrowseRail'));});
     // Native HomeWebController uses WebView.goBack(), not HTML keydown.
     await p.evaluate(()=>history.back());await p.waitForFunction(()=>!testBrowse.tvBrowseState().filterOpen);
     assert.equal(await p.locator('#tvBrowseColumns').isVisible(),true);assert.equal(await p.evaluate(()=>nativeBackCalls),0);assert.equal(await p.evaluate(()=>testBrowse.state.tvFullscreen),true);
@@ -291,7 +292,7 @@ async function filterBackAcceptance() {
     assert.equal(await p.evaluate(()=>!!document.activeElement.closest('[hidden]')),false);
     if(zone==='card') {
       assert.equal(await p.evaluate(()=>document.activeElement===returnCard),true);
-      assert.equal(await p.evaluate(()=>document.querySelector('#tvBrowseRail').scrollLeft===returnScroll),true);
+      assert.equal(await p.evaluate(()=>tvBrowseRailCurrentPosition(document.querySelector('#tvBrowseRail'))===returnScroll),true);
       assert.equal(await p.evaluate(()=>testBrowse.tvBrowseState().positions[testBrowse.secondaryActiveQuery('movie').key].index===returnIndex),true);
     } else assert.equal(await active(p),'tvColumn-movie');
     assert.equal(await p.evaluate(()=>location.hash),'');

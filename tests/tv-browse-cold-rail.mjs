@@ -13,6 +13,7 @@ validateRenderedArtifact(output);
 const hook = `window.testRail = {
   state, secondaryGetQuery, secondaryActiveQuery, renderTvBrowse, tvBrowseState, tvBrowseSelectColumn,
   tvBrowseInitialVisibleCardCount, tvBrowsePosition, tvBrowseQueryKey, tvBrowsePreview, tvBrowseSyncRailImagePreparation,
+  tvBrowseRailCards, tvBrowseRailCurrentPosition, tvBrowseWriteRailPosition, tvBrowseRailTargetScrollLeft,
   tvBrowseCancelRailScroll, tvBrowsePrepareCardResources, tvBrowseReadinessCacheValid, bindActions, installRemoteKeys,
   syncBrowseDevicePresentation, focusRemoteTarget, isVisibleFocusable, observeHomeImages
 };
@@ -70,6 +71,10 @@ window.testRail.seedMovies = (id, count, prefix, firstTmdbId) => {
 };
 window.testRail.setPageLoader = loader => { loadSecondaryPage=loader; };
 window.testRail.visibleCount = () => tvBrowseInitialVisibleCardCount(document.querySelector("#tvBrowseRail"),Number.MAX_SAFE_INTEGER);
+window.testRail.cards = (rail=document.querySelector("#tvBrowseRail")) => Array.from(tvBrowseRailCards(rail));
+window.testRail.positionPixels = (rail=document.querySelector("#tvBrowseRail")) => tvBrowseRailCurrentPosition(rail);
+window.testRail.setPositionPixels = (value,rail=document.querySelector("#tvBrowseRail")) => tvBrowseWriteRailPosition(rail,value,{silent:true});
+window.testRail.targetPosition = (card,rail=document.querySelector("#tvBrowseRail")) => tvBrowseRailTargetScrollLeft(card,rail);
 window.testRail.artworkState = id => {
   const entry=state.movieDetail.cache["movie:"+id],asset=entry&&entry.logoAsset;
   return {detail:!!(entry&&entry.detail),hasLogo:!!asset,url:asset&&asset.url||"",ready:!!(asset&&asset.ready),failed:!!(asset&&asset.failed),pending:!!(asset&&asset.promise),decodeState:asset&&asset.decodeState||""};
@@ -135,7 +140,7 @@ async function openPage() {
   await page.goto("http://fixture.local/?_tv=1");
   await page.evaluate(() => testRail.installDecodeProbe());
   await page.evaluate(() => testRail.setup());
-  await page.waitForFunction(() => document.querySelectorAll("#tvBrowseRail > .card").length > 0);
+  await page.waitForFunction(() => document.querySelectorAll("#tvBrowseRail .tv-browse-rail-track > .card").length > 0);
   return page;
 }
 function releaseHeld(fragment = "") {
@@ -213,7 +218,7 @@ try {
     return {previousTitle,presentedTitle:document.querySelector("#tvBrowseTitle").textContent,previewKey:testRail.tvBrowseState().previewKey,
       pending:host.classList.contains("rail-switch-pending"),columnsPending:document.querySelector("#tvBrowseColumns").classList.contains("tv-browse-columns-pending"),
       columnsVisible:getComputedStyle(document.querySelector("#tvBrowseColumns")).visibility==="visible",
-      oldCardsHidden:Array.from(document.querySelectorAll("#tvBrowseRail > .card")).every(card=>getComputedStyle(card).visibility==="hidden"),loaderHidden:document.querySelector("#tvBrowseRailLoader").hidden};
+      oldCardsHidden:Array.from(document.querySelectorAll("#tvBrowseRail .tv-browse-rail-track > .card")).every(card=>getComputedStyle(card).visibility==="hidden"),loaderHidden:document.querySelector("#tvBrowseRailLoader").hidden};
   });
   assert.equal(coldSwitch.columnsPending,false,"ordinary category changes do not re-arm the one-time initial columns marker");
   assert.equal(coldSwitch.columnsVisible,true,"ordinary category changes keep the category row visible while their existing rail gate runs");
@@ -221,7 +226,7 @@ try {
   assert.equal(coldSwitch.oldCardsHidden,true,"previous-category cards cannot masquerade as the newly selected category");
   assert.equal(coldSwitch.loaderHidden,true,"the wait animation appears only after the current first-screen gate confirms work is pending");
   await page.waitForFunction(() => testRail.tvBrowseState().railReadiness && !document.querySelector("#tvBrowseRailLoader").hidden);
-  await page.waitForFunction(() => Array.from(document.querySelectorAll("#tvBrowseRail > .card img.poster"))
+  await page.waitForFunction(() => Array.from(document.querySelectorAll("#tvBrowseRail .tv-browse-rail-track > .card img.poster"))
     .filter(image => image.src.includes("cold-movie-poster")).length >= testRail.visibleCount());
   await waitUntil(() => heldCount("cold-movie-poster-") >= visibleCount);
   assert.equal(heldCount("cold-movie-poster-"),visibleCount,"the extra offscreen poster must wait until the first-screen gate releases");
@@ -237,12 +242,12 @@ try {
   assert.equal(heldCount("/cold-movie-backdrop-0.jpg"),1,"the first card backdrop is prepared alongside its poster and detail");
   const coldState = await page.evaluate(() => ({
     count:testRail.visibleCount(),
-    physicalVisibleCount:Array.from(document.querySelectorAll("#tvBrowseRail > .card")).filter(card=>{
+    physicalVisibleCount:Array.from(document.querySelectorAll("#tvBrowseRail .tv-browse-rail-track > .card")).filter(card=>{
       const rail=document.querySelector("#tvBrowseRail"),rr=rail.getBoundingClientRect(),cr=card.getBoundingClientRect(),style=getComputedStyle(rail);
       const left=rr.left+rail.clientLeft+parseFloat(style.paddingLeft||"0"),right=rr.left+rail.clientLeft+rail.clientWidth-parseFloat(style.paddingRight||"0");
       return cr.right>left+.5&&cr.left<right-.5;
     }).length,
-    cards:Array.from(document.querySelectorAll("#tvBrowseRail > .card")).slice(0,testRail.visibleCount())
+    cards:Array.from(document.querySelectorAll("#tvBrowseRail .tv-browse-rail-track > .card")).slice(0,testRail.visibleCount())
       .map(card=>({hidden:getComputedStyle(card).visibility==="hidden",src:card.querySelector("img.poster").getAttribute("src")})),
     loaderHidden:document.querySelector("#tvBrowseRailLoader").hidden,
     loaderText:document.querySelector("#tvBrowseRailLoader").textContent.trim(),
@@ -283,10 +288,10 @@ try {
   releaseHeld("cold-movie-backdrop-0.jpg");
   holdPrefix="";
   await page.waitForFunction(() => document.querySelector("#tvBrowseRailLoader").hidden
-    && Array.from(document.querySelectorAll("#tvBrowseRail > .card")).slice(0,testRail.visibleCount())
+    && Array.from(document.querySelectorAll("#tvBrowseRail .tv-browse-rail-track > .card")).slice(0,testRail.visibleCount())
       .every(card => ["ready","failed"].includes(card.querySelector("img.poster").dataset.tvBrowsePosterState)));
   const ready = await page.evaluate(() => ({
-    cards:Array.from(document.querySelectorAll("#tvBrowseRail > .card")).slice(0,testRail.visibleCount()).map(card=>({
+    cards:Array.from(document.querySelectorAll("#tvBrowseRail .tv-browse-rail-track > .card")).slice(0,testRail.visibleCount()).map(card=>({
       visible:getComputedStyle(card).visibility!=="hidden",state:card.querySelector("img.poster").dataset.tvBrowsePosterState
     })),
     loading:document.querySelector("#tvBrowsePosters").classList.contains("rail-loading"),
@@ -365,7 +370,7 @@ try {
 
   const requestsBeforeFocus=logoRequested.length;
   await page.evaluate(()=>{
-    const card=document.querySelectorAll("#tvBrowseRail > .card")[0];
+    const card=document.querySelectorAll("#tvBrowseRail .tv-browse-rail-track > .card")[0];
     card.focus();tvBrowsePosition().key=card.dataset.mediaKey;tvBrowsePosition().index=0;
     tvBrowsePreview(card.__mediaItem);
   });
@@ -377,11 +382,11 @@ try {
     "focus presentation consumes the active preparation result and does not start a second Logo request");
 
   const noLogoCard=await page.evaluate(()=>({
-    key:document.querySelectorAll("#tvBrowseRail > .card")[1].dataset.mediaKey,
-    title:document.querySelectorAll("#tvBrowseRail > .card .card-title")[1].textContent
+    key:document.querySelectorAll("#tvBrowseRail .tv-browse-rail-track > .card")[1].dataset.mediaKey,
+    title:document.querySelectorAll("#tvBrowseRail .tv-browse-rail-track > .card .card-title")[1].textContent
   }));
   await page.evaluate(()=>{
-    const card=document.querySelectorAll("#tvBrowseRail > .card")[1];card.focus();
+    const card=document.querySelectorAll("#tvBrowseRail .tv-browse-rail-track > .card")[1];card.focus();
     tvBrowsePosition().key=card.dataset.mediaKey;tvBrowsePosition().index=1;tvBrowsePreview(card.__mediaItem);
   });
   await page.waitForFunction(()=>testRail.artworkState(62001).detail);
@@ -394,7 +399,7 @@ try {
 
   await page.waitForFunction(()=>testRail.artworkState(62002).failed);
   await page.evaluate(()=>{
-    const card=document.querySelectorAll("#tvBrowseRail > .card")[2];card.focus();
+    const card=document.querySelectorAll("#tvBrowseRail .tv-browse-rail-track > .card")[2];card.focus();
     tvBrowsePosition().key=card.dataset.mediaKey;tvBrowsePosition().index=2;tvBrowsePreview(card.__mediaItem);
   });
   assert.equal(await page.locator("#tvBrowseTitle").isVisible(),true,
@@ -405,10 +410,10 @@ try {
   // A rapid viewport jump updates the shared preparation window without
   // creating a focus-direction Logo queue or widening the single-card lead.
   const quickWindow=await page.evaluate(()=>{
-    const rail=document.querySelector("#tvBrowseRail"),cards=Array.from(rail.children);
+    const rail=document.querySelector("#tvBrowseRail"),cards=testRail.cards(rail);
     testRail.tvBrowseCancelRailScroll();
     [9,3,13,7].forEach(index=>{
-      rail.scrollLeft=Math.max(0,cards[index].offsetLeft-rail.offsetLeft);
+      testRail.setPositionPixels(testRail.targetPosition(cards[index],rail),rail);
       testRail.tvBrowseSyncRailImagePreparation();
     });
     const style=getComputedStyle(rail),rect=rail.getBoundingClientRect();
@@ -417,15 +422,15 @@ try {
     return {keys:testRail.tvBrowseState().logoPreparationKeys.slice(),expected:visible.map(card=>card.dataset.mediaKey),cards:cards.length};
   });
   const expectedQuickKeys=quickWindow.expected.slice();
-  const rightmostIndex=await page.evaluate(keys=>Math.max(...keys.map(key=>Array.from(document.querySelectorAll("#tvBrowseRail > .card")).findIndex(card=>card.dataset.mediaKey===key))),expectedQuickKeys);
-  if(rightmostIndex+1<quickWindow.cards) expectedQuickKeys.push(await page.locator(`#tvBrowseRail > .card:nth-child(${rightmostIndex+2})`).getAttribute("data-media-key"));
+  const rightmostIndex=await page.evaluate(keys=>Math.max(...keys.map(key=>Array.from(document.querySelectorAll("#tvBrowseRail .tv-browse-rail-track > .card")).findIndex(card=>card.dataset.mediaKey===key))),expectedQuickKeys);
+  if(rightmostIndex+1<quickWindow.cards) expectedQuickKeys.push(await page.locator(`#tvBrowseRail .tv-browse-rail-track > .card:nth-child(${rightmostIndex+2})`).getAttribute("data-media-key"));
   assert.deepEqual(quickWindow.keys,expectedQuickKeys,"quick scrolling prepares the current visible cards plus only the next screen-edge card");
   assert.ok(quickWindow.keys.length<=quickWindow.expected.length+1,"rapid viewport updates keep the Logo preparation window bounded");
   releaseHeld("logo-62000.png");holdFragments.clear();
   await page.waitForFunction(()=>testRail.artworkState(62000).ready,
     {},{timeout:5000});
   await page.evaluate(()=>{
-    const rail=document.querySelector("#tvBrowseRail"),card=rail.children[0];rail.scrollLeft=0;
+    const rail=document.querySelector("#tvBrowseRail"),card=testRail.cards(rail)[0];testRail.setPositionPixels(0,rail);
     testRail.tvBrowseSyncRailImagePreparation();card.focus();testRail.tvBrowsePosition().key=card.dataset.mediaKey;
     testRail.tvBrowsePosition().index=0;testRail.tvBrowsePreview(card.__mediaItem);
   });
@@ -449,33 +454,34 @@ try {
     return testRail.artworkState(62000+count).ready;
   },ready.count);
   await page.evaluate(()=>{
-    const rail=document.querySelector("#tvBrowseRail");rail.scrollLeft=0;
+    const rail=document.querySelector("#tvBrowseRail");testRail.setPositionPixels(0,rail);
     testRail.tvBrowseSyncRailImagePreparation();
   });
 
   const detailCountBeforeHotReturn=new Set(detailRequested).size,logoCountBeforeHotReturn=logoRequested.length;
   const sameCategoryPosition=await page.evaluate(()=>{
     const rail=document.querySelector("#tvBrowseRail"),ui=testRail.tvBrowseState(),key=testRail.tvBrowseQueryKey();
-    const card=rail.children[5];
+    const card=testRail.cards(rail)[5];
     ui.positions[key]={key:card.dataset.mediaKey,index:5,scrollLeft:137};
-    rail.scrollLeft=137;
+    testRail.setPositionPixels(137,rail);
     testRail.tvBrowseColumnButton("movie").focus();
     renderTvBrowse();
-    return {position:testRail.position(key),scrollLeft:rail.scrollLeft,focusedColumn:document.activeElement.closest("#tvBrowseColumns")===document.querySelector("#tvBrowseColumns")};
+    return {position:testRail.position(key),scrollLeft:testRail.positionPixels(rail),actualScrollLeft:rail.scrollLeft,focusedColumn:document.activeElement.closest("#tvBrowseColumns")===document.querySelector("#tvBrowseColumns")};
   });
   assert.equal(sameCategoryPosition.position.index,5,"a same-query rerender retains the current card index");
   assert.equal(sameCategoryPosition.position.key,"cold-movie-5","a same-query rerender retains the current media key");
   assert.equal(sameCategoryPosition.scrollLeft,137,"a same-query rerender retains the current rail position");
+  assert.equal(sameCategoryPosition.actualScrollLeft,0,"D2 keeps browser-native scrollLeft out of the motion path");
   assert.equal(sameCategoryPosition.focusedColumn,true,"same-query rendering leaves remote focus on its category control");
   await page.evaluate(() => {
-    window.movieNodes=Array.from(document.querySelectorAll("#tvBrowseRail > .card"));
+    window.movieNodes=Array.from(document.querySelectorAll("#tvBrowseRail .tv-browse-rail-track > .card"));
     testRail.tvBrowseSelectColumn("recommendation");
     testRail.tvBrowseSelectColumn("movie",{afterPaint:true});
   });
   assert.equal(await page.locator("#tvBrowseRailLoader").isHidden(),true,"a hot category restore does not replay the cold loader");
-  assert.equal(await page.evaluate(() => window.movieNodes[0]===document.querySelector("#tvBrowseRail > .card")),true,
+  assert.equal(await page.evaluate(() => window.movieNodes[0]===document.querySelector("#tvBrowseRail .tv-browse-rail-track > .card")),true,
     "a hot category restore reuses the same card node");
-  const returnedPosition=await page.evaluate(()=>({position:testRail.position(),scrollLeft:document.querySelector("#tvBrowseRail").scrollLeft,
+  const returnedPosition=await page.evaluate(()=>({position:testRail.position(),scrollLeft:testRail.positionPixels(),actualScrollLeft:document.querySelector("#tvBrowseRail").scrollLeft,
     preview:testRail.previewState(),activeColumn:document.activeElement.closest("#tvBrowseColumns")&&document.activeElement.dataset.column}));
   assert.equal(returnedPosition.position.index,0,"a real category change starts at the first card");
   assert.equal(returnedPosition.position.scrollLeft,0,"a real category change resets the rail to its left edge");
@@ -543,7 +549,7 @@ try {
   assert.equal(await page.locator("#tvBrowsePosters").evaluate(node=>node.classList.contains("rail-loading")),false,
     "the image readiness timeout releases the whole rail instead of waiting indefinitely");
   const timedStates=await page.evaluate(() => {
-    const count=testRail.visibleCount(), cards=Array.from(document.querySelectorAll("#tvBrowseRail > .card"));
+    const count=testRail.visibleCount(), cards=Array.from(document.querySelectorAll("#tvBrowseRail .tv-browse-rail-track > .card"));
     return {
       firstScreen:cards.slice(0,count).map(card=>({state:card.querySelector("img.poster").dataset.tvBrowsePosterState,unavailable:card.classList.contains("poster-unavailable")})),
       laterScreen:cards.slice(count).map(card=>card.classList.contains("poster-unavailable")),
@@ -560,7 +566,7 @@ try {
   assert.equal(timedStates.preview.key,"timed-category-0","the timed-out cold screen still commits the selected resource identity");
   assert.equal(timedStates.title,"timed-category item 0","background timeout never delays the selected card title");
   releaseHeld();holdPrefix="";
-  await page.waitForFunction(count=>Array.from(document.querySelectorAll("#tvBrowseRail > .card")).slice(0,count)
+  await page.waitForFunction(count=>Array.from(document.querySelectorAll("#tvBrowseRail .tv-browse-rail-track > .card")).slice(0,count)
     .every(card=>card.querySelector("img.poster")?.dataset.tvBrowsePosterState==="ready"&&!card.classList.contains("poster-unavailable")),timedCount,
     {timeout:3000});
   await page.waitForFunction(()=>!Array.from(document.querySelectorAll("#tvBrowseBackdrop,#tvBrowseBackdropNext"))
@@ -600,11 +606,11 @@ try {
       const rail=document.querySelector("#tvBrowseRail"),count=testRail.visibleCount();
       return testRail.tvBrowseState().column===id && rail.dataset.queryKey===testRail.tvBrowseQueryKey()
         && document.querySelector("#tvBrowseRailLoader").hidden
-        && Array.from(rail.children).slice(0,count).every(card=>["ready","failed"].includes(card.querySelector("img.poster")?.dataset.tvBrowsePosterState));
+        && testRail.cards(rail).slice(0,count).every(card=>["ready","failed"].includes(card.querySelector("img.poster")?.dataset.tvBrowsePosterState));
     },column,{timeout:5000});
     await page.evaluate(id=>{
       window.roundtripCachedNodes=window.roundtripCachedNodes||{};
-      window.roundtripCachedNodes[id]=document.querySelector("#tvBrowseRail > .card");
+      window.roundtripCachedNodes[id]=document.querySelector("#tvBrowseRail .tv-browse-rail-track > .card");
     },column);
   }
   for(const column of allColumns.slice().reverse()){
@@ -612,7 +618,7 @@ try {
     const revisit=await page.evaluate(id=>({
       selected:testRail.tvBrowseState().column,
       loaderHidden:document.querySelector("#tvBrowseRailLoader").hidden,
-      sameNode:window.roundtripCachedNodes[id]===document.querySelector("#tvBrowseRail > .card")
+      sameNode:window.roundtripCachedNodes[id]===document.querySelector("#tvBrowseRail .tv-browse-rail-track > .card")
     }),column);
     assert.equal(revisit.selected,column);
     assert.equal(revisit.loaderHidden,true,"a ready category revisit never replays the cold dots");
@@ -627,13 +633,13 @@ try {
     testRail.tvBrowseSelectColumn("movie");
   });
   await page.waitForFunction(()=>{
-    const image=document.querySelector("#tvBrowseRail > .card img.poster");
+    const image=document.querySelector("#tvBrowseRail .tv-browse-rail-track > .card img.poster");
     return image&&String(image.currentSrc||image.src).includes("decode-late-poster-0.jpg")
       && image.complete&&image.naturalWidth>0&&testRail.tvBrowseState().railReadiness;
   });
   await page.waitForFunction(()=>document.querySelector("#tvBrowseRailLoader").hidden,{},{timeout:6500});
   const decodeTimedOut=await page.evaluate(()=>{
-    const card=document.querySelector("#tvBrowseRail > .card"),image=card&&card.querySelector("img.poster");
+    const card=document.querySelector("#tvBrowseRail .tv-browse-rail-track > .card"),image=card&&card.querySelector("img.poster");
     return {state:image&&image.dataset.tvBrowsePosterState,unavailable:!!(card&&card.classList.contains("poster-unavailable")),
       decodePending:typeof window.delayedPosterDecodeRelease==="function"};
   });
@@ -642,7 +648,7 @@ try {
   assert.equal(decodeTimedOut.decodePending,true,"the test held the poster decode across the Gate deadline");
   await page.evaluate(()=>testRail.releaseDecode());
   await page.waitForFunction(()=>{
-    const card=document.querySelector("#tvBrowseRail > .card"),image=card&&card.querySelector("img.poster");
+    const card=document.querySelector("#tvBrowseRail .tv-browse-rail-track > .card"),image=card&&card.querySelector("img.poster");
     return image&&image.dataset.tvBrowsePosterState==="ready"&&!card.classList.contains("poster-unavailable");
   });
   await page.evaluate(()=>testRail.restoreDecode());

@@ -104,7 +104,10 @@ function createHarness() {
     tvBrowseQueryKey: () => "query-movie",
     tvBrowseActive: () => true,
     tvWallpaperIsActive: () => false,
+    tvBrowseEnsureRailMotionMode() {},
     tvBrowsePosterSource: (candidate) => candidate.getAttribute("data-src") || candidate.getAttribute("src") || candidate.src || "",
+    tvBrowseRailCards: (candidateRail) => candidateRail && candidateRail.children || [],
+    tvBrowseRailCurrentPosition: () => 0,
     tvBrowseExpectedRailScrollLeft: () => 0,
     tvBrowseSetRailLoading() {},
     tvBrowseRememberRailReady(queryKey, signature, resources) {

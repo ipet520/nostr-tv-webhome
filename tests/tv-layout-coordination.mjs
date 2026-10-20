@@ -37,6 +37,15 @@ const hook = `window.testBrowse = { secondaryGetQuery, state, renderAll, renderT
      releaseDate: '2025-01-01', overview: '影片简介', genreIds: [18], voteAverage: 8.2
    })); return query;
  };
+ window.testBrowse.railCards = rail => typeof tvBrowseRailCards === "function"
+   ? Array.from(tvBrowseRailCards(rail || document.querySelector("#tvBrowseRail")))
+   : Array.from((rail || document.querySelector("#tvBrowseRail")).querySelectorAll(".card"));
+ window.testBrowse.railPosition = rail => typeof tvBrowseRailCurrentPosition === "function"
+   ? tvBrowseRailCurrentPosition(rail || document.querySelector("#tvBrowseRail"))
+   : Number((rail || document.querySelector("#tvBrowseRail")).scrollLeft || 0);
+ window.testBrowse.setRailPosition = (rail,value) => typeof tvBrowseWriteRailPosition === "function"
+   ? tvBrowseWriteRailPosition(rail || document.querySelector("#tvBrowseRail"),value,{silent:true})
+   : ((rail || document.querySelector("#tvBrowseRail")).scrollLeft=value);
 `;
 const html = output.replace(/boot\(\)\.catch\(function\(e\) \{[\s\S]*?\n    \}\);/, hook);
 assert.notEqual(html, output);
@@ -78,16 +87,16 @@ async function press(page, key) { await page.keyboard.press(key); await page.wai
 const measurements=[];
 const views=[{width:1920,height:1080},{width:1280,height:720},{width:960,height:540},{width:1728,height:894},{width:2048,height:930},{width:1280,height:400}];
 async function measure(p){return p.evaluate(()=>{
- const root=document.querySelector('#tvBrowse'),rail=document.querySelector('#tvBrowseRail'),card=rail.firstElementChild;
+ const root=document.querySelector('#tvBrowse'),rail=document.querySelector('#tvBrowseRail'),card=rail.querySelector('.card');
  const rect=e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom,right:r.right};};
  const get=s=>document.querySelector(s),cs=(e,pseudo)=>getComputedStyle(e,pseudo),cols=get('#tvBrowseColumns'),fg=get('.tv-browse-foreground'),fb=get('.tv-browse-feedback');
  const nodes={root,foreground:fg,info:get('#tvBrowseInfo'),columns:cols,filters:get('#tvBrowseFilters'),resume:get('#tvHistoryResume'),rail,card,poster:card.querySelector('.poster-wrap'),title:card.querySelector('.card-title'),feedback:fb};
  const vars=['safe-top','safe-bottom','rail-slot','focus-space','gap','column-space','column-font','column-pad-x','column-gap','poster-height','poster-width','rail-gap','filter-overview-lines'];
  const last=cols.lastElementChild,first=cols.firstElementChild;
  const intro=get('#tvBrowseFilterOverview');
- const titles=Array.from(rail.children).slice(0,6).map(c=>{const t=c.querySelector('.card-title'),b=c.querySelector('.card-body');const range=document.createRange();range.selectNodeContents(t);return {glyph:rect(range),text:t.textContent,card:rect(c),poster:rect(c.querySelector('.poster-wrap')),body:rect(b),title:rect(t),overflow:cs(t).overflow,whiteSpace:cs(t).whiteSpace,ellipsis:cs(t).textOverflow,align:cs(t).textAlign,scrollWidth:t.scrollWidth,clientWidth:t.clientWidth};});
+ const titles=testBrowse.railCards(rail).slice(0,6).map(c=>{const t=c.querySelector('.card-title'),b=c.querySelector('.card-body');const range=document.createRange();range.selectNodeContents(t);return {glyph:rect(range),text:t.textContent,card:rect(c),poster:rect(c.querySelector('.poster-wrap')),body:rect(b),title:rect(t),overflow:cs(t).overflow,whiteSpace:cs(t).whiteSpace,ellipsis:cs(t).textOverflow,align:cs(t).textAlign,scrollWidth:t.scrollWidth,clientWidth:t.clientWidth};});
  const filterRows=Array.from(get('#tvBrowseFilters').querySelectorAll('.secondary-filter-row')).map(e=>({rect:rect(e),margin:cs(e).marginBottom}));
- return {titles,filterRows,intro:intro?{rect:rect(intro),hidden:intro.hidden,text:intro.textContent,lines:cs(intro).webkitLineClamp}:null,railPadding:cs(rail).padding,viewport:{width:innerWidth,height:innerHeight,dpr:devicePixelRatio,visual:{height:visualViewport.height,width:visualViewport.width,scale:visualViewport.scale}},visibleHeight:parseFloat(root.style.getPropertyValue('--tv-visible-height')),rects:Object.fromEntries(Object.entries(nodes).map(([k,e])=>[k,rect(e)])),vars:Object.fromEntries(vars.map(k=>[k,cs(root).getPropertyValue('--tv-'+k)])),rows:cs(fg).gridTemplateRows,feedbackHidden:fb.hidden,titleBottomSpace:root.getBoundingClientRect().bottom-card.querySelector('.card-title').getBoundingClientRect().bottom,buttonBottom:Math.max(...Array.from(cols.children).map(e=>e.getBoundingClientRect().bottom)),column:{font:cs(first).fontSize,padding:cs(first).padding,gap:cs(cols).gap,contentWidth:last.getBoundingClientRect().right-first.getBoundingClientRect().left,background:cs(last).backgroundColor,line:{width:cs(get('#tvColumn-movie'),'::after').width}},filterFont:cs(get('#tvBrowseFilters')).getPropertyValue('--tv-filter-font'),railScroll:rail.scrollLeft,frame:cs(card.querySelector('.poster-wrap'),'::after').border,transform:cs(card).transform};
+ return {titles,filterRows,intro:intro?{rect:rect(intro),hidden:intro.hidden,text:intro.textContent,lines:cs(intro).webkitLineClamp}:null,railPadding:cs(rail).padding,viewport:{width:innerWidth,height:innerHeight,dpr:devicePixelRatio,visual:{height:visualViewport.height,width:visualViewport.width,scale:visualViewport.scale}},visibleHeight:parseFloat(root.style.getPropertyValue('--tv-visible-height')),rects:Object.fromEntries(Object.entries(nodes).map(([k,e])=>[k,rect(e)])),vars:Object.fromEntries(vars.map(k=>[k,cs(root).getPropertyValue('--tv-'+k)])),rows:cs(fg).gridTemplateRows,feedbackHidden:fb.hidden,titleBottomSpace:root.getBoundingClientRect().bottom-card.querySelector('.card-title').getBoundingClientRect().bottom,buttonBottom:Math.max(...Array.from(cols.children).map(e=>e.getBoundingClientRect().bottom)),column:{font:cs(first).fontSize,padding:cs(first).padding,gap:cs(cols).gap,contentWidth:last.getBoundingClientRect().right-first.getBoundingClientRect().left,background:cs(last).backgroundColor,line:{width:cs(get('#tvColumn-movie'),'::after').width}},filterFont:cs(get('#tvBrowseFilters')).getPropertyValue('--tv-filter-font'),railScroll:testBrowse.railPosition(rail),frame:cs(card.querySelector('.poster-wrap'),'::after').border,transform:cs(card).transform};
  });}
 async function history(p){await p.evaluate(()=>{
  testBrowse.disableTracking();window.fm=Object.assign({},testBrowse.sdk(),{history:async()=>Array.from({length:12},(_,i)=>({key:'fixture@@@history'+i+'@@@1',vodName:i?'历史影片 '+i:'同一影视长标题用于省略验证',vodPic:'/poster.jpg',position:3608000,duration:7322000,episodeName:'第47集',createTime:Date.now()-i}))});testBrowse.state.recent.loaded=false;

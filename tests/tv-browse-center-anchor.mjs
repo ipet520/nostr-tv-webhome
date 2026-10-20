@@ -21,7 +21,8 @@ catch {
 const { output } = renderIndex();
 validateRenderedArtifact(output);
 const hook = `window.testBrowse = { state, tvBrowseState, tvBrowsePosition, tvBrowseSelectColumn,
-  tvBrowseRailAnchorMetrics, tvBrowseScheduleRailAnchor, tvBrowseSetRailAnchor, focusRemoteTarget,
+  tvBrowseRailAnchorMetrics, tvBrowseScheduleRailAnchor, tvBrowseSetRailAnchor, tvBrowseRailCards,
+  tvBrowseRailCurrentPosition, tvBrowseSetRailPosition: tvBrowseWriteRailPosition, focusRemoteTarget, renderTvBrowse,
   syncBrowseDevicePresentation, bindActions, installRemoteKeys, tvBrowseBeginStartup, homeFocusUserEpoch,
   secondaryGetQuery, openDetail };
 window.testBrowse.setup = () => { syncBrowseDevicePresentation(); bindActions(); installRemoteKeys(); };
@@ -36,7 +37,7 @@ window.testBrowse.seed = (count = 18) => {
   return query;
 };
 window.testBrowse.sample = () => {
-  const rail = document.querySelector('#tvBrowseRail'), card = document.activeElement && document.activeElement.closest('#tvBrowseRail > .card');
+  const rail = document.querySelector('#tvBrowseRail'), card = document.activeElement && document.activeElement.closest('#tvBrowseRail .tv-browse-rail-track > .card');
   const ui = tvBrowseState(), runtime = ui.railScroll || {}, position = tvBrowsePosition();
   if (!rail) return null;
   const railRect = rail.getBoundingClientRect(), style = getComputedStyle(rail), cardRect = card && card.getBoundingClientRect();
@@ -44,13 +45,16 @@ window.testBrowse.sample = () => {
   const anchorX = railRect.left + rail.clientLeft + padLeft + (rail.clientWidth - padLeft - padRight) / 2;
   const metrics = card && tvBrowseRailAnchorMetrics(card, rail);
   const scaleOf = node => { const transform = getComputedStyle(node).transform; if (transform === 'none') return 1; const matrix = transform.match(/^matrix\(([^,]+)/) || transform.match(/^matrix3d\(([^,]+)/); return matrix ? Number(matrix[1]) : 1; };
-  const focusVisuals = Array.from(rail.children).filter(node => node.classList.contains('tv-browse-focus-interpolated')).map(node => {
+  const focusVisuals = Array.from(tvBrowseRailCards(rail)).filter(node => node.classList.contains('tv-browse-focus-interpolated')).map(node => {
     const rect = node.getBoundingClientRect(), wrap = node.querySelector('.poster-wrap');
     return {key: node.dataset.mediaKey || '', centerX: rect.left + rect.width / 2, scale: scaleOf(node), opacity: wrap ? Number(getComputedStyle(wrap, '::after').opacity) : 0};
   });
   return {
-    scrollLeft: rail.scrollLeft,
-    target: runtime.frame && Number.isFinite(Number(runtime.target)) ? Number(runtime.target) : metrics ? metrics.target : Number(rail.scrollLeft || 0),
+    scrollLeft: tvBrowseRailCurrentPosition(rail), actualScrollLeft: rail.scrollLeft,
+    logicalPos: Number(runtime.logicalPos || 0), velocity: Number(runtime.velocity || 0),
+    trackTransform: rail.querySelector('.tv-browse-rail-track').style.transform,
+    motionMode: runtime.motionMode,
+    target: runtime.frame && Number.isFinite(Number(runtime.target)) ? Number(runtime.target) : metrics ? metrics.target : tvBrowseRailCurrentPosition(rail),
     targetKey: runtime.frame ? runtime.targetKey : card && card.dataset.mediaKey || '',
     anchorX, cardCenterX: cardRect ? cardRect.left + cardRect.width / 2 : null,
     domFocusKey: card && card.dataset.mediaKey || '', selectedKey: position.key || '', selectedIndex: Number(position.index || 0),
@@ -63,6 +67,7 @@ window.testBrowse.sample = () => {
     focusVisuals
   };
 };
+window.testBrowse.setMotionMode = mode => { window.__TV_BROWSE_RAIL_MOTION__ = mode; renderTvBrowse(); };
 window.testBrowse.beginTrace = () => {
   window.centerAnchorTrace = []; window.centerAnchorKeys = [];
   const sample = () => {
@@ -107,7 +112,7 @@ async function pageAt(viewport = { width: 1280, height: 720 }) {
     api.state.recent.loaded = true; api.state.recent.items = [];
     api.setup(); api.tvBrowseBeginStartup(api.homeFocusUserEpoch()); api.seed(); api.tvBrowseSelectColumn("movie");
   });
-  await page.waitForFunction(() => document.querySelectorAll("#tvBrowseRail > .card").length === 18);
+  await page.waitForFunction(() => document.querySelectorAll("#tvBrowseRail .tv-browse-rail-track > .card").length === 18);
   await page.waitForTimeout(700);
   return page;
 }
@@ -124,7 +129,7 @@ const summarize = trace => trace.length ? {
 } : null;
 
 const waitForFullCenterTreatment = page => page.waitForFunction(() => {
-  const card = document.activeElement && document.activeElement.closest('#tvBrowseRail > .card');
+  const card = document.activeElement && document.activeElement.closest('#tvBrowseRail .tv-browse-rail-track > .card');
   if (!card) return false;
   const transform = getComputedStyle(card).transform;
   const matrix = transform.match(/^matrix\(([^,]+)/) || transform.match(/^matrix3d\(([^,]+)/);
@@ -135,11 +140,14 @@ const waitForFullCenterTreatment = page => page.waitForFunction(() => {
 const report = { viewport: { width: 1280, height: 720 }, phases: {}, trace: {} };
 try {
   const page = await pageAt();
-  await page.locator("#tvBrowseRail > .card").first().focus();
+  await page.locator("#tvBrowseRail .tv-browse-rail-track > .card").first().focus();
   await waitForScrollIdle(page);
   await page.waitForTimeout(190);
   const start = await page.evaluate(() => testBrowse.sample());
+  assert.equal(start.motionMode, "d2", "the formal TV Browse rail defaults to the selected D2 controller");
   assert.equal(start.scrollLeft, 0, "first card remains at the natural rail start");
+  assert.equal(start.actualScrollLeft, 0, "D2 leaves native scrollLeft at zero");
+  assert.match(start.trackTransform, /^translate3d\(/, "the inner track is the single visual position authority");
   assert.equal(start.domFocusKey, start.selectedKey, "start DOM focus and current resource agree");
   assert.equal(start.spatialMode, false, "the natural start edge retains ordinary focus presentation");
   assert.ok(Math.abs(start.scale - 1.04) < 0.001 && start.ringOpacity > 0.999, "start edge retains the ordinary focused card treatment");
@@ -216,7 +224,7 @@ try {
   report.trace.longForward = longForwardTrace;
 
   const tail = await page.evaluate(() => {
-    const card = document.querySelector("#tvBrowseRail > .card:last-child");
+    const card = document.querySelector("#tvBrowseRail .tv-browse-rail-track > .card:last-child");
     focusRemoteTarget(card);
     return testBrowse.sample();
   });
@@ -227,6 +235,31 @@ try {
   assert.ok(tailEnd.scale >= 1.035 && tailEnd.ringOpacity >= 0.9, "clamped tail keeps a strong, continuous focus treatment");
   assert.equal(tailEnd.domFocusKey, tailEnd.selectedKey, "tail DOM focus and selected resource agree");
   report.phases.tail = { initial: tail, end: tailEnd };
+
+  const migration = await page.evaluate(() => {
+    const rail = document.querySelector("#tvBrowseRail"), card = document.activeElement;
+    const rect = () => { const r=card.getBoundingClientRect(); return {left:r.left,right:r.right,center:r.left+r.width/2}; };
+    const before = { position:tvBrowseRailCurrentPosition(rail), rect:rect() };
+    testBrowse.setMotionMode("baseline");
+    const baseline = { mode:tvBrowseState().railScroll.motionMode, scrollLeft:rail.scrollLeft,
+      transform:tvBrowseRailCards(rail).length ? document.querySelector("#tvBrowseRailTrack").style.transform : "missing", rect:rect() };
+    testBrowse.setMotionMode("d2");
+    const d2 = { mode:tvBrowseState().railScroll.motionMode, logical:tvBrowseRailCurrentPosition(rail),
+      scrollLeft:rail.scrollLeft, transform:document.querySelector("#tvBrowseRailTrack").style.transform, rect:rect(),
+      controllers:tvBrowseState().railScroll.frame ? 1 : 0 };
+    return { before, baseline, d2 };
+  });
+  await waitForScrollIdle(page);
+  assert.equal(migration.baseline.mode, "baseline", "the explicit rollback mode takes sole control");
+  assert.equal(migration.baseline.transform, "", "baseline mode removes the D2 track transform");
+  assert.ok(Math.abs(migration.baseline.scrollLeft-migration.before.position)<=1.5, "D2 logical position migrates to native position without a jump");
+  assert.ok(Math.abs(migration.baseline.rect.center-migration.before.rect.center)<=1.5, "the card remains visually stationary during D2 to baseline migration");
+  assert.equal(migration.d2.mode, "d2", "switching back restores the D2 controller");
+  assert.equal(migration.d2.scrollLeft, 0, "D2 resets physical scroll before accepting control");
+  assert.ok(Math.abs(migration.d2.logical-migration.baseline.scrollLeft)<=1.5, "baseline position migrates back to D2 logical position");
+  assert.ok(Math.abs(migration.d2.rect.center-migration.baseline.rect.center)<=1.5, "the reverse migration does not move the selected card on screen");
+  assert.ok(migration.d2.controllers<=1, "mode migration never leaves concurrent rail controllers");
+  report.phases.motionMigration = migration;
 
   await page.keyboard.press("Enter");
   await page.waitForFunction(() => document.querySelector("#detailSheet")?.classList.contains("active"));

@@ -25,7 +25,7 @@ for (const name of ['renderTvBrowse', 'layoutTvBrowse', 'mediaCard', 'observeHom
 testBrowse.renderTvBrowse = renderTvBrowse;
 testBrowse.readRect = () => {
   const rect = e => { const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom}; };
-  const rail=document.querySelector('#tvBrowseRail'),card=rail.firstElementChild;
+  const rail=document.querySelector('#tvBrowseRail'),card=rail.querySelector('.card');
   return {t:performance.now(),column:tvBrowseState().column,view:tvBrowseState().view,filter:tvBrowseState().filterOpen,
     viewport: {width:innerWidth,height:innerHeight,dpr:devicePixelRatio,visualHeight:visualViewport.height,visualWidth:visualViewport.width,visualScale:visualViewport.scale},
     rail:rect(rail),poster:card?rect(card.querySelector('.poster-wrap')):null,title:card?rect(card.querySelector('.card-title')):null,
@@ -33,7 +33,7 @@ testBrowse.readRect = () => {
     feedback:rect(document.querySelector('.tv-browse-feedback')),feedbackHidden:document.querySelector('.tv-browse-feedback').hidden,
     info:rect(document.querySelector('#tvBrowseInfo')),columns:rect(document.querySelector('#tvBrowseColumns')),
     columnPill:rect(document.querySelector('#tvColumn-'+testBrowse.tvBrowseState().column)),
-    filters:rect(document.querySelector('#tvBrowseFilters')),scrollY,railScroll:rail.scrollLeft,root:rect(document.querySelector('#tvBrowse')),
+    filters:rect(document.querySelector('#tvBrowseFilters')),scrollY,railScroll:testBrowse.railPosition(rail),nativeRailScroll:rail.scrollLeft,root:rect(document.querySelector('#tvBrowse')),
     active:document.activeElement.id||document.activeElement.dataset.mediaKey||'',cardTransform:card?getComputedStyle(card).transform:null,query:rail.dataset.queryKey};
 };
 `;
@@ -168,7 +168,7 @@ async function switching(version){
  const p=await pageAt(version,{width:1280,height:720});await pause(p,150);
  await p.evaluate(()=>{for(const id of ['movie','tv','anime','documentary','variety']){const q=testBrowse.seed(id,180);q.hasMore=false;q.items.forEach(x=>x.mediaType='other');}testBrowse.tvBrowseSelectColumn('movie');metrics.calls={};});
  await p.evaluate(()=>{for(const id of ['tv','anime','documentary','variety'])document.querySelector('#tvColumn-'+id).focus();});await pause(p,150);
- const rapid=await p.evaluate(()=>({calls:metrics.calls,count:document.querySelector('#tvBrowseRail').children.length,query:document.querySelector('#tvBrowseRail').dataset.queryKey}));
+ const rapid=await p.evaluate(()=>({calls:metrics.calls,count:document.querySelectorAll('#tvBrowseRail .card').length,query:document.querySelector('#tvBrowseRail').dataset.queryKey}));
  assert.equal(await p.evaluate(()=>document.querySelector('#tvBrowseRail').dataset.queryKey===testBrowse.secondaryActiveQuery('variety').key),true);
  if(version==='after'&&check){assert.equal(rapid.calls.mediaCard.count,18,'coalesced traversal only renders the final visible batch');assert.equal(rapid.count,18);}
  await p.evaluate(()=>testBrowse.tvBrowseSelectColumn('movie'));
@@ -204,10 +204,10 @@ async function railMotionStability(){
    q.items=q.items.map((item,index)=>Object.assign(item,{mediaType:'other',source:'fixture',pic:'/motion-poster-'+index+'.jpg'}));
    testBrowse.tvBrowseSelectColumn('movie');
  });
- await p.waitForFunction(()=>document.querySelectorAll('#tvBrowseRail > .card').length>=18);
+ await p.waitForFunction(()=>document.querySelectorAll('#tvBrowseRail .tv-browse-rail-track > .card').length>=18);
  await p.evaluate(()=>{
-   const rail=document.querySelector('#tvBrowseRail'),cards=Array.from(rail.children);
-   rail.scrollLeft=0;
+   const rail=document.querySelector('#tvBrowseRail'),cards=testBrowse.railCards(rail);
+   testBrowse.setRailPosition(rail,0);
    testBrowse.focusRemoteTarget(cards[0]);
    for(let index=1;index<=8;index++)testBrowse.focusRemoteTarget(cards[index]);
    const active=document.activeElement,expectedTarget=testBrowse.tvBrowseState().railScroll.target;
@@ -216,7 +216,7 @@ async function railMotionStability(){
      const railRect=rail.getBoundingClientRect(),cardRect=active.getBoundingClientRect(),style=getComputedStyle(rail);
      const center=railRect.left+rail.clientLeft+(parseFloat(style.paddingLeft)||0)
        +(rail.clientWidth-(parseFloat(style.paddingLeft)||0)-(parseFloat(style.paddingRight)||0))/2;
-     window.railMotionTrace.push({at:performance.now()-started,scroll:rail.scrollLeft,error:cardRect.left+cardRect.width/2-center,
+     window.railMotionTrace.push({at:performance.now()-started,scroll:testBrowse.railPosition(rail),actualScrollLeft:rail.scrollLeft,error:cardRect.left+cardRect.width/2-center,
        frame:!!testBrowse.tvBrowseState().railScroll.frame,transform:getComputedStyle(active).transform});
      if(testBrowse.tvBrowseState().railScroll.frame||performance.now()-started<260)requestAnimationFrame(sample);
      else window.railMotionDone=true;
@@ -232,11 +232,12 @@ async function railMotionStability(){
  assert.ok(scroll.every((value,index)=>!index||value>=scroll[index-1]-1.25),'rightward anchor motion never corrects back toward an older target');
  assert.ok(Math.abs(scroll.at(-1)-motion.expected)<=1.25,'the latest target is reached without a corrective second anchor');
  assert.ok(Math.abs(trace.at(-1).error)<=2,'the focused card settles on the visual center anchor');
+ assert.ok(trace.every(sample=>sample.actualScrollLeft===0),'D2 never lets native scrollLeft compete with its transform position');
  assert.ok(Math.max(...last.map(sample=>sample.scroll))-Math.min(...last.map(sample=>sample.scroll))<=.5,'the settled rail does not micro-jitter');
  assert.ok(trace.every(sample=>sample.transform==='none'),'focused cards do not scale during rail travel');
  assert.equal(motion.running,false,'only one coalesced animation remains and it is cleared at rest');
  await p.evaluate(()=>{
-   const rail=document.querySelector('#tvBrowseRail'),cards=Array.from(rail.children);
+   const rail=document.querySelector('#tvBrowseRail'),cards=testBrowse.railCards(rail);
    testBrowse.focusRemoteTarget(cards[7]);testBrowse.focusRemoteTarget(cards[6]);testBrowse.focusRemoteTarget(cards[5]);
    const active=document.activeElement,expectedTarget=testBrowse.tvBrowseState().railScroll.target;
    const started=performance.now();window.reverseMotionTrace=[];window.reverseMotionDone=false;
@@ -244,7 +245,7 @@ async function railMotionStability(){
      const railRect=rail.getBoundingClientRect(),cardRect=active.getBoundingClientRect(),style=getComputedStyle(rail);
      const center=railRect.left+rail.clientLeft+(parseFloat(style.paddingLeft)||0)
        +(rail.clientWidth-(parseFloat(style.paddingLeft)||0)-(parseFloat(style.paddingRight)||0))/2;
-     window.reverseMotionTrace.push({at:performance.now()-started,scroll:rail.scrollLeft,error:cardRect.left+cardRect.width/2-center,
+     window.reverseMotionTrace.push({at:performance.now()-started,scroll:testBrowse.railPosition(rail),actualScrollLeft:rail.scrollLeft,error:cardRect.left+cardRect.width/2-center,
        frame:!!testBrowse.tvBrowseState().railScroll.frame});
      if(testBrowse.tvBrowseState().railScroll.frame||performance.now()-started<260)requestAnimationFrame(sample);
      else window.reverseMotionDone=true;
@@ -259,6 +260,7 @@ async function railMotionStability(){
  assert.ok(reverseScroll.every((value,index)=>!index||value<=reverseScroll[index-1]+1.25),'leftward anchor motion does not jump back toward the previous rightward target');
  assert.ok(Math.abs(reverseScroll.at(-1)-reverse.expected)<=1.25&&Math.abs(reverseTrace.at(-1).error)<=2,'reverse motion settles on its latest visual anchor');
  assert.ok(Math.max(...reverseLast.map(sample=>sample.scroll))-Math.min(...reverseLast.map(sample=>sample.scroll))<=.5,'reverse motion also settles without micro-jitter');
+ assert.ok(reverseTrace.every(sample=>sample.actualScrollLeft===0),'reverse motion continues to use only transform control');
  report.results.push({version:'after',motion:{firstMoveMs:firstMoved.at,finalOffset:trace.at(-1).error,settledRange:Math.max(...last.map(sample=>sample.scroll))-Math.min(...last.map(sample=>sample.scroll)),reverseOffset:reverseTrace.at(-1).error,reverseSettledRange:Math.max(...reverseLast.map(sample=>sample.scroll))-Math.min(...reverseLast.map(sample=>sample.scroll)),samples:trace.length+reverseTrace.length}});
  await p.close();
 }

@@ -115,6 +115,7 @@ function makeHarness(items, imagePlan = {}) {
     function mediaDomKey(item) { return item && item.key || ""; }
     function tvBrowseActive() { return true; }
     function tvBrowseQueryKey() { return runtimeUi.queryKey || "history-test-query"; }
+    function tvBrowseRailCards(rail) { return rail && rail.children || []; }
     function secondaryGetQuery() { return runtimeQuery; }
     function tvWallpaperCurrentItems(query) { return query.items; }
     function tvBrowseShouldDeferAsyncDetailPreview() { return false; }
