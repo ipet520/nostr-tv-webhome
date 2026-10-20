@@ -27932,7 +27932,7 @@ utils.encode = function encode(arr, enc) {
       variety: ["region", "year", "sort"]
     };
     const TV_BROWSE_BACKDROP_TIMEOUT_MS = 8000;
-    const TV_BROWSE_RAIL_READY_TIMEOUT_MS = 5000;
+    const TV_BROWSE_RAIL_READY_TIMEOUT_MS = 15000;
 
     // TV presentation owns only selection, focus and viewport position. Catalog
     // results and filters remain owned by the shared catalog query service.
@@ -29017,12 +29017,14 @@ utils.encode = function encode(arr, enc) {
       if (image) {
         image.dataset.tvBrowsePosterState = stateName;
         if (source != null) image.dataset.tvBrowsePosterReadySource = source;
-        if (stateName === "failed") image.dataset.tvBrowsePosterFailedAt = String(Date.now());
+        if (stateName === "failed" || stateName === "decode-failed") image.dataset.tvBrowsePosterFailedAt = String(Date.now());
         else if (stateName === "ready" || stateName === "pending" || stateName === "timed-out") delete image.dataset.tvBrowsePosterFailedAt;
       }
       if (card) {
         card.dataset.posterState = stateName;
-        card.classList.toggle("poster-unavailable", stateName === "failed" || stateName === "absent" || stateName === "timed-out");
+        // A Gate timeout only means preparation took too long. Keep the image
+        // visible and reserve the unavailable treatment for confirmed failure.
+        card.classList.toggle("poster-unavailable", stateName === "failed" || stateName === "decode-failed" || stateName === "absent");
       }
     }
 
@@ -29073,8 +29075,8 @@ utils.encode = function encode(arr, enc) {
           || !tvBrowseReadinessTerminal(record.backgroundDecodeState)) return false;
         const posterState = image && image.dataset.tvBrowsePosterState;
         if (!image || image.dataset.tvBrowsePosterReadySource !== posterUrl
-          || !["ready", "absent", "failed", "timed-out"].includes(posterState)) return false;
-        if (posterState === "failed" && Date.now() >= itemRetryAfter) return false;
+          || !["ready", "absent", "failed", "decode-failed", "timed-out"].includes(posterState)) return false;
+        if (["failed", "decode-failed"].includes(posterState) && Date.now() >= itemRetryAfter) return false;
         if (posterState === "timed-out" && image.complete && !image.naturalWidth && Date.now() >= itemRetryAfter) return false;
         const type = String(item.mediaType || item.media_type || "").toLowerCase();
         const id = movieDetailCacheId(item);
@@ -29147,7 +29149,10 @@ utils.encode = function encode(arr, enc) {
       ui.railReadiness = null;
       const dataTimedOut = timedOut && gate.dataPending;
       ui.coldRailQueryKey = dataTimedOut ? gate.queryKey : "";
-      ui.railReadinessTimedOutKey = timedOut ? gate.queryKey + "|" + gate.signature : "";
+      // The signature suppresses repeated retries only while the first data
+      // page itself is missing. Resource Gate timeouts are cached separately
+      // with their bounded retry window, so they must not block a later retry.
+      ui.railReadinessTimedOutKey = dataTimedOut ? gate.queryKey + "|" + gate.signature : "";
       if (!dataTimedOut) tvBrowseRememberRailReady(gate.queryKey, gate.signature, gate.resources);
       if (dataTimedOut) tvBrowseSetRailLoading(true, "首屏暂不可用", false);
       else {
@@ -29196,9 +29201,9 @@ utils.encode = function encode(arr, enc) {
         tvBrowseMarkPosterState(card, image, state, source);
         return Promise.resolve({ posterState: state, posterDecodeState: state });
       }
-      if (image.dataset.tvBrowsePosterReadySource === source && ["ready", "absent", "failed"].includes(image.dataset.tvBrowsePosterState)) {
+      if (image.dataset.tvBrowsePosterReadySource === source && ["ready", "absent", "failed", "decode-failed"].includes(image.dataset.tvBrowsePosterState)) {
         const decodeState = image.dataset.tvBrowsePosterDecodeState || "ready";
-        if (image.dataset.tvBrowsePosterState === "failed"
+        if (["failed", "decode-failed"].includes(image.dataset.tvBrowsePosterState)
           && Date.now() - Number(image.dataset.tvBrowsePosterFailedAt || 0) >= 60000) {
           delete image.dataset.tvBrowsePosterState; delete image.dataset.tvBrowsePosterReadySource;
           delete image.dataset.tvBrowsePosterDecodeState; delete image.dataset.tvBrowsePosterFailedAt;
@@ -29209,7 +29214,7 @@ utils.encode = function encode(arr, enc) {
             image.removeAttribute("src"); image.src = source;
           }
         } else {
-        return Promise.resolve({ posterState: image.dataset.tvBrowsePosterState === "failed" ? decodeState === "decode-failed" ? "decode-failed" : "failed" : decodeState,
+          return Promise.resolve({ posterState: ["failed", "decode-failed"].includes(image.dataset.tvBrowsePosterState) ? decodeState === "decode-failed" ? "decode-failed" : "failed" : decodeState,
           posterDecodeState: decodeState });
         }
       }
@@ -29244,13 +29249,13 @@ utils.encode = function encode(arr, enc) {
               || image.dataset.tvBrowseDecodePreparedSource !== source) return;
             settled = true; cleanup();
             image.dataset.tvBrowsePosterDecodeState = status;
-            tvBrowseMarkPosterState(currentCard, image, available ? "ready" : "failed", source);
+            tvBrowseMarkPosterState(currentCard, image, status === "decode-failed" ? "decode-failed" : available ? "ready" : "failed", source);
             return;
           }
           settled = true; cleanup();
           image.dataset.tvBrowsePosterDecodeState = status;
           record.posterDecodeState = status;
-          tvBrowseMarkPosterState(card, image, available ? "ready" : "failed", source);
+          tvBrowseMarkPosterState(card, image, status === "decode-failed" ? "decode-failed" : available ? "ready" : "failed", source);
           finishPosterWait({ posterState: status, posterDecodeState: status });
         };
         const decode = () => {
@@ -29361,7 +29366,7 @@ utils.encode = function encode(arr, enc) {
       if (!image) return false;
       const card = image.closest && image.closest(".card"), key = card && card.dataset.mediaKey || "";
       const source = tvBrowsePosterSource(image);
-      if (image.dataset.tvBrowsePosterState === "failed") {
+      if (["failed", "decode-failed"].includes(image.dataset.tvBrowsePosterState)) {
         const failedAt = Number(image.dataset.tvBrowsePosterFailedAt || 0);
         if (Date.now() - failedAt < 60000) return false;
         delete image.dataset.tvBrowsePosterState;
@@ -29389,7 +29394,7 @@ utils.encode = function encode(arr, enc) {
         const currentCard = image.closest && image.closest(".card");
         if (currentCard && String(currentCard.dataset.mediaKey || "") === String(key)
           && tvBrowsePosterSource(image) === source) tvBrowseMarkPosterState(currentCard, image,
-            status === "ready" || status === "loaded-no-decode" ? "ready" : "failed", source);
+          status === "decode-failed" ? "decode-failed" : status === "ready" || status === "loaded-no-decode" ? "ready" : "failed", source);
       };
       const onError = () => finish("failed");
       const onLoad = () => decodeLoaded();

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { createContext, runInContext } from "node:vm";
 
 const source = readFileSync(new URL("../src/js/11e-tv-browse.js", import.meta.url), "utf8");
+assert.match(source, /const TV_BROWSE_RAIL_READY_TIMEOUT_MS = 15000;/, "the first-screen Gate retains a 15-second upper bound");
 
 function extract(name, nextName) {
   const start = source.indexOf(`function ${name}(`);
@@ -135,12 +136,12 @@ function createHarness() {
     if (targetImage) {
       targetImage.dataset.tvBrowsePosterState = stateName;
       if (sourceUrl != null) targetImage.dataset.tvBrowsePosterReadySource = sourceUrl;
-      if (stateName === "failed") targetImage.dataset.tvBrowsePosterFailedAt = String(now);
-      else if (stateName === "ready") delete targetImage.dataset.tvBrowsePosterFailedAt;
+      if (stateName === "failed" || stateName === "decode-failed") targetImage.dataset.tvBrowsePosterFailedAt = String(now);
+      else if (["ready", "pending", "timed-out"].includes(stateName)) delete targetImage.dataset.tvBrowsePosterFailedAt;
     }
     if (targetCard) {
       targetCard.dataset.posterState = stateName;
-      targetCard.classList.toggle("poster-unavailable", stateName === "failed" || stateName === "absent" || stateName === "timed-out");
+      targetCard.classList.toggle("poster-unavailable", stateName === "failed" || stateName === "decode-failed" || stateName === "absent");
     }
   };
   const sandbox = createContext(context);
@@ -185,7 +186,7 @@ function makeRecord(harness) {
   };
 }
 
-// A normal poster completes before the five-second Gate and is decoded once.
+// A normal poster completes before the 15-second Gate and is decoded once.
 {
   const h = createHarness(), { gate, record } = h.makeGate();
   const prepared = h.sandbox.tvBrowsePrepareGatePoster(h.card, record, gate);
@@ -195,36 +196,65 @@ function makeRecord(harness) {
   assert.equal(h.card.classList.contains("poster-unavailable"), false);
 }
 
-// Load at the Gate boundary, but decode resolves at eight seconds. The Gate
+// Load before the 15-second Gate boundary, but decode resolves later. The Gate
 // timeout must not swallow the resource completion callback.
 {
   const h = createHarness(), { gate, record } = h.makeGate();
   const prepared = h.sandbox.tvBrowsePrepareGatePoster(h.card, record, gate);
   const delayedDecode = h.deferDecode();
-  h.setNow(4999); h.image.complete = true; h.image.naturalWidth = 240; h.image.emit("load");
+  h.setNow(14999); h.image.complete = true; h.image.naturalWidth = 240; h.image.emit("load");
   assert.equal(h.image.dataset.tvBrowseDecodePrepared, "movie-1");
-  h.setNow(5000); h.sandbox.tvBrowseFinishRailReadiness(gate, true);
+  h.setNow(15000); h.sandbox.tvBrowseFinishRailReadiness(gate, true);
   const atGate = { posterState: h.image.dataset.tvBrowsePosterState, recordState: record.posterState,
     placeholder: h.card.classList.contains("poster-unavailable") };
-  h.setNow(8000); delayedDecode.resolve(); await h.flush();
+  h.setNow(18000); delayedDecode.resolve(); await h.flush();
   const afterDecode = { posterState: h.image.dataset.tvBrowsePosterState,
     placeholder: h.card.classList.contains("poster-unavailable") };
   console.log("load-before-gate/decode-after-gate", JSON.stringify({ atGate, afterDecode }));
   assert.equal(atGate.recordState, "timed-out");
+  assert.equal(atGate.placeholder, false, "loaded pixels are not hidden while decode is still pending");
   assert.equal(afterDecode.posterState, "ready", "a late decode completion recovers the current poster");
   assert.equal(afterDecode.placeholder, false, "a late decode completion clears the temporary unavailable state");
   await prepared;
 }
 
-// A request which is still pending at timeout gets an independent visible-card
-// listener after the rail is released, and can recover when it later loads.
+// An eight-second image remains inside the 15-second Gate and never receives
+// an unavailable placeholder.
+{
+  const h = createHarness(), { gate, record } = h.makeGate();
+  const prepared = h.sandbox.tvBrowsePrepareGatePoster(h.card, record, gate);
+  h.setNow(8000); h.image.complete = true; h.image.naturalWidth = 240; h.image.emit("load"); await h.flush();
+  assert.equal(gate.settled, false, "an eight-second poster does not prematurely release the 15-second Gate");
+  assert.equal(h.image.dataset.tvBrowsePosterState, "ready");
+  assert.equal(h.card.classList.contains("poster-unavailable"), false);
+  await prepared;
+}
+
+// At the 15-second deadline the original request continues. Gate cleanup does
+// not change src, and the existing visible-image path observes its late load.
 {
   const h = createHarness(), { gate, record } = h.makeGate();
   h.sandbox.tvBrowsePrepareGatePoster(h.card, record, gate);
-  h.setNow(5000); h.sandbox.tvBrowseFinishRailReadiness(gate, true);
-  h.setNow(8000); h.image.complete = true; h.image.naturalWidth = 240; h.image.emit("load"); await h.flush();
-  assert.equal(h.image.dataset.tvBrowsePosterState, "ready");
+  const requestsBeforeTimeout = h.image.requestCount;
+  h.setNow(15000); h.sandbox.tvBrowseFinishRailReadiness(gate, true);
+  assert.equal(h.image.dataset.tvBrowsePosterState, "timed-out");
+  assert.equal(h.card.classList.contains("poster-unavailable"), false, "a preparation timeout is not an image failure");
+  assert.equal(h.image.requestCount, requestsBeforeTimeout, "Gate release does not issue a duplicate poster request");
+  assert.equal(h.ui.railReadinessTimedOutKey || "", "", "a resource timeout does not permanently block same-query readiness checks");
+  h.setNow(18000); h.image.complete = true; h.image.naturalWidth = 240; h.image.emit("load"); await h.flush();
+  assert.equal(h.image.dataset.tvBrowsePosterState, "ready", "a late load automatically clears the temporary state");
   assert.equal(h.card.classList.contains("poster-unavailable"), false);
+  assert.equal(h.image.requestCount, requestsBeforeTimeout, "late recovery reuses the original request");
+}
+
+// A real failure after the Gate deadline still gets the unavailable treatment.
+{
+  const h = createHarness(), { gate, record } = h.makeGate();
+  h.sandbox.tvBrowsePrepareGatePoster(h.card, record, gate);
+  h.setNow(15000); h.sandbox.tvBrowseFinishRailReadiness(gate, true);
+  h.image.complete = true; h.image.emit("error"); await h.flush();
+  assert.equal(h.image.dataset.tvBrowsePosterState, "failed");
+  assert.equal(h.card.classList.contains("poster-unavailable"), true, "only the confirmed load failure gets the unavailable treatment");
 }
 
 // A cached category card may be detached while its decode finishes. Retain
@@ -233,10 +263,10 @@ function makeRecord(harness) {
   const h = createHarness(), { gate, record } = h.makeGate();
   h.sandbox.tvBrowsePrepareGatePoster(h.card, record, gate);
   const delayedDecode = h.deferDecode();
-  h.setNow(4999); h.image.complete = true; h.image.naturalWidth = 240; h.image.emit("load");
-  h.setNow(5000); h.sandbox.tvBrowseFinishRailReadiness(gate, true);
+  h.setNow(14999); h.image.complete = true; h.image.naturalWidth = 240; h.image.emit("load");
+  h.setNow(15000); h.sandbox.tvBrowseFinishRailReadiness(gate, true);
   h.card.isConnected = false;
-  h.setNow(8000); delayedDecode.resolve(); await h.flush();
+  h.setNow(18000); delayedDecode.resolve(); await h.flush();
   h.card.isConnected = true;
   assert.equal(h.image.dataset.tvBrowsePosterState, "ready", "a detached but identity-matching cached card retains late decode success");
   assert.equal(h.card.classList.contains("poster-unavailable"), false);
@@ -256,6 +286,7 @@ function makeRecord(harness) {
   decode.image.complete = true; decode.image.naturalWidth = 240; decode.image.emit("load");
   await decode.flush();
   assert.equal((await failedDecode).posterState, "decode-failed");
+  assert.equal(decode.image.dataset.tvBrowsePosterState, "decode-failed", "decode failure remains distinct from request failure");
   assert.equal(decode.card.classList.contains("poster-unavailable"), true);
 }
 
@@ -297,11 +328,11 @@ function makeRecord(harness) {
   h.sandbox.tvBrowsePrepareGatePoster(h.card, record, gate);
   const delayedDecode = h.deferDecode();
   h.image.complete = true; h.image.naturalWidth = 240; h.image.emit("load");
-  h.setNow(5000); h.sandbox.tvBrowseFinishRailReadiness(gate, true);
+  h.setNow(15000); h.sandbox.tvBrowseFinishRailReadiness(gate, true);
   h.image.src = "/replacement-poster.jpg";
   h.card.dataset.mediaKey = "replacement";
-  h.setNow(8000); delayedDecode.resolve(); await h.flush();
+  h.setNow(18000); delayedDecode.resolve(); await h.flush();
   assert.notEqual(h.image.dataset.tvBrowsePosterState, "ready", "a stale decode cannot mark a different media key ready");
 }
 
-console.log("TV Browse poster lifecycle checks passed: pending timeout, late decode, late request, true failure, decode failure, TTL retry, stale media guard.");
+console.log("TV Browse poster lifecycle checks passed: 15-second Gate, pending timeout, late decode/load, true failure, decode failure, TTL retry, stale media guard.");

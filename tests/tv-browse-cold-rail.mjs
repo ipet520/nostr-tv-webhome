@@ -545,7 +545,7 @@ try {
   await page.waitForFunction(() => testRail.tvBrowseState().railReadiness && !document.querySelector("#tvBrowseRailLoader").hidden);
   const timedCount=await page.evaluate(()=>testRail.visibleCount());
   await waitUntil(()=>held.size>=timedCount);
-  await page.waitForFunction(() => document.querySelector("#tvBrowseRailLoader").hidden,{},{timeout:6500});
+  await page.waitForFunction(() => document.querySelector("#tvBrowseRailLoader").hidden,{},{timeout:16500});
   assert.equal(await page.locator("#tvBrowsePosters").evaluate(node=>node.classList.contains("rail-loading")),false,
     "the image readiness timeout releases the whole rail instead of waiting indefinitely");
   const timedStates=await page.evaluate(() => {
@@ -557,8 +557,8 @@ try {
       preview:testRail.previewState(),title:document.querySelector("#tvBrowseTitle").textContent
     };
   });
-  assert.equal(timedStates.firstScreen.every(card=>card.state==="timed-out"&&card.unavailable),true,
-    "the first-screen timeout releases the Gate while retaining a recoverable temporary poster state");
+  assert.equal(timedStates.firstScreen.every(card=>card.state==="timed-out"&&!card.unavailable),true,
+    "the first-screen timeout releases the Gate without presenting a temporary timeout as image failure");
   assert.equal(timedStates.laterScreen.some(Boolean),false,
     "only timed-out first-screen images are degraded and the remainder of the rail remains normal");
   assert.equal(timedStates.resources.slice(0,timedCount).every(resource=>resource.background==="timed-out"&&resource.decode==="timed-out"),true,
@@ -626,7 +626,7 @@ try {
   }
 
   // The poster can load before the Gate while decode resolves later. Releasing
-  // the Gate at five seconds must not discard that same-resource completion.
+  // the Gate at 15 seconds must not hide valid loaded pixels or discard completion.
   await page.evaluate(() => {
     testRail.seedMovies("movie",8,"decode-late",63000);
     testRail.delayDecode("decode-late-poster-0.jpg");
@@ -637,14 +637,14 @@ try {
     return image&&String(image.currentSrc||image.src).includes("decode-late-poster-0.jpg")
       && image.complete&&image.naturalWidth>0&&testRail.tvBrowseState().railReadiness;
   });
-  await page.waitForFunction(()=>document.querySelector("#tvBrowseRailLoader").hidden,{},{timeout:6500});
+  await page.waitForFunction(()=>document.querySelector("#tvBrowseRailLoader").hidden,{},{timeout:16500});
   const decodeTimedOut=await page.evaluate(()=>{
     const card=document.querySelector("#tvBrowseRail > .card"),image=card&&card.querySelector("img.poster");
     return {state:image&&image.dataset.tvBrowsePosterState,unavailable:!!(card&&card.classList.contains("poster-unavailable")),
       decodePending:typeof window.delayedPosterDecodeRelease==="function"};
   });
   assert.equal(decodeTimedOut.state,"timed-out","a slow decode is not cached as a genuine image failure");
-  assert.equal(decodeTimedOut.unavailable,true,"the temporary poster state remains visible until decode completes");
+  assert.equal(decodeTimedOut.unavailable,false,"loaded poster pixels remain visible while decode is pending");
   assert.equal(decodeTimedOut.decodePending,true,"the test held the poster decode across the Gate deadline");
   await page.evaluate(()=>testRail.releaseDecode());
   await page.waitForFunction(()=>{
